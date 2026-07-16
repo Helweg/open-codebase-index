@@ -361,6 +361,27 @@ graph TD
 
 **Additional Supported Formats (line-based chunking)**: TXT, HTML, HTM, Markdown, Shell scripts
 
+#### Compatibilité PHP 8.x vérifiée
+
+Le support PHP utilise [`tree-sitter-php` 0.24.2](https://github.com/tree-sitter/tree-sitter-php/releases/tag/v0.24.2), distribué sous licence MIT. La matrice suivante est couverte par le fixture de régression [`php-8-features.php`](tests/fixtures/call-graph/php-8-features.php) et par les tests Rust et Vitest :
+
+| Version | Constructions vérifiées |
+|---|---|
+| PHP 8.0 | attributs, arguments nommés, propriétés promues, types union, opérateur nullsafe et expressions `match` |
+| PHP 8.1 | enums avec constantes, propriétés `readonly`, types intersection et callables de première classe |
+| PHP 8.2 | classes `readonly` et types DNF |
+| PHP 8.3 | constantes typées et accès dynamique aux constantes de classe |
+| PHP 8.4 | property hooks, visibilité asymétrique et chaînage sur `new` sans parenthèses |
+| PHP 8.5 | attributs sur les constantes et opérateur pipe `|>` |
+
+Le parsing sémantique vérifie les noms et types de chunks pour les fonctions, classes, interfaces, traits et `enum_declaration`. Les méthodes restent incluses dans le chunk de leur conteneur au lieu de devenir des chunks autonomes.
+
+Le graphe d'appels distingue les invocations réelles des références de callable : `foo(...)`, `$object->method(...)` et `Type::method(...)` seuls ne créent pas d'arête, tandis que ces mêmes callables utilisés comme opérandes directs ou parenthésés de `|>` sont enregistrés, car le pipe les invoque. Les appels qualifiés et relatifs `namespace\foo()`, appels nullsafe, statiques, constructeurs, arguments nommés, corps de `match`, property hooks et méthodes d'enum sont également couverts.
+
+Le graphe reste limité aux cibles nommées résolubles statiquement : les appels comme `$callable()`, `$object->$method()` et `new $class()`, les expressions `include`/`require` et les relations `extends`/`implements` ne sont pas ajoutés par cette contribution.
+
+PHP 8.5 reste partiel dans la grammaire upstream 0.24.2 : les propriétés promues `final` et `clone($object, [...])` produisent encore des nœuds `ERROR`. Ces deux syntaxes ne sont donc pas revendiquées comme prises en charge.
+
 **Default File Patterns**:
 ```
 **/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}    **/*.{py,pyi}

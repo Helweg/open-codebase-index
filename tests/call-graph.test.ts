@@ -245,6 +245,34 @@ describe("call-graph", () => {
         expect(importNames).toContain("StringHelper");
         expect(importNames).toContain("ArrayHelper");
       });
+
+      it("should distinguish PHP 8.x calls from first-class callable references", () => {
+        const content = fs.readFileSync(path.join(fixturesDir, "php-8-features.php"), "utf-8");
+        const calls = extractCalls(content, "php");
+        const callNames = calls.map((call) => call.calleeName);
+
+        expect(callNames).toContain("displayname");
+        expect(callNames).toContain("fallback");
+        expect(callNames).toContain("normalize");
+        expect(callNames).toContain("formatstatus");
+        expect(callNames).toContain("now");
+        expect(callNames).toContain("trim");
+        expect(callNames).toContain("strtolower");
+        expect(callNames).toContain("format");
+        expect(callNames).toContain("create");
+        expect(calls).toContainEqual(
+          expect.objectContaining({ calleeName: "Job", callType: "Constructor" }),
+        );
+        expect(calls).toContainEqual(
+          expect.objectContaining({ calleeName: "Profile", callType: "Constructor" }),
+        );
+
+        expect(callNames).not.toContain("callableonly");
+        expect(callNames).not.toContain("methodonly");
+        expect(callNames).not.toContain("staticonly");
+        expect(callNames).not.toContain("featureflag");
+        expect(callNames).not.toContain("attribute");
+      });
     });
 
     describe("php same-file case-insensitive resolution", () => {

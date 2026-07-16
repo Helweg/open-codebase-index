@@ -12,6 +12,11 @@
   function: (qualified_name
     (name) @callee.name)) @call
 
+; Relative function calls: namespace\foo()
+(function_call_expression
+  function: (relative_name
+    (name) @callee.name)) @call
+
 ; Static method calls: Foo::bar(), self::method()
 (scoped_call_expression
   name: (name) @callee.name) @static.call
@@ -31,6 +36,11 @@
 ; Qualified constructor: new Namespace\Foo()
 (object_creation_expression
   (qualified_name
+    (name) @callee.name)) @constructor
+
+; Relative constructor: new namespace\Foo()
+(object_creation_expression
+  (relative_name
     (name) @callee.name)) @constructor
 
 ; Use imports: use App\Models\User;

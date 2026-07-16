@@ -90,6 +90,34 @@ fn exclusion_scope(
     (start, root.end_byte(), node.kind() == "field_identifier")
 }
 
+fn is_first_class_callable(node: tree_sitter::Node<'_>) -> bool {
+    let Some(arguments) = node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let mut cursor = arguments.walk();
+    arguments
+        .named_children(&mut cursor)
+        .any(|child| child.kind() == "variadic_placeholder")
+}
+
+fn is_pipe_callable(mut node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+    while let Some(parent) = node.parent() {
+        if parent.kind() == "parenthesized_expression" {
+            node = parent;
+            continue;
+        }
+        if parent.kind() != "binary_expression" || parent.child_by_field_name("right") != Some(node)
+        {
+            return false;
+        }
+        return parent
+            .child_by_field_name("operator")
+            .and_then(|operator| operator.utf8_text(source).ok())
+            == Some("|>");
+    }
+    false
+}
+
 pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>> {
     let language = Language::from_string(language_name);
     let ts_language = match language {
@@ -233,6 +261,22 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let mut captures_iter = cursor.captures(&query, tree.root_node(), text_bytes);
 
     while let Some((match_, _)) = captures_iter.next() {
+        let is_callable_reference = language == Language::Php
+            && match_.captures.iter().any(|capture| {
+                let is_call_capture = call_idx.map(|idx| capture.index == idx).unwrap_or(false)
+                    || method_call_idx
+                        .map(|idx| capture.index == idx)
+                        .unwrap_or(false)
+                    || static_call_idx
+                        .map(|idx| capture.index == idx)
+                        .unwrap_or(false);
+                is_call_capture
+                    && is_first_class_callable(capture.node)
+                    && !is_pipe_callable(capture.node, text_bytes)
+            });
+        if is_callable_reference {
+            continue;
+        }
         let mut callee_name: Option<String> = None;
         let mut call_type: Option<CallType> = None;
         let mut position: Option<(u32, u32)> = None;

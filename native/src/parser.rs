@@ -879,6 +879,20 @@ fn chunk_by_lines(content: &str, language: &Language) -> Vec<CodeChunk> {
 mod tests {
     use super::*;
 
+    fn assert_php_parses_without_errors(content: &str) {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_php::LANGUAGE_PHP.into())
+            .unwrap();
+        let tree = parser.parse(content, None).unwrap();
+
+        assert!(
+            !tree.root_node().has_error(),
+            "Expected valid PHP syntax without ERROR nodes, got: {}",
+            tree.root_node().to_sexp()
+        );
+    }
+
     #[test]
     fn test_parse_typescript() {
         let content = r#"
@@ -919,6 +933,36 @@ class Greeter:
 
         let chunks = parse_file_internal("test.py", content).unwrap();
         assert!(!chunks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_php_8_syntax_without_errors() {
+        let content = include_str!("../../tests/fixtures/call-graph/php-8-features.php");
+
+        assert_php_parses_without_errors(content);
+    }
+
+    #[test]
+    fn test_parse_php_8_semantic_chunks_have_names() {
+        let content = include_str!("../../tests/fixtures/call-graph/php-8-features.php");
+        let chunks = parse_file_internal("php-8-features.php", content).unwrap();
+
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "class_declaration" && chunk.name.as_deref() == Some("Job")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "interface_declaration"
+                && chunk.name.as_deref() == Some("Cacheable")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "trait_declaration" && chunk.name.as_deref() == Some("Timestamps")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "enum_declaration" && chunk.name.as_deref() == Some("Status")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "function_definition" && chunk.name.as_deref() == Some("pipeline")
+        }));
     }
 
     #[test]

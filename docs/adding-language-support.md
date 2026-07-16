@@ -249,11 +249,15 @@ npm run build
 npm run test:run
 ```
 
-## Practical note for PHP
+## Note pratique pour PHP
 
-`php` files are already included in `src/config/constants.ts`, but PHP is not yet wired in `native/src/types.rs`, `native/src/parser.rs`, or `native/queries/`.
+PHP est déjà branché aux trois niveaux : découverte des fichiers, parsing sémantique et graphe d'appels. Toute évolution doit donc préserver ensemble `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts` et leurs tests.
 
-So a PHP PR is mainly a **semantic parsing** change, with **optional call-graph support**.
+Un test de contenu `parseFile()` ne suffit pas à prouver la compatibilité d'une syntaxe : Tree-sitter peut retourner des chunks malgré des nœuds `ERROR`. Les tests de grammaire PHP doivent aussi vérifier `!tree.root_node().has_error()` en Rust, puis contrôler les noms et types de chunks exposés par NAPI.
+
+Les tests de graphe doivent enfin distinguer une invocation d'une référence de callable de première classe. Par exemple, `foo(...)` ne constitue pas un appel, sauf lorsqu'il est utilisé comme opérande du pipe PHP 8.5 `|>`.
+
+La matrice testée et les limites restantes de `tree-sitter-php` 0.24.2 sont documentées dans la section « Compatibilité PHP 8.x vérifiée » du `README.md`.
 
 ## One-line summary
 
