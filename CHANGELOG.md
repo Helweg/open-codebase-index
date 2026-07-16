@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.
+- **Metal Shading Language**: Added default `.metal` discovery, semantic chunks for Metal declarations, and direct, template, member, and qualified call extraction.
 
 ## [0.17.1] - 2026-07-25
 

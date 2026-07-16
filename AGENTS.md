@@ -49,11 +49,11 @@ src/
 
 native/src/
 ├── lib.rs                # NAPI exports: parse_file, VectorStore, Database, InvertedIndex
-├── parser.rs             # Tree-sitter parsing (19 languages: TS, JS, Python, Rust, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB)
+├── parser.rs             # Tree-sitter parsing (20 languages: TS, JS, Python, Rust, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, Metal, JSON, TOML, YAML, Zig, GDScript, MATLAB)
 ├── chunker.rs            # Semantic chunking with overlap
 ├── store.rs              # usearch vector store (F16 quantization)
 ├── db.rs                 # SQLite: embeddings, chunks, branch catalog, symbols, call edges
-├── call_extractor.rs     # Tree-sitter query-based call extraction (TS/JS, Python, Go, Rust, PHP, Zig, Apex, GDScript, MATLAB)
+├── call_extractor.rs     # Tree-sitter query-based call extraction (TS/JS, Python, Go, Rust, PHP, Zig, Apex, GDScript, MATLAB, Bash, Metal)
 ├── inverted_index.rs     # BM25 keyword search
 ├── hasher.rs             # xxhash content hashing
 └── types.rs              # Shared types (Language enum with from_string)

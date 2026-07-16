@@ -398,6 +398,71 @@ end
       expect(classChunk?.content).toContain("function value = score");
       expect(classChunk?.language).toBe("matlab");
     });
+
+    it("should parse Metal functions, structs, stages, and address spaces", () => {
+      const fixturePath = path.join(
+        __dirname,
+        "fixtures",
+        "metal",
+        "representative.metal",
+      );
+      const content = fs.readFileSync(fixturePath, "utf-8");
+      const chunks = parseFile("representative.metal", content);
+
+      const functionNames = chunks
+        .filter((chunk) => chunk.chunkType === "function_definition")
+        .map((chunk) => chunk.name);
+      expect(functionNames).toEqual(
+        expect.arrayContaining([
+          "scaled_value",
+          "shade",
+          "adjust",
+          "vertex_main",
+          "fragment_main",
+          "reduce_kernel",
+        ]),
+      );
+
+      const structNames = chunks
+        .filter((chunk) => chunk.chunkType === "struct_specifier")
+        .map((chunk) => chunk.name);
+      expect(structNames).toEqual(
+        expect.arrayContaining([
+          "VertexIn",
+          "VertexOut",
+          "Uniforms",
+          "Tiny",
+          "Ops",
+          "BufferPair",
+        ]),
+      );
+      expect(structNames.filter((name) => name === "BufferPair")).toHaveLength(2);
+
+      expect(
+        chunks.find((chunk) => chunk.chunkType === "enum_specifier")?.name,
+      ).toBe("BlendMode");
+      expect(
+        chunks.find((chunk) => chunk.chunkType === "union_specifier")?.name,
+      ).toBe("ScalarBits");
+      expect(
+        chunks.find((chunk) => chunk.chunkType === "alias_declaration")?.name,
+      ).toBe("Gain");
+      expect(
+        chunks.find((chunk) => chunk.chunkType === "type_definition")?.name,
+      ).toBe("LegacyUniforms");
+
+      const shade = chunks.find((chunk) => chunk.name === "shade");
+      expect(shade?.content).toContain("Samples the texture");
+
+      const kernel = chunks.find((chunk) => chunk.name === "reduce_kernel");
+      expect(kernel?.content).toContain("kernel void");
+      expect(kernel?.content).toContain("device float");
+      expect(kernel?.content).toContain("constant uint");
+      expect(kernel?.content).toContain("threadgroup float");
+      expect(kernel?.content).toContain("thread float");
+      expect(kernel?.content).toContain("[[thread_position_in_grid]]");
+      expect(chunks.every((chunk) => chunk.language === "metal")).toBe(true);
+    });
   });
 
   describe("parseFiles", () => {

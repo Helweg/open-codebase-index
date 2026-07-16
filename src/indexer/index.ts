@@ -53,7 +53,7 @@ import {
   type IndexMutationOperation,
 } from "./index-lock.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -4209,6 +4209,23 @@ export class Indexer {
 
       for (const chunk of parsed.chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
+
+        // Large Metal functions are split into overlapping chunks. Keep one symbol
+        // spanning the full declaration so same-file resolution does not treat the
+        // fragments as ambiguous overloads.
+        const existingMetalSymbol = chunk.language === "metal"
+          ? fileSymbols.find((symbol) =>
+              symbol.name === chunk.name
+              && symbol.kind === chunk.chunkType
+              && symbol.startLine <= chunk.endLine
+              && chunk.startLine <= symbol.endLine
+            )
+          : undefined;
+        if (existingMetalSymbol) {
+          existingMetalSymbol.startLine = Math.min(existingMetalSymbol.startLine, chunk.startLine);
+          existingMetalSymbol.endLine = Math.max(existingMetalSymbol.endLine, chunk.endLine);
+          continue;
+        }
 
         const symbolId = `sym_${hashContent(parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`;
         const symbol: SymbolData = {

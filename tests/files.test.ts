@@ -100,6 +100,20 @@ describe("files utilities", () => {
       ).toBe(true);
     });
 
+    it("should include Metal shader files by default", () => {
+      const filter = createIgnoreFilter(tempDir);
+
+      expect(
+        shouldIncludeFile(
+          path.join(tempDir, "shaders", "compute.metal"),
+          tempDir,
+          DEFAULT_INCLUDE,
+          DEFAULT_EXCLUDE,
+          filter
+        )
+      ).toBe(true);
+    });
+
     it("should NOT include MATLAB .m files by default (opt-in required)", () => {
       const filter = createIgnoreFilter(tempDir);
 
