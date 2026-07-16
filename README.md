@@ -355,7 +355,9 @@ graph TD
 
 1. **Parsing**: We use `tree-sitter` to intelligently parse your code into meaningful blocks (functions, classes, interfaces). JSDoc comments and docstrings are automatically included with their associated code.
 
-**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB†
+**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Swift, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB†
+
+Swift support uses [`tree-sitter-swift` 0.7.3](https://github.com/alex-pinkus/tree-sitter-swift/tree/0.7.3), distributed under the MIT license. It provides Tree-sitter syntax analysis for chunks, symbols, and calls; it does not replace SourceKit semantic analysis.
 
 † MATLAB (`.m`) is opt-in — see below.
 
@@ -515,7 +517,9 @@ Returns recent debug logs with optional filtering.
 
 ### `call_graph`
 
-Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, and C++.
+Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, and C++.
+
+Swift resolution is name-based: overloads, extension duplicates, and protocol dispatch can remain ambiguous.
 
 - **Use for**: Understanding code flow, tracing dependencies, impact analysis.
 - **Parameters**: `name` (function name), `direction` (`callers` or `callees`), `symbolId` (required for `callees`, returned by previous queries), `relationshipType` (optional: `Call`, `MethodCall`, `Constructor`, `Import`, `Inherits`, `Implements`).

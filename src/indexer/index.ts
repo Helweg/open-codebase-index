@@ -53,7 +53,7 @@ import {
   type IndexMutationOperation,
 } from "./index-lock.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -101,6 +101,14 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "test_declaration",
   "struct_declaration",
   "union_declaration",
+  // Synthetic or tree-sitter-swift-specific Swift declarations.
+  "actor_declaration",
+  "extension_declaration",
+  "protocol_declaration",
+  "protocol_function_declaration",
+  "init_declaration",
+  "deinit_declaration",
+  "subscript_declaration",
   // GDScript declarations whose names participate in the call graph.
   // `function_definition` and `class_definition` are already in the set
   // above (shared with Python/C/Bash and Python, respectively).
@@ -125,6 +133,28 @@ function isCompatibleCFamilyCallTarget(
     return isTypeSymbol;
   }
   return !isTypeSymbol;
+}
+
+const EXECUTABLE_SYMBOL_CHUNK_TYPES = new Set([
+  "function_declaration", "function", "arrow_function", "method_definition",
+  "function_definition", "method_declaration", "function_item",
+  "protocol_function_declaration", "init_declaration", "deinit_declaration",
+  "subscript_declaration", "constructor_definition", "trigger_declaration", "test_declaration",
+]);
+
+export function findEnclosingSymbol(symbols: readonly SymbolData[], line: number, column?: number): SymbolData | undefined {
+  let best: SymbolData | undefined;
+  for (const symbol of symbols) {
+    if (line < symbol.startLine || line > symbol.endLine) continue;
+    if (column !== undefined && ((line === symbol.startLine && column < symbol.startCol) || (line === symbol.endLine && column >= symbol.endCol))) continue;
+    if (!best) { best = symbol; continue; }
+    const span = symbol.endLine - symbol.startLine;
+    const bestSpan = best.endLine - best.startLine;
+    const narrowerRange = column !== undefined && span === bestSpan && symbol.startLine === best.startLine && symbol.endLine === best.endLine && symbol.startCol >= best.startCol && symbol.endCol <= best.endCol && (symbol.startCol > best.startCol || symbol.endCol < best.endCol);
+    const moreSpecificTie = span === bestSpan && symbol.startLine === best.startLine && EXECUTABLE_SYMBOL_CHUNK_TYPES.has(symbol.kind) && !EXECUTABLE_SYMBOL_CHUNK_TYPES.has(best.kind);
+    if (span < bestSpan || (span === bestSpan && symbol.startLine > best.startLine) || narrowerRange || moreSpecificTie) best = symbol;
+  }
+  return best;
 }
 
 function float32ArrayToBuffer(arr: number[]): Buffer {
@@ -4210,16 +4240,16 @@ export class Indexer {
       for (const chunk of parsed.chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
 
-        const symbolId = `sym_${hashContent(parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`;
+        const symbolId = `sym_${hashContent(parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine + ":" + chunk.startCol).slice(0, 16)}`;
         const symbol: SymbolData = {
           id: symbolId,
           filePath: parsed.path,
           name: chunk.name,
           kind: chunk.chunkType,
           startLine: chunk.startLine,
-          startCol: 0,
+          startCol: chunk.startCol,
           endLine: chunk.endLine,
-          endCol: 0,
+          endCol: chunk.endCol,
           language: chunk.language,
         };
         fileSymbols.push(symbol);
@@ -4257,9 +4287,7 @@ export class Indexer {
 
       const edges: CallEdgeData[] = [];
       for (const site of callSites) {
-        const enclosingSymbol = fileSymbols.find(
-          (sym) => site.line >= sym.startLine && site.line <= sym.endLine
-        );
+        const enclosingSymbol = findEnclosingSymbol(fileSymbols, site.line, site.column);
         if (!enclosingSymbol) continue;
 
         const edgeId = `edge_${hashContent(enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column).slice(0, 16)}`;

@@ -36,7 +36,9 @@ mod tests {
         let chunk = CodeChunk {
             content: "function greet() { return 'hello'; }".to_string(),
             start_line: 1,
+            start_col: 0,
             end_line: 1,
+            end_col: 36,
             chunk_type: "function_declaration".to_string(),
             name: Some("greet".to_string()),
             language: "typescript".to_string(),

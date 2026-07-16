@@ -35,6 +35,7 @@ pub fn parse_file_internal(file_path: &str, content: &str) -> Result<Vec<CodeChu
         Language::JavaScript | Language::JavaScriptJsx => tree_sitter_javascript::LANGUAGE.into(),
         Language::Python => tree_sitter_python::LANGUAGE.into(),
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         Language::Go => tree_sitter_go::LANGUAGE.into(),
         Language::Json => tree_sitter_json::LANGUAGE.into(),
         Language::Java => tree_sitter_java::LANGUAGE.into(),
@@ -145,8 +146,9 @@ fn extract_semantic_nodes(
             }
 
             let content = &source[start_byte..end_byte];
-
+            let name = extract_name(cursor, source);
             let preserve_small_call_graph_symbol = match language {
+                Language::Swift => name.is_some(),
                 Language::Bash => node_type == "function_definition",
                 Language::C => node_type == "function_definition",
                 Language::Cpp => matches!(
@@ -157,19 +159,25 @@ fn extract_semantic_nodes(
             };
 
             if content.len() >= MIN_CHUNK_SIZE || preserve_small_call_graph_symbol {
-                let name = extract_name(cursor, source);
-
-                let start_line = if leading_comment.is_some() {
-                    source[..start_byte].lines().count() as u32
+                let (start_line, start_col) = if leading_comment.is_some() {
+                    let prefix = &source[..start_byte];
+                    let line = prefix.bytes().filter(|byte| *byte == b"\n"[0]).count() as u32 + 1;
+                    let col = prefix.rsplit("\n").next().unwrap_or_default().len() as u32;
+                    (line, col)
                 } else {
-                    node.start_position().row as u32 + 1
+                    (
+                        node.start_position().row as u32 + 1,
+                        node.start_position().column as u32,
+                    )
                 };
 
                 let chunk = CodeChunk {
                     content: content.to_string(),
                     start_line,
+                    start_col,
                     end_line: node.end_position().row as u32 + 1,
-                    chunk_type: node_type.to_string(),
+                    end_col: node.end_position().column as u32,
+                    chunk_type: semantic_chunk_type(&node, source, language),
                     name,
                     language: language.as_str().to_string(),
                 };
@@ -182,7 +190,8 @@ fn extract_semantic_nodes(
             }
         }
 
-        if !is_semantic && !skip_children && cursor.goto_first_child() {
+        let should_descend = !is_semantic || *language == Language::Swift;
+        if should_descend && !skip_children && cursor.goto_first_child() {
             extract_semantic_nodes(cursor, source, language, chunks, depth + 1);
             cursor.goto_parent();
         }
@@ -213,19 +222,13 @@ fn find_leading_comment(
 
     let mut prev = node.prev_sibling();
     let mut comments = Vec::new();
-    let mut count = 0;
-    const MAX_COMMENT_SIBLINGS: usize = 5;
 
     while let Some(sibling) = prev {
-        if count >= MAX_COMMENT_SIBLINGS {
-            break;
-        }
         if is_comment_node(sibling.kind(), language) {
             let start = sibling.start_byte();
             let end = sibling.end_byte();
             comments.push((start, end));
             prev = sibling.prev_sibling();
-            count += 1;
         } else {
             break;
         }
@@ -307,6 +310,7 @@ fn is_comment_node(node_type: &str, language: &Language) -> bool {
         | Language::JavaScriptJsx => matches!(node_type, "comment"),
         Language::Python => matches!(node_type, "comment"),
         Language::Rust => matches!(node_type, "line_comment" | "block_comment"),
+        Language::Swift => matches!(node_type, "comment" | "multiline_comment"),
         Language::Go => matches!(node_type, "comment"),
         Language::Java => matches!(node_type, "line_comment" | "block_comment"),
         Language::CSharp => matches!(node_type, "comment"),
@@ -425,6 +429,17 @@ lazy_static! {
         set.insert("trait_item");
         set.insert("mod_item");
         set.insert("macro_definition");
+        set
+    };
+    static ref SWIFT_SEMANTIC_NODES: HashSet<&'static str> = {
+        let mut set = HashSet::new();
+        set.insert("class_declaration");
+        set.insert("protocol_declaration");
+        set.insert("function_declaration");
+        set.insert("protocol_function_declaration");
+        set.insert("init_declaration");
+        set.insert("deinit_declaration");
+        set.insert("subscript_declaration");
         set
     };
     static ref GO_SEMANTIC_NODES: HashSet<&'static str> = {
@@ -573,6 +588,7 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
         | Language::JavaScriptJsx => TS_SEMANTIC_NODES.contains(node_type),
         Language::Python => PYTHON_SEMANTIC_NODES.contains(node_type),
         Language::Rust => RUST_SEMANTIC_NODES.contains(node_type),
+        Language::Swift => SWIFT_SEMANTIC_NODES.contains(node_type),
         Language::Go => GO_SEMANTIC_NODES.contains(node_type),
         Language::Java => JAVA_SEMANTIC_NODES.contains(node_type),
         Language::CSharp => CSHARP_SEMANTIC_NODES.contains(node_type),
@@ -599,6 +615,37 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
     result
 }
 
+fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Language) -> String {
+    if *language != Language::Swift {
+        return node.kind().to_string();
+    }
+
+    if node.kind() == "class_declaration" {
+        if let Some(declaration_kind) = node.child_by_field_name("declaration_kind") {
+            return match &source[declaration_kind.byte_range()] {
+                "class" => "class_declaration",
+                "struct" => "struct_declaration",
+                "enum" => "enum_declaration",
+                "actor" => "actor_declaration",
+                "extension" => "extension_declaration",
+                _ => "class_declaration",
+            }
+            .to_string();
+        }
+    }
+
+    if node.kind() == "function_declaration"
+        && node
+            .parent()
+            .map(|parent| matches!(parent.kind(), "class_body" | "enum_class_body"))
+            .unwrap_or(false)
+    {
+        return "method_declaration".to_string();
+    }
+
+    node.kind().to_string()
+}
+
 fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String> {
     #[cfg(debug_assertions)]
     let start = Instant::now();
@@ -609,17 +656,45 @@ fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String
 
     let node = cursor.node();
 
+    let fixed_name = match node.kind() {
+        "init_declaration" => Some("init"),
+        "deinit_declaration" => Some("deinit"),
+        "subscript_declaration" => Some("subscript"),
+        _ => None,
+    };
+    if let Some(name) = fixed_name {
+        #[cfg(debug_assertions)]
+        {
+            let elapsed = start.elapsed().as_micros();
+            PERF_STATS.lock().unwrap().extract_name_time += elapsed;
+        }
+        return Some(name.to_string());
+    }
+
     let extract_identifier = |n: tree_sitter::Node| -> Option<String> {
         let kind = n.kind();
         if kind == "identifier"
+            || kind == "simple_identifier"
             || kind == "property_identifier"
             || kind == "property_name"
             || kind == "type_identifier"
             || kind == "namespace_identifier"
+            || kind == "custom_operator"
             || kind == "name"
             || kind == "word"
         {
             return Some(source[n.start_byte()..n.end_byte()].to_string());
+        }
+
+        if kind == "user_type" {
+            for index in (0..n.named_child_count()).rev() {
+                let Some(child) = n.named_child(index.try_into().unwrap()) else {
+                    continue;
+                };
+                if child.kind() == "type_identifier" {
+                    return Some(source[child.start_byte()..child.end_byte()].to_string());
+                }
+            }
         }
         None
     };
@@ -632,6 +707,19 @@ fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String
                 PERF_STATS.lock().unwrap().extract_name_time += elapsed;
             }
             return Some(name);
+        }
+
+        if matches!(
+            node.kind(),
+            "function_declaration" | "protocol_function_declaration"
+        ) && !name_node.is_named()
+        {
+            #[cfg(debug_assertions)]
+            {
+                let elapsed = start.elapsed().as_micros();
+                PERF_STATS.lock().unwrap().extract_name_time += elapsed;
+            }
+            return Some(source[name_node.byte_range()].to_string());
         }
     }
 
@@ -772,7 +860,13 @@ fn split_large_chunk(chunk: CodeChunk, chunks: &mut Vec<CodeChunk>) {
             chunks.push(CodeChunk {
                 content: sub_content,
                 start_line: chunk.start_line + start as u32,
+                start_col: if start == 0 { chunk.start_col } else { 0 },
                 end_line: chunk.start_line + end as u32 - 1,
+                end_col: if end == total_lines {
+                    chunk.end_col
+                } else {
+                    lines[end - 1].len() as u32
+                },
                 chunk_type: chunk.chunk_type.clone(),
                 name: chunk.name.clone(),
                 language: chunk.language.clone(),
@@ -807,6 +901,7 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
                     candidate.chunk_type.as_str(),
                     "function_definition" | "class_specifier" | "struct_specifier"
                 ),
+                "swift" => candidate.name.is_some(),
                 _ => false,
             };
         let can_merge_without_losing_symbol =
@@ -820,6 +915,7 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
             cur.content.push_str("\n\n");
             cur.content.push_str(&chunk.content);
             cur.end_line = chunk.end_line;
+            cur.end_col = chunk.end_col;
             current = Some(cur);
         } else {
             merged.push(cur);
@@ -859,7 +955,9 @@ fn chunk_by_lines(content: &str, language: &Language) -> Vec<CodeChunk> {
             chunks.push(CodeChunk {
                 content: sub_content,
                 start_line: start as u32 + 1,
+                start_col: 0,
                 end_line: end as u32,
+                end_col: lines[end - 1].len() as u32,
                 chunk_type: "block".to_string(),
                 name: None,
                 language: language.as_str().to_string(),
@@ -878,6 +976,160 @@ fn chunk_by_lines(content: &str, language: &Language) -> Vec<CodeChunk> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const MODERN_SWIFT_FIXTURE: &str =
+        include_str!("../../tests/fixtures/swift/ModernService.swift");
+
+    fn parse_swift_syntax(source: &str) -> Tree {
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_swift::LANGUAGE.into())
+            .expect("tree-sitter-swift 0.7.3 should load");
+        let tree = parser
+            .parse(source, None)
+            .expect("Swift parsing should return a tree");
+        assert!(
+            !tree.root_node().has_error(),
+            "Unexpected Swift ERROR/MISSING node:\n{}",
+            tree.root_node().to_sexp()
+        );
+        tree
+    }
+
+    fn collect_swift_declaration_kinds(
+        node: tree_sitter::Node<'_>,
+        source: &str,
+        kinds: &mut Vec<String>,
+    ) {
+        if node.kind() == "class_declaration" {
+            let declaration_kind = node
+                .child_by_field_name("declaration_kind")
+                .expect("Swift class_declaration should expose declaration_kind");
+            kinds.push(source[declaration_kind.byte_range()].to_string());
+        }
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_swift_declaration_kinds(child, source, kinds);
+        }
+    }
+
+    #[test]
+    fn test_swift_grammar_node_types_contract() {
+        let node_types: Vec<serde_json::Value> =
+            serde_json::from_str(tree_sitter_swift::NODE_TYPES).unwrap();
+
+        for expected in [
+            "class_declaration",
+            "protocol_declaration",
+            "function_declaration",
+            "protocol_function_declaration",
+            "init_declaration",
+            "deinit_declaration",
+            "subscript_declaration",
+            "call_expression",
+            "navigation_expression",
+            "constructor_expression",
+            "import_declaration",
+            "inheritance_specifier",
+            "simple_identifier",
+            "type_identifier",
+            "comment",
+            "multiline_comment",
+        ] {
+            assert!(
+                node_types.iter().any(|node| node["type"] == expected),
+                "tree-sitter-swift 0.7.3 NODE_TYPES is missing {expected}"
+            );
+        }
+
+        let class_declaration = node_types
+            .iter()
+            .find(|node| node["type"] == "class_declaration")
+            .unwrap();
+        let declaration_kinds = class_declaration["fields"]["declaration_kind"]["types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|entry| entry["type"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            declaration_kinds,
+            ["actor", "class", "enum", "extension", "struct"]
+        );
+    }
+
+    #[test]
+    fn test_swift_grammar_parses_modern_fixture_without_errors() {
+        let tree = parse_swift_syntax(MODERN_SWIFT_FIXTURE);
+        let syntax = tree.root_node().to_sexp();
+
+        for expected in [
+            "protocol_declaration",
+            "protocol_function_declaration",
+            "function_declaration",
+            "init_declaration",
+            "deinit_declaration",
+            "subscript_declaration",
+            "await_expression",
+            "try_expression",
+            "lambda_literal",
+        ] {
+            assert!(syntax.contains(expected), "AST should contain {expected}");
+        }
+
+        let mut declaration_kinds = Vec::new();
+        collect_swift_declaration_kinds(
+            tree.root_node(),
+            MODERN_SWIFT_FIXTURE,
+            &mut declaration_kinds,
+        );
+        for expected in ["actor", "class", "enum", "extension", "struct"] {
+            assert!(
+                declaration_kinds.iter().any(|kind| kind == expected),
+                "AST should contain Swift declaration kind {expected}: {declaration_kinds:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_swift_call_syntax_shapes_have_no_errors() {
+        let source = r#"
+import Foundation
+import struct Foundation.Date
+
+class Child: Base, Runnable {
+    func run() async throws {
+        direct()
+        self.method()
+        super.method()
+        object?.method()
+        Type()
+        Module.Type()
+        generic<Int>()
+        object.method<Int>()
+        Type.init()
+        try await asyncWork()
+        withTaskGroup { group in group.cancelAll() }
+    }
+}
+"#;
+        let tree = parse_swift_syntax(source);
+        let syntax = tree.root_node().to_sexp();
+
+        for expected in [
+            "call_expression",
+            "navigation_expression",
+            "constructor_expression",
+            "await_expression",
+            "try_expression",
+            "lambda_literal",
+            "import_declaration",
+            "inheritance_specifier",
+        ] {
+            assert!(syntax.contains(expected), "AST should contain {expected}");
+        }
+    }
 
     #[test]
     fn test_parse_typescript() {

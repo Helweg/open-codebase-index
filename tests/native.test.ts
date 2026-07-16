@@ -280,6 +280,176 @@ public class AccountService {
       expect(chunks.every((c) => c.language === "apex")).toBe(true);
     });
 
+    it("should parse modern Swift declarations into named semantic chunks", () => {
+      const fixturePath = path.join(
+        __dirname,
+        "fixtures",
+        "swift",
+        "ModernService.swift",
+      );
+      const content = fs.readFileSync(fixturePath, "utf-8");
+      const chunks = parseFile("ModernService.swift", content);
+
+      expect(chunks.length).toBeGreaterThan(20);
+      expect(chunks.every((chunk) => chunk.language === "swift")).toBe(true);
+      expect(chunks.some((chunk) => chunk.chunkType === "block")).toBe(false);
+
+      const hasNamedChunk = (chunkType: string, name: string): boolean =>
+        chunks.some(
+          (chunk) => chunk.chunkType === chunkType && chunk.name === name,
+        );
+
+      expect(hasNamedChunk("protocol_declaration", "DataLoading")).toBe(true);
+      expect(hasNamedChunk("protocol_function_declaration", "load")).toBe(true);
+      expect(hasNamedChunk("actor_declaration", "ResponseCache")).toBe(true);
+      expect(hasNamedChunk("struct_declaration", "User")).toBe(true);
+      expect(hasNamedChunk("enum_declaration", "LoadState")).toBe(true);
+      expect(hasNamedChunk("class_declaration", "UserRepository")).toBe(true);
+      expect(hasNamedChunk("extension_declaration", "UserRepository")).toBe(true);
+      expect(hasNamedChunk("method_declaration", "loadNames")).toBe(true);
+      expect(hasNamedChunk("init_declaration", "init")).toBe(true);
+      expect(hasNamedChunk("deinit_declaration", "deinit")).toBe(true);
+      expect(hasNamedChunk("subscript_declaration", "subscript")).toBe(true);
+      expect(hasNamedChunk("function_declaration", "decode")).toBe(true);
+      expect(hasNamedChunk("function_declaration", "collect")).toBe(true);
+
+      const protocolChunk = chunks.find(
+        (chunk) =>
+          chunk.chunkType === "protocol_declaration" &&
+          chunk.name === "DataLoading",
+      );
+      expect(protocolChunk?.content).toContain("Loads values asynchronously");
+
+      const repositoryChunk = chunks.find(
+        (chunk) =>
+          chunk.chunkType === "class_declaration" &&
+          chunk.name === "UserRepository",
+      );
+      expect(repositoryChunk?.content).toContain("Repository backed by an actor-isolated cache");
+    });
+
+    it("should keep adjacent small Swift functions as separate named chunks", () => {
+      const chunks = parseFile(
+        "Tiny.swift",
+        "func a() { b() }\nfunc b() {}\n",
+      );
+      const functions = chunks.filter(
+        (chunk) => chunk.chunkType === "function_declaration",
+      );
+
+      expect(functions.map((chunk) => chunk.name)).toEqual(["a", "b"]);
+      expect(functions[0].content).toContain("func a()");
+      expect(functions[1].content).toContain("func b()");
+    });
+
+    it("should expose small Swift methods nested in a type", () => {
+      const chunks = parseFile(
+        "TinyType.swift",
+        `struct TinyType {
+    func a() { b() }
+    func b() {}
+}
+`,
+      );
+      const methods = chunks.filter(
+        (chunk) => chunk.chunkType === "method_declaration",
+      );
+
+      expect(chunks.some(
+        (chunk) =>
+          chunk.chunkType === "struct_declaration" && chunk.name === "TinyType",
+      )).toBe(true);
+      expect(methods.map((chunk) => chunk.name)).toEqual(["a", "b"]);
+    });
+
+    it("should attach Swift line and block comments to declarations", () => {
+      const chunks = parseFile(
+        "Comments.swift",
+        `/// Line documentation.
+func documented() {}
+
+/** Block documentation. */
+struct DocumentedType {}
+`,
+      );
+
+      const documented = chunks.find((chunk) => chunk.name === "documented");
+      const documentedType = chunks.find(
+        (chunk) => chunk.name === "DocumentedType",
+      );
+      expect(documented?.content).toContain("Line documentation");
+      expect(documentedType?.content).toContain("Block documentation");
+    });
+
+    it("should keep Swift doc comment ranges on their real source lines", () => {
+      const chunks = parseFile(
+        "CommentRange.swift",
+        `helper()
+/// Documentation.
+func documented() {}
+`,
+      );
+      const documented = chunks.find((chunk) => chunk.name === "documented");
+
+      expect(documented?.startLine).toBe(2);
+      expect(documented?.endLine).toBe(3);
+
+      const nestedChunks = parseFile(
+        "NestedCommentRange.swift",
+        `struct Container {
+    /// Documentation.
+    func documented() {}
+}
+`,
+      );
+      const nestedMethod = nestedChunks.find(
+        (chunk) => chunk.name === "documented",
+      );
+
+      expect(nestedMethod?.startLine).toBe(2);
+      expect(nestedMethod?.endLine).toBe(3);
+    });
+
+    it("should keep complete multi-line Swift doc comments", () => {
+      const chunks = parseFile(
+        "LongDocumentation.swift",
+        `/// one
+/// two
+/// three
+/// four
+/// five
+/// six
+func documented() {}
+`,
+      );
+      const documented = chunks.find((chunk) => chunk.name === "documented");
+
+      expect(documented?.content).toContain("/// one");
+      expect(documented?.content).toContain("/// six");
+      expect(documented?.startLine).toBe(1);
+    });
+
+    it("should name Swift operators and qualified extensions", () => {
+      const chunks = parseFile(
+        "Names.swift",
+        `struct Vector {}
+func + (lhs: Vector, rhs: Vector) -> Vector { lhs }
+extension Module.Container<Int> {
+    func inspect() {}
+}
+`,
+      );
+
+      expect(chunks.some(
+        (chunk) => chunk.chunkType === "function_declaration" && chunk.name === "+",
+      )).toBe(true);
+      expect(chunks.some(
+        (chunk) =>
+          chunk.chunkType === "extension_declaration" &&
+          chunk.name === "Container",
+      )).toBe(true);
+    });
+
     it("should parse GDScript files", () => {
       const content = `
 extends Node
@@ -984,6 +1154,21 @@ end
       const text = createEmbeddingText(chunk, "/src/auth.ts");
 
       expect(text.toLowerCase()).toContain("token");
+    });
+
+    it("should describe Swift semantic chunk types", () => {
+      const chunk: CodeChunk = {
+        content: "actor ResponseCache {}",
+        startLine: 1,
+        endLine: 1,
+        chunkType: "actor_declaration",
+        name: "ResponseCache",
+        language: "swift",
+      };
+
+      const text = createEmbeddingText(chunk, "/Sources/ResponseCache.swift");
+
+      expect(text).toContain('Swift actor "ResponseCache"');
     });
   });
 
