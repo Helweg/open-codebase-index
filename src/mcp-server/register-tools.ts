@@ -36,7 +36,7 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
     "codebase_context",
-    "PREFERRED FIRST TOOL for any question about this repository. Use before agentgrep, grep, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
+    "PREFERRED FIRST TOOL for any question about this repository. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
     {
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),

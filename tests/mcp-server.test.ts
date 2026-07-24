@@ -323,7 +323,7 @@ describe("MCP server tools and prompts", () => {
 
     expect(tools.tools[0]?.name).toBe("codebase_context");
     expect(descriptions.get("codebase_context")).toContain("PREFERRED FIRST TOOL");
-    expect(descriptions.get("codebase_context")).toContain("before agentgrep");
+    expect(descriptions.get("codebase_context")).toContain("before built-in code search");
     expect(descriptions.get("index_status")).toContain("START HERE");
     expect(descriptions.get("index_status")).toContain("codebase_peek");
     expect(descriptions.get("codebase_peek")).toContain("LOW-TOKEN");
