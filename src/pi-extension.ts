@@ -6,6 +6,8 @@ import { formatPrImpact } from "./tools/format-pr-impact.js";
 import {
   addKnowledgeBase,
   findSimilarCode,
+  getCallGraphData,
+  getCallGraphPath,
   getIndexLogs,
   getIndexMetrics,
   getIndexStatus,
@@ -18,6 +20,8 @@ import {
   searchCodebase,
 } from "./tools/operations.js";
 import {
+  formatCallGraphPath,
+  formatCodebasePeek,
   formatDefinitionLookup,
   formatHealthCheck,
   formatIndexStats,
@@ -48,9 +52,75 @@ function projectRoot(ctx: { cwd?: string } | undefined): string | undefined {
 
 export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
+    name: "codebase_context",
+    label: "Codebase Context",
+    description: "PREFERRED FIRST TOOL for any repository question. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow.",
+    parameters: Type.Object({
+      query: Type.String({ description: "Natural language description of what code you're trying to locate" }),
+      from: Type.Optional(Type.String({ description: "Source symbol when asking for a dependency path." })),
+      to: Type.Optional(Type.String({ description: "Target symbol when asking for a dependency path." })),
+      symbol: Type.Optional(Type.String({ description: "Exact symbol name for an authoritative definition lookup." })),
+      limit: Type.Optional(Type.Number({ description: "Maximum results (default: 10)" })),
+      maxDepth: Type.Optional(Type.Number({ description: "Maximum call-graph traversal depth for from/to paths" })),
+      fileType: Type.Optional(Type.String({ description: "Filter by file extension, e.g., ts, py, rs" })),
+      directory: Type.Optional(Type.String({ description: "Filter by directory path" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const root = projectRoot(ctx);
+
+      if (params.from && params.to) {
+        const path = await getCallGraphPath(root, HOST, params.from, params.to, params.maxDepth);
+        if (path.length > 0) {
+          return text(formatCallGraphPath(params.from, params.to, path), path);
+        }
+
+        const { callers } = await getCallGraphData(root, HOST, {
+          name: params.to,
+          direction: "callers",
+        });
+        const directEdge = callers.find((edge) => edge.fromSymbolName === params.from);
+        if (directEdge) {
+          const location = directEdge.fromSymbolFilePath
+            ? ` at ${directEdge.fromSymbolFilePath}:${directEdge.line}`
+            : "";
+          return text(
+            `Direct path: ${params.from} --${directEdge.callType}--> ${params.to}${location} ` +
+              `(edge is ${directEdge.isResolved ? "resolved" : "unresolved"}).`,
+            path,
+          );
+        }
+
+        return text(formatCallGraphPath(params.from, params.to, path), path);
+      }
+
+      if (params.symbol) {
+        const results = await implementationLookup(root, HOST, params.symbol, {
+          limit: params.limit ?? 10,
+          fileType: params.fileType,
+          directory: params.directory,
+        });
+        return text(formatDefinitionLookup(results, params.symbol), results);
+      }
+
+      const results = await searchCodebase(root, HOST, params.query, {
+        limit: params.limit ?? 10,
+        fileType: params.fileType,
+        directory: params.directory,
+        metadataOnly: true,
+      });
+
+      if (results.length === 0) {
+        return text("No matching code found. Try a different query or run index_status/index_codebase first.");
+      }
+
+      return text(`Found ${results.length} locations for "${params.query}":\n\n${formatCodebasePeek(results)}`, results);
+    },
+  });
+
+  pi.registerTool({
     name: "codebase_search",
     label: "Codebase Search",
-    description: "Semantic search over the indexed codebase. Describe behavior, not syntax.",
+    description: "Use this after codebase_context when you need semantic content, not just locations. Describe behavior, not syntax.",
     parameters: Type.Object({
       query: Type.String({ description: "Natural language description of what code you're looking for" }),
       limit: Type.Optional(Type.Number({ description: "Maximum results (default: 10)" })),
@@ -71,7 +141,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "codebase_peek",
     label: "Codebase Peek",
-    description: "Semantic search returning only metadata (file, lines, symbol) to save tokens.",
+    description: "LOW-TOKEN location-first retrieval. Prefer codebase_context first, then use this for cheap conceptual lookup.",
     parameters: Type.Object({
       query: Type.String(),
       limit: Type.Optional(Type.Number()),
@@ -91,7 +161,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "find_similar",
     label: "Find Similar Code",
-    description: "Find code similar to a snippet for duplicate detection and pattern discovery.",
+    description: "Find code similar to a snippet for duplicate detection, pattern discovery, and refactor planning.",
     parameters: Type.Object({
       code: Type.String({ description: "Code snippet to compare" }),
       limit: Type.Optional(Type.Number()),
@@ -109,7 +179,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "implementation_lookup",
     label: "Implementation Lookup",
-    description: "Find likely symbol definitions or implementations by name or natural language.",
+    description: "Find likely symbol definitions or implementations after codebase_context identifies a symbol.",
     parameters: Type.Object({
       query: Type.String(),
       limit: Type.Optional(Type.Number()),
@@ -125,7 +195,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "index_codebase",
     label: "Index Codebase",
-    description: "Build or refresh the semantic codebase index.",
+    description: "Build or refresh the semantic codebase index. Run index_status when freshness is unknown.",
     parameters: Type.Object({
       force: Type.Optional(Type.Boolean({ default: false })),
       estimateOnly: Type.Optional(Type.Boolean({ default: false })),
@@ -153,7 +223,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "index_health_check",
     label: "Index Health Check",
-    description: "Garbage collect orphaned embeddings/chunks and report health.",
+    description: "Garbage collect orphaned embeddings/chunks and report index health status.",
     parameters: Type.Object({}),
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const result = await runIndexHealthCheck(projectRoot(ctx), HOST);
@@ -196,6 +266,14 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   registerPiCallGraphTools(pi);
+
+  pi.on("before_agent_start", (event) => ({
+    systemPrompt:
+      `${event.systemPrompt}\n\n` +
+      "Check index_status first when index readiness is unknown. For repository questions, call codebase_context before search/grep/bash/read-style broad reads. " +
+      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow. " +
+      "Avoid broad tool calls until semantic locations are known.",
+  }));
 
   pi.registerTool({
     name: "pr_impact",

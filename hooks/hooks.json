@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "printf '\nUse codebase_peek for quick location discovery, then codebase_search for implementation details. Use index_status before searching on first run.\\n'",
-            "commandWindows": "Write-Output 'Use codebase_peek for quick location discovery, then codebase_search for implementation details. Use index_status before searching on first run.'",
+            "command": "printf '\nFor repository questions, use index_status when readiness is unknown, then call codebase_context before shell search, grep, or broad file reads. Pass symbol for definitions or from+to for dependency paths; use specialized lookup and graph tools afterward.\\n'",
+            "commandWindows": "Write-Output 'For repository questions, use index_status when readiness is unknown, then call codebase_context before shell search, grep, or broad file reads. Pass symbol for definitions or from+to for dependency paths; use specialized lookup and graph tools afterward.'",
             "statusMessage": "Codebase Index ready"
           }
         ]

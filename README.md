@@ -115,6 +115,8 @@ pi install ./path/to/opencode-codebase-index
 
 Pi uses the neutral `.codebase-index/` project storage and falls back to existing OpenCode state when present.
 
+The Pi extension injects lightweight routing guidance and exposes `codebase_context` as its preferred first repository tool. It routes conceptual discovery, known-symbol definitions, and dependency paths before broad shell search or file reads.
+
 ## 🧩 Codex Plugin
 Install once for Codex threads and get skill guidance plus MCP tools in one manifest.
 
@@ -143,6 +145,8 @@ npm run dev:link-mcp
 ```
 
 After that, the normal `.mcp.json` command also works when Codex starts the plugin from this repository.
+
+The native Codex plugin is important: its session hook and `codebase-search` skill tell Codex to use `index_status` and `codebase_context` before shell exploration. A bare MCP configuration does not provide the same selection reliability. Current Codex `exec` releases may cancel MCP calls in non-interactive mode while waiting for an app-tool approval; use an interactive Codex thread to approve the tool call. This is a Codex client limitation, not an MCP server failure.
 
 ## 🧩 Claude Code Plugin
 Install once for Claude Code sessions and get skill guidance plus MCP tools in one manifest.

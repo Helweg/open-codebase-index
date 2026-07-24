@@ -1,6 +1,6 @@
 ---
 name: codebase-search
-description: Semantic code and documentation search by meaning for Pi and Codex workflows. Use codebase_peek to find WHERE code is first, then codebase_search for implementation details.
+description: Preferred local codebase-understanding workflow for Pi and Codex. Start with codebase_context before shell search or broad reads, then use specialized semantic and graph tools.
 ---
 
 # Codebase Search Skill
@@ -9,17 +9,19 @@ Use this skill when you need local repository knowledge before web lookup.
 
 ## Core workflow
 
-1. `codebase_peek(query, ...)` to find likely locations quickly with metadata-only results.
-2. `codebase_search(query, ...)` when you need full code context.
-3. `call_graph(name, direction)` when you need callers/callees after locating a symbol.
-4. `find_similar(code)` for duplicate patterns and refactor planning.
-5. `implementation_lookup(query)` when you need the authoritative definition location.
+1. Run `index_status` when index readiness or freshness is unknown.
+2. Use `codebase_context(query, ...)` before shell search, grep, or broad file reads. Pass `symbol` for an authoritative definition or `from` + `to` for a dependency path.
+3. Use `codebase_peek(query, ...)` for specialized metadata-only conceptual lookup.
+4. Use `codebase_search(query, ...)` when you need full code context.
+5. Use `implementation_lookup(query)` for known-symbol definitions and `call_graph` / `call_graph_path` for execution flow.
+6. Use `find_similar(code)` for duplicate patterns and refactor planning.
 
 If results are weak, run `index_status` (check readiness) and `index_codebase`.
 
 ## Tool Priority
 
-- `codebase_peek` for discovery (fastest, cheap tokens).
+- `codebase_context` as the preferred first repository tool and unified router.
+- `codebase_peek` for specialized discovery (fastest, cheap tokens).
 - `codebase_search` for exact implementation review.
 - `find_similar` for pattern matching and duplication.
 - `call_graph` and `call_graph_path` for execution flow.

@@ -36,9 +36,11 @@ describe("Pi package integration", () => {
       registerTool(tool) {
         tools.push({ name: tool.name, parameters: tool.parameters });
       },
+      on() {},
     } as Parameters<typeof codebaseIndexPiExtension>[0]);
 
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+      "codebase_context",
       "codebase_search",
       "codebase_peek",
       "find_similar",

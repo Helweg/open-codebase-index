@@ -1,6 +1,6 @@
 {
   "name": "codebase-index",
-  "version": "0.13.2",
+  "version": "0.15.0",
   "description": "Semantic code search and codebase graph tools for Codex",
   "author": {
     "name": "Kenneth",
@@ -37,7 +37,7 @@
     "termsOfServiceURL": "https://github.com/Helweg/opencode-codebase-index/blob/main/LICENSE",
     "brandColor": "#3B82F6",
     "defaultPrompt": [
-      "Use codebase-search skills and MCP tools to find local implementation context before edits."
+      "For repository questions, use index_status when readiness is unknown, then call codebase_context before shell search or broad file reads."
     ]
   }
 }
