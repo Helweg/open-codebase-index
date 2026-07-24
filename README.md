@@ -227,6 +227,17 @@ Use the same semantic search from any MCP-compatible client. Index once, search 
 
 The MCP server exposes all 12 tools (`codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`).
 
+The tools carry self-routing descriptions so clients can choose the lightweight path without relying on separate documentation:
+
+1. `index_status` when index readiness is unknown
+2. `codebase_peek` for low-token conceptual discovery
+3. `implementation_lookup` for known symbols and definitions
+4. `codebase_search` only when full semantic content is needed
+5. `grep` for exact identifiers or exhaustive matches
+6. `call_graph` / `call_graph_path` after symbols are known
+
+The server also publishes this workflow through the standard MCP initialization `instructions` field. Client behavior remains client-controlled: an MCP server can describe and recommend its tools, but cannot force an agent host to read server instructions or invoke a tool before filesystem search. Clients that ignore MCP instructions still receive the routing guidance in each tool description.
+
 The MCP dependencies (`@modelcontextprotocol/sdk`, `zod`) ship with the package so published `npx --package opencode-codebase-index` launches work in clean MCP clients.
 
 If you are testing the MCP command from inside this repository checkout and see `opencode-codebase-index-mcp: command not found`, run `npm run build:ts && npm run dev:link-mcp`. That adds the local bin shim expected by `npx` without changing the published MCP config.

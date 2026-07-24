@@ -296,6 +296,23 @@ describe("MCP server tools and prompts", () => {
     expect(toolNames).toEqual(expectedNames);
   });
 
+  it("should expose self-routing descriptions even when the client ignores server instructions", async () => {
+    const tools = await client.listTools();
+    const descriptions = new Map(tools.tools.map(tool => [tool.name, tool.description ?? ""]));
+
+    expect(descriptions.get("index_status")).toContain("START HERE");
+    expect(descriptions.get("index_status")).toContain("codebase_peek");
+    expect(descriptions.get("codebase_peek")).toContain("DEFAULT FIRST TOOL");
+    expect(descriptions.get("codebase_peek")).toContain("codebase_search");
+    expect(descriptions.get("implementation_lookup")).toContain("FIRST TOOL");
+    expect(descriptions.get("implementation_lookup")).toContain("known-symbol");
+    expect(descriptions.get("codebase_search")).toContain("after codebase_peek");
+    expect(descriptions.get("codebase_search")).toContain("grep");
+    expect(descriptions.get("call_graph")).toContain("after identifying a symbol");
+    expect(descriptions.get("call_graph_path")).toContain("both endpoint symbols");
+    expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
+  });
+
   it("should register all 5 prompts", async () => {
     const prompts = await client.listPrompts();
 

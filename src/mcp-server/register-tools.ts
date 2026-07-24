@@ -36,7 +36,7 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
     "codebase_search",
-    "Search codebase by MEANING, not keywords. Returns full code content. For just finding WHERE code is (saves ~90% tokens), use codebase_peek instead.",
+    "FULL-CONTENT semantic retrieval. Use after codebase_peek when you need implementation text, not as the default first step. For exact identifiers or exhaustive matches use grep instead.",
     {
       query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results to return"),
@@ -70,7 +70,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "codebase_peek",
-    "Quick lookup of code locations by meaning. Returns only metadata (file, line, name, type) WITHOUT code content. Saves ~90% tokens vs codebase_search.",
+    "DEFAULT FIRST TOOL for unfamiliar-code discovery. Finds locations by meaning and returns only file, line, symbol, and type metadata, saving about 90% of tokens versus codebase_search. Read selected files or escalate to codebase_search afterward.",
     {
       query: z.string().describe("Natural language description of what code you're looking for."),
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
@@ -103,7 +103,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "index_codebase",
-    "Index the codebase for semantic search. Creates vector embeddings of code chunks. Incremental - only re-indexes changed files. Run before first codebase_search.",
+    "Create or refresh the semantic index. Call index_status first when readiness is unknown, then use this tool only if the index is missing, stale, or incompatible. Incremental by default; force=true rebuilds everything.",
     {
       force: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Force reindex even if already indexed"),
       estimateOnly: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Only show cost estimate without indexing"),
@@ -123,7 +123,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "index_status",
-    "Check the status of the codebase index. Shows whether the codebase is indexed, how many chunks are stored, and the embedding provider being used.",
+    "START HERE once per repository task when index readiness or freshness is unknown. Reports whether semantic retrieval is ready, chunk counts, compatibility, and the embedding provider. If ready, continue with codebase_peek or implementation_lookup; otherwise run index_codebase.",
     {},
     async () => {
       const status = await getIndexStatus(runtime.projectRoot, runtime.host);
@@ -174,7 +174,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "find_similar",
-    "Find code similar to a given snippet. Use for duplicate detection, pattern discovery, or refactoring prep.",
+    "Use when you already have a code snippet and need analogous implementations, duplicates, patterns, or refactoring candidates. For a natural-language concept without example code, start with codebase_peek instead.",
     {
       code: z.string().describe("The code snippet to find similar code for"),
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
@@ -202,7 +202,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "implementation_lookup",
-    "Jump to symbol definition. Find WHERE something is defined. Returns the authoritative source location(s). Prefers real implementation files over tests, docs, examples, and fixtures.",
+    "FIRST TOOL for known-symbol and definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Use codebase_peek instead when you know the behavior but not the symbol name.",
     {
       query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results"),
@@ -222,7 +222,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "call_graph",
-    "Query the call graph to find callers or callees of a function/method. Use to understand code flow and dependencies."
+    "Use after identifying a symbol to find its direct callers or callees and understand code flow. Use implementation_lookup first if the symbol or definition is still ambiguous."
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
     {
       name: z.string().describe("Function or method name to query"),
@@ -250,7 +250,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "call_graph_path",
-    "Find the shortest connection path between two symbols in the call graph. Returns the chain of calls connecting them.",
+    "Use after identifying both endpoint symbols to find the shortest known call path between them. Use codebase_peek or implementation_lookup first when either endpoint is unknown.",
     {
       from: z.string().describe("Source function/method name (starting point)"),
       to: z.string().describe("Target function/method name (destination)"),
@@ -263,7 +263,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
   server.tool(
     "pr_impact",
-    "Analyze the impact of a pull request or branch by examining changed files, affected symbols, transitive callers, communities touched, hub nodes, and risk level. Use to understand blast radius before merging.",
+    "FIRST TOOL for pull-request or branch blast-radius questions. Analyzes changed files, affected symbols, transitive dependencies, communities, hub nodes, conflicts, and risk before merging.",
     {
       pr: allowNullAsUndefined(z.number().optional()).describe("Pull request number to analyze"),
       branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
