@@ -363,6 +363,30 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("validateToken");
   });
 
+  it("should execute codebase_search with null optional fields", async () => {
+    const result = await client.callTool({
+      name: "codebase_search",
+      arguments: {
+        query: "test query",
+        limit: null,
+        fileType: null,
+        directory: null,
+        chunkType: null,
+        contextLines: null,
+        blameAuthor: null,
+        blameSha: null,
+        blameSince: null,
+      },
+    });
+
+    expect(result.content).toBeDefined();
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content).toHaveLength(1);
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("Found 1 results");
+    expect(content[0].text).toContain("validateToken");
+  });
+
   it("should execute codebase_peek tool", async () => {
     const result = await client.callTool({
       name: "codebase_peek",

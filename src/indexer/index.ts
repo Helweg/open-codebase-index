@@ -4787,11 +4787,20 @@ export class Indexer {
 
     const embeddingStartTime = performance.now();
     const embeddingQuery = stripFilePathHint(query);
-    const embedding = await this.getQueryEmbedding(embeddingQuery, provider);
+    let embedding: number[] | undefined;
+    try {
+      embedding = await this.getQueryEmbedding(embeddingQuery, provider);
+    } catch (error) {
+      this.logger.warn("Query embedding failed; falling back to keyword-only search", {
+        query,
+        error: getErrorMessage(error),
+        action: "Check the embedding provider configuration and retry search after restoring provider health.",
+      });
+    }
     const embeddingMs = performance.now() - embeddingStartTime;
 
     const vectorStartTime = performance.now();
-    const semanticResults = store.search(embedding, maxResults * 4);
+    const semanticResults = embedding ? store.search(embedding, maxResults * 4) : [];
     const vectorMs = performance.now() - vectorStartTime;
 
     const keywordStartTime = performance.now();
@@ -4842,12 +4851,15 @@ export class Indexer {
     }
 
     const fusionStartTime = performance.now();
+    const rankingHybridWeight = embedding === undefined && fusionStrategy === "weighted"
+      ? 1
+      : effectiveHybridWeight;
     const combined = rankHybridResults(query, semanticCandidates, keywordCandidates, {
       fusionStrategy,
       rrfK,
       rerankTopN,
       limit: maxResults,
-      hybridWeight: effectiveHybridWeight,
+      hybridWeight: rankingHybridWeight,
       prioritizeSourcePaths: sourceIntent,
     });
     const rerankedCombined = await this.rerankCandidatesWithApi(query, combined, {
