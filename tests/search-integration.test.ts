@@ -505,4 +505,43 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(results[0]?.filePath).toContain("README.md");
     expect(results[0]?.filePath).not.toContain(path.join("app", "indexer", "index.ts"));
   });
+
+  it("falls back to weighted keyword search when query embedding generation fails", async () => {
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+      search: {
+        maxResults: 10,
+        minScore: 0.01,
+        fusionStrategy: "weighted",
+        hybridWeight: 0,
+        rerankTopN: 20,
+      },
+    });
+
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await indexer.index();
+    fetchSpy.mockRejectedValue(new Error("embedding endpoint unavailable"));
+    const warningLog = vi.spyOn(indexer.getLogger(), "warn");
+
+    const results = await indexer.search("rankHybridResults", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+    });
+
+    expect(results[0]?.filePath).toContain(path.join("app", "indexer", "index.ts"));
+    expect(results[0]?.score).toBeGreaterThan(0);
+    expect(warningLog).toHaveBeenCalledWith(
+      "Query embedding failed; falling back to keyword-only search",
+      expect.objectContaining({
+        error: "embedding endpoint unavailable",
+        action: expect.stringContaining("embedding provider"),
+      })
+    );
+  });
 });
