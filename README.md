@@ -115,6 +115,8 @@ pi install ./path/to/opencode-codebase-index
 
 Pi uses the neutral `.codebase-index/` project storage and falls back to existing OpenCode state when present.
 
+The Pi extension injects lightweight routing guidance and exposes `codebase_context` as its preferred first repository tool. It routes conceptual discovery, known-symbol definitions, and dependency paths before broad shell search or file reads.
+
 ## 🧩 Codex Plugin
 Install once for Codex threads and get skill guidance plus MCP tools in one manifest.
 
@@ -143,6 +145,8 @@ npm run dev:link-mcp
 ```
 
 After that, the normal `.mcp.json` command also works when Codex starts the plugin from this repository.
+
+The native Codex plugin is important: its session hook and `codebase-search` skill tell Codex to use `index_status` and `codebase_context` before shell exploration. A bare MCP configuration does not provide the same selection reliability. Current Codex `exec` releases may cancel MCP calls in non-interactive mode while waiting for an app-tool approval; use an interactive Codex thread to approve the tool call. This is a Codex client limitation, not an MCP server failure.
 
 ## 🧩 Claude Code Plugin
 Install once for Claude Code sessions and get skill guidance plus MCP tools in one manifest.
@@ -225,7 +229,19 @@ Use the same semantic search from any MCP-compatible client. Index once, search 
    npx -y --package opencode-codebase-index opencode-codebase-index-mcp
    ```
 
-The MCP server exposes all 12 tools (`codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`).
+The MCP server exposes all 13 tools (`codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`).
+
+The tools carry self-routing descriptions so clients can choose the lightweight path without relying on separate documentation:
+
+1. `codebase_context` as the preferred single entry point for repository questions
+2. `index_status` when index readiness is unknown
+3. `codebase_peek` for direct low-token conceptual discovery
+4. `implementation_lookup` for direct known-symbol definition lookup
+5. `codebase_search` only when full semantic content is needed
+6. `grep` for exact identifiers or exhaustive matches
+7. `call_graph` / `call_graph_path` for direct graph queries
+
+The server also publishes this workflow through the standard MCP initialization `instructions` field. Client behavior remains client-controlled: an MCP server can describe and recommend its tools, but cannot force an agent host to read server instructions or invoke a tool before filesystem search. Clients that ignore MCP instructions still receive the routing guidance in each tool description.
 
 The MCP dependencies (`@modelcontextprotocol/sdk`, `zod`) ship with the package so published `npx --package opencode-codebase-index` launches work in clean MCP clients.
 
@@ -254,9 +270,9 @@ src/api/checkout.ts:89      (Route handler for /pay)
 
 | Scenario | Tool | Why |
 |----------|------|-----|
-| Don't know the function name | `codebase_search` | Semantic search finds by meaning |
-| Exploring unfamiliar codebase | `codebase_search` | Discovers related code across files |
-| Just need to find locations | `codebase_peek` | Returns metadata only, saves ~90% tokens |
+| Don't know the function name | `codebase_context` (MCP) | Routes conceptual questions to low-token discovery first |
+| Exploring unfamiliar codebase | `codebase_context` (MCP) | Discovers related code and then guides to definitions or graph queries |
+| Just need to find locations | `codebase_peek` (or `codebase_context`) | Returns metadata only, saves ~90% tokens |
 | Need the authoritative definition site | `implementation_lookup` | Prioritizes real implementation definitions over docs/tests |
 | Understand code flow | `call_graph` | Find callers/callees of any function |
 | Trace dependency paths | `call_graph_path` | Find the shortest known call path between two symbols |
@@ -264,7 +280,7 @@ src/api/checkout.ts:89      (Route handler for /pay)
 | Need ALL matches | `grep` | Semantic returns top N only |
 | Mixed discovery + precision | `/find` (hybrid) | Best of both worlds |
 
-**Rule of thumb**: `codebase_peek` to find locations → `Read` to examine → `grep` for precision. For symbol-definition questions, use `implementation_lookup` first.
+**Rule of thumb**: `codebase_context` to route discovery first. Then `Read` to examine exact content and `grep` for precision. For symbol-definition questions, use `implementation_lookup` first.
 
 ## 🧭 OMO CodeGraph Compatibility
 
@@ -281,7 +297,7 @@ Recent OMO releases include a built-in CodeGraph MCP and make it part of the def
 
 Recommended OMO workflow:
 
-1. Start broad with `codebase_peek` when the prompt is conceptual, such as "where is auth enforced?" or "payment validation flow".
+1. Start broad with `codebase_context` when the prompt is conceptual, such as "where is auth enforced?" or "payment validation flow".
 2. Use `implementation_lookup` once you have a symbol or concept that should resolve to a definition.
 3. Use OMO CodeGraph, `call_graph`, or `call_graph_path` after locating the relevant symbol to check blast radius and dependency flow.
 4. Keep `grep` for exact identifiers and exhaustive text matches.
@@ -424,9 +440,18 @@ The following files/folders are excluded from indexing by default:
 
 The plugin exposes these tools to the OpenCode agent:
 
+`codebase_context` is MCP-server-only.
+
+### `codebase_context`
+*MCP-only entrypoint for combined routing*
+**Preferred first tool for repository questions.** Routes to the lowest-token indexed operation that matches the query: conceptual discovery, definition lookup, callers/callees, or symbol-to-symbol paths.
+- **Use for**: New questions about behavior, locating symbols, or tracing direct call relationships.
+- **Example**: `"Where is the payment validation logic?"`
+- **Workflow**: If the query is conceptual, it may return locations first. For exact behavior text, follow with `codebase_search`.
+
 ### `codebase_search`
-**The primary tool.** Searches code by describing behavior.
-- **Use for**: Discovery, understanding flows, finding logic when you don't know the names.
+**Behavioral semantic retrieval with full content.** Searches code by describing behavior.
+- **Use for**: Discovery when you already want full matching snippets and are ready to inspect implementation text.
 - **Example**: `"find the middleware that sanitizes input"`
 - **Ranking path**: hybrid retrieval → fusion (`search.fusionStrategy`) → deterministic rerank (`search.rerankTopN`) → filters
 - **Blame filters**: when `indexing.gitBlame.enabled` is `true`, filter with `blameAuthor`, `blameSha`, or `blameSince`.
