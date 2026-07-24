@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-07-24
+
+### Added
+
+- **Unified agent context gateway**: Added the `codebase_context` MCP and Pi tool as the preferred first step for repository questions, routing conceptual discovery, authoritative symbol definitions, and call-graph paths through one low-friction interface.
+- **Cross-client tool adoption**: Added native Codex session guidance, skill/default-prompt updates, and Pi pre-agent routing guidance so Jcode, OpenCode, Codex, and Pi agents select codebase tools before broad shell search or file reads.
+
+### Changed
+
+- **Self-routing MCP guidance**: Reworked server instructions and tool descriptions around a staged, client-neutral workflow: check readiness, retrieve lightweight context, locate definitions or graph paths, then use full-content search or exact grep only when needed.
+- **Client plugin metadata**: Aligned Codex and Claude Code marketplace manifests with the package release version so clients can discover and refresh the updated integration guidance.
+
+### Fixed
+
+- **Jcode MCP argument compatibility**: Treat explicit JSON `null` values for optional MCP arguments as omitted values across search, definition, graph, PR-impact, and index tools.
+- **Embedding-provider outages**: Keep `codebase_search` and `codebase_peek` operational through BM25 keyword fallback when query embedding generation is temporarily unavailable, with full keyword weighting and actionable diagnostics.
+
 ## [0.15.0] - 2026-07-24
 
 ### Added
@@ -413,7 +430,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.1...v0.13.2
