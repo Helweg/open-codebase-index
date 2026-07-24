@@ -36,6 +36,8 @@ const indexerMockState = vi.hoisted(() => ({
   instances: [] as Array<{
     initialize: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
+    getCallers: ReturnType<typeof vi.fn>;
+    getCallees: ReturnType<typeof vi.fn>;
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
@@ -95,6 +97,8 @@ vi.mock("../src/indexer/index.js", () => {
       indexerMockState.instances.push({
         initialize: this.initialize,
         getStatus: this.getStatus,
+        getCallers: this.getCallers,
+        getCallees: this.getCallees,
         clearIndex: this.clearIndex,
         forceIndex: this.forceIndex,
       });
@@ -128,6 +132,33 @@ vi.mock("../src/indexer/index.js", () => {
     getStatus = vi.fn().mockImplementation(async () => mockStatusResult);
     healthCheck = vi.fn().mockImplementation(async () => mockHealthCheckResult);
     clearIndex = vi.fn().mockResolvedValue(undefined);
+    getCallers = vi.fn().mockResolvedValue([
+      {
+        id: "edge_1",
+        fromSymbolId: "sym_caller",
+        targetName: "validateToken",
+        callType: "Call",
+        confidence: "Direct",
+        line: 12,
+        col: 4,
+        isResolved: true,
+        fromSymbolName: "callerFn",
+        fromSymbolFilePath: "src/caller.ts",
+      },
+    ]);
+    getCallees = vi.fn().mockResolvedValue([
+      {
+        id: "edge_2",
+        fromSymbolId: "sym_validate",
+        targetName: "calledFn",
+        callType: "Call",
+        confidence: "Direct",
+        line: 4,
+        col: 2,
+        isResolved: true,
+        toSymbolId: "sym_called",
+      },
+    ]);
     estimateCost = vi.fn().mockResolvedValue({
       filesCount: 10,
       totalSizeBytes: 50000,
@@ -301,6 +332,41 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 locations");
+  });
+
+  it("should execute codebase_peek with null optional fields", async () => {
+    const result = await client.callTool({
+      name: "codebase_peek",
+      arguments: {
+        query: "test query",
+        limit: null,
+        fileType: null,
+        directory: null,
+        chunkType: null,
+        blameAuthor: null,
+        blameSha: null,
+        blameSince: null,
+      },
+    });
+
+    expect(result.content).toBeDefined();
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content).toHaveLength(1);
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("Found 1 locations");
+  });
+
+  it("should expose concise server instructions for tool workflow", async () => {
+    const instructions = await client.getInstructions();
+
+    expect(instructions).toBeDefined();
+    expect(instructions).toContain("index_status");
+    expect(instructions).toContain("codebase_peek");
+    expect(instructions).toContain("implementation_lookup");
+    expect(instructions).toContain("codebase_search");
+    expect(instructions).toContain("grep");
+    expect(instructions).toContain("call_graph");
+    expect(instructions).toContain("opencode");
   });
 
   it("should execute index_status tool", async () => {
@@ -617,6 +683,26 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("validateToken");
+  });
+
+  it("should execute call_graph callers with null optional fields", async () => {
+    const result = await client.callTool({
+      name: "call_graph",
+      arguments: {
+        name: "validateToken",
+        direction: null,
+        symbolId: null,
+        relationshipType: null,
+      },
+    });
+
+    expect(result.content).toBeDefined();
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content).toHaveLength(1);
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("called by 1 function");
+    const indexer = indexerMockState.instances[0];
+    expect(indexer.getCallers).toHaveBeenCalledWith("validateToken", undefined);
   });
 
   it("should get search prompt", async () => {

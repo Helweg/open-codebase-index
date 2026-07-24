@@ -29,20 +29,24 @@ import {
 } from "../tools/operations.js";
 import { CHUNK_TYPE_ENUM, type McpServerRuntime } from "./shared.js";
 
+function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
+  return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;
+}
+
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
     "codebase_search",
     "Search codebase by MEANING, not keywords. Returns full code content. For just finding WHERE code is (saves ~90% tokens), use codebase_peek instead.",
     {
       query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
-      limit: z.number().optional().default(5).describe("Maximum number of results to return"),
-      fileType: z.string().optional().describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
-      directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: z.enum(CHUNK_TYPE_ENUM).optional().describe("Filter by code chunk type"),
-      contextLines: z.number().optional().describe("Number of extra lines to include before/after each match (default: 0)"),
-      blameAuthor: z.string().optional().describe("Filter by git blame author name or email"),
-      blameSha: z.string().optional().describe("Filter by git blame commit SHA or prefix"),
-      blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date"),
+      limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results to return"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      contextLines: allowNullAsUndefined(z.number().optional()).describe("Number of extra lines to include before/after each match (default: 0)"),
+      blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
+      blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
+      blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
     },
     async (args) => {
       const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
@@ -69,13 +73,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "Quick lookup of code locations by meaning. Returns only metadata (file, line, name, type) WITHOUT code content. Saves ~90% tokens vs codebase_search.",
     {
       query: z.string().describe("Natural language description of what code you're looking for."),
-      limit: z.number().optional().default(10).describe("Maximum number of results to return"),
-      fileType: z.string().optional().describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
-      directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: z.enum(CHUNK_TYPE_ENUM).optional().describe("Filter by code chunk type"),
-      blameAuthor: z.string().optional().describe("Filter by git blame author name or email"),
-      blameSha: z.string().optional().describe("Filter by git blame commit SHA or prefix"),
-      blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date"),
+      limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
+      blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
+      blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
     },
     async (args) => {
       const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
@@ -101,9 +105,9 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "index_codebase",
     "Index the codebase for semantic search. Creates vector embeddings of code chunks. Incremental - only re-indexes changed files. Run before first codebase_search.",
     {
-      force: z.boolean().optional().default(false).describe("Force reindex even if already indexed"),
-      estimateOnly: z.boolean().optional().default(false).describe("Only show cost estimate without indexing"),
-      verbose: z.boolean().optional().default(false).describe("Show detailed info about skipped files and parsing failures"),
+      force: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Force reindex even if already indexed"),
+      estimateOnly: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Only show cost estimate without indexing"),
+      verbose: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Show detailed info about skipped files and parsing failures"),
     },
     async (args) => {
       const result = await runIndexCodebase(runtime.projectRoot, runtime.host, args);
@@ -154,9 +158,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "index_logs",
     "Get recent debug logs from the codebase indexer. Requires debug.enabled=true in config.",
     {
-      limit: z.number().optional().default(20).describe("Maximum number of log entries to return"),
-      category: z.enum(["search", "embedding", "cache", "gc", "branch", "general"]).optional().describe("Filter by log category"),
-      level: z.enum(["error", "warn", "info", "debug"]).optional().describe("Filter by minimum log level"),
+      limit: allowNullAsUndefined(z.number().optional().default(20)).describe("Maximum number of log entries to return"),
+      category: allowNullAsUndefined(
+        z.enum(["search", "embedding", "cache", "gc", "branch", "general"]).optional(),
+      ).describe("Filter by log category"),
+      level: allowNullAsUndefined(
+        z.enum(["error", "warn", "info", "debug"]).optional(),
+      ).describe("Filter by minimum log level"),
     },
     async (args) => {
       const result = await getIndexLogs(runtime.projectRoot, runtime.host, args);
@@ -169,11 +177,11 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "Find code similar to a given snippet. Use for duplicate detection, pattern discovery, or refactoring prep.",
     {
       code: z.string().describe("The code snippet to find similar code for"),
-      limit: z.number().optional().default(10).describe("Maximum number of results to return"),
-      fileType: z.string().optional().describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
-      directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: z.enum(CHUNK_TYPE_ENUM).optional().describe("Filter by code chunk type"),
-      excludeFile: z.string().optional().describe("Exclude results from this file path"),
+      limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      excludeFile: allowNullAsUndefined(z.string().optional()).describe("Exclude results from this file path"),
     },
     async (args) => {
       const results = await findSimilarCode(runtime.projectRoot, runtime.host, args.code, {
@@ -197,9 +205,9 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "Jump to symbol definition. Find WHERE something is defined. Returns the authoritative source location(s). Prefers real implementation files over tests, docs, examples, and fixtures.",
     {
       query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
-      limit: z.number().optional().default(5).describe("Maximum number of results"),
-      fileType: z.string().optional().describe("Filter by file extension (e.g., 'ts', 'py')"),
-      directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils')"),
+      limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py')"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils')"),
     },
     async (args) => {
       const results = await implementationLookup(runtime.projectRoot, runtime.host, args.query, {
@@ -218,9 +226,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
     {
       name: z.string().describe("Function or method name to query"),
-      direction: z.enum(["callers", "callees"]).default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
-      symbolId: z.string().optional().describe("Symbol ID (required for 'callees' direction)"),
-      relationshipType: z.enum(["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"]).optional().describe("Filter by relationship type. Omit to show all."),
+      direction: allowNullAsUndefined(
+        z.enum(["callers", "callees"]).default("callers"),
+      ).describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
+      symbolId: allowNullAsUndefined(z.string().optional()).describe("Symbol ID (required for 'callees' direction)"),
+      relationshipType: allowNullAsUndefined(
+        z.enum(["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"]).optional(),
+      ).describe("Filter by relationship type. Omit to show all."),
     },
     async (args) => {
       if (args.direction === "callees") {
@@ -242,7 +254,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     {
       from: z.string().describe("Source function/method name (starting point)"),
       to: z.string().describe("Target function/method name (destination)"),
-      maxDepth: z.number().optional().default(10).describe("Maximum traversal depth (default: 10)"),
+      maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
     async (args) => {
       const path = await getCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
@@ -253,12 +265,14 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "pr_impact",
     "Analyze the impact of a pull request or branch by examining changed files, affected symbols, transitive callers, communities touched, hub nodes, and risk level. Use to understand blast radius before merging.",
     {
-      pr: z.number().optional().describe("Pull request number to analyze"),
-      branch: z.string().optional().describe("Branch name to analyze (defaults to current branch)"),
-      maxDepth: z.number().optional().default(5).describe("Maximum traversal depth for transitive callers (default: 5)"),
-      hubThreshold: z.number().optional().default(10).describe("Minimum caller count to flag a symbol as a hub node (default: 10)"),
-      checkConflicts: z.boolean().optional().default(false).describe("Check for conflicting open PRs touching the same communities (default: false)"),
-      direction: z.enum(["callers", "callees", "both"]).optional().default("both").describe("Call-graph traversal direction: 'callers' for upstream, 'callees' for downstream, 'both' for union (default: both)"),
+      pr: allowNullAsUndefined(z.number().optional()).describe("Pull request number to analyze"),
+      branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
+      maxDepth: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum traversal depth for transitive callers (default: 5)"),
+      hubThreshold: allowNullAsUndefined(z.number().optional().default(10)).describe("Minimum caller count to flag a symbol as a hub node (default: 10)"),
+      checkConflicts: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Check for conflicting open PRs touching the same communities (default: false)"),
+      direction: allowNullAsUndefined(
+        z.enum(["callers", "callees", "both"]).optional().default("both"),
+      ).describe("Call-graph traversal direction: 'callers' for upstream, 'callees' for downstream, 'both' for union (default: both)"),
     },
     async (args) => {
       try {
