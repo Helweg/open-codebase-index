@@ -38,6 +38,7 @@ const indexerMockState = vi.hoisted(() => ({
     getStatus: ReturnType<typeof vi.fn>;
     getCallers: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
+    findCallPath: ReturnType<typeof vi.fn>;
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
@@ -99,6 +100,7 @@ vi.mock("../src/indexer/index.js", () => {
         getStatus: this.getStatus,
         getCallers: this.getCallers,
         getCallees: this.getCallees,
+        findCallPath: this.findCallPath,
         clearIndex: this.clearIndex,
         forceIndex: this.forceIndex,
       });
@@ -157,6 +159,24 @@ vi.mock("../src/indexer/index.js", () => {
         col: 2,
         isResolved: true,
         toSymbolId: "sym_called",
+      },
+    ]);
+    findCallPath = vi.fn().mockResolvedValue([
+      {
+        symbolName: "fromNode",
+        filePath: "src/start.ts",
+        line: 1,
+        symbolId: "from-node-id",
+        toSymbolId: "to-node-id",
+        callType: "Call",
+      },
+      {
+        symbolName: "toNode",
+        filePath: "src/end.ts",
+        line: 2,
+        symbolId: "to-node-id",
+        toSymbolId: "to-symbol-id",
+        callType: "Call",
       },
     ]);
     estimateCost = vi.fn().mockResolvedValue({
@@ -271,15 +291,16 @@ describe("MCP server tools and prompts", () => {
     fs.rmSync(testMainRepo, { recursive: true, force: true });
   });
 
-  it("should register all 12 tools", async () => {
+  it("should register all 13 tools", async () => {
     const tools = await client.listTools();
 
-    expect(tools.tools).toHaveLength(12);
+    expect(tools.tools).toHaveLength(13);
 
     const toolNames = tools.tools.map(t => t.name).sort();
     const expectedNames = [
       "call_graph",
       "call_graph_path",
+      "codebase_context",
       "codebase_peek",
       "codebase_search",
       "find_similar",
@@ -300,12 +321,16 @@ describe("MCP server tools and prompts", () => {
     const tools = await client.listTools();
     const descriptions = new Map(tools.tools.map(tool => [tool.name, tool.description ?? ""]));
 
+    expect(tools.tools[0]?.name).toBe("codebase_context");
+    expect(descriptions.get("codebase_context")).toContain("PREFERRED FIRST TOOL");
+    expect(descriptions.get("codebase_context")).toContain("before agentgrep");
     expect(descriptions.get("index_status")).toContain("START HERE");
     expect(descriptions.get("index_status")).toContain("codebase_peek");
-    expect(descriptions.get("codebase_peek")).toContain("DEFAULT FIRST TOOL");
-    expect(descriptions.get("codebase_peek")).toContain("codebase_search");
+    expect(descriptions.get("codebase_peek")).toContain("LOW-TOKEN");
+    expect(descriptions.get("codebase_peek")).toContain("codebase_context");
     expect(descriptions.get("implementation_lookup")).toContain("FIRST TOOL");
     expect(descriptions.get("implementation_lookup")).toContain("known-symbol");
+    expect(descriptions.get("implementation_lookup")).toContain("Do not use for callers");
     expect(descriptions.get("codebase_search")).toContain("after codebase_peek");
     expect(descriptions.get("codebase_search")).toContain("grep");
     expect(descriptions.get("call_graph")).toContain("after identifying a symbol");
@@ -373,11 +398,79 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Found 1 locations");
   });
 
+  it("should route codebase_context conceptual discovery with null optional fields", async () => {
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: {
+        query: "where is authentication handled",
+        symbol: null,
+        from: null,
+        to: null,
+        limit: null,
+        maxDepth: null,
+        fileType: null,
+        directory: null,
+      },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain("Found 1 locations");
+    expect(content[0].text).toContain("implementation_lookup");
+  });
+
+  it("should route codebase_context known symbols to definition lookup", async () => {
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "where is validateToken defined", symbol: "validateToken" },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain('function "validateToken"');
+  });
+
+  it("should route codebase_context endpoint pairs to call graph paths", async () => {
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "trace fromNode to toNode", from: "fromNode", to: "toNode", maxDepth: 7 },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain("Path (2 hops)");
+    const indexer = indexerMockState.instances.at(-1);
+    expect(indexer?.findCallPath).toHaveBeenCalledWith("fromNode", "toNode", 7);
+  });
+
+  it("should recover direct unresolved edges when path traversal returns no hops", async () => {
+    const indexer = indexerMockState.instances.at(-1);
+    indexer?.findCallPath.mockResolvedValueOnce([]);
+    indexer?.getCallers.mockResolvedValueOnce([{
+      fromSymbolId: "from-node-id",
+      fromSymbolName: "fromNode",
+      fromSymbolFilePath: "src/start.ts",
+      toSymbolId: null,
+      targetName: "toNode",
+      callType: "Call",
+      line: 12,
+      confidence: "Direct",
+      isResolved: false,
+    }]);
+
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "trace fromNode to toNode", from: "fromNode", to: "toNode" },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain("Direct path: fromNode --Call--> toNode");
+    expect(content[0].text).toContain("edge is unresolved");
+  });
+
   it("should expose concise server instructions for tool workflow", async () => {
     const instructions = await client.getInstructions();
 
     expect(instructions).toBeDefined();
     expect(instructions).toContain("index_status");
+    expect(instructions).toContain("codebase_context");
     expect(instructions).toContain("codebase_peek");
     expect(instructions).toContain("implementation_lookup");
     expect(instructions).toContain("codebase_search");

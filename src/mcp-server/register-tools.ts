@@ -35,6 +35,81 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
+    "codebase_context",
+    "PREFERRED FIRST TOOL for any question about this repository. Use before agentgrep, grep, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
+    {
+      query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
+      from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
+      to: allowNullAsUndefined(z.string().optional()).describe("Target symbol. For dependency-path questions, extract the second endpoint and provide it here."),
+      symbol: allowNullAsUndefined(z.string().optional()).describe("Exact symbol for an authoritative definition lookup. Omit when from and to are supplied."),
+      limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of search or definition results"),
+      maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum call-graph traversal depth for from/to path lookup"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+    },
+    async (args) => {
+      if (args.from && args.to) {
+        const path = await getCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
+        if (path.length > 0) {
+          return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
+        }
+
+        // Path traversal follows resolved symbol IDs, but extraction can still
+        // retain a useful direct edge before the target has been resolved.
+        const { callers } = await getCallGraphData(runtime.projectRoot, runtime.host, {
+          name: args.to,
+          direction: "callers",
+        });
+        const directEdge = callers.find(edge => edge.fromSymbolName === args.from);
+        if (directEdge) {
+          const location = directEdge.fromSymbolFilePath
+            ? ` at ${directEdge.fromSymbolFilePath}:${directEdge.line}`
+            : "";
+          return {
+            content: [{
+              type: "text",
+              text: `Direct path: ${args.from} --${directEdge.callType}--> ${args.to}${location} ` +
+                `(edge is ${directEdge.isResolved ? "resolved" : "unresolved"}).`,
+            }],
+          };
+        }
+
+        return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
+      }
+
+      if (args.symbol) {
+        const results = await implementationLookup(runtime.projectRoot, runtime.host, args.symbol, {
+          limit: args.limit ?? 10,
+          fileType: args.fileType,
+          directory: args.directory,
+        });
+
+        return { content: [{ type: "text", text: formatDefinitionLookup(results, args.symbol) }] };
+      }
+
+      const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
+        limit: args.limit ?? 10,
+        fileType: args.fileType,
+        directory: args.directory,
+        metadataOnly: true,
+      });
+
+      if (results.length === 0) {
+        return { content: [{ type: "text", text: "No matching code found. Try a different query or run index_codebase first." }] };
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text: `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}\n\n` +
+            "Use implementation_lookup for an authoritative definition, or call call_graph/call_graph_path once you have a symbol.",
+        }],
+      };
+    },
+  );
+
+
+  server.tool(
     "codebase_search",
     "FULL-CONTENT semantic retrieval. Use after codebase_peek when you need implementation text, not as the default first step. For exact identifiers or exhaustive matches use grep instead.",
     {
@@ -70,7 +145,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "codebase_peek",
-    "DEFAULT FIRST TOOL for unfamiliar-code discovery. Finds locations by meaning and returns only file, line, symbol, and type metadata, saving about 90% of tokens versus codebase_search. Read selected files or escalate to codebase_search afterward.",
+    "DIRECT LOW-TOKEN semantic location lookup for unfamiliar-code discovery. Prefer codebase_context when the request may involve definitions or graph navigation; use this specialized tool when you only need conceptual locations.",
     {
       query: z.string().describe("Natural language description of what code you're looking for."),
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
@@ -202,7 +277,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "implementation_lookup",
-    "FIRST TOOL for known-symbol and definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Use codebase_peek instead when you know the behavior but not the symbol name.",
+    "FIRST TOOL only for known-symbol definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Do not use for callers, callees, dependency paths, or code flow; use codebase_context with direction or from/to for those questions.",
     {
       query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results"),
