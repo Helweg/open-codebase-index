@@ -16,7 +16,13 @@ import {
   MAX_CONTEXT_PACK_TOKEN_BUDGET,
   MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "../tools/utils.js";
-import { resolveCodebaseContext } from "../tools/context.js";
+import {
+  MAX_CONTEXT_PATH_DEPTH,
+  MAX_CONTEXT_RESULT_LIMIT,
+  MIN_CONTEXT_PATH_DEPTH,
+  MIN_CONTEXT_RESULT_LIMIT,
+  resolveCodebaseContext,
+} from "../tools/context.js";
 import { formatPrImpact } from "../tools/format-pr-impact.js";
 import {
   findSimilarCode,
@@ -46,8 +52,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
       to: allowNullAsUndefined(z.string().optional()).describe("Target symbol. For dependency-path questions, extract the second endpoint and provide it here."),
       symbol: allowNullAsUndefined(z.string().optional()).describe("Exact symbol for an authoritative definition lookup. Omit when from and to are supplied."),
-      limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of search or definition results"),
-      maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum call-graph traversal depth for from/to path lookup"),
+      limit: allowNullAsUndefined(
+        z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).optional().default(10),
+      ).describe(`Maximum number of search or definition results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
+      maxDepth: allowNullAsUndefined(
+        z.number().int().min(MIN_CONTEXT_PATH_DEPTH).max(MAX_CONTEXT_PATH_DEPTH).optional().default(10),
+      ).describe(`Maximum call-graph traversal depth for from/to path lookup (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})`),
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
       tokenBudget: allowNullAsUndefined(

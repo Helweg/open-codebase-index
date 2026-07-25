@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { estimateTokens } from "../src/utils/cost.js";
+import { countContextTokens } from "../src/tools/utils.js";
 
 const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
@@ -67,7 +67,7 @@ describe("native OpenCode codebase_context", () => {
     });
     expect(result).toContain("Codebase evidence");
     expect(result).not.toContain("secret source");
-    expect(estimateTokens(result)).toBeLessThanOrEqual(128);
+    expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
 
   it("routes explicit definitions to compact location evidence", async () => {
@@ -94,7 +94,7 @@ describe("native OpenCode codebase_context", () => {
     });
     expect(result).toContain("src/auth.ts:12-30");
     expect(result).not.toContain("fullSource");
-    expect(estimateTokens(result)).toBeLessThanOrEqual(128);
+    expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
 
   it("routes dependency endpoints through bounded call-path output", async () => {
@@ -114,6 +114,27 @@ describe("native OpenCode codebase_context", () => {
 
     expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10);
     expect(result).toContain("Path (30 hops)");
-    expect(estimateTokens(result)).toBeLessThanOrEqual(128);
+    expect(countContextTokens(result)).toBeLessThanOrEqual(128);
+  });
+
+  it("accepts explicit null optional arguments like the other adapters", async () => {
+    await codebase_context.execute({
+      query: "request handling",
+      from: null,
+      to: null,
+      symbol: null,
+      limit: null,
+      maxDepth: null,
+      fileType: null,
+      directory: null,
+      tokenBudget: null,
+    }, context);
+
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "request handling", {
+      limit: 10,
+      fileType: undefined,
+      directory: undefined,
+      metadataOnly: true,
+    });
   });
 });

@@ -252,6 +252,8 @@ Validation errors are surfaced with clear path-specific messages (e.g. `queries[
 
 The harness computes:
 
+Context response budgets and response-token metrics use the `cl100k_base` tokenizer rather than a character heuristic.
+
 - Hit@1, Hit@3, Hit@5, Hit@10
 - MRR@10
 - nDCG@10

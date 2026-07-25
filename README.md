@@ -241,7 +241,7 @@ The tools carry self-routing descriptions so clients can choose the lightweight 
 6. `grep` for exact identifiers or exhaustive matches
 7. `call_graph` / `call_graph_path` for direct graph queries
 
-`codebase_context` accepts a `tokenBudget` from 128 to 4000 tokens, defaulting to 1200. It returns deterministic location evidence rather than source bodies, removes overlapping same-file results, diversifies the selected evidence across files, and reports omitted candidates. Increase the budget only when broader location coverage is useful. Use `implementation_lookup`, `codebase_search`, or a targeted file read for the exact source after selecting a location.
+`codebase_context` accepts a `tokenBudget` from 128 to 4000 tokens, defaulting to 1200. The hard cap is counted with the `cl100k_base` tokenizer, including multilingual and emoji text. It returns deterministic location evidence rather than source bodies, removes overlapping same-file results, diversifies evidence across files, and distinguishes duplicates, result-limit exclusions, and token-budget omissions. Increase the budget only when broader location coverage is useful. Use `implementation_lookup`, `codebase_search`, or a targeted file read for the exact source after selecting a location.
 
 The server also publishes this workflow through the standard MCP initialization `instructions` field. Client behavior remains client-controlled: an MCP server can describe and recommend its tools, but cannot force an agent host to read server instructions or invoke a tool before filesystem search. Clients that ignore MCP instructions still receive the routing guidance in each tool description.
 

@@ -9,13 +9,13 @@ import {
   formatLogs,
   formatSearchResults,
   buildContextPack,
+  countContextTokens,
   fitTextToContextBudget,
   MIN_CONTEXT_PACK_TOKEN_BUDGET,
   MAX_CONTEXT_PACK_TOKEN_BUDGET,
 } from "../src/tools/utils.js";
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../src/indexer/index.js";
 import type { LogEntry } from "../src/utils/logger.js";
-import { estimateTokens } from "../src/utils/cost.js";
 
 function createBaseStats(overrides: Partial<IndexStats> = {}): IndexStats {
   return {
@@ -622,7 +622,7 @@ describe("tools utils", () => {
       expect(tooSmall.tokenBudget).toBe(MIN_CONTEXT_PACK_TOKEN_BUDGET);
       expect(tooLarge.tokenBudget).toBe(MAX_CONTEXT_PACK_TOKEN_BUDGET);
       expect(tooSmall.results).toHaveLength(1);
-      expect(tooSmall.tokenEstimate).toBe(estimateTokens(tooSmall.text));
+      expect(tooSmall.tokenEstimate).toBe(countContextTokens(tooSmall.text));
       expect(tooSmall.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
     });
 
@@ -785,7 +785,7 @@ describe("tools utils", () => {
       const packed = buildContextPack(results, { tokenBudget: 1 });
       const maxBudget = packed.tokenBudget;
       expect(packed.results.length).toBeGreaterThan(0);
-      expect(estimateTokens(packed.text)).toBeLessThanOrEqual(maxBudget);
+      expect(countContextTokens(packed.text)).toBeLessThanOrEqual(maxBudget);
     });
 
     it("adds a clear omitted-count footer when candidates are dropped", () => {
@@ -822,7 +822,7 @@ describe("tools utils", () => {
       const packed = buildContextPack(results, { tokenBudget: 1 });
       expect(packed.results.length + packed.omittedCount).toBe(results.length);
       expect(packed.text).toContain("omitted by token budget");
-      expect(estimateTokens(packed.text)).toBeLessThanOrEqual(packed.tokenBudget);
+      expect(countContextTokens(packed.text)).toBeLessThanOrEqual(packed.tokenBudget);
     });
 
     it("honors maxResults and reports budget omissions separately from duplicates", () => {
@@ -840,8 +840,11 @@ describe("tools utils", () => {
 
       expect(packed.selectedCount).toBe(2);
       expect(packed.duplicateCount).toBe(0);
-      expect(packed.budgetOmittedCount).toBe(2);
+      expect(packed.limitOmittedCount).toBe(2);
+      expect(packed.budgetOmittedCount).toBe(0);
       expect(packed.omittedCount).toBe(2);
+      expect(packed.text).toContain("excluded by result limit");
+      expect(packed.text).not.toContain("omitted by token budget");
     });
 
     it("keeps worst-case headings and paths within the minimum budget", () => {
@@ -861,7 +864,7 @@ describe("tools utils", () => {
       });
 
       expect(packed.selectedCount).toBe(1);
-      expect(packed.tokenEstimate).toBe(estimateTokens(packed.text));
+      expect(packed.tokenEstimate).toBe(countContextTokens(packed.text));
       expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
       expect(packed.text).not.toContain(result.content);
     });
@@ -880,9 +883,16 @@ describe("tools utils", () => {
       const fitted = fitTextToContextBudget("x".repeat(5000), MIN_CONTEXT_PACK_TOKEN_BUDGET);
 
       expect(fitted.truncated).toBe(true);
-      expect(fitted.tokenEstimate).toBe(estimateTokens(fitted.text));
+      expect(fitted.tokenEstimate).toBe(countContextTokens(fitted.text));
       expect(fitted.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
       expect(fitted.text).toContain("truncated to context token budget");
+    });
+
+    it("enforces the budget with multilingual and emoji input", () => {
+      const fitted = fitTextToContextBudget("😀 漢字 café مرحبا ".repeat(500), MIN_CONTEXT_PACK_TOKEN_BUDGET);
+
+      expect(fitted.tokenEstimate).toBe(countContextTokens(fitted.text));
+      expect(fitted.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
     });
   });
 

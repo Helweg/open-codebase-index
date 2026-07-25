@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import * as fs from "fs";
 import { estimateTokens } from "../src/utils/cost.js";
+import { countContextTokens } from "../src/tools/utils.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
@@ -445,7 +446,7 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Codebase evidence");
     expect(content[0].text).toContain("src/auth.ts:10-25");
     expect(content[0].text).not.toContain("return token.length");
-    expect(estimateTokens(content[0].text ?? "")).toBeLessThanOrEqual(1200);
+    expect(countContextTokens(content[0].text ?? "")).toBeLessThanOrEqual(1200);
   });
 
   it("should route codebase_context known symbols to definition lookup", async () => {
@@ -550,7 +551,7 @@ describe("MCP server tools and prompts", () => {
       arguments: { query: "find all request handlers", tokenBudget: 128 },
     });
     const conceptualText = (conceptual.content as Array<{ text?: string }>)[0]?.text ?? "";
-    expect(estimateTokens(conceptualText)).toBeLessThanOrEqual(128);
+    expect(countContextTokens(conceptualText)).toBeLessThanOrEqual(128);
     expect(conceptualText).not.toContain("full source");
 
     indexer?.findCallPath.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
@@ -564,7 +565,7 @@ describe("MCP server tools and prompts", () => {
       arguments: { query: "trace start to finish", from: "start", to: "finish", tokenBudget: 128 },
     });
     const graphText = (graph.content as Array<{ text?: string }>)[0]?.text ?? "";
-    expect(estimateTokens(graphText)).toBeLessThanOrEqual(128);
+    expect(countContextTokens(graphText)).toBeLessThanOrEqual(128);
   });
 
   it("should enforce the MCP token budget schema range", async () => {
@@ -579,6 +580,18 @@ describe("MCP server tools and prompts", () => {
       arguments: { query: "find authentication", tokenBudget: 4001 },
     });
     expect(rejected.isError).toBe(true);
+
+    for (const arguments_ of [
+      { query: "find authentication", limit: 0 },
+      { query: "find authentication", limit: 101 },
+      { query: "find authentication", limit: 1.5 },
+      { query: "trace authentication", maxDepth: 0 },
+      { query: "trace authentication", maxDepth: 101 },
+      { query: "trace authentication", maxDepth: 1.5 },
+    ]) {
+      const invalid = await client.callTool({ name: "codebase_context", arguments: arguments_ });
+      expect(invalid.isError).toBe(true);
+    }
   });
 
   it("should recover direct unresolved edges when path traversal returns no hops", async () => {

@@ -37,7 +37,13 @@ import {
   searchCodebase,
 } from "./operations.js";
 import { pr_impact } from "./pr-impact.js";
-import { resolveCodebaseContext } from "./context.js";
+import {
+  MAX_CONTEXT_PATH_DEPTH,
+  MAX_CONTEXT_RESULT_LIMIT,
+  MIN_CONTEXT_PATH_DEPTH,
+  MIN_CONTEXT_RESULT_LIMIT,
+  resolveCodebaseContext,
+} from "./context.js";
 import { writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -78,15 +84,17 @@ export const codebase_context: ToolDefinition = tool({
     "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, symbol for definitions, or only query for conceptual discovery.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
-    from: z.string().optional().describe("Source symbol for a dependency path"),
-    to: z.string().optional().describe("Target symbol for a dependency path"),
-    symbol: z.string().optional().describe("Exact symbol for authoritative definition lookup"),
-    limit: z.number().optional().default(10).describe("Maximum number of results"),
-    maxDepth: z.number().optional().default(10).describe("Maximum call-path traversal depth"),
-    fileType: z.string().optional().describe("Filter by file extension"),
-    directory: z.string().optional().describe("Filter by directory path"),
+    from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
+    to: z.string().nullable().optional().describe("Target symbol for a dependency path"),
+    symbol: z.string().nullable().optional().describe("Exact symbol for authoritative definition lookup"),
+    limit: z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).nullable().optional().default(10)
+      .describe(`Maximum number of results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
+    maxDepth: z.number().int().min(MIN_CONTEXT_PATH_DEPTH).max(MAX_CONTEXT_PATH_DEPTH).nullable().optional().default(10)
+      .describe(`Maximum call-path traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})`),
+    fileType: z.string().nullable().optional().describe("Filter by file extension"),
+    directory: z.string().nullable().optional().describe("Filter by directory path"),
     tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
-      .optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
+      .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
       .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
   },
   async execute(args, context) {

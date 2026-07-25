@@ -185,7 +185,12 @@ function sameReclaimOwner(left: ReclaimOwner, right: ReclaimOwner): boolean {
 
 function publishJsonDirectory(finalPath: string, value: IndexLockOwner | ReclaimOwner): boolean {
   const candidatePath = `${finalPath}.candidate.${process.pid}.${randomUUID()}`;
-  mkdirSync(candidatePath, { mode: 0o700 });
+  try {
+    mkdirSync(candidatePath, { mode: 0o700 });
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") return false;
+    throw error;
+  }
   try {
     writeFileSync(path.join(candidatePath, OWNER_FILE_NAME), JSON.stringify(value), {
       encoding: "utf-8",
@@ -198,8 +203,12 @@ function publishJsonDirectory(finalPath: string, value: IndexLockOwner | Reclaim
       return true;
     } catch (error) {
       if (existsSync(finalPath)) return false;
+      if (getErrorCode(error) === "ENOENT") return false;
       throw error;
     }
+  } catch (error) {
+    if (getErrorCode(error) === "ENOENT") return false;
+    throw error;
   } finally {
     if (existsSync(candidatePath)) rmSync(candidatePath, { recursive: true, force: true });
   }

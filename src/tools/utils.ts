@@ -1,11 +1,12 @@
-import { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
+import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
 import type { CallEdgeData, PathHopData } from "../native/index.js";
 import type { LogEntry } from "../utils/logger.js";
-import { estimateTokens } from "../utils/cost.js";
+import { get_encoding } from "tiktoken";
 
 export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
 export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
 export const DEFAULT_CONTEXT_PACK_TOKEN_BUDGET = 1200;
+const CONTEXT_TOKENIZER = get_encoding("cl100k_base");
 
 interface RankedSearchResult {
   result: SearchResult;
@@ -29,6 +30,7 @@ export interface ContextPackResult {
   selectedCount: number;
   omittedCount: number;
   duplicateCount: number;
+  limitOmittedCount: number;
   budgetOmittedCount: number;
 }
 
@@ -49,24 +51,37 @@ export function clampContextPackTokenBudget(tokenBudget?: number): number {
   );
 }
 
+export function countContextTokens(text: string): number {
+  return CONTEXT_TOKENIZER.encode(text).length;
+}
+
 export function fitTextToContextBudget(text: string, tokenBudget?: number): BudgetedTextResult {
   const normalizedBudget = clampContextPackTokenBudget(tokenBudget);
-  if (estimateTokens(text) <= normalizedBudget) {
+  const tokenEstimate = countContextTokens(text);
+  if (tokenEstimate <= normalizedBudget) {
     return {
       text,
       tokenBudget: normalizedBudget,
-      tokenEstimate: estimateTokens(text),
+      tokenEstimate,
       truncated: false,
     };
   }
 
   const suffix = "\n...[truncated to context token budget]";
-  const maxChars = Math.max(0, normalizedBudget * 4 - suffix.length);
-  const fitted = `${text.slice(0, maxChars).trimEnd()}${suffix}`;
+  const codePoints = Array.from(text);
+  let low = 0;
+  let high = codePoints.length;
+  while (low < high) {
+    const middle = Math.ceil((low + high) / 2);
+    const candidate = `${codePoints.slice(0, middle).join("").trimEnd()}${suffix}`;
+    if (countContextTokens(candidate) <= normalizedBudget) low = middle;
+    else high = middle - 1;
+  }
+  const fitted = `${codePoints.slice(0, low).join("").trimEnd()}${suffix}`;
   return {
     text: fitted,
     tokenBudget: normalizedBudget,
-    tokenEstimate: estimateTokens(fitted),
+    tokenEstimate: countContextTokens(fitted),
     truncated: true,
   };
 }
@@ -136,11 +151,13 @@ function formatContextPack(
   selected: SearchResult[],
   candidateCount: number,
   duplicateCount: number,
+  limitOmittedCount: number,
   budgetOmittedCount: number,
 ): string {
   const lines = selected.map((result, index) => formatContextEvidence(result, index + 1));
   const notes: string[] = [];
   if (duplicateCount > 0) notes.push(`${duplicateCount} overlapping duplicate${duplicateCount === 1 ? "" : "s"} removed`);
+  if (limitOmittedCount > 0) notes.push(`${limitOmittedCount} additional result${limitOmittedCount === 1 ? "" : "s"} excluded by result limit`);
   if (budgetOmittedCount > 0) notes.push(`${budgetOmittedCount} additional result${budgetOmittedCount === 1 ? "" : "s"} omitted by token budget`);
   const footer = notes.length > 0
     ? `Selected ${selected.length} of ${candidateCount} candidates; ${notes.join("; ")}.`
@@ -158,20 +175,22 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const diversified = diversifyContextCandidates(deduplicated);
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
+  const limitOmittedCount = deduplicated.length - selectable.length;
   let selected: SearchResult[] = [];
-  let text = formatContextPack(heading, selected, candidateCount, duplicateCount, deduplicated.length);
+  let text = formatContextPack(heading, selected, candidateCount, duplicateCount, limitOmittedCount, selectable.length);
 
   for (let count = 1; count <= selectable.length; count += 1) {
     const candidateSelection = selectable.slice(0, count);
-    const budgetOmittedCount = deduplicated.length - candidateSelection.length;
+    const budgetOmittedCount = selectable.length - candidateSelection.length;
     const candidateText = formatContextPack(
       heading,
       candidateSelection,
       candidateCount,
       duplicateCount,
+      limitOmittedCount,
       budgetOmittedCount,
     );
-    if (estimateTokens(candidateText) > tokenBudget) break;
+    if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;
     text = candidateText;
   }
@@ -183,12 +202,13 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       selected,
       candidateCount,
       duplicateCount,
-      deduplicated.length - 1,
+      limitOmittedCount,
+      selectable.length - 1,
     );
   }
 
   const fitted = fitTextToContextBudget(text, tokenBudget);
-  const budgetOmittedCount = deduplicated.length - selected.length;
+  const budgetOmittedCount = selectable.length - selected.length;
   const omittedCount = candidateCount - selected.length;
   return {
     requestedTokenBudget,
@@ -201,6 +221,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     selectedCount: selected.length,
     omittedCount,
     duplicateCount,
+    limitOmittedCount,
     budgetOmittedCount,
   };
 }
