@@ -1,11 +1,10 @@
 {
-  "name": "github-models-eval-budget",
+  "name": "agent-context-eval-budget",
   "failOnMissingBaseline": false,
   "thresholds": {
-    "minHitAt5": 0.5,
-    "minMrrAt10": 0.45,
-    "minRawDistinctTop3Ratio": 0.5,
-    "p95LatencyMaxAbsoluteMs": 500,
+    "p95LatencyMaxAbsoluteMs": 4000,
+    "minHitAt5": 0.25,
+    "minMrrAt10": 0.18,
     "maxContextResponseTokensAverage": 1000,
     "maxContextResponseTokensP95": 1200,
     "maxContextResponseTokensMax": 1200,

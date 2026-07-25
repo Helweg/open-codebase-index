@@ -8,6 +8,7 @@ import { loadMergedConfig } from "./config/merger.js";
 import { createWatcherWithIndexer } from "./watcher/index.js";
 import {
   codebase_search,
+  codebase_context,
   codebase_peek,
   index_codebase,
   index_status,
@@ -122,6 +123,7 @@ const plugin: Plugin = async ({ directory, worktree }) => {
 
     return {
       tool: {
+        codebase_context,
         codebase_search,
         codebase_peek,
         index_codebase,

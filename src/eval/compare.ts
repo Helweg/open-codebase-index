@@ -12,6 +12,17 @@ function metricDelta(current: number, baseline: number): MetricDelta {
 }
 
 export function compareSummaries(current: EvalSummary, baseline: EvalSummary, againstPath: string): EvalComparison {
+  if (
+    current.datasetName !== baseline.datasetName ||
+    current.datasetVersion !== baseline.datasetVersion ||
+    current.queryCount !== baseline.queryCount
+  ) {
+    throw new Error(
+      `Cannot compare incompatible evaluation datasets: current=${current.datasetName}@${current.datasetVersion} (${current.queryCount} queries), ` +
+      `baseline=${baseline.datasetName}@${baseline.datasetVersion} (${baseline.queryCount} queries) at ${againstPath}`,
+    );
+  }
+
   return {
     againstPath,
     deltas: {
@@ -33,6 +44,34 @@ export function compareSummaries(current: EvalSummary, baseline: EvalSummary, ag
       estimatedCostUsd: metricDelta(
         current.metrics.embedding.estimatedCostUsd,
         baseline.metrics.embedding.estimatedCostUsd
+      ),
+      contextResponseTokensAverage: metricDelta(
+        current.metrics.contextEfficiency.responseTokens.average,
+        baseline.metrics.contextEfficiency.responseTokens.average,
+      ),
+      contextResponseTokensP95: metricDelta(
+        current.metrics.contextEfficiency.responseTokens.p95,
+        baseline.metrics.contextEfficiency.responseTokens.p95,
+      ),
+      contextResponseTokensMax: metricDelta(
+        current.metrics.contextEfficiency.responseTokens.max,
+        baseline.metrics.contextEfficiency.responseTokens.max,
+      ),
+      contextDuplicateCandidateRatio: metricDelta(
+        current.metrics.contextEfficiency.duplicateCandidateRatio,
+        baseline.metrics.contextEfficiency.duplicateCandidateRatio,
+      ),
+      contextSelectedFileRatio: metricDelta(
+        current.metrics.contextEfficiency.selectedFileRatio,
+        baseline.metrics.contextEfficiency.selectedFileRatio,
+      ),
+      contextHitAt5Per1kResponseTokens: metricDelta(
+        current.metrics.contextEfficiency.hitAt5Per1kResponseTokens,
+        baseline.metrics.contextEfficiency.hitAt5Per1kResponseTokens,
+      ),
+      contextMrrAt10Per1kResponseTokens: metricDelta(
+        current.metrics.contextEfficiency.mrrAt10Per1kResponseTokens,
+        baseline.metrics.contextEfficiency.mrrAt10Per1kResponseTokens,
       ),
     },
   };

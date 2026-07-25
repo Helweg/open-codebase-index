@@ -43,6 +43,26 @@ export function validateSummary(
   assertFiniteNumber(summary.metrics.embedding.callCount, `${summaryPath}.metrics.embedding.callCount`);
   assertFiniteNumber(summary.metrics.embedding.estimatedCostUsd, `${summaryPath}.metrics.embedding.estimatedCostUsd`);
 
+  if (!summary.metrics.contextEfficiency) {
+    summary.metrics.contextEfficiency = {
+      queryCount: 0,
+      responseTokens: { total: 0, average: 0, p95: 0, max: 0 },
+      duplicateCandidateRatio: 0,
+      selectedFileRatio: 0,
+      hitAt5Per1kResponseTokens: 0,
+      mrrAt10Per1kResponseTokens: 0,
+    };
+  }
+  assertFiniteNumber(summary.metrics.contextEfficiency.queryCount, `${summaryPath}.metrics.contextEfficiency.queryCount`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.responseTokens.total, `${summaryPath}.metrics.contextEfficiency.responseTokens.total`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.responseTokens.average, `${summaryPath}.metrics.contextEfficiency.responseTokens.average`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.responseTokens.p95, `${summaryPath}.metrics.contextEfficiency.responseTokens.p95`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.responseTokens.max, `${summaryPath}.metrics.contextEfficiency.responseTokens.max`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.duplicateCandidateRatio, `${summaryPath}.metrics.contextEfficiency.duplicateCandidateRatio`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.selectedFileRatio, `${summaryPath}.metrics.contextEfficiency.selectedFileRatio`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.hitAt5Per1kResponseTokens, `${summaryPath}.metrics.contextEfficiency.hitAt5Per1kResponseTokens`);
+  assertFiniteNumber(summary.metrics.contextEfficiency.mrrAt10Per1kResponseTokens, `${summaryPath}.metrics.contextEfficiency.mrrAt10Per1kResponseTokens`);
+
   return summary;
 }
 

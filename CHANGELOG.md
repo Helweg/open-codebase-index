@@ -10,11 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Agent-facing retrieval evaluation**: Added a versioned `codebase_context` golden dataset, `npm run eval:agent`, and per-query route metadata for measuring definition routing and conceptual discovery.
+- **Token-budgeted context packs**: Added deterministic, overlapping-result deduplication and cross-file evidence selection with configurable 128-4000 token response budgets across native OpenCode, MCP, and Pi clients.
+- **Context efficiency gates**: Added returned-token, duplicate-candidate, file-diversity, and quality-per-1,000-token evaluation metrics with configurable CI thresholds.
 
 ### Changed
 
 - **Automatic definition routing**: MCP and Pi `codebase_context` now conservatively infer unambiguous symbol names from definition-style questions before falling back to conceptual search.
 - **Large-file retrieval coverage**: Files exceeding `maxChunksPerFile` now retain representative chunks from across the file instead of silently indexing only the beginning.
+- **Location-first context details**: `codebase_context` definition and conceptual routes now return compact locations rather than full source bodies; Pi details expose metadata only.
 
 ## [0.16.0] - 2026-07-24
 

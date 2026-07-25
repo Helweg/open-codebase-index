@@ -229,7 +229,7 @@ Use the same semantic search from any MCP-compatible client. Index once, search 
    npx -y --package opencode-codebase-index opencode-codebase-index-mcp
    ```
 
-The MCP server exposes all 13 tools (`codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`).
+The MCP server exposes all 13 tools (`codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`). Native OpenCode and Pi integrations expose the same `codebase_context` entry point.
 
 The tools carry self-routing descriptions so clients can choose the lightweight path without relying on separate documentation:
 
@@ -240,6 +240,8 @@ The tools carry self-routing descriptions so clients can choose the lightweight 
 5. `codebase_search` only when full semantic content is needed
 6. `grep` for exact identifiers or exhaustive matches
 7. `call_graph` / `call_graph_path` for direct graph queries
+
+`codebase_context` accepts a `tokenBudget` from 128 to 4000 tokens, defaulting to 1200. The hard cap is counted with the `cl100k_base` tokenizer, including multilingual and emoji text. It returns deterministic location evidence rather than source bodies, removes overlapping same-file results, diversifies evidence across files, and distinguishes duplicates, result-limit exclusions, and token-budget omissions. Increase the budget only when broader location coverage is useful. Use `implementation_lookup`, `codebase_search`, or a targeted file read for the exact source after selecting a location.
 
 The server also publishes this workflow through the standard MCP initialization `instructions` field. Client behavior remains client-controlled: an MCP server can describe and recommend its tools, but cannot force an agent host to read server instructions or invoke a tool before filesystem search. Clients that ignore MCP instructions still receive the routing guidance in each tool description.
 
@@ -270,8 +272,8 @@ src/api/checkout.ts:89      (Route handler for /pay)
 
 | Scenario | Tool | Why |
 |----------|------|-----|
-| Don't know the function name | `codebase_context` (MCP) | Routes conceptual questions to low-token discovery first |
-| Exploring unfamiliar codebase | `codebase_context` (MCP) | Discovers related code and then guides to definitions or graph queries |
+| Don't know the function name | `codebase_context` | Routes conceptual questions to a bounded, low-token evidence pack |
+| Exploring unfamiliar codebase | `codebase_context` | Available natively in OpenCode and Pi, and through MCP for other clients |
 | Just need to find locations | `codebase_peek` (or `codebase_context`) | Returns metadata only, saves ~90% tokens |
 | Need the authoritative definition site | `implementation_lookup` | Prioritizes real implementation definitions over docs/tests |
 | Understand code flow | `call_graph` | Find callers/callees of any function |

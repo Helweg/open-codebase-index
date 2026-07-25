@@ -3,7 +3,8 @@ import * as path from "path";
 import { performance } from "perf_hooks";
 
 import { Indexer } from "../indexer/index.js";
-import { inferExactSymbolFromQuery } from "../tools/symbol-inference.js";
+import { resolveSearchContext } from "../tools/context.js";
+import { DEFAULT_CONTEXT_PACK_TOKEN_BUDGET } from "../tools/utils.js";
 
 import { evaluateBudgetGate } from "./budget.js";
 import { compareSummaries } from "./compare.js";
@@ -76,19 +77,32 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         );
       }
 
-      const inferredSymbol = query.retrievalMode === "context"
-        ? inferExactSymbolFromQuery(query.query)
-        : undefined;
-      const routedQuery = inferredSymbol ?? query.query;
-      const resolvedRoute = inferredSymbol ? "definition" : "search";
-
       const start = performance.now();
-      const result = await indexer.search(routedQuery, 10, {
+      const contextResult = query.retrievalMode === "context"
+        ? await resolveSearchContext({
+          query: query.query,
+          limit: 10,
+          tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+        }, {
+          lookup: (symbol, limit) => indexer.search(symbol, limit, {
+            metadataOnly: true,
+            filterByBranch: !!query.expected.branch,
+            definitionIntent: true,
+          }),
+          search: (searchQuery, limit) => indexer.search(searchQuery, limit, {
+            metadataOnly: true,
+            filterByBranch: !!query.expected.branch,
+            definitionIntent: false,
+          }),
+        })
+        : undefined;
+      const result = contextResult?.details?.results ?? await indexer.search(query.query, 10, {
         metadataOnly: true,
         filterByBranch: !!query.expected.branch,
-        definitionIntent: inferredSymbol !== undefined,
       });
       const elapsed = performance.now() - start;
+      const resolvedRoute = contextResult?.details?.route === "definition" ? "definition" : "search";
+      const routedQuery = contextResult?.details?.routedQuery ?? query.query;
 
       const materialized = result.map((item) => ({
         filePath: item.filePath,
@@ -102,7 +116,13 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       perQuery.push(buildPerQueryResult(query, materialized, elapsed, 10, {
         resolvedRoute,
         routedQuery,
-      }));
+      }, contextResult?.details ? {
+        tokenBudget: contextResult.details.tokenBudget,
+        responseTokens: contextResult.details.tokenEstimate,
+        candidateCount: contextResult.details.candidateCount ?? 0,
+        deduplicatedCount: contextResult.details.deduplicatedCount ?? 0,
+        omittedCount: contextResult.details.omittedCount ?? 0,
+      } : undefined));
     }
 
     const logger = indexer.getLogger();

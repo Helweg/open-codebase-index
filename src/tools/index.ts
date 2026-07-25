@@ -5,6 +5,7 @@ import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { Indexer } from "../indexer/index.js";
 import { formatCostEstimate } from "../utils/cost.js";
 import {
+  DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCodebasePeek,
   formatCallGraphCallees,
   formatCallGraphCallers,
@@ -14,6 +15,8 @@ import {
   formatIndexStats,
   formatSearchResults,
   formatStatus,
+  MAX_CONTEXT_PACK_TOKEN_BUDGET,
+  MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "./utils.js";
 import {
   addKnowledgeBase,
@@ -34,6 +37,13 @@ import {
   searchCodebase,
 } from "./operations.js";
 import { pr_impact } from "./pr-impact.js";
+import {
+  MAX_CONTEXT_PATH_DEPTH,
+  MAX_CONTEXT_RESULT_LIMIT,
+  MIN_CONTEXT_PATH_DEPTH,
+  MIN_CONTEXT_RESULT_LIMIT,
+  resolveCodebaseContext,
+} from "./context.js";
 import { writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -68,6 +78,29 @@ export function getSharedIndexer(): Indexer {
 export function getIndexerForProject(directory: string): Indexer {
   return getOperationIndexerForProject(directory, DEFAULT_HOST);
 }
+
+export const codebase_context: ToolDefinition = tool({
+  description:
+    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, symbol for definitions, or only query for conceptual discovery.",
+  args: {
+    query: z.string().describe("The repository question or behavior to locate"),
+    from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
+    to: z.string().nullable().optional().describe("Target symbol for a dependency path"),
+    symbol: z.string().nullable().optional().describe("Exact symbol for authoritative definition lookup"),
+    limit: z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).nullable().optional().default(10)
+      .describe(`Maximum number of results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
+    maxDepth: z.number().int().min(MIN_CONTEXT_PATH_DEPTH).max(MAX_CONTEXT_PATH_DEPTH).nullable().optional().default(10)
+      .describe(`Maximum call-path traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})`),
+    fileType: z.string().nullable().optional().describe("Filter by file extension"),
+    directory: z.string().nullable().optional().describe("Filter by directory path"),
+    tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
+      .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
+      .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
+  },
+  async execute(args, context) {
+    return (await resolveCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
+  },
+});
 
 export const codebase_peek: ToolDefinition = tool({
   description:

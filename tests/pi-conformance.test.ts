@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { countContextTokens } from "../src/tools/utils.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -31,6 +32,14 @@ vi.mock("../src/tools/operations.js", () => ({
 
 interface RegisteredTool {
   readonly name: string;
+  readonly parameters?: {
+    readonly properties?: Record<string, {
+      readonly default?: number;
+      readonly minimum?: number;
+      readonly maximum?: number;
+      readonly anyOf?: ReadonlyArray<{ readonly minimum?: number; readonly maximum?: number; readonly type?: string }>;
+    }>;
+  };
   readonly execute: (
     toolCallId: string,
     params: Record<string, unknown>,
@@ -82,6 +91,20 @@ describe("Pi adapter conformance", () => {
     expect(names[0]).toBe("codebase_context");
     expect(names).toContain("codebase_search");
     expect(names).toContain("implementation_lookup");
+    expect(tools.get("codebase_context")?.parameters?.properties?.tokenBudget).toEqual(
+      expect.objectContaining({
+        default: 1200,
+        anyOf: expect.arrayContaining([expect.objectContaining({ minimum: 128, maximum: 4000 })]),
+      }),
+    );
+    expect(tools.get("codebase_context")?.parameters?.properties?.limit).toEqual(expect.objectContaining({
+      default: 10,
+      anyOf: expect.arrayContaining([expect.objectContaining({ minimum: 1, maximum: 100 })]),
+    }));
+    expect(tools.get("codebase_context")?.parameters?.properties?.maxDepth).toEqual(expect.objectContaining({
+      default: 10,
+      anyOf: expect.arrayContaining([expect.objectContaining({ minimum: 1, maximum: 100 })]),
+    }));
   });
 
   it("formats caller results like other host adapters", async () => {
@@ -186,7 +209,7 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", undefined);
+    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10);
     expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", { name: "targetFn", direction: "callers" });
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");
@@ -208,19 +231,28 @@ describe("Pi adapter conformance", () => {
 
     const { tools } = await registerPiTools();
 
-    await tools.get("codebase_context")?.execute(
+    const result = await tools.get("codebase_context")?.execute(
       "tool-call",
-      { query: "unused", symbol: "validateToken", limit: 8 },
+      { query: "unused", symbol: "validateToken", limit: 8, tokenBudget: 128 },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "validateToken", {
-      limit: 8,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
+    expect(result?.content[0]?.text).toContain("src/auth.ts:12-30");
+    expect(result?.content[0]?.text).not.toContain("function validateToken() {}");
+    expect(countContextTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
+    expect(result?.details).toEqual(expect.objectContaining({
+      tokenBudget: 128,
+      selectedCount: 1,
+      results: [expect.objectContaining({ filePath: "src/auth.ts", name: "validateToken" })],
+    }));
+    expect(JSON.stringify(result?.details)).not.toContain("content");
   });
 
   it("routes inferred symbol-style codebase_context queries through implementation lookup", async () => {
@@ -247,7 +279,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "getStatus", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -279,7 +311,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "missingDefinition", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -288,13 +320,13 @@ describe("Pi adapter conformance", () => {
       "pi",
       "show definition for `missingDefinition`",
       {
-        limit: 10,
+        limit: 100,
         fileType: undefined,
         directory: undefined,
         metadataOnly: true,
       },
     );
-    expect(result?.content[0]?.text).toContain("Found 1 locations for \"show definition for `missingDefinition`\":");
+    expect(result?.content[0]?.text).toContain("Codebase evidence for \"show definition for `missingDefinition`\"");
   });
 
   it("routes codebase_context query-only lookups with metadata-only search", async () => {
@@ -314,19 +346,51 @@ describe("Pi adapter conformance", () => {
 
     const result = await tools.get("codebase_context")?.execute(
       "tool-call",
-      { query: "validation helper", limit: 4, fileType: "ts", directory: "src" },
+      { query: "validation helper", limit: 4, fileType: "ts", directory: "src", tokenBudget: 128 },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
     );
 
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "validation helper", {
-      limit: 4,
+      limit: 100,
       fileType: "ts",
       directory: "src",
       metadataOnly: true,
     });
-    expect(result?.content[0]?.text).toContain("Found 1 locations for \"validation helper\":");
+    expect(result?.content[0]?.text).toContain("Codebase evidence for \"validation helper\"");
+    expect(countContextTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
+    expect(JSON.stringify(result?.details)).not.toContain("function validateToken() {}");
+  });
+
+  it("accepts explicit null optional codebase_context arguments", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([]);
+    const { tools } = await registerPiTools();
+
+    await tools.get("codebase_context")?.execute(
+      "tool-call",
+      {
+        query: "validation helper",
+        from: null,
+        to: null,
+        symbol: null,
+        limit: null,
+        maxDepth: null,
+        fileType: null,
+        directory: null,
+        tokenBudget: null,
+      },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "validation helper", {
+      limit: 100,
+      fileType: undefined,
+      directory: undefined,
+      metadataOnly: true,
+    });
   });
 
   it("injects client-neutral repository guidance on before_agent_start", async () => {

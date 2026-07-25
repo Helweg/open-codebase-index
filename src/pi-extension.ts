@@ -6,8 +6,6 @@ import { formatPrImpact } from "./tools/format-pr-impact.js";
 import {
   addKnowledgeBase,
   findSimilarCode,
-  getCallGraphData,
-  getCallGraphPath,
   getIndexLogs,
   getIndexMetrics,
   getIndexStatus,
@@ -20,15 +18,22 @@ import {
   searchCodebase,
 } from "./tools/operations.js";
 import {
-  formatCallGraphPath,
-  formatCodebasePeek,
+  DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatDefinitionLookup,
   formatHealthCheck,
   formatIndexStats,
   formatSearchResults,
   formatStatus,
+  MAX_CONTEXT_PACK_TOKEN_BUDGET,
+  MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "./tools/utils.js";
-import { inferExactSymbolFromQuery } from "./tools/symbol-inference.js";
+import {
+  MAX_CONTEXT_PATH_DEPTH,
+  MAX_CONTEXT_RESULT_LIMIT,
+  MIN_CONTEXT_PATH_DEPTH,
+  MIN_CONTEXT_RESULT_LIMIT,
+  resolveCodebaseContext,
+} from "./tools/context.js";
 import { registerPiCallGraphTools } from "./pi-call-graph.js";
 
 const HOST = "pi" as const;
@@ -55,79 +60,33 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "codebase_context",
     label: "Codebase Context",
-    description: "PREFERRED FIRST TOOL for any repository question. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow.",
+    description: "PREFERRED FIRST TOOL for any repository question. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow.",
     parameters: Type.Object({
       query: Type.String({ description: "Natural language description of what code you're trying to locate" }),
-      from: Type.Optional(Type.String({ description: "Source symbol when asking for a dependency path." })),
-      to: Type.Optional(Type.String({ description: "Target symbol when asking for a dependency path." })),
-      symbol: Type.Optional(Type.String({ description: "Exact symbol name for an authoritative definition lookup." })),
-      limit: Type.Optional(Type.Number({ description: "Maximum results (default: 10)" })),
-      maxDepth: Type.Optional(Type.Number({ description: "Maximum call-graph traversal depth for from/to paths" })),
-      fileType: Type.Optional(Type.String({ description: "Filter by file extension, e.g., ts, py, rs" })),
-      directory: Type.Optional(Type.String({ description: "Filter by directory path" })),
+      from: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Source symbol when asking for a dependency path." })),
+      to: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Target symbol when asking for a dependency path." })),
+      symbol: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Exact symbol name for an authoritative definition lookup." })),
+      limit: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CONTEXT_RESULT_LIMIT, maximum: MAX_CONTEXT_RESULT_LIMIT }),
+        Type.Null(),
+      ], { default: 10, description: `Maximum results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})` })),
+      maxDepth: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CONTEXT_PATH_DEPTH, maximum: MAX_CONTEXT_PATH_DEPTH }),
+        Type.Null(),
+      ], { default: 10, description: `Maximum call-graph traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})` })),
+      fileType: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Filter by file extension, e.g., ts, py, rs" })),
+      directory: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Filter by directory path" })),
+      tokenBudget: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET, maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET }),
+        Type.Null(),
+      ], {
+        default: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+        description: `Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`,
+      })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const root = projectRoot(ctx);
-
-      if (params.from && params.to) {
-        const path = await getCallGraphPath(root, HOST, params.from, params.to, params.maxDepth);
-        if (path.length > 0) {
-          return text(formatCallGraphPath(params.from, params.to, path), path);
-        }
-
-        const { callers } = await getCallGraphData(root, HOST, {
-          name: params.to,
-          direction: "callers",
-        });
-        const directEdge = callers.find((edge) => edge.fromSymbolName === params.from);
-        if (directEdge) {
-          const location = directEdge.fromSymbolFilePath
-            ? ` at ${directEdge.fromSymbolFilePath}:${directEdge.line}`
-            : "";
-          return text(
-            `Direct path: ${params.from} --${directEdge.callType}--> ${params.to}${location} ` +
-              `(edge is ${directEdge.isResolved ? "resolved" : "unresolved"}).`,
-            path,
-          );
-        }
-
-        return text(formatCallGraphPath(params.from, params.to, path), path);
-      }
-
-      if (params.symbol) {
-        const results = await implementationLookup(root, HOST, params.symbol, {
-          limit: params.limit ?? 10,
-          fileType: params.fileType,
-          directory: params.directory,
-        });
-        return text(formatDefinitionLookup(results, params.symbol), results);
-      }
-
-      const inferredSymbol = inferExactSymbolFromQuery(params.query);
-      if (inferredSymbol) {
-        const inferredResults = await implementationLookup(root, HOST, inferredSymbol, {
-          limit: params.limit ?? 10,
-          fileType: params.fileType,
-          directory: params.directory,
-        });
-
-        if (inferredResults.length > 0) {
-          return text(formatDefinitionLookup(inferredResults, inferredSymbol), inferredResults);
-        }
-      }
-
-      const results = await searchCodebase(root, HOST, params.query, {
-        limit: params.limit ?? 10,
-        fileType: params.fileType,
-        directory: params.directory,
-        metadataOnly: true,
-      });
-
-      if (results.length === 0) {
-        return text("No matching code found. Try a different query or run index_status/index_codebase first.");
-      }
-
-      return text(`Found ${results.length} locations for "${params.query}":\n\n${formatCodebasePeek(results)}`, results);
+      const result = await resolveCodebaseContext(projectRoot(ctx), HOST, params);
+      return text(result.text, result.details);
     },
   });
 

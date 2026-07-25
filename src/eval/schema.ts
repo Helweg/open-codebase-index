@@ -253,6 +253,41 @@ export function parseBudget(raw: unknown, sourceLabel: string): EvalBudget {
         "minRawDistinctTop3Ratio",
         sourceLabel
       ),
+      maxContextResponseTokensAverage: parseThresholdValue(
+        thresholds.maxContextResponseTokensAverage,
+        "maxContextResponseTokensAverage",
+        sourceLabel
+      ),
+      maxContextResponseTokensP95: parseThresholdValue(
+        thresholds.maxContextResponseTokensP95,
+        "maxContextResponseTokensP95",
+        sourceLabel
+      ),
+      maxContextResponseTokensMax: parseThresholdValue(
+        thresholds.maxContextResponseTokensMax,
+        "maxContextResponseTokensMax",
+        sourceLabel
+      ),
+      maxContextDuplicateCandidateRatio: parseThresholdValue(
+        thresholds.maxContextDuplicateCandidateRatio,
+        "maxContextDuplicateCandidateRatio",
+        sourceLabel
+      ),
+      minContextSelectedFileRatio: parseThresholdValue(
+        thresholds.minContextSelectedFileRatio,
+        "minContextSelectedFileRatio",
+        sourceLabel
+      ),
+      minContextHitAt5Per1kResponseTokens: parseThresholdValue(
+        thresholds.minContextHitAt5Per1kResponseTokens,
+        "minContextHitAt5Per1kResponseTokens",
+        sourceLabel
+      ),
+      minContextMrrAt10Per1kResponseTokens: parseThresholdValue(
+        thresholds.minContextMrrAt10Per1kResponseTokens,
+        "minContextMrrAt10Per1kResponseTokens",
+        sourceLabel
+      ),
     },
   };
 }
