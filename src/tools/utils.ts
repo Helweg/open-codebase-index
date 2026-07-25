@@ -136,8 +136,9 @@ function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
 }
 
 function compactEvidenceValue(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  return `…${value.slice(-(maxChars - 1))}`;
+  const characters = [...value];
+  if (characters.length <= maxChars) return value;
+  return `…${characters.slice(-(maxChars - 1)).join("")}`;
 }
 
 function formatContextEvidence(result: SearchResult, index: number): string {
@@ -193,18 +194,6 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;
     text = candidateText;
-  }
-
-  if (selected.length === 0 && selectable.length > 0) {
-    selected = [selectable[0]];
-    text = formatContextPack(
-      compactEvidenceValue(heading, 60),
-      selected,
-      candidateCount,
-      duplicateCount,
-      limitOmittedCount,
-      selectable.length - 1,
-    );
   }
 
   const fitted = fitTextToContextBudget(text, tokenBudget);

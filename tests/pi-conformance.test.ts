@@ -240,7 +240,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "validateToken", {
-      limit: 8,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -279,7 +279,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "getStatus", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -311,7 +311,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "missingDefinition", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -320,7 +320,7 @@ describe("Pi adapter conformance", () => {
       "pi",
       "show definition for `missingDefinition`",
       {
-        limit: 10,
+        limit: 100,
         fileType: undefined,
         directory: undefined,
         metadataOnly: true,
@@ -353,7 +353,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "validation helper", {
-      limit: 4,
+      limit: 100,
       fileType: "ts",
       directory: "src",
       metadataOnly: true,
@@ -386,7 +386,7 @@ describe("Pi adapter conformance", () => {
     );
 
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "validation helper", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,

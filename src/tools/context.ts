@@ -44,6 +44,7 @@ export interface CodebaseContextResult {
   text: string;
   details?: {
     route: "path" | "direct-edge" | "definition" | "conceptual";
+    routedQuery?: string;
     tokenBudget: number;
     tokenEstimate: number;
     truncated?: boolean;
@@ -71,12 +72,14 @@ function locations(results: SearchResult[]): ContextLocation[] {
 
 function packedResult(
   route: "definition" | "conceptual",
+  routedQuery: string,
   pack: ReturnType<typeof buildContextPack>,
 ): CodebaseContextResult {
   return {
     text: pack.text,
     details: {
       route,
+      routedQuery,
       tokenBudget: pack.tokenBudget,
       tokenEstimate: pack.tokenEstimate,
       candidateCount: pack.candidateCount,
@@ -89,6 +92,54 @@ function packedResult(
       results: locations(pack.results),
     },
   };
+}
+
+interface SearchContextOperations {
+  lookup(symbol: string, limit: number): Promise<SearchResult[]>;
+  search(query: string, limit: number): Promise<SearchResult[]>;
+}
+
+export async function resolveSearchContext(
+  input: Pick<CodebaseContextInput, "query" | "symbol" | "limit" | "tokenBudget">,
+  operations: SearchContextOperations,
+): Promise<CodebaseContextResult> {
+  const explicitSymbol = input.symbol ?? undefined;
+  const limit = input.limit ?? 10;
+  const tokenBudget = input.tokenBudget ?? undefined;
+  const lookupSymbol = explicitSymbol ?? inferExactSymbolFromQuery(input.query);
+
+  if (lookupSymbol) {
+    const definitions = await operations.lookup(lookupSymbol, MAX_CONTEXT_RESULT_LIMIT);
+    if (definitions.length > 0) {
+      return packedResult("definition", lookupSymbol, buildContextPack(definitions, {
+        tokenBudget,
+        maxResults: limit,
+        heading: `Definition evidence for ${JSON.stringify(lookupSymbol)}`,
+      }));
+    }
+    if (explicitSymbol) {
+      const fitted = fitTextToContextBudget(
+        formatDefinitionLookup(definitions, lookupSymbol),
+        tokenBudget,
+      );
+      return { text: fitted.text };
+    }
+  }
+
+  const results = await operations.search(input.query, MAX_CONTEXT_RESULT_LIMIT);
+  if (results.length === 0) {
+    const fitted = fitTextToContextBudget(
+      "No matching code found. Try a different query or run index_codebase first.",
+      tokenBudget,
+    );
+    return { text: fitted.text };
+  }
+
+  return packedResult("conceptual", input.query, buildContextPack(results, {
+    tokenBudget,
+    maxResults: limit,
+    heading: `Codebase evidence for ${JSON.stringify(input.query)}`,
+  }));
 }
 
 function fittedDetails(
@@ -159,46 +210,17 @@ export async function resolveCodebaseContext(
     };
   }
 
-  const lookupSymbol = symbol ?? inferExactSymbolFromQuery(input.query);
-  if (lookupSymbol) {
-    const definitions = await implementationLookup(projectRoot, host, lookupSymbol, {
-      limit,
+  return resolveSearchContext({ query: input.query, symbol, limit, tokenBudget }, {
+    lookup: (lookupSymbol, retrievalLimit) => implementationLookup(projectRoot, host, lookupSymbol, {
+      limit: retrievalLimit,
       fileType,
       directory,
-    });
-    if (definitions.length > 0) {
-      return packedResult("definition", buildContextPack(definitions, {
-        tokenBudget,
-        maxResults: limit,
-        heading: `Definition evidence for ${JSON.stringify(lookupSymbol)}`,
-      }));
-    }
-    if (symbol) {
-      const fitted = fitTextToContextBudget(
-        formatDefinitionLookup(definitions, lookupSymbol),
-        tokenBudget,
-      );
-      return { text: fitted.text };
-    }
-  }
-
-  const results = await searchCodebase(projectRoot, host, input.query, {
-    limit,
-    fileType,
-    directory,
-    metadataOnly: true,
+    }),
+    search: (query, retrievalLimit) => searchCodebase(projectRoot, host, query, {
+      limit: retrievalLimit,
+      fileType,
+      directory,
+      metadataOnly: true,
+    }),
   });
-  if (results.length === 0) {
-    const fitted = fitTextToContextBudget(
-      "No matching code found. Try a different query or run index_codebase first.",
-      tokenBudget,
-    );
-    return { text: fitted.text };
-  }
-
-  return packedResult("conceptual", buildContextPack(results, {
-    tokenBudget,
-    maxResults: limit,
-    heading: `Codebase evidence for ${JSON.stringify(input.query)}`,
-  }));
 }

@@ -869,6 +869,43 @@ describe("tools utils", () => {
       expect(packed.text).not.toContain(result.content);
     });
 
+    it("does not split Unicode surrogate pairs while compacting evidence", () => {
+      const result: SearchResult = {
+        filePath: `src/${"😀".repeat(160)}.ts`,
+        startLine: 1,
+        endLine: 2,
+        content: "hidden",
+        score: 1,
+        chunkType: "function",
+        name: "𐐷".repeat(100),
+      };
+
+      const packed = buildContextPack([result], { tokenBudget: 4000 });
+
+      expect(Buffer.from(packed.text, "utf8").toString("utf8")).toBe(packed.text);
+    });
+
+    it("does not claim a result was selected when no evidence line fits", () => {
+      const rareCharacter = String.fromCodePoint(0x10ffff);
+      const result: SearchResult = {
+        filePath: rareCharacter.repeat(300),
+        startLine: 1,
+        endLine: 2,
+        content: "hidden",
+        score: 1,
+        chunkType: rareCharacter.repeat(100),
+        name: rareCharacter.repeat(100),
+      };
+
+      const packed = buildContextPack([result], { tokenBudget: MIN_CONTEXT_PACK_TOKEN_BUDGET });
+
+      expect(packed.selectedCount).toBe(0);
+      expect(packed.results).toEqual([]);
+      expect(packed.budgetOmittedCount).toBe(1);
+      expect(packed.text).toContain("omitted by token budget");
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+    });
+
     it("returns a bounded empty evidence pack", () => {
       const packed = buildContextPack([], { tokenBudget: MIN_CONTEXT_PACK_TOKEN_BUDGET });
 

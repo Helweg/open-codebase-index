@@ -60,12 +60,13 @@ describe("native OpenCode codebase_context", () => {
     }, context);
 
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "where is request handling implemented", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
     });
     expect(result).toContain("Codebase evidence");
+    expect(result).toContain("2 additional results excluded by result limit");
     expect(result).not.toContain("secret source");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
@@ -88,7 +89,7 @@ describe("native OpenCode codebase_context", () => {
     }, context);
 
     expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "opencode", "validateToken", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
     });
@@ -131,10 +132,40 @@ describe("native OpenCode codebase_context", () => {
     }, context);
 
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "request handling", {
-      limit: 10,
+      limit: 100,
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
     });
+  });
+
+  it("falls back from an inferred definition miss to conceptual search", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([{
+      filePath: "src/fallback.ts",
+      startLine: 1,
+      endLine: 4,
+      name: "actualHandler",
+      chunkType: "function",
+      content: "hidden",
+      score: 0.8,
+    }]);
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "where is missingHandler defined",
+    }, context);
+
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "opencode", "missingHandler", {
+      limit: 100,
+      fileType: undefined,
+      directory: undefined,
+    });
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "where is missingHandler defined", {
+      limit: 100,
+      fileType: undefined,
+      directory: undefined,
+      metadataOnly: true,
+    });
+    expect(result).toContain("src/fallback.ts:1-4");
   });
 });

@@ -461,7 +461,7 @@ describe("MCP server tools and prompts", () => {
     const indexer = indexerMockState.instances.at(-1);
     expect(indexer?.search).toHaveBeenCalledWith(
       "validateToken",
-      10,
+      100,
       expect.objectContaining({ definitionIntent: true }),
     );
   });
@@ -477,7 +477,7 @@ describe("MCP server tools and prompts", () => {
     const indexer = indexerMockState.instances.at(-1);
     expect(indexer?.search).toHaveBeenCalledWith(
       "getStatus",
-      10,
+      100,
       expect.objectContaining({ definitionIntent: true }),
     );
   });
@@ -517,7 +517,7 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Codebase evidence for \"Find definition for `missingDefinition`\"");
     expect(indexer?.search).toHaveBeenCalledWith(
       "Find definition for `missingDefinition`",
-      10,
+      100,
       expect.objectContaining({ metadataOnly: true }),
     );
   });
