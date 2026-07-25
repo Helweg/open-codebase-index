@@ -43,6 +43,7 @@
     "visualize": "node dist/cli.js visualize",
     "dev": "tsup --watch",
     "eval": "npx tsx src/cli.ts eval run",
+    "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
     "eval:smoke": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/small.json",
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
     "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",

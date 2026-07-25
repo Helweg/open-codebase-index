@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Agent-facing retrieval evaluation**: Added a versioned `codebase_context` golden dataset, `npm run eval:agent`, and per-query route metadata for measuring definition routing and conceptual discovery.
+
+### Changed
+
+- **Automatic definition routing**: MCP and Pi `codebase_context` now conservatively infer unambiguous symbol names from definition-style questions before falling back to conceptual search.
+- **Large-file retrieval coverage**: Files exceeding `maxChunksPerFile` now retain representative chunks from across the file instead of silently indexing only the beginning.
+
 ## [0.16.0] - 2026-07-24
 
 ### Added

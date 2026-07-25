@@ -92,6 +92,7 @@ describe("eval runner", () => {
               id: "q1",
               query: "where is rankHybridResults implementation",
               queryType: "definition",
+              retrievalMode: "context",
               expected: {
                 filePath: "src/indexer/index.ts",
                 symbol: "rankHybridResults",
@@ -121,6 +122,8 @@ describe("eval runner", () => {
     });
 
     expect(result.summary.queryCount).toBe(1);
+    expect(result.perQuery[0]?.resolvedRoute).toBe("definition");
+    expect(result.perQuery[0]?.routedQuery).toBe("rankHybridResults");
     expect(typeof result.summary.metrics.distinctTop3Ratio).toBe("number");
     expect(typeof result.summary.metrics.rawDistinctTop3Ratio).toBe("number");
     expect(readFileSync(path.join(result.outputDir, "summary.json"), "utf-8")).toContain("\"metrics\"");

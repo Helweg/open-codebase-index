@@ -10,6 +10,13 @@ This project ships a first-class retrieval evaluation harness with CLI subcomman
 npm run eval -- --dataset benchmarks/golden/small.json
 ```
 
+To measure the same automatic definition-versus-concept routing used by the
+agent-facing `codebase_context` gateway, run:
+
+```bash
+npm run eval:agent
+```
+
 Optional flags:
 
 - `--project <path>`: project root (default: current directory)
@@ -166,6 +173,7 @@ Golden sets are versioned JSON files:
 - `benchmarks/golden/small.json`
 - `benchmarks/golden/medium.json`
 - `benchmarks/golden/large.json`
+- `benchmarks/golden/agent-context.json`
 
 Schema:
 
@@ -179,6 +187,7 @@ Schema:
       "id": "def-rank-hybrid-results",
       "query": "where is rankHybridResults implementation",
       "queryType": "definition",
+      "retrievalMode": "context",
       "expected": {
         "filePath": "src/indexer/index.ts",
         "acceptableFiles": ["src/indexer/index.ts"],
@@ -198,6 +207,17 @@ Allowed values:
 - `implementation-intent`
 - `similarity`
 - `keyword-heavy`
+- `conceptual`
+
+### `retrievalMode`
+
+- `search` (default) evaluates the raw hybrid search path.
+- `context` evaluates agent-facing gateway behavior. Confident symbol queries
+  use authoritative definition lookup; other questions use conceptual search.
+
+The per-query artifact records both `resolvedRoute` and `routedQuery`, making
+automatic routing decisions visible rather than hiding them inside aggregate
+quality scores.
 
 ### `expected`
 

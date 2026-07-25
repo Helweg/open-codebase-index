@@ -13,6 +13,8 @@ import {
   rankSemanticOnlyResults,
   mergeTieredResults,
   rankHybridResults,
+  selectChunksWithFileCoverage,
+  selectIndexableChunks,
   stripFilePathHint,
   rerankResults,
 } from "../src/indexer/index.js";
@@ -287,6 +289,37 @@ describe("retrieval ranking", () => {
     const merged = mergeTieredResults(symbolLane, hybridLane, 5);
     expect(merged.map((r) => r.id).slice(0, 2)).toEqual(["def1", "def2"]);
     expect(merged.map((r) => r.id)).toContain("noise");
+  });
+
+  it("preserves coverage across large files when enforcing a chunk limit", () => {
+    const chunks = Array.from({ length: 201 }, (_, index) => index);
+
+    const selected = selectChunksWithFileCoverage(chunks, 5);
+
+    expect(selected).toEqual([0, 50, 100, 150, 200]);
+  });
+
+  it("handles whole-file chunk coverage edge cases", () => {
+    expect(selectChunksWithFileCoverage([0, 1, 2], 5)).toEqual([0, 1, 2]);
+    expect(selectChunksWithFileCoverage([0, 1, 2], 1)).toEqual([1]);
+    expect(selectChunksWithFileCoverage([0, 1, 2], 0)).toEqual([]);
+  });
+
+  it("filters generic chunks before sampling a semantic-only file", () => {
+    const chunks = [
+      ...Array.from({ length: 100 }, (_, id) => ({ id: `other-${id}`, chunkType: "other" })),
+      ...Array.from({ length: 10 }, (_, id) => ({ id: `function-${id}`, chunkType: "function" })),
+    ];
+
+    const selected = selectIndexableChunks(chunks, 5, true);
+
+    expect(selected.map((chunk) => chunk.id)).toEqual([
+      "function-0",
+      "function-2",
+      "function-5",
+      "function-7",
+      "function-9",
+    ]);
   });
 
   it("builds fallback lane from implementation code-term hints when exact symbol names are unavailable", () => {

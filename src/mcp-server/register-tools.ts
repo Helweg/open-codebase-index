@@ -27,6 +27,7 @@ import {
   runIndexHealthCheck,
   searchCodebase,
 } from "../tools/operations.js";
+import { inferExactSymbolFromQuery } from "../tools/symbol-inference.js";
 import { CHUNK_TYPE_ENUM, type McpServerRuntime } from "./shared.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
@@ -85,6 +86,19 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         });
 
         return { content: [{ type: "text", text: formatDefinitionLookup(results, args.symbol) }] };
+      }
+
+      const inferredSymbol = inferExactSymbolFromQuery(args.query);
+      if (inferredSymbol) {
+        const inferredResults = await implementationLookup(runtime.projectRoot, runtime.host, inferredSymbol, {
+          limit: args.limit ?? 10,
+          fileType: args.fileType,
+          directory: args.directory,
+        });
+
+        if (inferredResults.length > 0) {
+          return { content: [{ type: "text", text: formatDefinitionLookup(inferredResults, inferredSymbol) }] };
+        }
       }
 
       const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {

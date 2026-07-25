@@ -28,6 +28,7 @@ import {
   formatSearchResults,
   formatStatus,
 } from "./tools/utils.js";
+import { inferExactSymbolFromQuery } from "./tools/symbol-inference.js";
 import { registerPiCallGraphTools } from "./pi-call-graph.js";
 
 const HOST = "pi" as const;
@@ -100,6 +101,19 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
           directory: params.directory,
         });
         return text(formatDefinitionLookup(results, params.symbol), results);
+      }
+
+      const inferredSymbol = inferExactSymbolFromQuery(params.query);
+      if (inferredSymbol) {
+        const inferredResults = await implementationLookup(root, HOST, inferredSymbol, {
+          limit: params.limit ?? 10,
+          fileType: params.fileType,
+          directory: params.directory,
+        });
+
+        if (inferredResults.length > 0) {
+          return text(formatDefinitionLookup(inferredResults, inferredSymbol), inferredResults);
+        }
       }
 
       const results = await searchCodebase(root, HOST, params.query, {

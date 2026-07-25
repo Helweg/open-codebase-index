@@ -1828,6 +1828,38 @@ export function mergeTieredResults(
   return out;
 }
 
+export function selectChunksWithFileCoverage<T>(chunks: T[], limit: number): T[] {
+  if (limit <= 0 || chunks.length === 0) {
+    return [];
+  }
+
+  if (chunks.length <= limit) {
+    return chunks;
+  }
+
+  if (limit === 1) {
+    return [chunks[Math.floor((chunks.length - 1) / 2)]!];
+  }
+
+  const selected: T[] = [];
+  for (let index = 0; index < limit; index++) {
+    const sourceIndex = Math.round(index * (chunks.length - 1) / (limit - 1));
+    selected.push(chunks[sourceIndex]!);
+  }
+  return selected;
+}
+
+export function selectIndexableChunks<T extends { chunkType: string }>(
+  chunks: T[],
+  limit: number,
+  semanticOnly: boolean,
+): T[] {
+  const indexableChunks = semanticOnly
+    ? chunks.filter((chunk) => chunk.chunkType !== "other")
+    : chunks;
+  return selectChunksWithFileCoverage(indexableChunks, limit);
+}
+
 function matchesSearchFilters(
   candidate: RankedCandidate,
   options: SearchFilterOptions | undefined,
@@ -4015,7 +4047,6 @@ export class Indexer {
         stats.parseFailures.push(relativePath);
       }
 
-      let fileChunkCount = 0;
       let chunksToProcess = parsed.chunks;
 
       if (this.config.indexing.fallbackToTextOnMaxChunks && chunksToProcess.length > this.config.indexing.maxChunksPerFile) {
@@ -4026,15 +4057,13 @@ export class Indexer {
         }
       }
 
+      chunksToProcess = selectIndexableChunks(
+        chunksToProcess,
+        this.config.indexing.maxChunksPerFile,
+        this.config.indexing.semanticOnly,
+      );
+
       for (const chunk of chunksToProcess) {
-        if (fileChunkCount >= this.config.indexing.maxChunksPerFile) {
-          break;
-        }
-
-        if (this.config.indexing.semanticOnly && chunk.chunkType === "other") {
-          continue;
-        }
-
         const id = generateChunkId(parsed.path, chunk);
         const contentHash = generateChunkHash(chunk);
         const existingContentHash = existingChunks.get(id);
@@ -4062,7 +4091,6 @@ export class Indexer {
         });
 
         if (existingContentHash === contentHash) {
-          fileChunkCount++;
           continue;
         }
 
@@ -4089,7 +4117,6 @@ export class Indexer {
           contentHash,
           metadata,
         });
-        fileChunkCount++;
       }
     }
 

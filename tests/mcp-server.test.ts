@@ -35,6 +35,7 @@ const indexerMockState = vi.hoisted(() => ({
   constructorArgs: [] as Array<[string, unknown]>,
   instances: [] as Array<{
     initialize: ReturnType<typeof vi.fn>;
+    search: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
     getCallers: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
@@ -97,6 +98,7 @@ vi.mock("../src/indexer/index.js", () => {
       indexerMockState.constructorArgs.push([projectRoot, config]);
       indexerMockState.instances.push({
         initialize: this.initialize,
+        search: this.search,
         getStatus: this.getStatus,
         getCallers: this.getCallers,
         getCallees: this.getCallees,
@@ -450,6 +452,68 @@ describe("MCP server tools and prompts", () => {
 
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain('function "validateToken"');
+    const indexer = indexerMockState.instances.at(-1);
+    expect(indexer?.search).toHaveBeenCalledWith(
+      "validateToken",
+      10,
+      expect.objectContaining({ definitionIntent: true }),
+    );
+  });
+
+  it("should infer an exact symbol and route through implementation lookup", async () => {
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "Find definition for `getStatus`" },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain('function "validateToken"');
+    const indexer = indexerMockState.instances.at(-1);
+    expect(indexer?.search).toHaveBeenCalledWith(
+      "getStatus",
+      10,
+      expect.objectContaining({ definitionIntent: true }),
+    );
+  });
+
+  it("should fall back to conceptual search when inferred symbol lookup returns no matches", async () => {
+    const warmResult = [{
+      filePath: "src/auth.ts",
+      startLine: 10,
+      endLine: 25,
+      name: "validateToken",
+      chunkType: "function",
+      content: "function validateToken(token: string) {\n  return token.length > 0;\n}",
+      score: 0.95,
+    }];
+
+    const warmup = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "known symbol", symbol: "validateToken" },
+    });
+    expect(warmup.content).toBeDefined();
+
+    const indexer = indexerMockState.instances.at(-1);
+    indexer?.search.mockImplementation(async (query: string) => {
+      if (query === "missingDefinition") {
+        return [];
+      }
+
+      return warmResult;
+    });
+
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "Find definition for `missingDefinition`" },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain("Found 1 locations for \"Find definition for `missingDefinition`\":");
+    expect(indexer?.search).toHaveBeenCalledWith(
+      "Find definition for `missingDefinition`",
+      10,
+      expect.objectContaining({ metadataOnly: true }),
+    );
   });
 
   it("should route codebase_context endpoint pairs to call graph paths", async () => {
