@@ -7,17 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-07-25
+
 ### Added
 
 - **Agent-facing retrieval evaluation**: Added a versioned `codebase_context` golden dataset, `npm run eval:agent`, and per-query route metadata for measuring definition routing and conceptual discovery.
-- **Token-budgeted context packs**: Added deterministic, overlapping-result deduplication and cross-file evidence selection with configurable 128-4000 token response budgets across native OpenCode, MCP, and Pi clients.
+- **Token-budgeted context packs**: Added deterministic overlapping-result deduplication and cross-file evidence selection with configurable 128-4000 token response budgets across native OpenCode, MCP, and Pi clients.
 - **Context efficiency gates**: Added returned-token, duplicate-candidate, file-diversity, and quality-per-1,000-token evaluation metrics with configurable CI thresholds.
 
 ### Changed
 
-- **Automatic definition routing**: MCP and Pi `codebase_context` now conservatively infer unambiguous symbol names from definition-style questions before falling back to conceptual search.
+- **Automatic definition routing**: `codebase_context` now conservatively infers unambiguous symbol names from definition-style questions before falling back to conceptual search, using shared routing across native OpenCode, MCP, Pi, and evaluation.
 - **Large-file retrieval coverage**: Files exceeding `maxChunksPerFile` now retain representative chunks from across the file instead of silently indexing only the beginning.
-- **Location-first context details**: `codebase_context` definition and conceptual routes now return compact locations rather than full source bodies; Pi details expose metadata only.
+- **Location-first context details**: Definition and conceptual routes now return compact locations rather than full source bodies, deduplicate overlapping evidence, diversify results across files, and report why candidates were omitted.
+- **Hard token caps**: Context budgets are enforced with the `cl100k_base` tokenizer, including Unicode-safe compaction, so agent harnesses can bound retrieval responses before requesting exact source.
+
+### Fixed
+
+- **Concurrent lock recovery**: Hardened crashed-owner index lock reclamation so concurrent recovery attempts publish a single valid lock without losing the winning candidate.
+- **Packed-context edge cases**: Preserve valid Unicode and report zero selected results when even one evidence item cannot fit the requested token budget.
 
 ## [0.16.0] - 2026-07-24
 
@@ -442,7 +450,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.2...v0.14.0
