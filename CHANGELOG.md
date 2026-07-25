@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-07-25
+
+### Fixed
+
+- **Published MCP CLI startup**: Keep `tiktoken` external to the ESM bundle so the installed `opencode-codebase-index-mcp` executable no longer crashes with `__dirname is not defined`; every TypeScript build now smoke-tests the built ESM CLI.
+
 ## [0.17.0] - 2026-07-25
 
 ### Added
@@ -450,7 +456,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...v0.15.0
