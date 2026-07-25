@@ -1,0 +1,126 @@
+{
+  "version": "1.0.0",
+  "name": "agent-context",
+  "description": "Agent-facing retrieval set covering automatic definition routing and conceptual codebase discovery through codebase_context semantics.",
+  "queries": [
+    {
+      "id": "context-def-fuse-rrf",
+      "query": "where is fuseResultsRrf implemented?",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/indexer/index.ts",
+        "symbol": "fuseResultsRrf"
+      }
+    },
+    {
+      "id": "context-def-get-status",
+      "query": "find the getStatus method definition",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/indexer/index.ts",
+        "symbol": "getStatus"
+      }
+    },
+    {
+      "id": "context-def-rerank-results",
+      "query": "show me the rerankResults function",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/indexer/index.ts",
+        "symbol": "rerankResults"
+      }
+    },
+    {
+      "id": "context-def-create-mcp-server",
+      "query": "where is `createMcpServer` defined?",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/mcp-server.ts",
+        "symbol": "createMcpServer"
+      }
+    },
+    {
+      "id": "context-concept-embedding-fallback",
+      "query": "continue with lexical keyword retrieval when creating a semantic query embedding fails",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/indexer/index.ts"
+      }
+    },
+    {
+      "id": "context-concept-mcp-registration",
+      "query": "register and route the MCP tools exposed to coding agents",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/mcp-server/register-tools.ts"
+      }
+    },
+    {
+      "id": "context-concept-pi-integration",
+      "query": "integrate repository search tools into the Pi coding agent",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/pi-extension.ts"
+      }
+    },
+    {
+      "id": "context-concept-eval-metrics",
+      "query": "calculate retrieval recall reciprocal rank and discounted cumulative gain",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/eval/metrics.ts"
+      }
+    },
+    {
+      "id": "context-concept-index-lock",
+      "query": "prevent two processes from mutating the same code index concurrently",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "src/indexer/index-lock.ts"
+      }
+    },
+    {
+      "id": "context-concept-config-loading",
+      "query": "load project and user configuration then validate defaults",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "acceptableFiles": [
+          "src/config/index.ts",
+          "src/config/merger.ts",
+          "src/config/schema.ts"
+        ]
+      }
+    },
+    {
+      "id": "context-concept-call-extraction",
+      "query": "extract function calls from syntax trees for the repository graph",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "native/src/call_extractor.rs"
+      }
+    },
+    {
+      "id": "context-concept-file-watching",
+      "query": "watch source files and refresh the index after code changes",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "expected": {
+        "acceptableFiles": [
+          "src/watcher/index.ts",
+          "src/watcher/file-watcher.ts"
+        ]
+      }
+    }
+  ]
+}

@@ -13,6 +13,7 @@ import {
   rankSemanticOnlyResults,
   mergeTieredResults,
   rankHybridResults,
+  selectChunksWithFileCoverage,
   stripFilePathHint,
   rerankResults,
 } from "../src/indexer/index.js";
@@ -287,6 +288,20 @@ describe("retrieval ranking", () => {
     const merged = mergeTieredResults(symbolLane, hybridLane, 5);
     expect(merged.map((r) => r.id).slice(0, 2)).toEqual(["def1", "def2"]);
     expect(merged.map((r) => r.id)).toContain("noise");
+  });
+
+  it("preserves coverage across large files when enforcing a chunk limit", () => {
+    const chunks = Array.from({ length: 201 }, (_, index) => index);
+
+    const selected = selectChunksWithFileCoverage(chunks, 5);
+
+    expect(selected).toEqual([0, 50, 100, 150, 200]);
+  });
+
+  it("handles whole-file chunk coverage edge cases", () => {
+    expect(selectChunksWithFileCoverage([0, 1, 2], 5)).toEqual([0, 1, 2]);
+    expect(selectChunksWithFileCoverage([0, 1, 2], 1)).toEqual([1]);
+    expect(selectChunksWithFileCoverage([0, 1, 2], 0)).toEqual([]);
   });
 
   it("builds fallback lane from implementation code-term hints when exact symbol names are unavailable", () => {

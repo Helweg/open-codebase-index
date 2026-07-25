@@ -4,7 +4,11 @@ export type GoldenQueryType =
   | "definition"
   | "implementation-intent"
   | "similarity"
-  | "keyword-heavy";
+  | "keyword-heavy"
+  | "conceptual";
+
+export type GoldenRetrievalMode = "search" | "context";
+export type EvalResolvedRoute = "search" | "definition";
 
 export interface GoldenExpected {
   filePath?: string;
@@ -17,6 +21,7 @@ export interface GoldenQuery {
   id: string;
   query: string;
   queryType: GoldenQueryType;
+  retrievalMode?: GoldenRetrievalMode;
   expected: GoldenExpected;
 }
 
@@ -62,6 +67,9 @@ export interface PerQueryEvalResult {
   id: string;
   query: string;
   queryType: GoldenQueryType;
+  retrievalMode: GoldenRetrievalMode;
+  resolvedRoute: EvalResolvedRoute;
+  routedQuery: string;
   latencyMs: number;
   hitAt1: boolean;
   hitAt3: boolean;

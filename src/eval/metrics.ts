@@ -2,6 +2,7 @@ import { estimateTokens } from "../utils/cost.js";
 import { normalizePathSeparators } from "../utils/paths.js";
 
 import type {
+  EvalResolvedRoute,
   EvalMetrics,
   FailureBucket,
   GoldenQuery,
@@ -138,7 +139,11 @@ export function buildPerQueryResult(
   query: GoldenQuery,
   results: PerQueryEvalResult["results"],
   latencyMs: number,
-  k: number
+  k: number,
+  route: { resolvedRoute: EvalResolvedRoute; routedQuery: string } = {
+    resolvedRoute: "search",
+    routedQuery: query.query,
+  },
 ): PerQueryEvalResult {
   const relevantPaths = getRelevantPaths(query);
   const deduped = uniqueResultsByPath(results);
@@ -149,6 +154,9 @@ export function buildPerQueryResult(
     id: query.id,
     query: query.query,
     queryType: query.queryType,
+    retrievalMode: query.retrievalMode ?? "search",
+    resolvedRoute: route.resolvedRoute,
+    routedQuery: route.routedQuery,
     latencyMs,
     hitAt1: hitAt(1),
     hitAt3: hitAt(3),

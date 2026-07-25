@@ -38,6 +38,48 @@ describe("eval schema", () => {
 
     expect(dataset.name).toBe("small");
     expect(dataset.queries).toHaveLength(1);
+    expect(dataset.queries[0]?.retrievalMode).toBe("search");
+  });
+
+  it("parses agent-facing context retrieval queries", () => {
+    const dataset = parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "agent-context",
+        queries: [
+          {
+            id: "q1",
+            query: "where is createMcpServer defined",
+            queryType: "conceptual",
+            retrievalMode: "context",
+            expected: { filePath: "src/mcp-server.ts" },
+          },
+        ],
+      },
+      "dataset.json",
+    );
+
+    expect(dataset.queries[0]?.queryType).toBe("conceptual");
+    expect(dataset.queries[0]?.retrievalMode).toBe("context");
+  });
+
+  it("rejects unknown retrieval modes", () => {
+    expect(() => parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "invalid",
+        queries: [
+          {
+            id: "q1",
+            query: "where",
+            queryType: "conceptual",
+            retrievalMode: "magic",
+            expected: { filePath: "src/index.ts" },
+          },
+        ],
+      },
+      "dataset.json",
+    )).toThrow(/retrievalMode.*search, context/);
   });
 
   it("rejects dataset with missing expected path", () => {

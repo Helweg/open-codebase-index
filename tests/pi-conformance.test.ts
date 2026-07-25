@@ -223,6 +223,80 @@ describe("Pi adapter conformance", () => {
     });
   });
 
+  it("routes inferred symbol-style codebase_context queries through implementation lookup", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([
+      {
+        chunkType: "function",
+        name: "getStatus",
+        filePath: "src/auth.ts",
+        startLine: 12,
+        endLine: 30,
+        score: 0.95,
+        content: "function getStatus() {}",
+      },
+    ]);
+
+    const { tools } = await registerPiTools();
+
+    const result = await tools.get("codebase_context")?.execute(
+      "tool-call",
+      { query: "where is `getStatus` defined" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "getStatus", {
+      limit: 10,
+      fileType: undefined,
+      directory: undefined,
+    });
+    expect(result?.content[0]?.text).toContain("\"getStatus\"");
+  });
+
+  it("falls back to conceptual search when inferred symbol lookup returns no matches", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([]);
+    operationMocks.searchCodebase.mockResolvedValue([
+      {
+        chunkType: "function",
+        name: "missingDefinition",
+        filePath: "src/auth.ts",
+        startLine: 12,
+        endLine: 30,
+        score: 0.95,
+        content: "function missingDefinition() {}",
+      },
+    ]);
+
+    const { tools } = await registerPiTools();
+
+    const result = await tools.get("codebase_context")?.execute(
+      "tool-call",
+      { query: "show definition for `missingDefinition`" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith("/repo", "pi", "missingDefinition", {
+      limit: 10,
+      fileType: undefined,
+      directory: undefined,
+    });
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith(
+      "/repo",
+      "pi",
+      "show definition for `missingDefinition`",
+      {
+        limit: 10,
+        fileType: undefined,
+        directory: undefined,
+        metadataOnly: true,
+      },
+    );
+    expect(result?.content[0]?.text).toContain("Found 1 locations for \"show definition for `missingDefinition`\":");
+  });
+
   it("routes codebase_context query-only lookups with metadata-only search", async () => {
     operationMocks.searchCodebase.mockResolvedValue([
       {
