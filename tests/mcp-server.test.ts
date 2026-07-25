@@ -5,6 +5,7 @@ import { IndexLockContentionError } from "../src/indexer/index-lock.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import * as fs from "fs";
+import { estimateTokens } from "../src/utils/cost.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
@@ -436,12 +437,15 @@ describe("MCP server tools and prompts", () => {
         maxDepth: null,
         fileType: null,
         directory: null,
+        tokenBudget: null,
       },
     });
 
     const content = result.content as Array<{ type: string; text?: string }>;
-    expect(content[0].text).toContain("Found 1 locations");
-    expect(content[0].text).toContain("implementation_lookup");
+    expect(content[0].text).toContain("Codebase evidence");
+    expect(content[0].text).toContain("src/auth.ts:10-25");
+    expect(content[0].text).not.toContain("return token.length");
+    expect(estimateTokens(content[0].text ?? "")).toBeLessThanOrEqual(1200);
   });
 
   it("should route codebase_context known symbols to definition lookup", async () => {
@@ -452,6 +456,7 @@ describe("MCP server tools and prompts", () => {
 
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain('function "validateToken"');
+    expect(content[0].text).not.toContain("return token.length");
     const indexer = indexerMockState.instances.at(-1);
     expect(indexer?.search).toHaveBeenCalledWith(
       "validateToken",
@@ -508,7 +513,7 @@ describe("MCP server tools and prompts", () => {
     });
 
     const content = result.content as Array<{ type: string; text?: string }>;
-    expect(content[0].text).toContain("Found 1 locations for \"Find definition for `missingDefinition`\":");
+    expect(content[0].text).toContain("Codebase evidence for \"Find definition for `missingDefinition`\"");
     expect(indexer?.search).toHaveBeenCalledWith(
       "Find definition for `missingDefinition`",
       10,
@@ -526,6 +531,54 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Path (2 hops)");
     const indexer = indexerMockState.instances.at(-1);
     expect(indexer?.findCallPath).toHaveBeenCalledWith("fromNode", "toNode", 7);
+  });
+
+  it("should keep conceptual and graph responses within the minimum token budget", async () => {
+    const indexer = indexerMockState.instances.at(-1);
+    indexer?.search.mockResolvedValueOnce(Array.from({ length: 20 }, (_, index) => ({
+      filePath: `src/${"long-directory/".repeat(8)}file-${index}.ts`,
+      startLine: index * 10 + 1,
+      endLine: index * 10 + 8,
+      name: `handler${index}`,
+      chunkType: "function",
+      content: `function handler${index}() { return "full source"; }`,
+      score: 1 - index / 100,
+    })));
+
+    const conceptual = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "find all request handlers", tokenBudget: 128 },
+    });
+    const conceptualText = (conceptual.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(estimateTokens(conceptualText)).toBeLessThanOrEqual(128);
+    expect(conceptualText).not.toContain("full source");
+
+    indexer?.findCallPath.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
+      symbolName: `symbol${index}`,
+      filePath: `src/path-${index}.ts`,
+      line: index + 1,
+      callType: "Call",
+    })));
+    const graph = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "trace start to finish", from: "start", to: "finish", tokenBudget: 128 },
+    });
+    const graphText = (graph.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(estimateTokens(graphText)).toBeLessThanOrEqual(128);
+  });
+
+  it("should enforce the MCP token budget schema range", async () => {
+    const accepted = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "find authentication", tokenBudget: 4000 },
+    });
+    expect(accepted.isError).not.toBe(true);
+
+    const rejected = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "find authentication", tokenBudget: 4001 },
+    });
+    expect(rejected.isError).toBe(true);
   });
 
   it("should recover direct unresolved edges when path traversal returns no hops", async () => {

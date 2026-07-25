@@ -4,6 +4,10 @@ import { performance } from "perf_hooks";
 
 import { Indexer } from "../indexer/index.js";
 import { inferExactSymbolFromQuery } from "../tools/symbol-inference.js";
+import {
+  buildContextPack,
+  DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+} from "../tools/utils.js";
 
 import { evaluateBudgetGate } from "./budget.js";
 import { compareSummaries } from "./compare.js";
@@ -89,8 +93,17 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         definitionIntent: inferredSymbol !== undefined,
       });
       const elapsed = performance.now() - start;
+      const contextPack = query.retrievalMode === "context"
+        ? buildContextPack(result, {
+          tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+          heading: inferredSymbol
+            ? `Definition evidence for ${JSON.stringify(inferredSymbol)}`
+            : `Codebase evidence for ${JSON.stringify(query.query)}`,
+        })
+        : undefined;
+      const evaluatedResults = contextPack?.results ?? result;
 
-      const materialized = result.map((item) => ({
+      const materialized = evaluatedResults.map((item) => ({
         filePath: item.filePath,
         startLine: item.startLine,
         endLine: item.endLine,
@@ -102,7 +115,13 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       perQuery.push(buildPerQueryResult(query, materialized, elapsed, 10, {
         resolvedRoute,
         routedQuery,
-      }));
+      }, contextPack ? {
+        tokenBudget: contextPack.tokenBudget,
+        responseTokens: contextPack.tokenEstimate,
+        candidateCount: contextPack.candidateCount,
+        deduplicatedCount: contextPack.deduplicatedCount,
+        omittedCount: contextPack.omittedCount,
+      } : undefined));
     }
 
     const logger = indexer.getLogger();

@@ -144,6 +144,13 @@ export function buildPerQueryResult(
     resolvedRoute: "search",
     routedQuery: query.query,
   },
+  context?: {
+    tokenBudget: number;
+    responseTokens: number;
+    candidateCount: number;
+    deduplicatedCount: number;
+    omittedCount: number;
+  },
 ): PerQueryEvalResult {
   const relevantPaths = getRelevantPaths(query);
   const deduped = uniqueResultsByPath(results);
@@ -166,6 +173,18 @@ export function buildPerQueryResult(
     ndcgAt10: ndcgAtK(deduped, relevantPaths, 10),
     failureBucket: classifyFailureBucket(query, results, k),
     rawTop3DistinctRatio: distinctTopKRatio(results, 3),
+    tokenBudget: context?.tokenBudget,
+    responseTokens: context?.responseTokens ?? 0,
+    candidateCount: context?.candidateCount ?? results.length,
+    deduplicatedCount: context?.deduplicatedCount ?? results.length,
+    selectedCount: results.length,
+    omittedCount: context?.omittedCount ?? 0,
+    duplicateCandidateRatio: context && context.candidateCount > 0
+      ? (context.candidateCount - context.deduplicatedCount) / context.candidateCount
+      : 0,
+    selectedFileRatio: results.length === 0
+      ? 0
+      : new Set(results.map((result) => normalizePath(result.filePath))).size / results.length,
     results: deduped,
   };
 
@@ -201,6 +220,10 @@ export function computeEvalMetrics(
   };
 
   const latencies = perQuery.map((item) => item.latencyMs);
+  const contextQueries = perQuery.filter((item) => item.retrievalMode === "context");
+  const contextResponseTokens = contextQueries.map((item) => item.responseTokens);
+  const totalContextResponseTokens = contextResponseTokens.reduce((sum, value) => sum + value, 0);
+  const contextTokenUnits = totalContextResponseTokens / 1000;
 
   for (const query of perQuery) {
     if (query.hitAt1) sum.hitAt1 += 1;
@@ -240,6 +263,27 @@ export function computeEvalMetrics(
       callCount: embeddingCallCount,
       estimatedCostUsd: (embeddingTokensUsed / 1_000_000) * costPer1MTokensUsd,
       costPer1MTokensUsd,
+    },
+    contextEfficiency: {
+      queryCount: contextQueries.length,
+      responseTokens: {
+        total: totalContextResponseTokens,
+        average: contextQueries.length === 0 ? 0 : totalContextResponseTokens / contextQueries.length,
+        p95: percentile(contextResponseTokens, 0.95),
+        max: contextResponseTokens.length === 0 ? 0 : Math.max(...contextResponseTokens),
+      },
+      duplicateCandidateRatio: contextQueries.length === 0
+        ? 0
+        : contextQueries.reduce((sum, item) => sum + item.duplicateCandidateRatio, 0) / contextQueries.length,
+      selectedFileRatio: contextQueries.length === 0
+        ? 0
+        : contextQueries.reduce((sum, item) => sum + item.selectedFileRatio, 0) / contextQueries.length,
+      hitAt5Per1kResponseTokens: contextTokenUnits === 0
+        ? 0
+        : contextQueries.filter((item) => item.hitAt5).length / contextTokenUnits,
+      mrrAt10Per1kResponseTokens: contextTokenUnits === 0
+        ? 0
+        : contextQueries.reduce((sum, item) => sum + item.reciprocalRankAt10, 0) / contextTokenUnits,
     },
     failureBuckets,
   };

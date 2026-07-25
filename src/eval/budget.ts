@@ -89,6 +89,79 @@ export function evaluateBudgetGate(
     });
   }
 
+  const context = summary.metrics.contextEfficiency;
+  if (context.queryCount > 0) {
+    if (
+      thresholds.maxContextResponseTokensAverage !== undefined &&
+      context.responseTokens.average > thresholds.maxContextResponseTokensAverage
+    ) {
+      violations.push({
+        metric: "maxContextResponseTokensAverage",
+        message: `Context response average ${context.responseTokens.average.toFixed(1)} tokens exceeds maximum ${thresholds.maxContextResponseTokensAverage.toFixed(1)}`,
+      });
+    }
+
+    if (
+      thresholds.maxContextResponseTokensP95 !== undefined &&
+      context.responseTokens.p95 > thresholds.maxContextResponseTokensP95
+    ) {
+      violations.push({
+        metric: "maxContextResponseTokensP95",
+        message: `Context response p95 ${context.responseTokens.p95.toFixed(1)} tokens exceeds maximum ${thresholds.maxContextResponseTokensP95.toFixed(1)}`,
+      });
+    }
+
+    if (
+      thresholds.maxContextResponseTokensMax !== undefined &&
+      context.responseTokens.max > thresholds.maxContextResponseTokensMax
+    ) {
+      violations.push({
+        metric: "maxContextResponseTokensMax",
+        message: `Context response maximum ${context.responseTokens.max.toFixed(1)} tokens exceeds maximum ${thresholds.maxContextResponseTokensMax.toFixed(1)}`,
+      });
+    }
+
+    if (
+      thresholds.maxContextDuplicateCandidateRatio !== undefined &&
+      context.duplicateCandidateRatio > thresholds.maxContextDuplicateCandidateRatio
+    ) {
+      violations.push({
+        metric: "maxContextDuplicateCandidateRatio",
+        message: `Context duplicate candidate ratio ${context.duplicateCandidateRatio.toFixed(4)} exceeds maximum ${thresholds.maxContextDuplicateCandidateRatio.toFixed(4)}`,
+      });
+    }
+
+    if (
+      thresholds.minContextSelectedFileRatio !== undefined &&
+      context.selectedFileRatio < thresholds.minContextSelectedFileRatio
+    ) {
+      violations.push({
+        metric: "minContextSelectedFileRatio",
+        message: `Context selected-file ratio ${context.selectedFileRatio.toFixed(4)} is below minimum ${thresholds.minContextSelectedFileRatio.toFixed(4)}`,
+      });
+    }
+
+    if (
+      thresholds.minContextHitAt5Per1kResponseTokens !== undefined &&
+      context.hitAt5Per1kResponseTokens < thresholds.minContextHitAt5Per1kResponseTokens
+    ) {
+      violations.push({
+        metric: "minContextHitAt5Per1kResponseTokens",
+        message: `Context Hit@5 per 1k response tokens ${context.hitAt5Per1kResponseTokens.toFixed(4)} is below minimum ${thresholds.minContextHitAt5Per1kResponseTokens.toFixed(4)}`,
+      });
+    }
+
+    if (
+      thresholds.minContextMrrAt10Per1kResponseTokens !== undefined &&
+      context.mrrAt10Per1kResponseTokens < thresholds.minContextMrrAt10Per1kResponseTokens
+    ) {
+      violations.push({
+        metric: "minContextMrrAt10Per1kResponseTokens",
+        message: `Context MRR@10 per 1k response tokens ${context.mrrAt10Per1kResponseTokens.toFixed(4)} is below minimum ${thresholds.minContextMrrAt10Per1kResponseTokens.toFixed(4)}`,
+      });
+    }
+  }
+
   return {
     passed: violations.length === 0,
     budgetName: budget.name,

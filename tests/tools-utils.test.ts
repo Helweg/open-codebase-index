@@ -8,9 +8,14 @@ import {
   formatHealthCheck,
   formatLogs,
   formatSearchResults,
+  buildContextPack,
+  fitTextToContextBudget,
+  MIN_CONTEXT_PACK_TOKEN_BUDGET,
+  MAX_CONTEXT_PACK_TOKEN_BUDGET,
 } from "../src/tools/utils.js";
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../src/indexer/index.js";
 import type { LogEntry } from "../src/utils/logger.js";
+import { estimateTokens } from "../src/utils/cost.js";
 
 function createBaseStats(overrides: Partial<IndexStats> = {}): IndexStats {
   return {
@@ -596,6 +601,288 @@ describe("tools utils", () => {
       expect(result).toContain("orphan embeddings: 5");
       expect(result).toContain("orphan chunks: 3");
       expect(result).toContain("a.ts");
+    });
+  });
+
+  describe("buildContextPack", () => {
+    it("caps and validates token budgets", () => {
+      const sampleResult: SearchResult = {
+        filePath: "src/example.ts",
+        startLine: 10,
+        endLine: 20,
+        content: "const ok = true;",
+        score: 0.98,
+        chunkType: "function",
+        name: "example",
+      };
+
+      const tooSmall = buildContextPack([sampleResult], { tokenBudget: 1 });
+      const tooLarge = buildContextPack([sampleResult], { tokenBudget: Number.MAX_SAFE_INTEGER });
+
+      expect(tooSmall.tokenBudget).toBe(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+      expect(tooLarge.tokenBudget).toBe(MAX_CONTEXT_PACK_TOKEN_BUDGET);
+      expect(tooSmall.results).toHaveLength(1);
+      expect(tooSmall.tokenEstimate).toBe(estimateTokens(tooSmall.text));
+      expect(tooSmall.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+    });
+
+    it("deduplicates exact and overlapping same-file hits", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "src/foo.ts",
+          startLine: 10,
+          endLine: 30,
+          content: "a",
+          score: 0.90,
+          chunkType: "function",
+          name: "outer",
+        },
+        {
+          filePath: "src/foo.ts",
+          startLine: 12,
+          endLine: 18,
+          content: "b",
+          score: 0.95,
+          chunkType: "function",
+          name: "inner",
+        },
+        {
+          filePath: "src/foo.ts",
+          startLine: 40,
+          endLine: 45,
+          content: "c",
+          score: 0.85,
+          chunkType: "function",
+          name: "later",
+        },
+        {
+          filePath: "src/foo.ts",
+          startLine: 10,
+          endLine: 30,
+          content: "d",
+          score: 0.40,
+          chunkType: "function",
+          name: "exactDup",
+        },
+      ];
+
+      const packed = buildContextPack(results, { tokenBudget: 2048 });
+      expect(packed.results).toHaveLength(2);
+      expect(packed.candidateCount).toBe(4);
+      expect(packed.deduplicatedCount).toBe(2);
+      expect(packed.duplicateCount).toBe(2);
+      expect(packed.omittedCount).toBe(2);
+      const names = packed.results.map((r) => r.name);
+      expect(names).toEqual(["inner", "later"]);
+      expect(names).not.toContain("overlap");
+    });
+
+    it("diversifies selection across files before taking additional same-file matches", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "src/a.ts",
+          startLine: 1,
+          endLine: 10,
+          content: "a1",
+          score: 0.99,
+          chunkType: "function",
+          name: "a1",
+        },
+        {
+          filePath: "src/a.ts",
+          startLine: 20,
+          endLine: 22,
+          content: "a2",
+          score: 0.95,
+          chunkType: "function",
+          name: "a2",
+        },
+        {
+          filePath: "src/b.ts",
+          startLine: 1,
+          endLine: 8,
+          content: "b1",
+          score: 0.98,
+          chunkType: "function",
+          name: "b1",
+        },
+        {
+          filePath: "src/c.ts",
+          startLine: 1,
+          endLine: 5,
+          content: "c1",
+          score: 0.97,
+          chunkType: "function",
+          name: "c1",
+        },
+      ];
+
+      const packed = buildContextPack(results, { tokenBudget: 2048 });
+      const names = packed.results.map((result) => result.name);
+      expect(names).toEqual(["a1", "b1", "c1", "a2"]);
+    });
+
+    it("is deterministic for identical input", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "src/b.ts",
+          startLine: 1,
+          endLine: 3,
+          content: "b",
+          score: 0.88,
+          chunkType: "function",
+          name: "b",
+        },
+        {
+          filePath: "src/a.ts",
+          startLine: 2,
+          endLine: 4,
+          content: "a",
+          score: 0.88,
+          chunkType: "function",
+          name: "a",
+        },
+      ];
+
+      const first = buildContextPack(results, { tokenBudget: 2048 });
+      const second = buildContextPack(results, { tokenBudget: 2048 });
+
+      expect(first.text).toBe(second.text);
+      expect(first.results).toEqual(second.results);
+    });
+
+    it("handles tiny budgets and still tracks omitted candidates when budget is tight", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "src/foo.ts",
+          startLine: 1,
+          endLine: 2,
+          content: "a",
+          score: 0.99,
+          chunkType: "function",
+          name: "first",
+        },
+        {
+          filePath: "src/foo.ts",
+          startLine: 3,
+          endLine: 4,
+          content: "b",
+          score: 0.98,
+          chunkType: "function",
+          name: "second",
+        },
+        {
+          filePath: "src/foo.ts",
+          startLine: 5,
+          endLine: 6,
+          content: "c",
+          score: 0.97,
+          chunkType: "function",
+          name: "third",
+        },
+      ];
+
+      const packed = buildContextPack(results, { tokenBudget: 1 });
+      const maxBudget = packed.tokenBudget;
+      expect(packed.results.length).toBeGreaterThan(0);
+      expect(estimateTokens(packed.text)).toBeLessThanOrEqual(maxBudget);
+    });
+
+    it("adds a clear omitted-count footer when candidates are dropped", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: `/tmp/example/${"a".repeat(180)}/a.ts`,
+          startLine: 1,
+          endLine: 6,
+          content: "a",
+          score: 0.95,
+          chunkType: "function",
+          name: "a1",
+        },
+        {
+          filePath: `/tmp/example/${"b".repeat(180)}/b.ts`,
+          startLine: 1,
+          endLine: 6,
+          content: "b",
+          score: 0.94,
+          chunkType: "function",
+          name: "b1",
+        },
+        {
+          filePath: `/tmp/example/${"c".repeat(180)}/c.ts`,
+          startLine: 1,
+          endLine: 6,
+          content: "c",
+          score: 0.93,
+          chunkType: "function",
+          name: "c1",
+        },
+      ];
+
+      const packed = buildContextPack(results, { tokenBudget: 1 });
+      expect(packed.results.length + packed.omittedCount).toBe(results.length);
+      expect(packed.text).toContain("omitted by token budget");
+      expect(estimateTokens(packed.text)).toBeLessThanOrEqual(packed.tokenBudget);
+    });
+
+    it("honors maxResults and reports budget omissions separately from duplicates", () => {
+      const results: SearchResult[] = Array.from({ length: 4 }, (_, index) => ({
+        filePath: `src/file-${index}.ts`,
+        startLine: 1,
+        endLine: 5,
+        content: `content-${index}`,
+        score: 1 - index / 10,
+        chunkType: "function",
+        name: `symbol${index}`,
+      }));
+
+      const packed = buildContextPack(results, { tokenBudget: 2048, maxResults: 2 });
+
+      expect(packed.selectedCount).toBe(2);
+      expect(packed.duplicateCount).toBe(0);
+      expect(packed.budgetOmittedCount).toBe(2);
+      expect(packed.omittedCount).toBe(2);
+    });
+
+    it("keeps worst-case headings and paths within the minimum budget", () => {
+      const result: SearchResult = {
+        filePath: `${"very-long-directory/".repeat(40)}implementation.ts`,
+        startLine: 1,
+        endLine: 999999,
+        content: "full source must not appear",
+        score: 0.99,
+        chunkType: "function",
+        name: "extremelyLongSymbolName".repeat(30),
+      };
+
+      const packed = buildContextPack([result], {
+        tokenBudget: MIN_CONTEXT_PACK_TOKEN_BUDGET,
+        heading: "Extremely long context heading ".repeat(30),
+      });
+
+      expect(packed.selectedCount).toBe(1);
+      expect(packed.tokenEstimate).toBe(estimateTokens(packed.text));
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+      expect(packed.text).not.toContain(result.content);
+    });
+
+    it("returns a bounded empty evidence pack", () => {
+      const packed = buildContextPack([], { tokenBudget: MIN_CONTEXT_PACK_TOKEN_BUDGET });
+
+      expect(packed.results).toEqual([]);
+      expect(packed.candidateCount).toBe(0);
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+    });
+  });
+
+  describe("fitTextToContextBudget", () => {
+    it("truncates long text without exceeding the effective budget", () => {
+      const fitted = fitTextToContextBudget("x".repeat(5000), MIN_CONTEXT_PACK_TOKEN_BUDGET);
+
+      expect(fitted.truncated).toBe(true);
+      expect(fitted.tokenEstimate).toBe(estimateTokens(fitted.text));
+      expect(fitted.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+      expect(fitted.text).toContain("truncated to context token budget");
     });
   });
 

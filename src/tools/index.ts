@@ -5,6 +5,7 @@ import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { Indexer } from "../indexer/index.js";
 import { formatCostEstimate } from "../utils/cost.js";
 import {
+  DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCodebasePeek,
   formatCallGraphCallees,
   formatCallGraphCallers,
@@ -14,6 +15,8 @@ import {
   formatIndexStats,
   formatSearchResults,
   formatStatus,
+  MAX_CONTEXT_PACK_TOKEN_BUDGET,
+  MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "./utils.js";
 import {
   addKnowledgeBase,
@@ -34,6 +37,7 @@ import {
   searchCodebase,
 } from "./operations.js";
 import { pr_impact } from "./pr-impact.js";
+import { resolveCodebaseContext } from "./context.js";
 import { writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -68,6 +72,27 @@ export function getSharedIndexer(): Indexer {
 export function getIndexerForProject(directory: string): Indexer {
   return getOperationIndexerForProject(directory, DEFAULT_HOST);
 }
+
+export const codebase_context: ToolDefinition = tool({
+  description:
+    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, symbol for definitions, or only query for conceptual discovery.",
+  args: {
+    query: z.string().describe("The repository question or behavior to locate"),
+    from: z.string().optional().describe("Source symbol for a dependency path"),
+    to: z.string().optional().describe("Target symbol for a dependency path"),
+    symbol: z.string().optional().describe("Exact symbol for authoritative definition lookup"),
+    limit: z.number().optional().default(10).describe("Maximum number of results"),
+    maxDepth: z.number().optional().default(10).describe("Maximum call-path traversal depth"),
+    fileType: z.string().optional().describe("Filter by file extension"),
+    directory: z.string().optional().describe("Filter by directory path"),
+    tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
+      .optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
+      .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
+  },
+  async execute(args, context) {
+    return (await resolveCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
+  },
+});
 
 export const codebase_peek: ToolDefinition = tool({
   description:

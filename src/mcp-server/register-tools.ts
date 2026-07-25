@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { formatCostEstimate } from "../utils/cost.js";
 import {
+  DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCallGraphCallees,
   formatCallGraphCallers,
   formatCallGraphPath,
@@ -12,7 +13,10 @@ import {
   formatIndexStats,
   formatSearchResults,
   formatStatus,
+  MAX_CONTEXT_PACK_TOKEN_BUDGET,
+  MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "../tools/utils.js";
+import { resolveCodebaseContext } from "../tools/context.js";
 import { formatPrImpact } from "../tools/format-pr-impact.js";
 import {
   findSimilarCode,
@@ -27,7 +31,6 @@ import {
   runIndexHealthCheck,
   searchCodebase,
 } from "../tools/operations.js";
-import { inferExactSymbolFromQuery } from "../tools/symbol-inference.js";
 import { CHUNK_TYPE_ENUM, type McpServerRuntime } from "./shared.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
@@ -37,7 +40,7 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
     "codebase_context",
-    "PREFERRED FIRST TOOL for any question about this repository. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
+    "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
     {
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
@@ -47,78 +50,14 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum call-graph traversal depth for from/to path lookup"),
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+      tokenBudget: allowNullAsUndefined(
+        z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
+          .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),
+      ).describe(`Maximum response tokens for this context pack (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
     },
     async (args) => {
-      if (args.from && args.to) {
-        const path = await getCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
-        if (path.length > 0) {
-          return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
-        }
-
-        // Path traversal follows resolved symbol IDs, but extraction can still
-        // retain a useful direct edge before the target has been resolved.
-        const { callers } = await getCallGraphData(runtime.projectRoot, runtime.host, {
-          name: args.to,
-          direction: "callers",
-        });
-        const directEdge = callers.find(edge => edge.fromSymbolName === args.from);
-        if (directEdge) {
-          const location = directEdge.fromSymbolFilePath
-            ? ` at ${directEdge.fromSymbolFilePath}:${directEdge.line}`
-            : "";
-          return {
-            content: [{
-              type: "text",
-              text: `Direct path: ${args.from} --${directEdge.callType}--> ${args.to}${location} ` +
-                `(edge is ${directEdge.isResolved ? "resolved" : "unresolved"}).`,
-            }],
-          };
-        }
-
-        return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
-      }
-
-      if (args.symbol) {
-        const results = await implementationLookup(runtime.projectRoot, runtime.host, args.symbol, {
-          limit: args.limit ?? 10,
-          fileType: args.fileType,
-          directory: args.directory,
-        });
-
-        return { content: [{ type: "text", text: formatDefinitionLookup(results, args.symbol) }] };
-      }
-
-      const inferredSymbol = inferExactSymbolFromQuery(args.query);
-      if (inferredSymbol) {
-        const inferredResults = await implementationLookup(runtime.projectRoot, runtime.host, inferredSymbol, {
-          limit: args.limit ?? 10,
-          fileType: args.fileType,
-          directory: args.directory,
-        });
-
-        if (inferredResults.length > 0) {
-          return { content: [{ type: "text", text: formatDefinitionLookup(inferredResults, inferredSymbol) }] };
-        }
-      }
-
-      const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
-        limit: args.limit ?? 10,
-        fileType: args.fileType,
-        directory: args.directory,
-        metadataOnly: true,
-      });
-
-      if (results.length === 0) {
-        return { content: [{ type: "text", text: "No matching code found. Try a different query or run index_codebase first." }] };
-      }
-
-      return {
-        content: [{
-          type: "text",
-          text: `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}\n\n` +
-            "Use implementation_lookup for an authoritative definition, or call call_graph/call_graph_path once you have a symbol.",
-        }],
-      };
+      const result = await resolveCodebaseContext(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 

@@ -41,6 +41,14 @@ function summary(p95: number): EvalSummary {
         estimatedCostUsd: 0,
         costPer1MTokensUsd: 0,
       },
+      contextEfficiency: {
+        queryCount: 1,
+        responseTokens: { total: 100, average: 100, p95: 100, max: 100 },
+        duplicateCandidateRatio: 0.1,
+        selectedFileRatio: 1,
+        hitAt5Per1kResponseTokens: 10,
+        mrrAt10Per1kResponseTokens: 10,
+      },
       failureBuckets: {
         "wrong-file": 0,
         "wrong-symbol": 0,
@@ -68,6 +76,13 @@ function comparisonWithBaselineP95(baselineP95: number): EvalComparison {
       latencyP99Ms: { current: 5, baseline: baselineP95, absolute: 5 - baselineP95, relativePct: 0 },
       embeddingCallCount: { current: 1, baseline: 1, absolute: 0, relativePct: 0 },
       estimatedCostUsd: { current: 0, baseline: 0, absolute: 0, relativePct: 0 },
+      contextResponseTokensAverage: { current: 100, baseline: 100, absolute: 0, relativePct: 0 },
+      contextResponseTokensP95: { current: 100, baseline: 100, absolute: 0, relativePct: 0 },
+      contextResponseTokensMax: { current: 100, baseline: 100, absolute: 0, relativePct: 0 },
+      contextDuplicateCandidateRatio: { current: 0.1, baseline: 0.1, absolute: 0, relativePct: 0 },
+      contextSelectedFileRatio: { current: 1, baseline: 1, absolute: 0, relativePct: 0 },
+      contextHitAt5Per1kResponseTokens: { current: 10, baseline: 10, absolute: 0, relativePct: 0 },
+      contextMrrAt10Per1kResponseTokens: { current: 10, baseline: 10, absolute: 0, relativePct: 0 },
     },
   };
 }
@@ -160,5 +175,46 @@ describe("eval budget gate", () => {
     );
     expect(gate.passed).toBe(false);
     expect(gate.violations.some((v) => v.metric === "rawDistinctTop3RatioMaxDrop")).toBe(true);
+  });
+
+  it("enforces context response, duplicate, and quality-per-token thresholds", () => {
+    const budget: EvalBudget = {
+      name: "context",
+      failOnMissingBaseline: false,
+      thresholds: {
+        maxContextResponseTokensAverage: 80,
+        maxContextResponseTokensP95: 90,
+        maxContextResponseTokensMax: 95,
+        maxContextDuplicateCandidateRatio: 0.05,
+        minContextSelectedFileRatio: 1.1,
+        minContextHitAt5Per1kResponseTokens: 11,
+        minContextMrrAt10Per1kResponseTokens: 11,
+      },
+    };
+
+    const gate = evaluateBudgetGate(budget, summary(5));
+
+    expect(gate.passed).toBe(false);
+    expect(gate.violations.map((violation) => violation.metric)).toEqual([
+      "maxContextResponseTokensAverage",
+      "maxContextResponseTokensP95",
+      "maxContextResponseTokensMax",
+      "maxContextDuplicateCandidateRatio",
+      "minContextSelectedFileRatio",
+      "minContextHitAt5Per1kResponseTokens",
+      "minContextMrrAt10Per1kResponseTokens",
+    ]);
+  });
+
+  it("skips context-specific gates when a dataset has no context queries", () => {
+    const withoutContext = summary(5);
+    withoutContext.metrics.contextEfficiency.queryCount = 0;
+    const gate = evaluateBudgetGate({
+      name: "search-only",
+      failOnMissingBaseline: false,
+      thresholds: { maxContextResponseTokensMax: 1 },
+    }, withoutContext);
+
+    expect(gate.passed).toBe(true);
   });
 });

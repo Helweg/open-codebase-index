@@ -1,6 +1,209 @@
 import { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
 import type { CallEdgeData, PathHopData } from "../native/index.js";
 import type { LogEntry } from "../utils/logger.js";
+import { estimateTokens } from "../utils/cost.js";
+
+export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
+export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
+export const DEFAULT_CONTEXT_PACK_TOKEN_BUDGET = 1200;
+
+interface RankedSearchResult {
+  result: SearchResult;
+  originalIndex: number;
+}
+
+export interface ContextPackOptions {
+  tokenBudget?: number;
+  heading?: string;
+  maxResults?: number;
+}
+
+export interface ContextPackResult {
+  requestedTokenBudget: number;
+  tokenBudget: number;
+  text: string;
+  tokenEstimate: number;
+  results: SearchResult[];
+  candidateCount: number;
+  deduplicatedCount: number;
+  selectedCount: number;
+  omittedCount: number;
+  duplicateCount: number;
+  budgetOmittedCount: number;
+}
+
+export interface BudgetedTextResult {
+  text: string;
+  tokenBudget: number;
+  tokenEstimate: number;
+  truncated: boolean;
+}
+
+export function clampContextPackTokenBudget(tokenBudget?: number): number {
+  if (tokenBudget === undefined || !Number.isFinite(tokenBudget)) {
+    return DEFAULT_CONTEXT_PACK_TOKEN_BUDGET;
+  }
+  return Math.min(
+    MAX_CONTEXT_PACK_TOKEN_BUDGET,
+    Math.max(MIN_CONTEXT_PACK_TOKEN_BUDGET, Math.floor(tokenBudget)),
+  );
+}
+
+export function fitTextToContextBudget(text: string, tokenBudget?: number): BudgetedTextResult {
+  const normalizedBudget = clampContextPackTokenBudget(tokenBudget);
+  if (estimateTokens(text) <= normalizedBudget) {
+    return {
+      text,
+      tokenBudget: normalizedBudget,
+      tokenEstimate: estimateTokens(text),
+      truncated: false,
+    };
+  }
+
+  const suffix = "\n...[truncated to context token budget]";
+  const maxChars = Math.max(0, normalizedBudget * 4 - suffix.length);
+  const fitted = `${text.slice(0, maxChars).trimEnd()}${suffix}`;
+  return {
+    text: fitted,
+    tokenBudget: normalizedBudget,
+    tokenEstimate: estimateTokens(fitted),
+    truncated: true,
+  };
+}
+
+function normalizedLineRange(result: SearchResult): { start: number; end: number } {
+  return result.startLine <= result.endLine
+    ? { start: result.startLine, end: result.endLine }
+    : { start: result.endLine, end: result.startLine };
+}
+
+function rankContextCandidates(results: SearchResult[]): RankedSearchResult[] {
+  return results
+    .map((result, originalIndex) => ({ result, originalIndex }))
+    .sort((left, right) => right.result.score - left.result.score || left.originalIndex - right.originalIndex);
+}
+
+function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchResult[] {
+  const acceptedByFile = new Map<string, Array<{ start: number; end: number }>>();
+  const deduplicated: SearchResult[] = [];
+
+  for (const { result } of candidates) {
+    const range = normalizedLineRange(result);
+    const accepted = acceptedByFile.get(result.filePath) ?? [];
+    if (accepted.some((item) => item.start <= range.end && range.start <= item.end)) {
+      continue;
+    }
+    accepted.push(range);
+    acceptedByFile.set(result.filePath, accepted);
+    deduplicated.push(result);
+  }
+
+  return deduplicated;
+}
+
+function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
+  const byFile = new Map<string, SearchResult[]>();
+  for (const result of results) {
+    const bucket = byFile.get(result.filePath) ?? [];
+    bucket.push(result);
+    byFile.set(result.filePath, bucket);
+  }
+
+  const files = [...byFile.keys()];
+  const diversified: SearchResult[] = [];
+  for (let depth = 0; diversified.length < results.length; depth += 1) {
+    for (const file of files) {
+      const result = byFile.get(file)?.[depth];
+      if (result) diversified.push(result);
+    }
+  }
+  return diversified;
+}
+
+function compactEvidenceValue(value: string, maxChars: number): string {
+  if (value.length <= maxChars) return value;
+  return `…${value.slice(-(maxChars - 1))}`;
+}
+
+function formatContextEvidence(result: SearchResult, index: number): string {
+  const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
+  const path = compactEvidenceValue(result.filePath, 120);
+  return `[${index}] ${result.chunkType}${symbol} in ${path}:${result.startLine}-${result.endLine} (score ${result.score.toFixed(2)})`;
+}
+
+function formatContextPack(
+  heading: string,
+  selected: SearchResult[],
+  candidateCount: number,
+  duplicateCount: number,
+  budgetOmittedCount: number,
+): string {
+  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1));
+  const notes: string[] = [];
+  if (duplicateCount > 0) notes.push(`${duplicateCount} overlapping duplicate${duplicateCount === 1 ? "" : "s"} removed`);
+  if (budgetOmittedCount > 0) notes.push(`${budgetOmittedCount} additional result${budgetOmittedCount === 1 ? "" : "s"} omitted by token budget`);
+  const footer = notes.length > 0
+    ? `Selected ${selected.length} of ${candidateCount} candidates; ${notes.join("; ")}.`
+    : `Selected ${selected.length} of ${candidateCount} candidates.`;
+  return `${heading}\n\n${lines.join("\n")}\n\n${footer}`;
+}
+
+export function buildContextPack(results: SearchResult[], options: ContextPackOptions = {}): ContextPackResult {
+  const requestedTokenBudget = options.tokenBudget ?? DEFAULT_CONTEXT_PACK_TOKEN_BUDGET;
+  const tokenBudget = clampContextPackTokenBudget(options.tokenBudget);
+  const heading = compactEvidenceValue(options.heading?.trim() || "Codebase evidence", 160);
+  const maxResults = Math.max(0, Math.floor(options.maxResults ?? results.length));
+  const candidateCount = results.length;
+  const deduplicated = deduplicateContextCandidates(rankContextCandidates(results));
+  const diversified = diversifyContextCandidates(deduplicated);
+  const duplicateCount = candidateCount - deduplicated.length;
+  const selectable = diversified.slice(0, maxResults);
+  let selected: SearchResult[] = [];
+  let text = formatContextPack(heading, selected, candidateCount, duplicateCount, deduplicated.length);
+
+  for (let count = 1; count <= selectable.length; count += 1) {
+    const candidateSelection = selectable.slice(0, count);
+    const budgetOmittedCount = deduplicated.length - candidateSelection.length;
+    const candidateText = formatContextPack(
+      heading,
+      candidateSelection,
+      candidateCount,
+      duplicateCount,
+      budgetOmittedCount,
+    );
+    if (estimateTokens(candidateText) > tokenBudget) break;
+    selected = candidateSelection;
+    text = candidateText;
+  }
+
+  if (selected.length === 0 && selectable.length > 0) {
+    selected = [selectable[0]];
+    text = formatContextPack(
+      compactEvidenceValue(heading, 60),
+      selected,
+      candidateCount,
+      duplicateCount,
+      deduplicated.length - 1,
+    );
+  }
+
+  const fitted = fitTextToContextBudget(text, tokenBudget);
+  const budgetOmittedCount = deduplicated.length - selected.length;
+  const omittedCount = candidateCount - selected.length;
+  return {
+    requestedTokenBudget,
+    tokenBudget,
+    text: fitted.text,
+    tokenEstimate: fitted.tokenEstimate,
+    results: selected,
+    candidateCount,
+    deduplicatedCount: deduplicated.length,
+    selectedCount: selected.length,
+    omittedCount,
+    duplicateCount,
+    budgetOmittedCount,
+  };
+}
 
 const MAX_CONTENT_LINES = 30;
 

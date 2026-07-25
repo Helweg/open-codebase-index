@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { estimateTokens } from "../src/utils/cost.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -31,6 +32,13 @@ vi.mock("../src/tools/operations.js", () => ({
 
 interface RegisteredTool {
   readonly name: string;
+  readonly parameters?: {
+    readonly properties?: Record<string, {
+      readonly default?: number;
+      readonly minimum?: number;
+      readonly maximum?: number;
+    }>;
+  };
   readonly execute: (
     toolCallId: string,
     params: Record<string, unknown>,
@@ -82,6 +90,9 @@ describe("Pi adapter conformance", () => {
     expect(names[0]).toBe("codebase_context");
     expect(names).toContain("codebase_search");
     expect(names).toContain("implementation_lookup");
+    expect(tools.get("codebase_context")?.parameters?.properties?.tokenBudget).toEqual(
+      expect.objectContaining({ default: 1200, minimum: 128, maximum: 4000 }),
+    );
   });
 
   it("formats caller results like other host adapters", async () => {
@@ -208,9 +219,9 @@ describe("Pi adapter conformance", () => {
 
     const { tools } = await registerPiTools();
 
-    await tools.get("codebase_context")?.execute(
+    const result = await tools.get("codebase_context")?.execute(
       "tool-call",
-      { query: "unused", symbol: "validateToken", limit: 8 },
+      { query: "unused", symbol: "validateToken", limit: 8, tokenBudget: 128 },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
@@ -221,6 +232,15 @@ describe("Pi adapter conformance", () => {
       fileType: undefined,
       directory: undefined,
     });
+    expect(result?.content[0]?.text).toContain("src/auth.ts:12-30");
+    expect(result?.content[0]?.text).not.toContain("function validateToken() {}");
+    expect(estimateTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
+    expect(result?.details).toEqual(expect.objectContaining({
+      tokenBudget: 128,
+      selectedCount: 1,
+      results: [expect.objectContaining({ filePath: "src/auth.ts", name: "validateToken" })],
+    }));
+    expect(JSON.stringify(result?.details)).not.toContain("content");
   });
 
   it("routes inferred symbol-style codebase_context queries through implementation lookup", async () => {
@@ -294,7 +314,7 @@ describe("Pi adapter conformance", () => {
         metadataOnly: true,
       },
     );
-    expect(result?.content[0]?.text).toContain("Found 1 locations for \"show definition for `missingDefinition`\":");
+    expect(result?.content[0]?.text).toContain("Codebase evidence for \"show definition for `missingDefinition`\"");
   });
 
   it("routes codebase_context query-only lookups with metadata-only search", async () => {
@@ -314,7 +334,7 @@ describe("Pi adapter conformance", () => {
 
     const result = await tools.get("codebase_context")?.execute(
       "tool-call",
-      { query: "validation helper", limit: 4, fileType: "ts", directory: "src" },
+      { query: "validation helper", limit: 4, fileType: "ts", directory: "src", tokenBudget: 128 },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
@@ -326,7 +346,9 @@ describe("Pi adapter conformance", () => {
       directory: "src",
       metadataOnly: true,
     });
-    expect(result?.content[0]?.text).toContain("Found 1 locations for \"validation helper\":");
+    expect(result?.content[0]?.text).toContain("Codebase evidence for \"validation helper\"");
+    expect(estimateTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
+    expect(JSON.stringify(result?.details)).not.toContain("function validateToken() {}");
   });
 
   it("injects client-neutral repository guidance on before_agent_start", async () => {

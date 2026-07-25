@@ -140,6 +140,13 @@ describe("eval schema", () => {
           rawDistinctTop3RatioMaxDrop: 0.1,
           p95LatencyMaxMultiplier: 1.5,
           minRawDistinctTop3Ratio: 0.7,
+          maxContextResponseTokensAverage: 800,
+          maxContextResponseTokensP95: 1200,
+          maxContextResponseTokensMax: 1200,
+          maxContextDuplicateCandidateRatio: 0.25,
+          minContextSelectedFileRatio: 0.5,
+          minContextHitAt5Per1kResponseTokens: 0.5,
+          minContextMrrAt10Per1kResponseTokens: 0.25,
         },
       },
       "budget.json"
@@ -148,6 +155,13 @@ describe("eval schema", () => {
     expect(budget.thresholds.hitAt5MaxDrop).toBe(0.05);
     expect(budget.thresholds.rawDistinctTop3RatioMaxDrop).toBe(0.1);
     expect(budget.thresholds.minRawDistinctTop3Ratio).toBe(0.7);
+    expect(budget.thresholds.maxContextResponseTokensAverage).toBe(800);
+    expect(budget.thresholds.maxContextResponseTokensP95).toBe(1200);
+    expect(budget.thresholds.maxContextResponseTokensMax).toBe(1200);
+    expect(budget.thresholds.maxContextDuplicateCandidateRatio).toBe(0.25);
+    expect(budget.thresholds.minContextSelectedFileRatio).toBe(0.5);
+    expect(budget.thresholds.minContextHitAt5Per1kResponseTokens).toBe(0.5);
+    expect(budget.thresholds.minContextMrrAt10Per1kResponseTokens).toBe(0.25);
     expect(budget.failOnMissingBaseline).toBe(true);
   });
 
