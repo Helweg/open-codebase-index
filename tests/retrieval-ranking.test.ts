@@ -14,6 +14,7 @@ import {
   mergeTieredResults,
   rankHybridResults,
   selectChunksWithFileCoverage,
+  selectIndexableChunks,
   stripFilePathHint,
   rerankResults,
 } from "../src/indexer/index.js";
@@ -302,6 +303,23 @@ describe("retrieval ranking", () => {
     expect(selectChunksWithFileCoverage([0, 1, 2], 5)).toEqual([0, 1, 2]);
     expect(selectChunksWithFileCoverage([0, 1, 2], 1)).toEqual([1]);
     expect(selectChunksWithFileCoverage([0, 1, 2], 0)).toEqual([]);
+  });
+
+  it("filters generic chunks before sampling a semantic-only file", () => {
+    const chunks = [
+      ...Array.from({ length: 100 }, (_, id) => ({ id: `other-${id}`, chunkType: "other" })),
+      ...Array.from({ length: 10 }, (_, id) => ({ id: `function-${id}`, chunkType: "function" })),
+    ];
+
+    const selected = selectIndexableChunks(chunks, 5, true);
+
+    expect(selected.map((chunk) => chunk.id)).toEqual([
+      "function-0",
+      "function-2",
+      "function-5",
+      "function-7",
+      "function-9",
+    ]);
   });
 
   it("builds fallback lane from implementation code-term hints when exact symbol names are unavailable", () => {

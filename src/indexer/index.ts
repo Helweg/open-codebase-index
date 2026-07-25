@@ -1849,6 +1849,17 @@ export function selectChunksWithFileCoverage<T>(chunks: T[], limit: number): T[]
   return selected;
 }
 
+export function selectIndexableChunks<T extends { chunkType: string }>(
+  chunks: T[],
+  limit: number,
+  semanticOnly: boolean,
+): T[] {
+  const indexableChunks = semanticOnly
+    ? chunks.filter((chunk) => chunk.chunkType !== "other")
+    : chunks;
+  return selectChunksWithFileCoverage(indexableChunks, limit);
+}
+
 function matchesSearchFilters(
   candidate: RankedCandidate,
   options: SearchFilterOptions | undefined,
@@ -4046,17 +4057,13 @@ export class Indexer {
         }
       }
 
-      chunksToProcess = selectChunksWithFileCoverage(
+      chunksToProcess = selectIndexableChunks(
         chunksToProcess,
         this.config.indexing.maxChunksPerFile,
+        this.config.indexing.semanticOnly,
       );
 
       for (const chunk of chunksToProcess) {
-
-        if (this.config.indexing.semanticOnly && chunk.chunkType === "other") {
-          continue;
-        }
-
         const id = generateChunkId(parsed.path, chunk);
         const contentHash = generateChunkHash(chunk);
         const existingContentHash = existingChunks.get(id);
