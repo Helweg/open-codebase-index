@@ -1,8 +1,8 @@
 import type { HostMode } from "../config/host.js";
 import type { SearchResult } from "../indexer/index.js";
 import {
+  executeCallGraphPath,
   getCallGraphData,
-  getCallGraphPath,
   implementationLookup,
   searchCodebase,
 } from "./operations.js";
@@ -10,7 +10,6 @@ import { inferExactSymbolFromQuery } from "./symbol-inference.js";
 import {
   buildContextPack,
   fitTextToContextBudget,
-  formatCallGraphPath,
 } from "./utils.js";
 
 export interface CodebaseContextInput {
@@ -514,10 +513,10 @@ export async function resolveCodebaseContext(
   const directory = input.directory ?? undefined;
   const tokenBudget = input.tokenBudget ?? undefined;
   if (from && to) {
-    const path = await getCallGraphPath(projectRoot, host, from, to, maxDepth);
-    if (path.length > 0) {
+    const pathResult = await executeCallGraphPath(projectRoot, host, from, to, maxDepth);
+    if (pathResult.details.resolution !== "no-path") {
       const fitted = fitTextToContextBudget(
-        formatCallGraphPath(from, to, path),
+        pathResult.text,
         tokenBudget,
       );
       return {
@@ -547,7 +546,7 @@ export async function resolveCodebaseContext(
     }
 
     const fitted = fitTextToContextBudget(
-      formatCallGraphPath(from, to, path),
+      pathResult.text,
       tokenBudget,
     );
     return {

@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { getCallGraphData, getCallGraphPath } from "./tools/operations.js";
-import { formatCallGraphCallees, formatCallGraphCallers, formatCallGraphPath } from "./tools/utils.js";
+import { executeCallGraph, executeCallGraphPath } from "./tools/operations.js";
 
 const HOST = "pi" as const;
 
@@ -27,40 +26,32 @@ export function registerPiCallGraphTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "call_graph",
     label: "Call Graph",
-    description: "Find callers or callees of a function/method in the indexed call graph.",
+    description: "Find callers or callees by symbol name. Use file or directory only when exact-name definitions are ambiguous.",
     parameters: Type.Object({
       name: Type.String(),
-      direction: Type.Optional(Type.Union([Type.Literal("callers"), Type.Literal("callees")])),
-      symbolId: Type.Optional(Type.String()),
-      relationshipType: Type.Optional(RelationshipType),
+      direction: Type.Optional(Type.Union([Type.Literal("callers"), Type.Literal("callees"), Type.Null()])),
+      file: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      directory: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      relationshipType: Type.Optional(Type.Union([RelationshipType, Type.Null()])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getCallGraphData(projectRoot(ctx), HOST, params);
-      if (result.direction === "callees") {
-        return text(
-          params.symbolId
-            ? formatCallGraphCallees(params.symbolId, result.callees, params.relationshipType)
-            : "Error: 'symbolId' is required when direction is 'callees'.",
-          result,
-        );
-      }
-
-      return text(formatCallGraphCallers(params.name, result.callers, params.relationshipType), result);
+      const result = await executeCallGraph(projectRoot(ctx), HOST, params);
+      return text(result.text, result.details);
     },
   });
 
   pi.registerTool({
     name: "call_graph_path",
     label: "Call Graph Path",
-    description: "Find a call path between two functions/methods.",
+    description: "Find a call path by endpoint names without silently selecting ambiguous same-name definitions.",
     parameters: Type.Object({
       from: Type.String(),
       to: Type.String(),
-      maxDepth: Type.Optional(Type.Number({ default: 10 })),
+      maxDepth: Type.Optional(Type.Union([Type.Number({ default: 10 }), Type.Null()])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getCallGraphPath(projectRoot(ctx), HOST, params.from, params.to, params.maxDepth);
-      return text(formatCallGraphPath(params.from, params.to, result), result);
+      const result = await executeCallGraphPath(projectRoot(ctx), HOST, params.from, params.to, params.maxDepth);
+      return text(result.text, result.details);
     },
   });
 }

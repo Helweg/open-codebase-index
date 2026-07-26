@@ -81,6 +81,7 @@ describe("routing hints", () => {
       expect(hint).toContain("prefer `codebase_peek`");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph");
+      expect(hint).toContain("file or directory only for ambiguity");
       expect(hint).toContain("`grep`");
     });
 
@@ -93,7 +94,8 @@ describe("routing hints", () => {
 
       expect(hint).toContain("check `index_status` first");
       expect(hint).toContain("run `index_codebase`");
-      expect(hint).toContain("Use graph tools after semantic discovery identifies relevant symbols");
+      expect(hint).toContain("Use graph tools after semantic discovery identifies relevant symbol names");
+      expect(hint).toContain("file or directory when it reports ambiguity");
     });
 
     it("returns null for non-conceptual intents", () => {

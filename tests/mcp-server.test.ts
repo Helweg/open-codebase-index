@@ -38,6 +38,7 @@ const indexerMockState = vi.hoisted(() => ({
     initialize: ReturnType<typeof vi.fn>;
     search: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
+    getSymbolsForBranch: ReturnType<typeof vi.fn>;
     getCallers: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
     findCallPath: ReturnType<typeof vi.fn>;
@@ -101,6 +102,7 @@ vi.mock("../src/indexer/index.js", () => {
         initialize: this.initialize,
         search: this.search,
         getStatus: this.getStatus,
+        getSymbolsForBranch: this.getSymbolsForBranch,
         getCallers: this.getCallers,
         getCallees: this.getCallees,
         findCallPath: this.findCallPath,
@@ -137,6 +139,52 @@ vi.mock("../src/indexer/index.js", () => {
     getStatus = vi.fn().mockImplementation(async () => mockStatusResult);
     healthCheck = vi.fn().mockImplementation(async () => mockHealthCheckResult);
     clearIndex = vi.fn().mockResolvedValue(undefined);
+    getSymbolsForBranch = vi.fn().mockResolvedValue([
+      {
+        id: "sym_validate_internal",
+        filePath: "src/auth.ts",
+        name: "validateToken",
+        kind: "function",
+        startLine: 10,
+        startCol: 0,
+        endLine: 25,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "sym_called_internal",
+        filePath: "src/called.ts",
+        name: "calledFn",
+        kind: "function",
+        startLine: 3,
+        startCol: 0,
+        endLine: 8,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "from-node-id",
+        filePath: "src/start.ts",
+        name: "fromNode",
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "to-node-id",
+        filePath: "src/end.ts",
+        name: "toNode",
+        kind: "function",
+        startLine: 2,
+        startCol: 0,
+        endLine: 6,
+        endCol: 0,
+        language: "typescript",
+      },
+    ]);
     getCallers = vi.fn().mockResolvedValue([
       {
         id: "edge_1",
@@ -147,6 +195,7 @@ vi.mock("../src/indexer/index.js", () => {
         line: 12,
         col: 4,
         isResolved: true,
+        toSymbolId: "sym_validate_internal",
         fromSymbolName: "callerFn",
         fromSymbolFilePath: "src/caller.ts",
       },
@@ -154,14 +203,14 @@ vi.mock("../src/indexer/index.js", () => {
     getCallees = vi.fn().mockResolvedValue([
       {
         id: "edge_2",
-        fromSymbolId: "sym_validate",
+        fromSymbolId: "sym_validate_internal",
         targetName: "calledFn",
         callType: "Call",
         confidence: "Direct",
         line: 4,
         col: 2,
         isResolved: true,
-        toSymbolId: "sym_called",
+        toSymbolId: "sym_called_internal",
       },
     ]);
     findCallPath = vi.fn().mockResolvedValue([
@@ -335,9 +384,15 @@ describe("MCP server tools and prompts", () => {
     expect(descriptions.get("implementation_lookup")).toContain("Do not use for callers");
     expect(descriptions.get("codebase_search")).toContain("after codebase_peek");
     expect(descriptions.get("codebase_search")).toContain("grep");
-    expect(descriptions.get("call_graph")).toContain("after identifying a symbol");
-    expect(descriptions.get("call_graph_path")).toContain("both endpoint symbols");
+    expect(descriptions.get("call_graph")).toContain("human-readable symbol name");
+    expect(descriptions.get("call_graph")).toContain("file or directory");
+    expect(descriptions.get("call_graph_path")).toContain("never silently selected");
     expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
+
+    const callGraphSchema = JSON.stringify(tools.tools.find((entry) => entry.name === "call_graph")?.inputSchema);
+    expect(callGraphSchema).toContain('"file"');
+    expect(callGraphSchema).toContain('"directory"');
+    expect(callGraphSchema).not.toContain("symbolId");
   });
 
   it("should register all 5 prompts", async () => {
@@ -906,7 +961,8 @@ describe("MCP server tools and prompts", () => {
       arguments: {
         name: "validateToken",
         direction: null,
-        symbolId: null,
+        file: null,
+        directory: null,
         relationshipType: null,
       },
     });
@@ -916,8 +972,28 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("called by 1 function");
+    expect(content[0].text).not.toContain("sym_validate_internal");
     const indexer = indexerMockState.instances[0];
     expect(indexer.getCallers).toHaveBeenCalledWith("validateToken", undefined);
+  });
+
+  it("should execute call_graph callees by name without exposing IDs", async () => {
+    const result = await client.callTool({
+      name: "call_graph",
+      arguments: {
+        name: "validateToken",
+        direction: "callees",
+        relationshipType: "Call",
+      },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0]?.text).toContain('"validateToken" at src/auth.ts:10 calls 1 function');
+    expect(content[0]?.text).toContain("calledFn");
+    expect(content[0]?.text).not.toContain("sym_validate_internal");
+    expect(content[0]?.text).not.toContain("sym_called_internal");
+    const indexer = indexerMockState.instances[0];
+    expect(indexer.getCallees).toHaveBeenCalledWith("sym_validate_internal", "Call");
   });
 
   it("should get search prompt", async () => {

@@ -1,5 +1,5 @@
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
-import type { CallEdgeData, PathHopData } from "../native/index.js";
+import type { PathHopData } from "../native/index.js";
 import type { LogEntry } from "../utils/logger.js";
 import { get_encoding } from "tiktoken";
 
@@ -451,30 +451,6 @@ export function formatLogs(logs: LogEntry[]): string {
   return logs.map(l => {
     const dataStr = l.data ? ` ${JSON.stringify(l.data)}` : "";
     return `[${l.timestamp}] [${l.level.toUpperCase()}] [${l.category}] ${l.message}${dataStr}`;
-  }).join("\n");
-}
-
-export function formatCallGraphCallers(name: string, callers: CallEdgeData[], relationshipType?: string): string {
-  if (callers.length === 0) {
-    return `No callers found for "${name}"${relationshipType ? ` with type ${relationshipType}` : ""}. It may not be called by any tracked function, or the index needs updating.`;
-  }
-
-  const formatted = callers.map((edge, index) => {
-    const confidence = edge.confidence !== "Direct" ? ` [${edge.confidence.toLowerCase()}]` : "";
-    return `[${index + 1}] \u2190 from ${edge.fromSymbolName ?? "<unknown>"} in ${edge.fromSymbolFilePath ?? "<unknown file>"} [${edge.fromSymbolId}] (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? " [resolved]" : " [unresolved]"}`;
-  });
-
-  return `"${name}" is called by ${callers.length} function(s):\n\n${formatted.join("\n")}`;
-}
-
-export function formatCallGraphCallees(symbolId: string, callees: CallEdgeData[], relationshipType?: string): string {
-  if (callees.length === 0) {
-    return `No callees found for symbol ${symbolId}${relationshipType ? ` with type ${relationshipType}` : ""}. The function may not call any other tracked functions.`;
-  }
-
-  return callees.map((edge, index) => {
-    const confidence = edge.confidence !== "Direct" ? ` [${edge.confidence.toLowerCase()}]` : "";
-    return `[${index + 1}] \u2192 ${edge.targetName} (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? ` [resolved: ${edge.toSymbolId}]` : " [unresolved]"}`;
   }).join("\n");
 }
 

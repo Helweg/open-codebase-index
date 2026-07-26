@@ -4,8 +4,9 @@ import { countContextTokens } from "../src/tools/utils.js";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 const operationMocks = vi.hoisted(() => ({
+  executeCallGraph: vi.fn(),
+  executeCallGraphPath: vi.fn(),
   getCallGraphData: vi.fn(),
-  getCallGraphPath: vi.fn(),
   getIndexHealthCheck: vi.fn(),
   runIndexHealthCheck: vi.fn(),
   searchCodebase: vi.fn(),
@@ -14,9 +15,10 @@ const operationMocks = vi.hoisted(() => ({
 
 vi.mock("../src/tools/operations.js", () => ({
   addKnowledgeBase: vi.fn(() => "Added knowledge base"),
+  executeCallGraph: operationMocks.executeCallGraph,
+  executeCallGraphPath: operationMocks.executeCallGraphPath,
   findSimilarCode: vi.fn(() => []),
   getCallGraphData: operationMocks.getCallGraphData,
-  getCallGraphPath: operationMocks.getCallGraphPath,
   getIndexHealthCheck: operationMocks.getIndexHealthCheck,
   getIndexMetrics: vi.fn(() => ({ text: "" })),
   getIndexStatus: vi.fn(),
@@ -76,8 +78,9 @@ async function registerPiTools(): Promise<RegisteredPiRuntime> {
 
 describe("Pi adapter conformance", () => {
   beforeEach(() => {
+    operationMocks.executeCallGraph.mockReset();
+    operationMocks.executeCallGraphPath.mockReset();
     operationMocks.getCallGraphData.mockReset();
-    operationMocks.getCallGraphPath.mockReset();
     operationMocks.getIndexHealthCheck.mockReset();
     operationMocks.runIndexHealthCheck.mockReset();
     operationMocks.searchCodebase.mockReset();
@@ -105,21 +108,22 @@ describe("Pi adapter conformance", () => {
       default: 10,
       anyOf: expect.arrayContaining([expect.objectContaining({ minimum: 1, maximum: 100 })]),
     }));
+    const callGraphParameters = JSON.stringify(tools.get("call_graph")?.parameters);
+    expect(callGraphParameters).toContain('"file"');
+    expect(callGraphParameters).toContain('"directory"');
+    expect(callGraphParameters).not.toContain("symbolId");
   });
 
   it("formats caller results like other host adapters", async () => {
-    operationMocks.getCallGraphData.mockResolvedValue({
-      direction: "callers",
-      callers: [{
-        fromSymbolName: "entryPoint",
-        fromSymbolFilePath: "src/app.ts",
-        fromSymbolId: "sym_entry",
-        callType: "Call",
-        confidence: "Direct",
-        line: 12,
-        isResolved: true,
-      }],
-      callees: [],
+    operationMocks.executeCallGraph.mockResolvedValue({
+      text: '"validateToken" at src/auth.ts:4 is called by 1 function(s):\n\n[1] ← from entryPoint in src/app.ts (Call) at line 12 [resolved]',
+      details: {
+        direction: "callers",
+        name: "validateToken",
+        resolution: "resolved",
+        symbol: { name: "validateToken", kind: "function", filePath: "src/auth.ts", line: 4 },
+        edges: [{ name: "entryPoint", filePath: "src/app.ts", line: 12, callType: "Call", confidence: "Direct", resolved: true }],
+      },
     });
     const { tools } = await registerPiTools();
 
@@ -131,43 +135,69 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(result?.content[0]?.text).toContain("\"validateToken\" is called by 1 function(s)");
+    expect(result?.content[0]?.text).toContain("\"validateToken\" at src/auth.ts:4 is called by 1 function(s)");
     expect(result?.content[0]?.text).toContain("entryPoint in src/app.ts");
     expect(result?.details).toEqual(expect.objectContaining({ direction: "callers" }));
+    expect(JSON.stringify(result?.details)).not.toContain("sym_");
+    expect(operationMocks.executeCallGraph).toHaveBeenCalledWith("/repo", "pi", {
+      name: "validateToken",
+      direction: "callers",
+    });
   });
 
   it("formats callee results like other host adapters", async () => {
-    operationMocks.getCallGraphData.mockResolvedValue({
-      direction: "callees",
-      callers: [],
-      callees: [{
-        targetName: "validateToken",
-        toSymbolId: "sym_validate",
-        callType: "Call",
-        confidence: "Direct",
-        line: 21,
-        isResolved: true,
-      }],
+    operationMocks.executeCallGraph.mockResolvedValue({
+      text: '"entryPoint" at src/app.ts:3 calls 1 function(s):\n\n[1] → validateToken (Call) at line 21 [resolved to src/auth.ts:4]',
+      details: {
+        direction: "callees",
+        name: "entryPoint",
+        resolution: "resolved",
+        symbol: { name: "entryPoint", kind: "function", filePath: "src/app.ts", line: 3 },
+        edges: [{
+          name: "validateToken",
+          line: 21,
+          callType: "Call",
+          confidence: "Direct",
+          resolved: true,
+          target: { name: "validateToken", kind: "function", filePath: "src/auth.ts", line: 4 },
+        }],
+      },
     });
     const { tools } = await registerPiTools();
 
     const result = await tools.get("call_graph")?.execute(
       "tool-call",
-      { name: "entryPoint", direction: "callees", symbolId: "sym_entry" },
+      { name: "entryPoint", direction: "callees", file: null, directory: null, relationshipType: null },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
     );
 
-    expect(result?.content[0]?.text).toContain("[1] \u2192 validateToken (Call) at line 21 [resolved: sym_validate]");
+    expect(result?.content[0]?.text).toContain("[1] \u2192 validateToken (Call) at line 21 [resolved to src/auth.ts:4]");
     expect(result?.details).toEqual(expect.objectContaining({ direction: "callees" }));
+    expect(JSON.stringify(result?.details)).not.toContain("sym_");
+    expect(operationMocks.executeCallGraph).toHaveBeenCalledWith("/repo", "pi", {
+      name: "entryPoint",
+      direction: "callees",
+      file: null,
+      directory: null,
+      relationshipType: null,
+    });
   });
 
   it("formats call path results like other host adapters", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue([
-      { symbolName: "createOrder", filePath: "src/order.ts", line: 10, callType: "Call" },
-      { symbolName: "chargeCard", filePath: "src/pay.ts", line: 33, callType: "MethodCall" },
-    ]);
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: "Path (2 hops):\n[start] createOrder (src/order.ts:10)\n--MethodCall--> chargeCard (src/pay.ts:33)",
+      details: {
+        from: "createOrder",
+        to: "chargeCard",
+        resolution: "resolved",
+        path: [
+          { symbolName: "createOrder", filePath: "src/order.ts", line: 10, callType: "Call" },
+          { symbolName: "chargeCard", filePath: "src/pay.ts", line: 33, callType: "MethodCall" },
+        ],
+      },
+    });
     const { tools } = await registerPiTools();
 
     const result = await tools.get("call_graph_path")?.execute(
@@ -181,11 +211,14 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("Path (2 hops):");
     expect(result?.content[0]?.text).toContain("[start] createOrder (src/order.ts:10)");
     expect(result?.content[0]?.text).toContain("--MethodCall--> chargeCard (src/pay.ts:33)");
-    expect(result?.details).toHaveLength(2);
+    expect(result?.details).toEqual(expect.objectContaining({ resolution: "resolved" }));
   });
 
   it("routes codebase_context from/to through call-graph lookup with fallback", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue([]);
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: 'No path found between "callerFn" and "targetFn".',
+      details: { from: "callerFn", to: "targetFn", resolution: "no-path", path: [] },
+    });
     operationMocks.getCallGraphData.mockResolvedValue({
       direction: "callers",
       callers: [{
@@ -209,7 +242,7 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10);
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10);
     expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", { name: "targetFn", direction: "callers" });
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");

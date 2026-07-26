@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Name-based call graph routing**: `call_graph` now resolves callers and callees from human-readable symbol names across OpenCode, MCP, and Pi, reports bounded same-name ambiguity with file qualifiers, preserves unresolved caller references, and keeps internal symbol IDs out of agent-facing output. `call_graph_path` now refuses ambiguous endpoints instead of silently selecting one.
 - **Self-recovering context lookup**: `codebase_context` now retries empty scoped searches without file filters, retries inferred symbol text after definition-style misses, reports bounded recovery metadata, and keeps all fallback responses within the requested token budget across MCP, native OpenCode, Pi, and evaluation.
 
 ## [0.18.1] - 2026-07-26

@@ -217,6 +217,8 @@ Final line.`;
       expect(callGraphCmd.description).toBe("Trace callers, callees, or paths using the call graph");
       expect(callGraphCmd.template).toContain("call_graph");
       expect(callGraphCmd.template).toContain("call_graph_path");
+      expect(callGraphCmd.template).toContain("file=<path>");
+      expect(callGraphCmd.template).not.toContain("symbolId");
 
       const searchCmd = commands.get("search")!;
       expect(searchCmd.template).toContain("blameAuthor");

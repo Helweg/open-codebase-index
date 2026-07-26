@@ -139,12 +139,12 @@ export function buildRoutingHint(
   }
 
   if (!status || !status.indexed || status.compatibility?.compatible === false) {
-      const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbols." : "";
+      const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbol names; call_graph only needs file or directory when it reports ambiguity." : "";
       return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Use \`grep\` for exact identifiers or exhaustive matches.`;
   }
 
   const graphHandoff = includeGraphHandoff
-    ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
+    ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph; call_graph accepts the symbol name and requests file or directory only for ambiguity"
     : "";
   return `For this turn, prefer \`codebase_peek\` for local code discovery by behavior or likely location${graphHandoff}. Then use \`codebase_search\` when you need implementation content. Use \`grep\` for exact identifiers or exhaustive matches.`;
 }

@@ -309,6 +309,71 @@ describe("pr_impact tool", () => {
     );
     expect(typeof result).toBe("string");
     expect(result).toContain("funcY");
+
+    const callees = await call_graph.execute(
+      { name: "funcY", direction: "callees" },
+      { worktree: tempDir },
+    );
+    expect(callees).toContain("funcX");
+    expect(callees).not.toContain("sym_x");
+    expect(callees).not.toContain("sym_y");
+  });
+
+  it("call_graph reports same-name ambiguity and qualifies callers by file", async () => {
+    const indexer = await createIndexer();
+    const db = await getDatabase(indexer);
+    const apiHandlerPath = path.join(tempDir, "src", "api-handler.ts");
+    const jobHandlerPath = path.join(tempDir, "src", "job-handler.ts");
+    const apiCallerPath = path.join(tempDir, "src", "api-caller.ts");
+    const jobCallerPath = path.join(tempDir, "src", "job-caller.ts");
+    const symbols = [
+      { id: "sym_api_handler", filePath: apiHandlerPath, name: "handle", kind: "function", startLine: 4, startCol: 0, endLine: 8, endCol: 0, language: "typescript" },
+      { id: "sym_job_handler", filePath: jobHandlerPath, name: "handle", kind: "function", startLine: 7, startCol: 0, endLine: 11, endCol: 0, language: "typescript" },
+      { id: "sym_api_caller", filePath: apiCallerPath, name: "apiCaller", kind: "function", startLine: 1, startCol: 0, endLine: 5, endCol: 0, language: "typescript" },
+      { id: "sym_job_caller", filePath: jobCallerPath, name: "jobCaller", kind: "function", startLine: 1, startCol: 0, endLine: 5, endCol: 0, language: "typescript" },
+    ];
+    for (const symbol of symbols) db.upsertSymbol(symbol);
+    db.addSymbolsToBranch("main", symbols.map((symbol) => symbol.id));
+    db.upsertCallEdge({
+      id: "edge_api_handle",
+      fromSymbolId: "sym_api_caller",
+      targetName: "handle",
+      toSymbolId: "sym_api_handler",
+      callType: "Call",
+      confidence: "Direct",
+      line: 3,
+      col: 0,
+      isResolved: true,
+    });
+    db.upsertCallEdge({
+      id: "edge_job_handle",
+      fromSymbolId: "sym_job_caller",
+      targetName: "handle",
+      toSymbolId: "sym_job_handler",
+      callType: "Call",
+      confidence: "Direct",
+      line: 3,
+      col: 0,
+      isResolved: true,
+    });
+
+    const ambiguous = await call_graph.execute(
+      { name: "handle", direction: "callers" },
+      { worktree: tempDir },
+    );
+    expect(ambiguous).toContain("Multiple indexed symbols named \"handle\"");
+    expect(ambiguous).toContain(`${apiHandlerPath}:4`);
+    expect(ambiguous).toContain(`${jobHandlerPath}:7`);
+    expect(ambiguous).not.toContain("apiCaller");
+    expect(ambiguous).not.toContain("jobCaller");
+
+    const qualified = await call_graph.execute(
+      { name: "handle", direction: "callers", file: "src/api-handler.ts" },
+      { worktree: tempDir },
+    );
+    expect(qualified).toContain("apiCaller");
+    expect(qualified).not.toContain("jobCaller");
+    expect(qualified).not.toContain("sym_api_handler");
   });
 
   it("direction callers only returns upstream callers", async () => {

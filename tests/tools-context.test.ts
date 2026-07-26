@@ -4,9 +4,10 @@ import { countContextTokens } from "../src/tools/utils.js";
 import { resolveSearchContext } from "../src/tools/context.js";
 
 const operationMocks = vi.hoisted(() => ({
+  executeCallGraph: vi.fn(),
+  executeCallGraphPath: vi.fn(),
   searchCodebase: vi.fn(),
   implementationLookup: vi.fn(),
-  getCallGraphPath: vi.fn(),
   getCallGraphData: vi.fn(),
 }));
 
@@ -14,14 +15,15 @@ vi.mock("../src/tools/operations.js", async () => {
   const actual = await vi.importActual<typeof import("../src/tools/operations.js")>("../src/tools/operations.js");
   return {
     ...actual,
+    executeCallGraph: operationMocks.executeCallGraph,
+    executeCallGraphPath: operationMocks.executeCallGraphPath,
     searchCodebase: operationMocks.searchCodebase,
     implementationLookup: operationMocks.implementationLookup,
-    getCallGraphPath: operationMocks.getCallGraphPath,
     getCallGraphData: operationMocks.getCallGraphData,
   };
 });
 
-import { codebase_context } from "../src/tools/index.js";
+import { call_graph, call_graph_path, codebase_context } from "../src/tools/index.js";
 
 const context = { worktree: "/repo" };
 const commonArgs = {
@@ -38,9 +40,16 @@ const commonArgs = {
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    operationMocks.executeCallGraph.mockResolvedValue({
+      text: "shared call graph result",
+      details: { direction: "callers", name: "handler", resolution: "resolved", edges: [] },
+    });
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: "shared call graph path result",
+      details: { from: "start", to: "finish", resolution: "resolved", path: [] },
+    });
     operationMocks.searchCodebase.mockResolvedValue([]);
     operationMocks.implementationLookup.mockResolvedValue([]);
-    operationMocks.getCallGraphPath.mockResolvedValue([]);
     operationMocks.getCallGraphData.mockResolvedValue({ direction: "callers", callers: [], callees: [] });
   });
 
@@ -100,12 +109,16 @@ describe("native OpenCode codebase_context", () => {
   });
 
   it("routes dependency endpoints through bounded call-path output", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue(Array.from({ length: 30 }, (_, index) => ({
+    const path = Array.from({ length: 30 }, (_, index) => ({
       symbolName: `symbol${index}`,
       filePath: `src/path-${index}.ts`,
       line: index + 1,
       callType: "Call",
-    })));
+    }));
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: `Path (30 hops):\n${path.map((hop, index) => `${index === 0 ? "[start]" : "--Call-->"} ${hop.symbolName} (${hop.filePath}:${hop.line})`).join("\n")}`,
+      details: { from: "start", to: "finish", resolution: "resolved", path },
+    });
 
     const result = await codebase_context.execute({
       ...commonArgs,
@@ -114,9 +127,34 @@ describe("native OpenCode codebase_context", () => {
       to: "finish",
     }, context);
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10);
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10);
     expect(result).toContain("Path (30 hops)");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
+  });
+
+  it("surfaces ambiguous path endpoints without falling back to mixed caller edges", async () => {
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: "Cannot resolve call_graph_path from endpoint \"start\" unambiguously. Candidates:\n[1] src/a.ts:1\n[2] src/b.ts:2",
+      details: {
+        from: "start",
+        to: "finish",
+        resolution: "ambiguous",
+        ambiguousEndpoint: "from",
+        candidates: [],
+        path: [],
+      },
+    });
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "trace start to finish",
+      from: "start",
+      to: "finish",
+    }, context);
+
+    expect(result).toContain("unambiguously");
+    expect(result).toContain("src/a.ts:1");
+    expect(operationMocks.getCallGraphData).not.toHaveBeenCalled();
   });
 
   it("accepts explicit null optional arguments like the other adapters", async () => {
@@ -138,6 +176,36 @@ describe("native OpenCode codebase_context", () => {
       directory: undefined,
       metadataOnly: true,
     });
+  });
+
+  it("routes native call_graph through the shared name-based operation", async () => {
+    const result = await call_graph.execute({
+      name: "handler",
+      direction: "callees",
+      file: null,
+      directory: "src/api",
+      relationshipType: null,
+    }, context);
+
+    expect(result).toBe("shared call graph result");
+    expect(operationMocks.executeCallGraph).toHaveBeenCalledWith("/repo", "opencode", {
+      name: "handler",
+      direction: "callees",
+      file: null,
+      directory: "src/api",
+      relationshipType: null,
+    });
+    const schema = JSON.stringify(call_graph.args);
+    expect(schema).toContain('"file"');
+    expect(schema).toContain('"directory"');
+    expect(schema).not.toContain("symbolId");
+  });
+
+  it("routes native call_graph_path through ambiguity-safe shared handling", async () => {
+    const result = await call_graph_path.execute({ from: "start", to: "finish", maxDepth: null }, context);
+
+    expect(result).toBe("shared call graph path result");
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", null);
   });
 
   it("falls back from an inferred definition miss to conceptual search", async () => {

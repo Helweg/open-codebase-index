@@ -10,6 +10,13 @@ import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
+import {
+  queryCallGraph,
+  queryCallGraphPath,
+  type CallGraphQuery,
+  type CallGraphResult,
+  type CallGraphPathResult,
+} from "./call-graph.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
 
 type IndexerCacheKey = `${HostMode}::${string}`;
@@ -200,6 +207,26 @@ export async function getCallGraphData(
 
   const callers = await indexer.getCallers(params.name, params.relationshipType);
   return { direction: "callers", callers, callees: [] };
+}
+
+export async function executeCallGraph(
+  projectRoot: string | undefined,
+  host: HostMode,
+  params: CallGraphQuery,
+): Promise<CallGraphResult> {
+  const indexer = getIndexerForProject(projectRoot, host);
+  return queryCallGraph(indexer, params);
+}
+
+export async function executeCallGraphPath(
+  projectRoot: string | undefined,
+  host: HostMode,
+  from: string,
+  to: string,
+  maxDepth?: number | null,
+): Promise<CallGraphPathResult> {
+  const indexer = getIndexerForProject(projectRoot, host);
+  return queryCallGraphPath(indexer, from, to, maxDepth);
 }
 
 export async function getCallGraphPath(

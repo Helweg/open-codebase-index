@@ -4,9 +4,6 @@ import { z } from "zod";
 import { formatCostEstimate } from "../utils/cost.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
-  formatCallGraphCallees,
-  formatCallGraphCallers,
-  formatCallGraphPath,
   formatCodebasePeek,
   formatDefinitionLookup,
   formatHealthCheck,
@@ -25,9 +22,9 @@ import {
 } from "../tools/context.js";
 import { formatPrImpact } from "../tools/format-pr-impact.js";
 import {
+  executeCallGraph,
+  executeCallGraphPath,
   findSimilarCode,
-  getCallGraphData,
-  getCallGraphPath,
   getIndexLogs,
   getIndexMetrics,
   getIndexStatus,
@@ -260,43 +257,36 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "call_graph",
-    "Use after identifying a symbol to find its direct callers or callees and understand code flow. Use implementation_lookup first if the symbol or definition is still ambiguous."
+    "Use a human-readable symbol name to find direct callers or callees. The name is sufficient for both directions. If multiple exact-name definitions exist, the tool returns bounded file:line candidates; retry with file or directory to disambiguate."
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
     {
       name: z.string().describe("Function or method name to query"),
       direction: allowNullAsUndefined(
         z.enum(["callers", "callees"]).default("callers"),
       ).describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
-      symbolId: allowNullAsUndefined(z.string().optional()).describe("Symbol ID (required for 'callees' direction)"),
+      file: allowNullAsUndefined(z.string().optional()).describe("Optional file path or suffix used to select one exact-name definition"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Optional directory path used to select one exact-name definition"),
       relationshipType: allowNullAsUndefined(
         z.enum(["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"]).optional(),
       ).describe("Filter by relationship type. Omit to show all."),
     },
     async (args) => {
-      if (args.direction === "callees") {
-        if (!args.symbolId) {
-          return { content: [{ type: "text", text: "Error: 'symbolId' is required when direction is 'callees'." }] };
-        }
-        const { callees } = await getCallGraphData(runtime.projectRoot, runtime.host, args);
-        return { content: [{ type: "text", text: formatCallGraphCallees(args.symbolId, callees, args.relationshipType) }] };
-      }
-
-      const { callers } = await getCallGraphData(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: formatCallGraphCallers(args.name, callers, args.relationshipType) }] };
+      const result = await executeCallGraph(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 
   server.tool(
     "call_graph_path",
-    "Use after identifying both endpoint symbols to find the shortest known call path between them. Use codebase_peek or implementation_lookup first when either endpoint is unknown.",
+    "Use human-readable endpoint names to find the shortest known call path. Ambiguous same-name endpoints return bounded locations and are never silently selected.",
     {
       from: z.string().describe("Source function/method name (starting point)"),
       to: z.string().describe("Target function/method name (destination)"),
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
     async (args) => {
-      const path = await getCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
-      return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
+      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
   server.tool(

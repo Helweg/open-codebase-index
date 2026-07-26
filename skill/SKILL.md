@@ -92,7 +92,10 @@ Query callers or callees of a function/method.
 
 ```
 call_graph(name="validateToken", direction="callers")
+call_graph(name="validateToken", direction="callees", file="src/auth.ts")
 ```
+
+Names are sufficient for both directions. Add `file` or `directory` only when exact-name definitions are ambiguous.
 
 ### `index_codebase`
 Manually trigger indexing. Required before first search.

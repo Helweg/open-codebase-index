@@ -244,7 +244,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     systemPrompt:
       `${event.systemPrompt}\n\n` +
       "Check index_status first when index readiness is unknown. For repository questions, call codebase_context before search/grep/bash/read-style broad reads. " +
-      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow. " +
+      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow. call_graph accepts names for callers and callees; use file or directory only to resolve reported ambiguity. " +
       "Avoid broad tool calls until semantic locations are known.",
   }));
 

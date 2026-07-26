@@ -7,9 +7,6 @@ import { formatCostEstimate } from "../utils/cost.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCodebasePeek,
-  formatCallGraphCallees,
-  formatCallGraphCallers,
-  formatCallGraphPath,
   formatDefinitionLookup,
   formatHealthCheck,
   formatIndexStats,
@@ -20,9 +17,9 @@ import {
 } from "./utils.js";
 import {
   addKnowledgeBase,
+  executeCallGraph,
+  executeCallGraphPath,
   findSimilarCode,
-  getCallGraphData,
-  getCallGraphPath,
   getIndexLogs,
   getIndexMetrics,
   getIndexerForProject as getOperationIndexerForProject,
@@ -278,39 +275,33 @@ export const implementation_lookup: ToolDefinition = tool({
 
 export const call_graph: ToolDefinition = tool({
   description:
-    "Query the call graph to find callers or callees of a function/method. Use to understand code flow and dependencies between functions."
-    + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
+    "Find direct callers or callees by human-readable function or method name. The name is sufficient for both directions. "
+    + "If the exact name has multiple indexed definitions, use file or directory to disambiguate; the tool never silently combines them. "
+    + "Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
   args: {
     name: z.string().describe("Function or method name to query"),
-    direction: z.enum(["callers", "callees"]).default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
-    symbolId: z.string().optional().describe("Symbol ID (required for 'callees' direction, returned by previous call_graph queries)"),
-    relationshipType: z.enum(RELATIONSHIP_TYPE_VALUES).optional().describe("Filter by relationship type. Omit to show all."),
+    direction: z.enum(["callers", "callees"]).nullable().optional().default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
+    file: z.string().nullable().optional().describe("Optional file path or suffix used to select one exact-name definition"),
+    directory: z.string().nullable().optional().describe("Optional directory path used to select one exact-name definition"),
+    relationshipType: z.enum(RELATIONSHIP_TYPE_VALUES).nullable().optional().describe("Filter by relationship type. Omit to show all."),
   },
   async execute(args, context) {
-    if (args.direction === "callees") {
-      if (!args.symbolId) {
-        return "Error: 'symbolId' is required when direction is 'callees'. First use direction='callers' to find the symbol ID.";
-      }
-      const { callees } = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
-      return formatCallGraphCallees(args.symbolId, callees, args.relationshipType);
-    }
-
-    const { callers } = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
-    return formatCallGraphCallers(args.name, callers, args.relationshipType);
+    const result = await executeCallGraph(context?.worktree, DEFAULT_HOST, args);
+    return result.text;
   },
 });
 
 export const call_graph_path: ToolDefinition = tool({
   description:
-    "Find the shortest connection path between two symbols in the call graph. Given a source and target function/method name, returns the chain of calls connecting them.",
+    "Find the shortest known call path between two human-readable symbol names. Ambiguous same-name endpoints are reported with locations instead of being silently selected.",
   args: {
     from: z.string().describe("Source function/method name (starting point)"),
     to: z.string().describe("Target function/method name (destination)"),
-    maxDepth: z.number().optional().default(10).describe("Maximum traversal depth (default: 10)"),
+    maxDepth: z.number().nullable().optional().default(10).describe("Maximum traversal depth (default: 10)"),
   },
   async execute(args, context) {
-    const path = await getCallGraphPath(context?.worktree, DEFAULT_HOST, args.from, args.to, args.maxDepth);
-    return formatCallGraphPath(args.from, args.to, path);
+    const result = await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args.from, args.to, args.maxDepth);
+    return result.text;
   },
 });
 
