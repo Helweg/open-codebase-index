@@ -59,7 +59,18 @@ export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", 
 // constructors and imports), so same-file resolution in this file must use
 // the same normalization when looking up symbols by name. Keep this set in
 // sync with the matching branch in native/src/call_extractor.rs.
-export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex"]);
+export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex", "php"]);
+// Existing indexes without this metadata are the implicit version 1.
+const CALL_GRAPH_RESOLUTION_VERSION = "2";
+const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
+  "function_declaration",
+  "function",
+  "function_definition",
+]);
+const PHP_CLASS_SYMBOL_CHUNK_TYPES = new Set([
+  "class_declaration",
+  "class_definition",
+]);
 export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -2170,6 +2181,15 @@ export class Indexer {
     return `index.forceReembed.${projectHash}`;
   }
 
+  private getCallGraphResolutionMetadataKey(): string {
+    if (this.config.scope !== "global") {
+      return "index.callGraphResolutionVersion";
+    }
+
+    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
+    return `index.callGraphResolutionVersion.${projectHash}`;
+  }
+
   private hasProjectForceReembedPending(): boolean {
     return this.config.scope === "global" && this.database?.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
   }
@@ -3644,6 +3664,7 @@ export class Indexer {
     this.database.setMetadata("index.embeddingProvider", provider.provider);
     this.database.setMetadata("index.embeddingModel", provider.modelInfo.model);
     this.database.setMetadata("index.embeddingDimensions", provider.modelInfo.dimensions.toString());
+    this.database.setMetadata(this.getCallGraphResolutionMetadataKey(), CALL_GRAPH_RESOLUTION_VERSION);
     if (this.config.scope === "global") {
       if (completeProjectEmbeddingStrategyReset) {
         this.database.setMetadata(this.getProjectEmbeddingStrategyMetadataKey(), EMBEDDING_STRATEGY_VERSION);
@@ -3918,12 +3939,19 @@ export class Indexer {
     const changedFiles: Array<{ path: string; content: string; hash: string }> = [];
     const unchangedFilePaths = new Set<string>();
     const currentFileHashes = new Map<string, string>();
+    const needsCallGraphResolutionMigration =
+      database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
 
     for (const f of files) {
       const currentHash = hashFile(f.path);
       currentFileHashes.set(f.path, currentHash);
 
-      if (this.fileHashCache.get(f.path) === currentHash) {
+      const cachedHashMatches = this.fileHashCache.get(f.path) === currentHash;
+      const needsPhpCallGraphRefresh = cachedHashMatches &&
+        needsCallGraphResolutionMigration &&
+        database.getChunksByFile(f.path).some((chunk) => chunk.language === "php");
+
+      if (cachedHashMatches && !needsPhpCallGraphRefresh) {
         unchangedFilePaths.add(f.path);
         this.logger.recordCacheHit();
       } else {
@@ -4233,7 +4261,20 @@ export class Indexer {
         // Resolve same-file calls (with the same case-insensitivity rules
         // used to build symbolsByName above).
         for (const edge of edges) {
-          const candidates = symbolsByName.get(normalizeSymbolKey(edge.targetName));
+          let candidates = symbolsByName.get(normalizeSymbolKey(edge.targetName));
+          if (fileLanguage === "php" && candidates) {
+            // PHP permits functions and classes whose names differ only by symbol kind.
+            // Resolve against the kind implied by the edge before checking uniqueness.
+            if (edge.callType === "Constructor") {
+              candidates = candidates.filter((candidate) =>
+                PHP_CLASS_SYMBOL_CHUNK_TYPES.has(candidate.kind)
+              );
+            } else if (edge.callType === "Call") {
+              candidates = candidates.filter((candidate) =>
+                PHP_FUNCTION_SYMBOL_CHUNK_TYPES.has(candidate.kind)
+              );
+            }
+          }
           if (candidates && candidates.length === 1) {
             database.resolveCallEdge(edge.id, candidates[0].id);
           }
