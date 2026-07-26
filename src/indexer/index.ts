@@ -4174,6 +4174,7 @@ export class Indexer {
     const restrictExistingChunksToBranch = this.branchNameOverride !== undefined
       || previousBranchChunkIds.length > 0
       || database.getAllBranches().length > 0;
+    const projectRootPath = path.resolve(this.projectRoot);
     const forceScopedReembed = scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
     const failedForcedChunkIds = new Set<string>();
 
@@ -4324,7 +4325,11 @@ export class Indexer {
       if (scopedRoots && !this.isFileInCurrentScope(metadata.filePath, scopedRoots)) {
         continue;
       }
-      if (restrictExistingChunksToBranch && !previousBranchChunkIdSet.has(key)) {
+      if (
+        restrictExistingChunksToBranch
+        && isPathWithinRoot(metadata.filePath, projectRootPath)
+        && !previousBranchChunkIdSet.has(key)
+      ) {
         continue;
       }
       if (forceScopedReembed && scopedRoots && this.isFileInCurrentScope(metadata.filePath, scopedRoots)) {
