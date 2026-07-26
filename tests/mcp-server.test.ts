@@ -38,13 +38,28 @@ const indexerMockState = vi.hoisted(() => ({
     initialize: ReturnType<typeof vi.fn>;
     search: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
-    getCallers: ReturnType<typeof vi.fn>;
+    getCallGraphSymbols: ReturnType<typeof vi.fn>;
+    getCallersForSymbol: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
-    findCallPath: ReturnType<typeof vi.fn>;
+    findCallPathBySymbolIds: ReturnType<typeof vi.fn>;
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
 }));
+
+function graphSymbol(id: string, name: string, filePath: string, startLine = 1) {
+  return {
+    id,
+    filePath,
+    name,
+    kind: "function",
+    startLine,
+    startCol: 0,
+    endLine: startLine + 4,
+    endCol: 0,
+    language: "typescript",
+  };
+}
 
 vi.mock("../src/config/merger.js", () => mergerMocks);
 
@@ -101,9 +116,10 @@ vi.mock("../src/indexer/index.js", () => {
         initialize: this.initialize,
         search: this.search,
         getStatus: this.getStatus,
-        getCallers: this.getCallers,
+        getCallGraphSymbols: this.getCallGraphSymbols,
+        getCallersForSymbol: this.getCallersForSymbol,
         getCallees: this.getCallees,
-        findCallPath: this.findCallPath,
+        findCallPathBySymbolIds: this.findCallPathBySymbolIds,
         clearIndex: this.clearIndex,
         forceIndex: this.forceIndex,
       });
@@ -137,7 +153,64 @@ vi.mock("../src/indexer/index.js", () => {
     getStatus = vi.fn().mockImplementation(async () => mockStatusResult);
     healthCheck = vi.fn().mockImplementation(async () => mockHealthCheckResult);
     clearIndex = vi.fn().mockResolvedValue(undefined);
-    getCallers = vi.fn().mockResolvedValue([
+    getCallGraphSymbols = vi.fn().mockResolvedValue([
+      {
+        id: "sym_validate",
+        filePath: "/tmp/test-project/src/auth.ts",
+        name: "validateToken",
+        kind: "function",
+        startLine: 10,
+        startCol: 0,
+        endLine: 25,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "from-node-id",
+        filePath: "/tmp/test-project/src/start.ts",
+        name: "fromNode",
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "to-node-id",
+        filePath: "/tmp/test-project/src/end.ts",
+        name: "toNode",
+        kind: "function",
+        startLine: 2,
+        startCol: 0,
+        endLine: 6,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "start-id",
+        filePath: "/tmp/test-project/src/start-long.ts",
+        name: "start",
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 0,
+        language: "typescript",
+      },
+      {
+        id: "finish-id",
+        filePath: "/tmp/test-project/src/finish.ts",
+        name: "finish",
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 0,
+        language: "typescript",
+      },
+    ]);
+    getCallersForSymbol = vi.fn().mockResolvedValue([
       {
         id: "edge_1",
         fromSymbolId: "sym_caller",
@@ -164,7 +237,7 @@ vi.mock("../src/indexer/index.js", () => {
         toSymbolId: "sym_called",
       },
     ]);
-    findCallPath = vi.fn().mockResolvedValue([
+    findCallPathBySymbolIds = vi.fn().mockResolvedValue([
       {
         symbolName: "fromNode",
         filePath: "src/start.ts",
@@ -335,8 +408,8 @@ describe("MCP server tools and prompts", () => {
     expect(descriptions.get("implementation_lookup")).toContain("Do not use for callers");
     expect(descriptions.get("codebase_search")).toContain("after codebase_peek");
     expect(descriptions.get("codebase_search")).toContain("grep");
-    expect(descriptions.get("call_graph")).toContain("after identifying a symbol");
-    expect(descriptions.get("call_graph_path")).toContain("both endpoint symbols");
+    expect(descriptions.get("call_graph")).toContain("Unique names resolve automatically");
+    expect(descriptions.get("call_graph_path")).toContain("fromFilePath or toFilePath");
     expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
   });
 
@@ -531,7 +604,7 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain("Path (2 hops)");
     const indexer = indexerMockState.instances.at(-1);
-    expect(indexer?.findCallPath).toHaveBeenCalledWith("fromNode", "toNode", 7);
+    expect(indexer?.findCallPathBySymbolIds).toHaveBeenCalledWith("from-node-id", "to-node-id", 7);
   });
 
   it("should keep conceptual and graph responses within the minimum token budget", async () => {
@@ -554,7 +627,7 @@ describe("MCP server tools and prompts", () => {
     expect(countContextTokens(conceptualText)).toBeLessThanOrEqual(128);
     expect(conceptualText).not.toContain("full source");
 
-    indexer?.findCallPath.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
+    indexer?.findCallPathBySymbolIds.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
       symbolName: `symbol${index}`,
       filePath: `src/path-${index}.ts`,
       line: index + 1,
@@ -596,8 +669,8 @@ describe("MCP server tools and prompts", () => {
 
   it("should recover direct unresolved edges when path traversal returns no hops", async () => {
     const indexer = indexerMockState.instances.at(-1);
-    indexer?.findCallPath.mockResolvedValueOnce([]);
-    indexer?.getCallers.mockResolvedValueOnce([{
+    indexer?.findCallPathBySymbolIds.mockResolvedValueOnce([]);
+    indexer?.getCallersForSymbol.mockResolvedValueOnce([{
       fromSymbolId: "from-node-id",
       fromSymbolName: "fromNode",
       fromSymbolFilePath: "src/start.ts",
@@ -906,6 +979,7 @@ describe("MCP server tools and prompts", () => {
       arguments: {
         name: "validateToken",
         direction: null,
+        filePath: null,
         symbolId: null,
         relationshipType: null,
       },
@@ -917,7 +991,80 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("called by 1 function");
     const indexer = indexerMockState.instances[0];
-    expect(indexer.getCallers).toHaveBeenCalledWith("validateToken", undefined);
+    expect(indexer.getCallersForSymbol).toHaveBeenCalledWith("sym_validate", "validateToken", true, undefined);
+  });
+
+  it("should report bounded candidate locations instead of unioning duplicate names", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallersForSymbol.mockClear();
+    indexer.getCallGraphSymbols.mockResolvedValueOnce(Array.from({ length: 7 }, (_, index) =>
+      graphSymbol(`sym_run_${index}`, "run", `/tmp/test-project/src/worker-${index}.ts`, index + 1)));
+
+    const result = await client.callTool({ name: "call_graph", arguments: { name: " run ", direction: "callers" } });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(text).toContain('Ambiguous symbol "run"');
+    expect(text).toContain("Pass filePath");
+    expect(text).toContain("src/worker-0.ts:1");
+    expect(text).toContain("...and 2 more");
+    expect(text).not.toContain("sym_run_");
+    expect(indexer.getCallersForSymbol).not.toHaveBeenCalled();
+  });
+
+  it("should normalize file paths and resolve callees by name", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("sym_run_a", "run", "/tmp/test-project/src/a.ts"),
+      graphSymbol("sym_run_b", "run", "/tmp/test-project/src/nested/b.ts"),
+    ]);
+
+    const result = await client.callTool({
+      name: "call_graph",
+      arguments: { name: " run ", direction: "callees", filePath: " ./src\\nested//b.ts/ " },
+    });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(text).toContain('"run" at src/nested/b.ts:1 calls 1 function');
+    expect(indexer.getCallees).toHaveBeenCalledWith("sym_run_b", undefined);
+  });
+
+  it("should return a concise missing-name result", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([]);
+    const result = await client.callTool({ name: "call_graph", arguments: { name: "missing", direction: "callers" } });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(text).toContain('No indexed symbol named "missing" was found');
+  });
+
+  it("should preserve symbolId as a backward-compatible escape hatch", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("sym_run_a", "run", "/tmp/test-project/src/a.ts"),
+      graphSymbol("sym_run_b", "run", "/tmp/test-project/src/b.ts"),
+    ]);
+    await client.callTool({
+      name: "call_graph",
+      arguments: { name: "run", direction: "callees", symbolId: " sym_run_b " },
+    });
+    expect(indexer.getCallees).toHaveBeenCalledWith("sym_run_b", undefined);
+  });
+
+  it("should disambiguate both path endpoints with normalized file paths", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("sym_start_a", "start", "/tmp/test-project/src/a.ts"),
+      graphSymbol("sym_start_b", "start", "/tmp/test-project/src/nested/start.ts"),
+      graphSymbol("sym_finish_a", "finish", "/tmp/test-project/src/c.ts"),
+      graphSymbol("sym_finish_b", "finish", "/tmp/test-project/src/nested/finish.ts"),
+    ]);
+    await client.callTool({
+      name: "call_graph_path",
+      arguments: {
+        from: " start ",
+        to: " finish ",
+        fromFilePath: " src\\nested/start.ts ",
+        toFilePath: " ./src/nested//finish.ts ",
+      },
+    });
+    expect(indexer.findCallPathBySymbolIds).toHaveBeenCalledWith("sym_start_b", "sym_finish_b", 10);
   });
 
   it("should get search prompt", async () => {

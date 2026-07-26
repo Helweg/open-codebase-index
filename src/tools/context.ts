@@ -10,13 +10,15 @@ import { inferExactSymbolFromQuery } from "./symbol-inference.js";
 import {
   buildContextPack,
   fitTextToContextBudget,
-  formatCallGraphPath,
+  formatCallGraphPathResult,
 } from "./utils.js";
 
 export interface CodebaseContextInput {
   query: string;
   from?: string | null;
   to?: string | null;
+  fromFilePath?: string | null;
+  toFilePath?: string | null;
   symbol?: string | null;
   limit?: number | null;
   maxDepth?: number | null;
@@ -505,8 +507,10 @@ export async function resolveCodebaseContext(
   host: HostMode,
   input: CodebaseContextInput,
 ): Promise<CodebaseContextResult> {
-  const from = input.from ?? undefined;
-  const to = input.to ?? undefined;
+  const from = trimOrUndefined(input.from);
+  const to = trimOrUndefined(input.to);
+  const fromFilePath = trimOrUndefined(input.fromFilePath);
+  const toFilePath = trimOrUndefined(input.toFilePath);
   const symbol = input.symbol ?? undefined;
   const limit = input.limit ?? 10;
   const maxDepth = input.maxDepth ?? 10;
@@ -514,10 +518,19 @@ export async function resolveCodebaseContext(
   const directory = input.directory ?? undefined;
   const tokenBudget = input.tokenBudget ?? undefined;
   if (from && to) {
-    const path = await getCallGraphPath(projectRoot, host, from, to, maxDepth);
-    if (path.length > 0) {
+    const path = await getCallGraphPath(
+      projectRoot,
+      host,
+      from,
+      to,
+      maxDepth,
+      fromFilePath,
+      toFilePath,
+    );
+    const pathText = formatCallGraphPathResult(path);
+    if (path.path.length > 0) {
       const fitted = fitTextToContextBudget(
-        formatCallGraphPath(from, to, path),
+        pathText,
         tokenBudget,
       );
       return {
@@ -526,11 +539,21 @@ export async function resolveCodebaseContext(
       };
     }
 
+    if (path.from.status !== "resolved" || path.to.status !== "resolved") {
+      const fitted = fitTextToContextBudget(pathText, tokenBudget);
+      return {
+        text: fitted.text,
+        details: fittedDetails("path", fitted),
+      };
+    }
+    const resolvedFrom = path.from;
+
     const { callers } = await getCallGraphData(projectRoot, host, {
       name: to,
       direction: "callers",
+      filePath: toFilePath,
     });
-    const directEdge = callers.find((edge) => edge.fromSymbolName === from);
+    const directEdge = callers.find((edge) => edge.fromSymbolId === resolvedFrom.symbolId);
     if (directEdge) {
       const location = directEdge.fromSymbolFilePath
         ? ` at ${directEdge.fromSymbolFilePath}:${directEdge.line}`
@@ -547,7 +570,7 @@ export async function resolveCodebaseContext(
     }
 
     const fitted = fitTextToContextBudget(
-      formatCallGraphPath(from, to, path),
+      pathText,
       tokenBudget,
     );
     return {

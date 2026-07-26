@@ -27,6 +27,8 @@ const context = { worktree: "/repo" };
 const commonArgs = {
   from: undefined,
   to: undefined,
+  fromFilePath: undefined,
+  toFilePath: undefined,
   symbol: undefined,
   limit: 10,
   maxDepth: 10,
@@ -40,8 +42,17 @@ describe("native OpenCode codebase_context", () => {
     vi.clearAllMocks();
     operationMocks.searchCodebase.mockResolvedValue([]);
     operationMocks.implementationLookup.mockResolvedValue([]);
-    operationMocks.getCallGraphPath.mockResolvedValue([]);
-    operationMocks.getCallGraphData.mockResolvedValue({ direction: "callers", callers: [], callees: [] });
+    operationMocks.getCallGraphPath.mockResolvedValue({
+      from: { status: "not_found", name: "", candidates: [], totalCandidates: 0 },
+      to: { status: "not_found", name: "", candidates: [], totalCandidates: 0 },
+      path: [],
+    });
+    operationMocks.getCallGraphData.mockResolvedValue({
+      direction: "callers",
+      resolution: { status: "not_found", name: "", candidates: [], totalCandidates: 0 },
+      callers: [],
+      callees: [],
+    });
   });
 
   it("returns a bounded conceptual evidence pack without source content", async () => {
@@ -100,12 +111,16 @@ describe("native OpenCode codebase_context", () => {
   });
 
   it("routes dependency endpoints through bounded call-path output", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue(Array.from({ length: 30 }, (_, index) => ({
-      symbolName: `symbol${index}`,
-      filePath: `src/path-${index}.ts`,
-      line: index + 1,
-      callType: "Call",
-    })));
+    operationMocks.getCallGraphPath.mockResolvedValue({
+      from: { status: "resolved", name: "start", symbolId: "start-id", filePath: "src/start.ts", startLine: 1, kind: "function", matchedBy: "name" },
+      to: { status: "resolved", name: "finish", symbolId: "finish-id", filePath: "src/finish.ts", startLine: 30, kind: "function", matchedBy: "name" },
+      path: Array.from({ length: 30 }, (_, index) => ({
+        symbolName: `symbol${index}`,
+        filePath: `src/path-${index}.ts`,
+        line: index + 1,
+        callType: index === 0 ? "source" : "Call",
+      })),
+    });
 
     const result = await codebase_context.execute({
       ...commonArgs,
@@ -114,7 +129,7 @@ describe("native OpenCode codebase_context", () => {
       to: "finish",
     }, context);
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10);
+    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10, undefined, undefined);
     expect(result).toContain("Path (30 hops)");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
@@ -124,6 +139,8 @@ describe("native OpenCode codebase_context", () => {
       query: "request handling",
       from: null,
       to: null,
+      fromFilePath: null,
+      toFilePath: null,
       symbol: null,
       limit: null,
       maxDepth: null,
