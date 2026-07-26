@@ -506,6 +506,120 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(results[0]?.filePath).not.toContain(path.join("app", "indexer", "index.ts"));
   });
 
+  it("applies directory, file type, and blame scopes before sending candidates to an external reranker", async () => {
+    const scopedDir = fs.mkdtempSync(path.join(os.tmpdir(), "search-reranker-scope-"));
+    let scopedIndexer: Indexer | undefined;
+    try {
+      execFileSync("git", ["init"], { cwd: scopedDir });
+      execFileSync("git", ["config", "user.name", "Default User"], { cwd: scopedDir });
+      execFileSync("git", ["config", "user.email", "default@example.com"], { cwd: scopedDir });
+      fs.mkdirSync(path.join(scopedDir, "private", "scope"), { recursive: true });
+      fs.mkdirSync(path.join(scopedDir, "public"), { recursive: true });
+
+      fs.writeFileSync(path.join(scopedDir, "private", "scope", "allowed-a.ts"),
+        "export function authorizeRequest() { return 'active session request'; }\n", "utf-8");
+      fs.writeFileSync(path.join(scopedDir, "private", "scope", "allowed-b.ts"),
+        "export function refreshAuthorization() { return 'active session request'; }\n", "utf-8");
+      execFileSync("git", ["add", "."], { cwd: scopedDir });
+      execFileSync("git", ["commit", "-m", "add allowed scoped sources"], {
+        cwd: scopedDir,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Jane Doe",
+          GIT_AUTHOR_EMAIL: "jane@example.com",
+          GIT_COMMITTER_NAME: "Jane Doe",
+          GIT_COMMITTER_EMAIL: "jane@example.com",
+        },
+      });
+
+      fs.writeFileSync(path.join(scopedDir, "private", "scope", "excluded.md"),
+        "# active session request FILE_TYPE_SECRET\n", "utf-8");
+      fs.writeFileSync(path.join(scopedDir, "private", "scope", "excluded-blame.ts"),
+        "export function leakedByBlame() { return 'active session request BLAME_SECRET'; }\n", "utf-8");
+      fs.writeFileSync(path.join(scopedDir, "public", "excluded-directory.ts"),
+        "export function leakedByDirectory() { return 'active session request DIRECTORY_SECRET'; }\n", "utf-8");
+      execFileSync("git", ["add", "."], { cwd: scopedDir });
+      execFileSync("git", ["commit", "-m", "add excluded sources"], {
+        cwd: scopedDir,
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: "Alex Roe",
+          GIT_AUTHOR_EMAIL: "alex@example.com",
+          GIT_COMMITTER_NAME: "Alex Roe",
+          GIT_COMMITTER_EMAIL: "alex@example.com",
+        },
+      });
+
+      const rerankerRequests: string[][] = [];
+      fetchSpy.mockImplementation(async (url: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        if (String(url).includes("/rerank")) {
+          const documents = (JSON.parse(String(init?.body ?? "{}")) as { documents?: string[] }).documents ?? [];
+          rerankerRequests.push(documents);
+          return new Response(JSON.stringify({
+            results: documents.map((_, index) => ({ index, relevance_score: 1 - index / 100 })),
+          }), { status: 200 });
+        }
+
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+        const texts = Array.isArray(body.input) ? body.input : [];
+        return new Response(JSON.stringify({
+          data: texts.map((text) => ({
+            embedding: Array.from({ length: 8 }, (_, index) => ((text.length + index * 13) % 97) / 97),
+          })),
+          usage: { total_tokens: Math.max(1, texts.length * 8) },
+        }), { status: 200 });
+      });
+
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-embedding-model",
+          dimensions: 8,
+        },
+        reranker: {
+          enabled: true,
+          provider: "custom",
+          model: "mock-reranker",
+          baseUrl: "https://rerank.example/v1",
+          topN: 10,
+        },
+        indexing: {
+          watchFiles: false,
+          gitBlame: { enabled: true },
+        },
+        search: {
+          maxResults: 10,
+          minScore: 0,
+          rerankTopN: 20,
+        },
+      });
+
+      scopedIndexer = new Indexer(scopedDir, config);
+      await scopedIndexer.index();
+      const results = await scopedIndexer.search("authorize incoming requests with active sessions", 10, {
+        metadataOnly: true,
+        filterByBranch: false,
+        directory: "private/scope",
+        fileType: "ts",
+        blameAuthor: "jane@example.com",
+      });
+
+      expect(results).toHaveLength(2);
+      expect(results.every((result) => result.filePath.includes(path.join("private", "scope", "allowed-")))).toBe(true);
+      expect(rerankerRequests.length).toBeGreaterThan(0);
+      const sentDocuments = rerankerRequests.flat();
+      expect(sentDocuments).toHaveLength(2);
+      expect(sentDocuments.every((document) => document.includes(path.join("private", "scope", "allowed-")))).toBe(true);
+      expect(sentDocuments.join("\n")).not.toContain("FILE_TYPE_SECRET");
+      expect(sentDocuments.join("\n")).not.toContain("BLAME_SECRET");
+      expect(sentDocuments.join("\n")).not.toContain("DIRECTORY_SECRET");
+    } finally {
+      await scopedIndexer?.close();
+      fs.rmSync(scopedDir, { recursive: true, force: true });
+    }
+  });
+
   it("falls back to weighted keyword search when query embedding generation fails", async () => {
     const config = parseConfig({
       embeddingProvider: "custom",

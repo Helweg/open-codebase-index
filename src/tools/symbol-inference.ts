@@ -1,3 +1,5 @@
+import { analyzeQueryIntent } from "../indexer/intent-aware-ranking.js";
+
 const IDENTIFIER_RE = /[A-Za-z_$][A-Za-z0-9_$]*/g;
 const QUOTED_BACKTICK_RE = /`([^`]+)`/g;
 const QUOTED_SINGLE_RE = /'([^'\\]+)'/g;
@@ -109,6 +111,10 @@ function isSingleMeaningfulToken(query: string, symbol: string): boolean {
 }
 
 export function inferExactSymbolFromQuery(query: string): string | undefined {
+  if (analyzeQueryIntent(query).explicitArtifactIntent) {
+    return undefined;
+  }
+
   const quoted = extractQuotedIdentifiers(query);
   if (quoted.length === 1) {
     return quoted[0];

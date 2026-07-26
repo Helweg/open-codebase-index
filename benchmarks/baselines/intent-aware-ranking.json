@@ -1,0 +1,71 @@
+{
+  "fixtureVersion": "1.0.0",
+  "queryCount": 8,
+  "topK": 3,
+  "baseline": {
+    "evidenceRecallAt3": 0.8125,
+    "mrr": 0.483333
+  },
+  "intentAware": {
+    "evidenceRecallAt3": 1,
+    "mrr": 1
+  },
+  "perQuery": [
+    {
+      "id": "exact-definition",
+      "baselineRecallAt3": 0,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.2,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "unicode-definition",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.333333,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "test-intent",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.333333,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "docs-intent",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.333333,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "config-intent",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.333333,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "call-flow-intent",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 0.333333,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "diverse-evidence",
+      "baselineRecallAt3": 0.5,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 1,
+      "intentAwareReciprocalRank": 1
+    },
+    {
+      "id": "conceptual-guardrail",
+      "baselineRecallAt3": 1,
+      "intentAwareRecallAt3": 1,
+      "baselineReciprocalRank": 1,
+      "intentAwareReciprocalRank": 1
+    }
+  ]
+}

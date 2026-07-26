@@ -348,6 +348,44 @@ describe("native OpenCode codebase_context", () => {
     });
   });
 
+  it("keeps explicit artifact-intent queries on host-aware scoped search instead of definition lookup", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([{
+      filePath: "tests/status.test.ts",
+      startLine: 1,
+      endLine: 5,
+      name: "getStatus test",
+      chunkType: "test_declaration",
+      content: "hidden",
+      score: 0.9,
+    }]);
+
+    const queries = [
+      "tests for `getStatus`",
+      "where is getStatus documentation",
+      "getStatus configuration settings",
+      "who calls getStatus",
+    ];
+
+    for (const query of queries) {
+      operationMocks.searchCodebase.mockClear();
+      operationMocks.implementationLookup.mockClear();
+      await codebase_context.execute({
+        ...commonArgs,
+        query,
+        fileType: "ts",
+        directory: "src",
+      }, context);
+
+      expect(operationMocks.implementationLookup).not.toHaveBeenCalled();
+      expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", query, {
+        limit: 100,
+        fileType: "ts",
+        directory: "src",
+        metadataOnly: true,
+      });
+    }
+  });
+
   it("falls back from an inferred definition miss to conceptual search", async () => {
     operationMocks.searchCodebase.mockResolvedValue([{
       filePath: "src/fallback.ts",

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Privacy-safe effectiveness metrics**: Added independent top-level opt-in, process-lifetime memory-only, schema-versioned fixed counters and histograms for repository tool routes, hosts, outcomes, recovery, result counts, latency, token budgets, returned-token estimates, exact-search handoffs, and scope relaxation across OpenCode, MCP, and Pi. The process-wide collector survives Indexer and config-watcher refreshes without repository or user identity dimensions, supports explicit reset, and has adversarial privacy, saturation, disabled-overhead, final-response, and error-path coverage.
 - **Offline effectiveness evaluation**: Added deterministic synthetic fixtures and a no-network formatting report with equal `maxResults` and final-response token budgets across routes. Evidence is credited only when visible in returned text, and the oracle exact-search baseline emits only matching lines without arbitrary complete reads. The report states that fixed rankings and markers do not measure retrieval quality, latency, end-to-end agent success, causal impact, or production performance.
+- **Intent-aware ranking evaluation**: Added a transparent fixed-candidate baseline comparison for evidence recall@3 and MRR across exact and Unicode-normalized definitions, test/docs/config/call-flow queries, duplicate evidence, file diversity, and a conceptual-search guardrail.
 
 ### Changed
 
@@ -18,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Automatic branch and PR index preparation**: `pr_impact` now safely materializes and indexes missing branch or pull-request commits in isolated hook-disabled worktrees, verifies commit-aware fork-specific catalogs, and reuses or replaces indexes without changing the caller's worktree.
 - **Name-based call graph routing**: Callers, callees, and dependency paths now resolve unique symbol names automatically across native OpenCode, MCP, Pi, and `codebase_context`. Duplicate names return bounded candidate locations with optional file-path disambiguators, while `symbolId` remains an optional compatibility escape hatch.
 - **Self-recovering context lookup**: `codebase_context` now retries empty scoped searches without file filters, retries inferred symbol text after definition-style misses, reports bounded recovery metadata, and keeps all fallback responses within the requested token budget across MCP, native OpenCode, Pi, and evaluation.
+- **Intent-aware local ranking**: Semantic and hybrid search now strongly promote exact NFKC/case-normalized authoritative definitions, interpret definition/implementation/test/docs/config/call-flow wording, demote imports, wrappers, fixtures, generated/vendor copies unless requested, remove nested duplicate chunks, diversify useful files, preserve conceptual retrieval strength, and keep stable ties.
+- **Scoped external reranking**: Directory, file-type, chunk-type, and blame filters now run before external reranking. Only already-scoped candidates and their exact indexed line ranges can be sent, while intent classification and evidence-class ordering remain deterministic and local.
 
 ## [0.18.1] - 2026-07-26
 

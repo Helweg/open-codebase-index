@@ -33,6 +33,14 @@ This command evaluates five versioned synthetic scenarios only. Each scenario su
 
 The checked-in report at `benchmarks/baselines/privacy-safe-effectiveness.json` contains aggregate methodology and route statistics only. It contains no fixture source, symbols, paths, repository names, queries, scenario IDs, or evidence identifiers. This is a synthetic formatting comparison with fixed rankings and oracle markers. It excludes discovery cost and does not measure retrieval quality, latency, end-to-end agent success, causal impact, or production-repository performance.
 
+The deterministic local ranker also has a focused fixed-candidate comparison:
+
+```bash
+npx vitest run tests/intent-aware-ranking-eval.test.ts
+```
+
+`benchmarks/fixtures/intent-aware-ranking.json` contains eight representative coding-agent queries for exact and Unicode-normalized definitions, test/docs/config/call-flow intent, evidence diversity, and a conceptual-search guardrail. The baseline sorts the supplied candidates by retrieval score and id, while the candidate run applies only the local intent-aware ranker. `benchmarks/baselines/intent-aware-ranking.json` records evidence recall@3 and MRR plus per-query values. The candidate pools and relevance ids are hand-labeled and fixed, so this comparison isolates post-retrieval ordering. It does not measure embedding recall, candidate generation, indexing quality, latency, external rerankers, production repositories, or end-to-end agent success.
+
 Evaluation comparisons require the same dataset name, version, and query count. Use the
 agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
 

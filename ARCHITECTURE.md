@@ -97,7 +97,7 @@ Source Files → Parse → Chunk → Embed → Store
 ### Search Flow
 
 ```
-Query → Embed → Search → Rank → Return
+Query → Embed → Search → Scope → Rank → Return
 
 1. EMBED QUERY
    └─ Same embedding model as indexing
@@ -109,16 +109,23 @@ Query → Embed → Search → Rank → Return
    └─ KEYWORD: BM25 inverted index
       └─ Returns top-K keyword matches
 
-3. HYBRID FUSION
+3. SCOPE CANDIDATES
+   └─ Restricts candidates to the current branch
+   └─ Applies directory, file-type, chunk-type, and blame filters before reranking
+   └─ Prevents out-of-scope source from reaching an external reranker
+
+4. HYBRID FUSION
    └─ Combines semantic + keyword candidates
    └─ Fusion controlled by fusionStrategy (rrf default, weighted fallback)
-   └─ Deterministic rerank applies to top-N candidates
 
-4. BRANCH FILTER
-   └─ Only returns chunks existing on current branch
-   └─ Prevents stale results from other branches
+5. LOCAL EVIDENCE RANKING
+   └─ NFKC/case-normalized exact symbol matching
+   └─ Definition, implementation, test, docs, config, and call-flow intent signals
+   └─ Authoritative-definition preference, nested duplicate removal, and file diversity
+   └─ Stable ordering for equal scores
+   └─ Optional external reranking stays within local evidence classes and scoped candidates
 
-5. RETURN RESULTS
+6. RETURN RESULTS
    └─ File path, line numbers, code snippet
    └─ Sorted by combined score
 ```
