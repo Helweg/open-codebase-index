@@ -30,6 +30,7 @@ The implementer still needs to know or look up:
 - the grammar crate
 - the parser constant
 - the node kinds for declarations, comments, and calls
+- the grammar license, release history, and compatibility with the repository's tree-sitter runtime
 
 So this guide is a **repo wiring guide**, not a replacement for the target language's tree-sitter grammar docs.
 
@@ -53,6 +54,7 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 - semantic chunks are produced for the main declaration types
 - `tests/native.test.ts` covers the language
 - the grammar license is verified and its notice is included in the published package when required
+- every new grammar dependency has a locked entry and verified runtime compatibility
 - docs are updated if user-facing support claims changed
 - `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run test:run` all pass
 
@@ -81,6 +83,13 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 - `src/indexer/index.ts` — call-graph language + symbol chunk-type allowlists
 - `tests/call-graph.test.ts` — call-graph coverage
 
+### Only when adding a grammar dependency
+
+- `native/Cargo.toml` — grammar crate declaration
+- `native/Cargo.lock` — reproducibly resolved version
+- the repository license or third-party notices file — attribution required by the dependency license
+- `package.json` — inclusion of a new notices file in the published package, when applicable
+
 ### Usually update too
 
 - `README.md` — supported-language claims
@@ -104,7 +113,8 @@ Use this exact sequence:
 - [ ] Check whether the extensions are already present in `src/config/constants.ts`
 - [ ] Add the language to `Language`, `from_extension()`, `as_str()`, and `from_string()` in `native/src/types.rs`
 - [ ] Add the grammar crate in `native/Cargo.toml` if needed
-- [ ] Verify the grammar license and distribute its third-party notice when required
+- [ ] Check the license text, release history, registry publication, and tree-sitter ABI compatibility of the grammar
+- [ ] Update `native/Cargo.lock` and distribute required third-party attribution when a grammar crate is added
 - [ ] Add parser selection, comment node kinds, and semantic node kinds in `native/src/parser.rs`
 - [ ] Add one parser test in `tests/native.test.ts`
 - [ ] Run `npm run build` and `npm run test:run`
@@ -153,6 +163,8 @@ Start with narrow, declaration-like nodes:
 - modules / namespaces
 
 Avoid broad container nodes unless the grammar gives you no better option.
+
+If a wrapper such as a template or namespace contains declarations, check whether marking it semantic prevents traversal from reaching the functions or types being sought.
 
 ### `tests/native.test.ts`
 
@@ -261,6 +273,10 @@ A `parseFile()` content assertion alone does not prove syntax compatibility beca
 Call graph tests must distinguish an invocation from a first-class callable reference. For example, `foo(...)` is not a call unless it is used as an operand of the PHP 8.5 pipe operator `|>`.
 
 The tested matrix and remaining `tree-sitter-php` 0.24.2 limitations are documented in the README's "Verified PHP 8.x compatibility" section.
+
+## Metal implementation note
+
+Metal uses a dedicated `Language::Metal` label while reusing the existing C++ grammar. This avoids a fragile new dependency, but still requires Metal-specific semantic nodes, declaration-name extraction, and a call query. Tests must cover short types, nested methods, exact function names under templates, and shader-stage qualifiers; a successfully built tree is not enough because tree-sitter recovery nodes can remain around Metal-specific syntax. Macro-only regions should be checked separately too: in a mixed file, regions not covered by a semantic declaration may remain outside chunks.
 
 ## One-line summary
 

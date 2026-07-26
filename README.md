@@ -538,7 +538,7 @@ Returns recent debug logs with optional filtering.
 
 ### `call_graph`
 
-Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, and C++.
+Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, C++, and Metal.
 
 For Swift, resolution remains name-based, so overloads, extension duplicates, and protocol dispatch can remain ambiguous. Syntax alone cannot always distinguish a superclass from a protocol conformance or an enum raw-value type from a protocol. Constructor classification uses an uppercase ASCII initial heuristic while retaining the exact name for resolution. `tree-sitter-swift` 0.7.3 also has limitations around `sending`, abbreviated collection constructors such as `[Int]()`, and some generic calls after `self`, `super`, optional chaining, or chained calls. The index does not infer SourceKit semantics for these cases.
 
@@ -1266,7 +1266,7 @@ The Rust native module handles performance-critical operations:
 - **usearch**: High-performance vector similarity search with F16 quantization
 - **SQLite**: Persistent storage for embeddings, chunks, branch catalog, symbols, and call edges
 - **BM25 inverted index**: Fast keyword search for hybrid retrieval
-- **Call graph extraction**: Tree-sitter query-based extraction of function calls, method calls, constructors, and imports (TypeScript/JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, C++)
+- **Call graph extraction**: Tree-sitter query-based extraction of function calls, method calls, constructors, and imports (TypeScript/JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, C++, Metal)
 - **xxhash**: Fast content hashing for change detection
 
 Rebuild with: `npm run build:native` (requires Rust toolchain)

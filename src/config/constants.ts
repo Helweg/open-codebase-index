@@ -13,6 +13,7 @@ export const DEFAULT_INCLUDE = [
   "**/*.{txt,html,htm}",
   "**/*.zig",
   "**/*.gd",
+  "**/*.metal",
 ];
 
 export const DEFAULT_EXCLUDE = [
