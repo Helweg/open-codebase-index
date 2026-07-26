@@ -36,6 +36,7 @@ import {
 } from "../native/index.js";
 import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CentralityData } from "../native/index.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
+import { withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
 import { getHostProjectIndexRelativePath, resolveProjectIndexPath } from "../config/paths.js";
 import { getChangedFiles } from "../tools/changed-files.js";
@@ -268,6 +269,17 @@ export interface IndexStats {
   failedBatchesPath?: string;
   warning?: string;
   resetCorruptedIndex?: boolean;
+}
+
+export interface IndexerRuntimeOptions {
+  materializedProjectRoot?: string;
+  branchName?: string;
+  indexPath?: string;
+}
+
+export interface BranchIndexResult {
+  prepared: boolean;
+  stats?: IndexStats;
 }
 
 interface CorruptedIndexResetResult {
@@ -2051,6 +2063,9 @@ export class Indexer {
   private readonly host: HostMode;
   private config: ParsedCodebaseIndexConfig;
   private projectRoot: string;
+  private readonly materializedProjectRoot: string;
+  private readonly branchNameOverride: string | undefined;
+  private readonly indexPathOverride: string | undefined;
   private indexPath: string;
   private store: VectorStore | null = null;
   private invertedIndex: InvertedIndex | null = null;
@@ -2078,8 +2093,16 @@ export class Indexer {
   private writerArtifactFingerprint: ReaderArtifactFingerprint | null = null;
   private readerArtifactRetryAfter = new Map<IndexReadIssue["component"], number>();
 
-  constructor(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode = "opencode") {
+  constructor(
+    projectRoot: string,
+    config: ParsedCodebaseIndexConfig,
+    host: HostMode = "opencode",
+    runtimeOptions: IndexerRuntimeOptions = {},
+  ) {
     this.projectRoot = projectRoot;
+    this.materializedProjectRoot = runtimeOptions.materializedProjectRoot ?? projectRoot;
+    this.branchNameOverride = runtimeOptions.branchName;
+    this.indexPathOverride = runtimeOptions.indexPath;
     this.config = config;
     this.host = host;
     this.indexPath = this.getIndexPath();
@@ -2089,7 +2112,21 @@ export class Indexer {
   }
 
   private getIndexPath(): string {
-    return resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+    return this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+  }
+
+  private toCanonicalFilePath(filePath: string): string {
+    if (path.resolve(this.materializedProjectRoot) === path.resolve(this.projectRoot)) {
+      return filePath;
+    }
+    return path.resolve(this.projectRoot, path.relative(this.materializedProjectRoot, filePath));
+  }
+
+  private toMaterializedFilePath(filePath: string): string {
+    if (path.resolve(this.materializedProjectRoot) === path.resolve(this.projectRoot)) {
+      return filePath;
+    }
+    return path.resolve(this.materializedProjectRoot, path.relative(this.projectRoot, filePath));
   }
 
   private isLocalProjectIndexPath(): boolean {
@@ -3478,9 +3515,9 @@ export class Indexer {
       }
     }
 
-    if (isGitRepo(this.projectRoot)) {
-      this.currentBranch = getBranchOrDefault(this.projectRoot);
-      this.baseBranch = getBaseBranch(this.projectRoot);
+    if (isGitRepo(this.materializedProjectRoot)) {
+      this.currentBranch = this.branchNameOverride ?? getBranchOrDefault(this.materializedProjectRoot);
+      this.baseBranch = getBaseBranch(this.materializedProjectRoot);
       this.logger.branch("info", "Detected git repository", {
         currentBranch: this.currentBranch,
         baseBranch: this.baseBranch,
@@ -3988,7 +4025,7 @@ export class Indexer {
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
     const { files } = await collectFiles(
-      this.projectRoot,
+      this.materializedProjectRoot,
       includePatterns,
       this.config.exclude,
       this.config.indexing.maxFileSize,
@@ -4002,6 +4039,27 @@ export class Indexer {
   async index(onProgress?: ProgressCallback): Promise<IndexStats> {
     return this.withIndexMutationLease("index", async (recoveredOwners) => {
       return this.indexUnlocked(onProgress, recoveredOwners);
+    });
+  }
+
+  async indexBranchIfMissing(branch: string, onProgress?: ProgressCallback): Promise<BranchIndexResult> {
+    if (branch !== this.currentBranch && this.initializationMode !== "none") {
+      throw new Error(
+        `Prepared Indexer branch mismatch: expected ${JSON.stringify(branch)}, got ${JSON.stringify(this.currentBranch)}.`,
+      );
+    }
+
+    return this.withIndexMutationLease("index", async (recoveredOwners) => {
+      const { database } = await this.ensureInitializedUnlocked(recoveredOwners);
+      const branchKey = this.getBranchCatalogKeyFor(branch);
+      const alreadyIndexed = database.getBranchChunkIds(branchKey).length > 0
+        || database.getBranchSymbolIds(branchKey).length > 0;
+      if (alreadyIndexed) {
+        return { prepared: false };
+      }
+
+      const stats = await this.indexUnlocked(onProgress, [], true);
+      return { prepared: true, stats };
     });
   }
 
@@ -4078,7 +4136,7 @@ export class Indexer {
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
     const { files, skipped } = await collectFiles(
-      this.projectRoot,
+      this.materializedProjectRoot,
       includePatterns,
       this.config.exclude,
       this.config.indexing.maxFileSize,
@@ -4087,7 +4145,10 @@ export class Indexer {
     );
 
     stats.totalFiles = files.length;
-    stats.skippedFiles = skipped;
+    stats.skippedFiles = skipped.map((entry) => ({
+      ...entry,
+      path: this.toCanonicalFilePath(entry.path),
+    }));
 
     this.logger.recordFilesScanned(files.length);
     this.logger.cache("debug", "Scanning files for changes", {
@@ -4102,21 +4163,22 @@ export class Indexer {
       database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
 
     for (const f of files) {
+      const canonicalPath = this.toCanonicalFilePath(f.path);
       const currentHash = hashFile(f.path);
-      currentFileHashes.set(f.path, currentHash);
+      currentFileHashes.set(canonicalPath, currentHash);
 
-      const cachedHashMatches = this.fileHashCache.get(f.path) === currentHash;
+      const cachedHashMatches = this.fileHashCache.get(canonicalPath) === currentHash;
       const needsCallGraphRefresh = cachedHashMatches &&
         needsCallGraphResolutionMigration &&
-        database.getChunksByFile(f.path).some((chunk) =>
+        database.getChunksByFile(canonicalPath).some((chunk) =>
           chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
         );
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles &&
-        path.extname(f.path).toLowerCase() === ".swift";
+        path.extname(canonicalPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles &&
-        path.extname(f.path).toLowerCase() === ".metal";
+        path.extname(canonicalPath).toLowerCase() === ".metal";
 
       if (
         cachedHashMatches &&
@@ -4124,11 +4186,11 @@ export class Indexer {
         !requiresSwiftParserUpgrade &&
         !requiresMetalParserUpgrade
       ) {
-        unchangedFilePaths.add(f.path);
+        unchangedFilePaths.add(canonicalPath);
         this.logger.recordCacheHit();
       } else {
         const content = await fsPromises.readFile(f.path, "utf-8");
-        changedFiles.push({ path: f.path, content, hash: currentHash });
+        changedFiles.push({ path: canonicalPath, content, hash: currentHash });
         this.logger.recordCacheMiss();
       }
     }
@@ -4174,7 +4236,7 @@ export class Indexer {
     const currentChunkIds = new Set<string>();
     const currentFilePaths = new Set<string>();
     const pendingChunks: PendingChunk[] = [];
-    const gitBlameEnabled = this.config.indexing.gitBlame.enabled && isGitRepo(this.projectRoot);
+    const gitBlameEnabled = this.config.indexing.gitBlame.enabled && isGitRepo(this.materializedProjectRoot);
     let backfilledBlameMetadata = false;
 
     for (const filePath of unchangedFilePaths) {
@@ -4203,7 +4265,12 @@ export class Indexer {
           continue;
         }
 
-        const blame = await getChunkGitBlame(this.projectRoot, chunk.filePath, chunk.startLine, chunk.endLine);
+        const blame = await getChunkGitBlame(
+          this.materializedProjectRoot,
+          this.toMaterializedFilePath(chunk.filePath),
+          chunk.startLine,
+          chunk.endLine,
+        );
         const blameMetadata = metadataFromBlame(blame);
         if (!blameMetadata.blameSha) {
           continue;
@@ -4269,7 +4336,12 @@ export class Indexer {
         const existingContentHash = existingChunks.get(id);
         const existingChunk = gitBlameEnabled ? database.getChunk(id) : null;
         const blame = gitBlameEnabled && existingContentHash !== contentHash
-          ? await getChunkGitBlame(this.projectRoot, parsed.path, chunk.startLine, chunk.endLine)
+          ? await getChunkGitBlame(
+              this.materializedProjectRoot,
+              this.toMaterializedFilePath(parsed.path),
+              chunk.startLine,
+              chunk.endLine,
+            )
           : blameFromChunkData(existingChunk);
         const blameMetadata = metadataFromBlame(blame);
         currentChunkIds.add(id);
@@ -5771,9 +5843,9 @@ export class Indexer {
   }
 
   refreshBranchInfo(): void {
-    if (isGitRepo(this.projectRoot)) {
-      this.currentBranch = getBranchOrDefault(this.projectRoot);
-      this.baseBranch = getBaseBranch(this.projectRoot);
+    if (isGitRepo(this.materializedProjectRoot)) {
+      this.currentBranch = this.branchNameOverride ?? getBranchOrDefault(this.materializedProjectRoot);
+      this.baseBranch = getBaseBranch(this.materializedProjectRoot);
     }
   }
 
@@ -6169,7 +6241,9 @@ export class Indexer {
     checkConflicts?: boolean;
     direction?: "callers" | "callees" | "both";
   }): Promise<PrImpactResult> {
-    const { database, readIssues } = await this.ensureInitialized();
+    const initialState = await this.ensureInitialized();
+    let database = initialState.database;
+    const { readIssues } = initialState;
     this.requireReadableComponents(readIssues, "database");
     const execFileAsync = promisify(execFile);
 
@@ -6193,11 +6267,57 @@ export class Indexer {
       : opts.branch || this.currentBranch;
     const branchKey = this.getBranchCatalogKeyFor(resolvedBranch || "default");
 
-    const branchSymbols = database.getSymbolsForBranch(branchKey);
+    let branchSymbols = database.getSymbolsForBranch(branchKey);
+    let indexPreparation: NonNullable<PrImpactResult["indexPreparation"]> = {
+      prepared: false,
+      branch: resolvedBranch || "default",
+    };
     if (branchSymbols.length === 0) {
-      throw new Error(
-        "Run index_codebase first to build the call graph and symbol index for this branch."
+      if (!resolvedBranch || resolvedBranch === "default") {
+        throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
+      }
+
+      this.resetLoadedIndexState();
+      const materialized = await withMaterializedBranch(
+        {
+          projectRoot: this.projectRoot,
+          branch: resolvedBranch,
+          ref: changedFilesResult.headRef ?? resolvedBranch,
+          pr: opts.pr,
+        },
+        async (worktreePath) => {
+          const branchIndexer = new Indexer(this.projectRoot, this.config, this.host, {
+            materializedProjectRoot: worktreePath,
+            branchName: resolvedBranch,
+            indexPath: this.indexPath,
+          });
+          try {
+            return await branchIndexer.indexBranchIfMissing(resolvedBranch);
+          } finally {
+            await branchIndexer.close();
+          }
+        },
       );
+
+      indexPreparation = {
+        prepared: materialized.value.prepared,
+        branch: resolvedBranch,
+        commit: materialized.info.commit,
+        source: materialized.info.source,
+      };
+
+      const refreshedState = await this.ensureInitialized();
+      this.requireReadableComponents(refreshedState.readIssues, "database");
+      database = refreshedState.database;
+      branchSymbols = database.getSymbolsForBranch(branchKey);
+      if (branchSymbols.length === 0) {
+        throw new Error(
+          `Branch ${JSON.stringify(resolvedBranch)} was indexed but produced no call-graph symbols. `
+          + `Available branch catalogs: ${database.getAllBranches().join(", ") || "none"}; `
+          + `${database.getBranchChunkIds(branchKey).length} chunks, ${database.getBranchSymbolIds(branchKey).length} symbol IDs. `
+          + "Ensure the branch contains a supported source language and is included by the index configuration.",
+        );
+      }
     }
 
     const absoluteChangedFiles = changedFiles.map((f) => path.resolve(this.projectRoot, f));
@@ -6326,6 +6446,7 @@ export class Indexer {
     }
 
     return {
+      indexPreparation,
       changedFiles,
       directSymbols: directSymbols.map((s) => ({
         id: s.id,

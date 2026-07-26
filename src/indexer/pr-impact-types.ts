@@ -1,4 +1,10 @@
 export interface PrImpactResult {
+  indexPreparation?: {
+    prepared: boolean;
+    branch: string;
+    commit?: string;
+    source?: "local" | "remote-fetch" | "pull-ref" | "gh";
+  };
   changedFiles: string[];
   directSymbols: Array<{
     id: string;

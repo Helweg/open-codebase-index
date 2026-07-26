@@ -1,6 +1,7 @@
 import * as path from "path";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { assertValidGitRefName, resolveLocalGitCommit } from "../git/branch-materialization.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -14,6 +15,7 @@ export interface ChangedFilesResult {
   baseBranch: string;
   source: "gh" | "git";
   headRefName?: string;
+  headRef?: string;
 }
 
 export interface GetChangedFilesOptions {
@@ -25,6 +27,7 @@ export interface GetChangedFilesOptions {
 
 interface GhPrViewResponse {
   headRefName?: string;
+  headRefOid?: string;
   baseRefName?: string;
   files?: Array<{ path: string }>;
 }
@@ -46,21 +49,38 @@ async function getChangedFilesForPr(
   projectRoot: string,
   baseBranch: string,
 ): Promise<ChangedFilesResult> {
+  if (!Number.isInteger(pr) || pr <= 0) {
+    throw new Error(`Pull request number must be a positive integer: ${pr}`);
+  }
+
+  const localPullRef = `refs/pull/${pr}/head`;
+  const localPullCommit = await resolveLocalGitCommit(projectRoot, localPullRef);
+  if (localPullCommit) {
+    const result = await getChangedFilesForBranch(localPullRef, projectRoot, baseBranch);
+    return {
+      ...result,
+      headRefName: `pr/${pr}`,
+      headRef: localPullCommit,
+    };
+  }
+
   let headRefName: string | undefined;
+  let headRef: string | undefined;
   let actualBaseBranch = baseBranch;
 
   try {
     const { stdout } = await execFileAsync(
       "gh",
-      ["pr", "view", String(pr), "--json", "headRefName,baseRefName,files"],
+      ["pr", "view", String(pr), "--json", "headRefName,headRefOid,baseRefName,files"],
       { cwd: projectRoot, timeout: 30000 },
     );
 
     const data = JSON.parse(stdout) as GhPrViewResponse;
     headRefName = data.headRefName;
+    headRef = data.headRefOid || data.headRefName;
     actualBaseBranch = data.baseRefName || baseBranch;
 
-    if (data.files && data.files.length > 0) {
+    if (Array.isArray(data.files)) {
       return {
         files: normalizeFiles(
           data.files.map((f) => f.path),
@@ -69,6 +89,7 @@ async function getChangedFilesForPr(
         baseBranch: actualBaseBranch,
         source: "gh",
         headRefName,
+        headRef,
       };
     }
   } catch (error) {
@@ -79,12 +100,12 @@ async function getChangedFilesForPr(
 
   if (headRefName === undefined) {
     throw new Error(
-      `PR #${pr} returned no usable branch or file information.`,
+      `PR #${pr} returned no usable head branch or file information.`,
     );
   }
 
-  const result = await getChangedFilesForBranch(headRefName, projectRoot, actualBaseBranch);
-  return { ...result, headRefName };
+  const result = await getChangedFilesForBranch(headRef, projectRoot, actualBaseBranch);
+  return { ...result, headRefName, headRef };
 }
 
 async function getChangedFilesForBranch(
@@ -93,6 +114,8 @@ async function getChangedFilesForBranch(
   baseBranch: string,
 ): Promise<ChangedFilesResult> {
   const targetBranch = branch || (await getCurrentBranch(projectRoot));
+  assertValidGitRefName(baseBranch, "Base branch");
+  assertValidGitRefName(targetBranch, "Branch name");
   const mergeBase = await getMergeBase(projectRoot, baseBranch, targetBranch);
 
   const { stdout } = await execFileAsync(
@@ -106,6 +129,7 @@ async function getChangedFilesForBranch(
     baseBranch,
     source: "git",
     headRefName: targetBranch,
+    headRef: targetBranch,
   };
 }
 

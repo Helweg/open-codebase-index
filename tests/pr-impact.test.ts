@@ -139,7 +139,7 @@ describe("pr_impact tool", () => {
     expect(result).toContain("Risk:");
   });
 
-  it("returns graceful error when branch has no indexed symbols", async () => {
+  it("returns an actionable error when a missing branch cannot be materialized", async () => {
     (getChangedFiles as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
       files: ["src/a.ts"],
       baseBranch: "main",
@@ -150,11 +150,19 @@ describe("pr_impact tool", () => {
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
     db.addSymbolsToBranch("main", []);
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (
+        _cmd: string,
+        _args: string[],
+        _opts: unknown,
+        callback: (error: Error) => void,
+      ) => callback(new Error("ref unavailable")),
+    );
 
     const result = await pr_impact.execute({ branch: "feature" }, { worktree: tempDir });
     expect(typeof result).toBe("string");
     expect(result).toContain("Error analyzing PR impact");
-    expect(result).toContain("Run index_codebase first");
+    expect(result).toContain("not available locally");
   });
 
   it("throws when headRefName cannot be resolved in PR mode", async () => {

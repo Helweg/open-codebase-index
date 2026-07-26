@@ -3,6 +3,12 @@ import type { PrImpactResult } from "../indexer/pr-impact-types.js";
 export function formatPrImpact(result: PrImpactResult): string {
   const lines: string[] = [];
 
+  if (result.indexPreparation) {
+    const status = result.indexPreparation.prepared ? "prepared automatically" : "already available";
+    const commit = result.indexPreparation.commit ? ` at ${result.indexPreparation.commit.slice(0, 12)}` : "";
+    lines.push(`→ Branch index: ${status} (${result.indexPreparation.branch}${commit})`);
+  }
+
   lines.push(`→ Files changed: ${result.changedFiles.length}`);
   for (const file of result.changedFiles) {
     lines.push(`  - ${file}`);
