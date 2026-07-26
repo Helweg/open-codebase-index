@@ -13,9 +13,10 @@ import type { CostEstimate } from "../utils/cost.js";
 import {
   queryCallGraph,
   queryCallGraphPath,
+  type CallGraphPathQuery,
+  type CallGraphPathResult,
   type CallGraphQuery,
   type CallGraphResult,
-  type CallGraphPathResult,
 } from "./call-graph.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
 
@@ -221,12 +222,10 @@ export async function executeCallGraph(
 export async function executeCallGraphPath(
   projectRoot: string | undefined,
   host: HostMode,
-  from: string,
-  to: string,
-  maxDepth?: number | null,
+  params: CallGraphPathQuery,
 ): Promise<CallGraphPathResult> {
   const indexer = getIndexerForProject(projectRoot, host);
-  return queryCallGraphPath(indexer, from, to, maxDepth);
+  return queryCallGraphPath(indexer, params);
 }
 
 export async function getCallGraphPath(

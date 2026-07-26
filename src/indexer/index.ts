@@ -5995,6 +5995,21 @@ export class Indexer {
     return shortest;
   }
 
+  async findCallPathById(fromSymbolId: string, toSymbolId: string, maxDepth?: number): Promise<PathHopData[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    let shortest: PathHopData[] = [];
+
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      const path = database.findShortestPathById(fromSymbolId, toSymbolId, branchKey, maxDepth);
+      if (path.length > 0 && (shortest.length === 0 || path.length < shortest.length)) {
+        shortest = path;
+      }
+    }
+
+    return shortest;
+  }
+
   async getSymbolsForBranch(branch?: string): Promise<SymbolData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");

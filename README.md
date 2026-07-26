@@ -544,7 +544,7 @@ Query the call graph to find callers or callees of a function/method. Automatica
 For Swift, resolution remains name-based, so overloads, extension duplicates, and protocol dispatch can remain ambiguous. Syntax alone cannot always distinguish a superclass from a protocol conformance or an enum raw-value type from a protocol. Constructor classification uses an uppercase ASCII initial heuristic while retaining the exact name for resolution. `tree-sitter-swift` 0.7.3 also has limitations around `sending`, abbreviated collection constructors such as `[Int]()`, and some generic calls after `self`, `super`, optional chaining, or chained calls. The index does not infer SourceKit semantics for these cases.
 
 - **Use for**: Understanding code flow, tracing dependencies, impact analysis.
-- **Parameters**: `name` (function name), `direction` (`callers` or `callees`), `symbolId` (required for `callees`, returned by previous queries), `relationshipType` (optional: `Call`, `MethodCall`, `Constructor`, `Import`, `Inherits`, `Implements`).
+- **Parameters**: `name` (function name), `direction` (`callers` or `callees`), `file` or `directory` (optional disambiguators for same-name definitions), `relationshipType` (optional: `Call`, `MethodCall`, `Constructor`, `Import`, `Inherits`, `Implements`).
 - **Example**: Find who calls `validateToken` → `call_graph(name="validateToken", direction="callers")`
 
 ### `call_graph_path`
@@ -552,8 +552,9 @@ For Swift, resolution remains name-based, so overloads, extension duplicates, an
 Find the shortest known call-graph path between two symbols. Use it after `codebase_peek`, `implementation_lookup`, or `call_graph` identifies the important source and target names.
 
 - **Use for**: Blast-radius checks, dependency-chain discovery, explaining how one subsystem reaches another.
-- **Parameters**: `from` (source symbol name), `to` (target symbol name), `maxDepth` (optional, default `10`).
+- **Parameters**: `from` (source symbol name), `to` (target symbol name), `fromFile`/`fromDirectory` and `toFile`/`toDirectory` (optional disambiguators for same-name endpoints), `maxDepth` (optional, default `10`).
 - **Example**: Trace how `createOrder` reaches `chargeCard` → `call_graph_path(from="createOrder", to="chargeCard")`
+- **Ambiguous example**: Select exact endpoints → `call_graph_path(from="handle", fromDirectory="src/jobs", to="save", toFile="src/db/save.ts")`
 
 ### `pr_impact`
 Analyzes a PR's changed files to determine impact scope within the codebase.

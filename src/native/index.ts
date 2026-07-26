@@ -1060,6 +1060,11 @@ export class Database {
     return this.inner.findShortestPath(fromName, toName, branch, maxDepth ?? null);
   }
 
+  findShortestPathById(fromSymbolId: string, toSymbolId: string, branch: string, maxDepth?: number): PathHopData[] {
+    this.throwIfClosed();
+    return this.inner.findShortestPathById(fromSymbolId, toSymbolId, branch, maxDepth ?? null);
+  }
+
 
 
   addSymbolsToBranch(branch: string, symbolIds: string[]): void {

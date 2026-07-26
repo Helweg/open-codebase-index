@@ -65,6 +65,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       query: Type.String({ description: "Natural language description of what code you're trying to locate" }),
       from: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Source symbol when asking for a dependency path." })),
       to: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Target symbol when asking for a dependency path." })),
+      fromFile: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional source file path or suffix used to disambiguate the from endpoint." })),
+      fromDirectory: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional source directory used to disambiguate the from endpoint." })),
+      toFile: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional target file path or suffix used to disambiguate the to endpoint." })),
+      toDirectory: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional target directory used to disambiguate the to endpoint." })),
       symbol: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Exact symbol name for an authoritative definition lookup." })),
       limit: Type.Optional(Type.Union([
         Type.Integer({ minimum: MIN_CONTEXT_RESULT_LIMIT, maximum: MAX_CONTEXT_RESULT_LIMIT }),

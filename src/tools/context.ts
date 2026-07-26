@@ -16,6 +16,10 @@ export interface CodebaseContextInput {
   query: string;
   from?: string | null;
   to?: string | null;
+  fromFile?: string | null;
+  fromDirectory?: string | null;
+  toFile?: string | null;
+  toDirectory?: string | null;
   symbol?: string | null;
   limit?: number | null;
   maxDepth?: number | null;
@@ -506,6 +510,10 @@ export async function resolveCodebaseContext(
 ): Promise<CodebaseContextResult> {
   const from = input.from ?? undefined;
   const to = input.to ?? undefined;
+  const fromFile = input.fromFile ?? undefined;
+  const fromDirectory = input.fromDirectory ?? undefined;
+  const toFile = input.toFile ?? undefined;
+  const toDirectory = input.toDirectory ?? undefined;
   const symbol = input.symbol ?? undefined;
   const limit = input.limit ?? 10;
   const maxDepth = input.maxDepth ?? 10;
@@ -513,8 +521,28 @@ export async function resolveCodebaseContext(
   const directory = input.directory ?? undefined;
   const tokenBudget = input.tokenBudget ?? undefined;
   if (from && to) {
-    const pathResult = await executeCallGraphPath(projectRoot, host, from, to, maxDepth);
+    const hasPathQualifier = Boolean(fromFile || fromDirectory || toFile || toDirectory);
+    const pathResult = await executeCallGraphPath(projectRoot, host, {
+      from,
+      to,
+      fromFile,
+      fromDirectory,
+      toFile,
+      toDirectory,
+      maxDepth,
+    });
     if (pathResult.details.resolution !== "no-path") {
+      const fitted = fitTextToContextBudget(
+        pathResult.text,
+        tokenBudget,
+      );
+      return {
+        text: fitted.text,
+        details: fittedDetails("path", fitted),
+      };
+    }
+
+    if (hasPathQualifier) {
       const fitted = fitTextToContextBudget(
         pathResult.text,
         tokenBudget,

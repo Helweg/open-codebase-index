@@ -1887,6 +1887,166 @@ pub fn find_shortest_path(
     Ok(path)
 }
 
+/// Find the shortest call path between two specific symbols using BFS.
+/// Resolved edges follow their stored symbol IDs. Unresolved edges are traversed
+/// only when their target name resolves to exactly one symbol under the source
+/// language's case-sensitivity rules, so qualified endpoints are never faked by
+/// falling back to a name-only path.
+pub fn find_shortest_path_by_id(
+    conn: &Connection,
+    from_symbol_id: &str,
+    to_symbol_id: &str,
+    branch: &str,
+    max_depth: u32,
+) -> DbResult<Vec<PathHopRow>> {
+    use std::collections::{HashMap, VecDeque};
+
+    let mut symbol_language_stmt = conn.prepare(
+        r#"
+        SELECT s.language
+        FROM symbols s
+        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
+        WHERE s.id = ?2
+        "#,
+    )?;
+    let Some(from_language) = symbol_language_stmt
+        .query_row(params![branch, from_symbol_id], |row| {
+            row.get::<_, String>(0)
+        })
+        .optional()?
+    else {
+        return Ok(Vec::new());
+    };
+    if symbol_language_stmt
+        .query_row(params![branch, to_symbol_id], |row| row.get::<_, String>(0))
+        .optional()?
+        .is_none()
+    {
+        return Ok(Vec::new());
+    }
+
+    let mut callees_stmt = conn.prepare(
+        r#"
+        SELECT ce.target_name, ce.to_symbol_id, ce.call_type, ce.line
+        FROM call_edges ce
+        INNER JOIN branch_symbols bs
+            ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?1
+        WHERE ce.from_symbol_id = ?2
+        "#,
+    )?;
+    let mut resolve_stmt = conn.prepare(
+        r#"
+        SELECT s.id, s.language
+        FROM symbols s
+        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
+        WHERE
+            (?2 IN ('apex', 'php') AND s.name = ?3 COLLATE NOCASE)
+            OR
+            (?2 NOT IN ('apex', 'php') AND s.name = ?3 COLLATE BINARY)
+        "#,
+    )?;
+
+    let mut visited: HashMap<String, (String, String, u32)> = HashMap::new();
+    let mut queue: VecDeque<(String, String, u32)> = VecDeque::new();
+    visited.insert(
+        from_symbol_id.to_string(),
+        (String::new(), String::new(), 0),
+    );
+    queue.push_back((from_symbol_id.to_string(), from_language, 0));
+
+    let mut target_found = from_symbol_id == to_symbol_id;
+    while !target_found {
+        let Some((current_id, current_language, depth)) = queue.pop_front() else {
+            break;
+        };
+        if depth >= max_depth {
+            continue;
+        }
+
+        let callees: Vec<(String, Option<String>, String, u32)> = callees_stmt
+            .query_map(params![branch, &current_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, u32>(3)?,
+                ))
+            })?
+            .filter_map(|row| row.ok())
+            .collect();
+
+        for (target_name, resolved_id, call_type, line) in callees {
+            let target = if let Some(resolved_id) = resolved_id {
+                symbol_language_stmt
+                    .query_row(params![branch, &resolved_id], |row| row.get::<_, String>(0))
+                    .optional()?
+                    .map(|language| (resolved_id, language))
+            } else {
+                let resolved: Vec<(String, String)> = resolve_stmt
+                    .query_map(params![branch, &current_language, &target_name], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })?
+                    .filter_map(|row| row.ok())
+                    .collect();
+                if resolved.len() == 1 {
+                    resolved.into_iter().next()
+                } else {
+                    None
+                }
+            };
+
+            let Some((target_id, target_language)) = target else {
+                continue;
+            };
+            if visited.contains_key(&target_id) {
+                continue;
+            }
+
+            visited.insert(target_id.clone(), (current_id.clone(), call_type, line));
+            if target_id == to_symbol_id {
+                target_found = true;
+                break;
+            }
+            queue.push_back((target_id, target_language, depth + 1));
+        }
+    }
+
+    if !target_found {
+        return Ok(Vec::new());
+    }
+
+    let mut info_stmt =
+        conn.prepare("SELECT name, file_path, start_line FROM symbols WHERE id = ?")?;
+    let mut path = Vec::new();
+    let mut current = to_symbol_id.to_string();
+    while let Some((parent_id, call_type, _line)) = visited.get(&current).cloned() {
+        if let Some((name, file_path, line)) = info_stmt
+            .query_row(params![&current], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, u32>(2)?,
+                ))
+            })
+            .optional()?
+        {
+            path.push(PathHopRow {
+                symbol_id: current.clone(),
+                symbol_name: name,
+                file_path,
+                line,
+                call_type,
+            });
+        }
+        if parent_id.is_empty() {
+            break;
+        }
+        current = parent_id;
+    }
+    path.reverse();
+    Ok(path)
+}
+
 // ============================================================================
 // Branch Symbol Operations (Call Graph)
 // ============================================================================
@@ -2559,6 +2719,7 @@ mod tests {
             call_graph_symbol("cpp_lower_caller", "cppLowerCaller", "cpp"),
             call_graph_symbol("cpp_upper_caller", "cppUpperCaller", "cpp"),
             call_graph_symbol("php_caller", "phpCaller", "php"),
+            call_graph_symbol("apex_caller", "apexCaller", "apex"),
         ];
         upsert_symbols_batch(&mut conn, &symbols).unwrap();
         add_symbols_to_branch_batch(
@@ -2577,6 +2738,7 @@ mod tests {
             call_graph_edge("cpp_lower_edge", "cpp_lower_caller", "render", None),
             call_graph_edge("cpp_upper_edge", "cpp_upper_caller", "Render", None),
             call_graph_edge("php_edge", "php_caller", "handler", None),
+            call_graph_edge("apex_edge", "apex_caller", "Process", None),
         ];
         upsert_call_edges_batch(&mut conn, &edges).unwrap();
 
@@ -2600,6 +2762,10 @@ mod tests {
         let php = get_callers_with_context(&conn, "HANDLER", "main", None).unwrap();
         assert_eq!(php.len(), 1);
         assert_eq!(php[0].id, "php_edge");
+
+        let apex = get_callers_with_context(&conn, "process", "main", None).unwrap();
+        assert_eq!(apex.len(), 1);
+        assert_eq!(apex[0].id, "apex_edge");
     }
 
     #[test]
@@ -2704,6 +2870,95 @@ mod tests {
                 .map(|hop| hop.symbol_id.as_str())
                 .collect::<Vec<_>>(),
             vec!["swift_bridge_entry", "php_bridge", "php_bridge_target"]
+        );
+    }
+
+    #[test]
+    fn test_shortest_path_by_id_disambiguates_same_name_endpoints() {
+        let (_temp_dir, mut conn) = setup_test_db();
+        let symbols = vec![
+            call_graph_symbol("start_api", "start", "typescript"),
+            call_graph_symbol("start_jobs", "start", "typescript"),
+            call_graph_symbol("middle", "middle", "typescript"),
+            call_graph_symbol("end_api", "end", "typescript"),
+            call_graph_symbol("end_jobs", "end", "typescript"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch_batch(
+            &mut conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        upsert_call_edges_batch(
+            &mut conn,
+            &[
+                call_graph_edge("jobs_middle", "start_jobs", "middle", Some("middle")),
+                call_graph_edge("middle_api", "middle", "end", Some("end_api")),
+                call_graph_edge("api_jobs", "start_api", "end", Some("end_jobs")),
+            ],
+        )
+        .unwrap();
+
+        let qualified =
+            find_shortest_path_by_id(&conn, "start_jobs", "end_api", "main", 10).unwrap();
+        assert_eq!(
+            qualified
+                .iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["start_jobs", "middle", "end_api"]
+        );
+        assert!(
+            find_shortest_path_by_id(&conn, "start_jobs", "end_jobs", "main", 10)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn test_shortest_path_by_id_only_resolves_unresolved_names_when_unambiguous() {
+        let (_temp_dir, mut conn) = setup_test_db();
+        let symbols = vec![
+            call_graph_symbol("php_source", "Source", "php"),
+            call_graph_symbol("php_target", "DoWork", "php"),
+            call_graph_symbol("ts_source", "source", "typescript"),
+            call_graph_symbol("ts_target_a", "handler", "typescript"),
+            call_graph_symbol("ts_target_b", "handler", "typescript"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch_batch(
+            &mut conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+        upsert_call_edges_batch(
+            &mut conn,
+            &[
+                call_graph_edge("php_unresolved", "php_source", "dowork", None),
+                call_graph_edge("ts_unresolved", "ts_source", "handler", None),
+            ],
+        )
+        .unwrap();
+
+        let php = find_shortest_path_by_id(&conn, "php_source", "php_target", "main", 10).unwrap();
+        assert_eq!(
+            php.iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["php_source", "php_target"]
+        );
+        assert!(
+            find_shortest_path_by_id(&conn, "ts_source", "ts_target_a", "main", 10)
+                .unwrap()
+                .is_empty()
         );
     }
 

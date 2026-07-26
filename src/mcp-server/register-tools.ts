@@ -48,6 +48,10 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
       to: allowNullAsUndefined(z.string().optional()).describe("Target symbol. For dependency-path questions, extract the second endpoint and provide it here."),
+      fromFile: allowNullAsUndefined(z.string().optional()).describe("Optional source file path or suffix used to disambiguate the from endpoint."),
+      fromDirectory: allowNullAsUndefined(z.string().optional()).describe("Optional source directory used to disambiguate the from endpoint."),
+      toFile: allowNullAsUndefined(z.string().optional()).describe("Optional target file path or suffix used to disambiguate the to endpoint."),
+      toDirectory: allowNullAsUndefined(z.string().optional()).describe("Optional target directory used to disambiguate the to endpoint."),
       symbol: allowNullAsUndefined(z.string().optional()).describe("Exact symbol for an authoritative definition lookup. Omit when from and to are supplied."),
       limit: allowNullAsUndefined(
         z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).optional().default(10),
@@ -278,14 +282,18 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "call_graph_path",
-    "Use human-readable endpoint names to find the shortest known call path. Ambiguous same-name endpoints return bounded locations and are never silently selected.",
+    "Use human-readable endpoint names to find the shortest known call path. Ambiguous same-name endpoints return bounded locations; retry with fromFile/fromDirectory or toFile/toDirectory to select an endpoint.",
     {
       from: z.string().describe("Source function/method name (starting point)"),
       to: z.string().describe("Target function/method name (destination)"),
+      fromFile: allowNullAsUndefined(z.string().optional()).describe("Optional source file path or suffix used to select one same-name definition"),
+      fromDirectory: allowNullAsUndefined(z.string().optional()).describe("Optional source directory used to select one same-name definition"),
+      toFile: allowNullAsUndefined(z.string().optional()).describe("Optional target file path or suffix used to select one same-name definition"),
+      toDirectory: allowNullAsUndefined(z.string().optional()).describe("Optional target directory used to select one same-name definition"),
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
     async (args) => {
-      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
+      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
     },
   );

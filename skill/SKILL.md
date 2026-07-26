@@ -97,6 +97,14 @@ call_graph(name="validateToken", direction="callees", file="src/auth.ts")
 
 Names are sufficient for both directions. Add `file` or `directory` only when exact-name definitions are ambiguous.
 
+### `call_graph_path`
+Find the shortest call path between named endpoints. If either name is ambiguous, retry with `fromFile`/`fromDirectory` or `toFile`/`toDirectory` from the returned candidates.
+
+```
+call_graph_path(from="createOrder", to="chargeCard")
+call_graph_path(from="handle", fromDirectory="src/jobs", to="save", toFile="src/db/save.ts")
+```
+
 ### `index_codebase`
 Manually trigger indexing. Required before first search.
 

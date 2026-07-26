@@ -43,14 +43,18 @@ export function registerPiCallGraphTools(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "call_graph_path",
     label: "Call Graph Path",
-    description: "Find a call path by endpoint names without silently selecting ambiguous same-name definitions.",
+    description: "Find a call path by endpoint names. Use fromFile/fromDirectory or toFile/toDirectory to select ambiguous same-name definitions.",
     parameters: Type.Object({
       from: Type.String(),
       to: Type.String(),
+      fromFile: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      fromDirectory: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      toFile: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      toDirectory: Type.Optional(Type.Union([Type.String(), Type.Null()])),
       maxDepth: Type.Optional(Type.Union([Type.Number({ default: 10 }), Type.Null()])),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await executeCallGraphPath(projectRoot(ctx), HOST, params.from, params.to, params.maxDepth);
+      const result = await executeCallGraphPath(projectRoot(ctx), HOST, params);
       return text(result.text, result.details);
     },
   });

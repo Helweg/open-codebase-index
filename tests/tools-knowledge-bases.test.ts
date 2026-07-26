@@ -91,6 +91,7 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
 });
 
 vi.mock("../src/indexer/index.js", () => ({
+  CASE_INSENSITIVE_LANGUAGES: new Set(["apex", "php"]),
   Indexer: MockIndexer,
 }));
 

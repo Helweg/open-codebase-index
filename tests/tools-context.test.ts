@@ -29,6 +29,10 @@ const context = { worktree: "/repo" };
 const commonArgs = {
   from: undefined,
   to: undefined,
+  fromFile: undefined,
+  fromDirectory: undefined,
+  toFile: undefined,
+  toDirectory: undefined,
   symbol: undefined,
   limit: 10,
   maxDepth: 10,
@@ -125,9 +129,19 @@ describe("native OpenCode codebase_context", () => {
       query: "trace start to finish",
       from: "start",
       to: "finish",
+      fromDirectory: "src/path",
+      toFile: "src/finish.ts",
     }, context);
 
-    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10);
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", {
+      from: "start",
+      to: "finish",
+      fromFile: undefined,
+      fromDirectory: "src/path",
+      toFile: "src/finish.ts",
+      toDirectory: undefined,
+      maxDepth: 10,
+    });
     expect(result).toContain("Path (30 hops)");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
@@ -157,11 +171,34 @@ describe("native OpenCode codebase_context", () => {
     expect(operationMocks.getCallGraphData).not.toHaveBeenCalled();
   });
 
+  it("does not use name-only direct-edge fallback for qualified no-path results", async () => {
+    operationMocks.executeCallGraphPath.mockResolvedValue({
+      text: 'No path found between "start" and "finish".',
+      details: { from: "start", to: "finish", resolution: "no-path", path: [] },
+    });
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "trace start to finish",
+      from: "start",
+      to: "finish",
+      fromFile: "src/start.ts",
+      toDirectory: "src/jobs",
+    }, context);
+
+    expect(result).toContain("No path found");
+    expect(operationMocks.getCallGraphData).not.toHaveBeenCalled();
+  });
+
   it("accepts explicit null optional arguments like the other adapters", async () => {
     await codebase_context.execute({
       query: "request handling",
       from: null,
       to: null,
+      fromFile: null,
+      fromDirectory: null,
+      toFile: null,
+      toDirectory: null,
       symbol: null,
       limit: null,
       maxDepth: null,
@@ -202,10 +239,24 @@ describe("native OpenCode codebase_context", () => {
   });
 
   it("routes native call_graph_path through ambiguity-safe shared handling", async () => {
-    const result = await call_graph_path.execute({ from: "start", to: "finish", maxDepth: null }, context);
+    const args = {
+      from: "start",
+      to: "finish",
+      fromFile: "src/start.ts",
+      fromDirectory: null,
+      toFile: null,
+      toDirectory: "src",
+      maxDepth: null,
+    };
+    const result = await call_graph_path.execute(args, context);
 
     expect(result).toBe("shared call graph path result");
-    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", null);
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", args);
+    const pathSchema = JSON.stringify(call_graph_path.args);
+    for (const qualifier of ["fromFile", "fromDirectory", "toFile", "toDirectory"]) {
+      expect(pathSchema).toContain(`"${qualifier}"`);
+      expect(JSON.stringify(codebase_context.args)).toContain(`"${qualifier}"`);
+    }
   });
 
   it("falls back from an inferred definition miss to conceptual search", async () => {

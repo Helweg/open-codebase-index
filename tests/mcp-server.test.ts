@@ -42,6 +42,7 @@ const indexerMockState = vi.hoisted(() => ({
     getCallers: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
     findCallPath: ReturnType<typeof vi.fn>;
+    findCallPathById: ReturnType<typeof vi.fn>;
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
@@ -106,6 +107,7 @@ vi.mock("../src/indexer/index.js", () => {
         getCallers: this.getCallers,
         getCallees: this.getCallees,
         findCallPath: this.findCallPath,
+        findCallPathById: this.findCallPathById,
         clearIndex: this.clearIndex,
         forceIndex: this.forceIndex,
       });
@@ -231,6 +233,7 @@ vi.mock("../src/indexer/index.js", () => {
         callType: "Call",
       },
     ]);
+    findCallPathById = vi.fn().mockImplementation(() => this.findCallPath());
     estimateCost = vi.fn().mockResolvedValue({
       filesCount: 10,
       totalSizeBytes: 50000,
@@ -261,7 +264,10 @@ vi.mock("../src/indexer/index.js", () => {
       conflictingPRs: undefined,
     });
   }
-  return { Indexer: MockIndexer };
+  return {
+    CASE_INSENSITIVE_LANGUAGES: new Set(["apex", "php"]),
+    Indexer: MockIndexer,
+  };
 });
 
 describe("createMcpServer", () => {
@@ -386,13 +392,21 @@ describe("MCP server tools and prompts", () => {
     expect(descriptions.get("codebase_search")).toContain("grep");
     expect(descriptions.get("call_graph")).toContain("human-readable symbol name");
     expect(descriptions.get("call_graph")).toContain("file or directory");
-    expect(descriptions.get("call_graph_path")).toContain("never silently selected");
+    expect(descriptions.get("call_graph_path")).toContain("fromFile/fromDirectory");
     expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
 
     const callGraphSchema = JSON.stringify(tools.tools.find((entry) => entry.name === "call_graph")?.inputSchema);
     expect(callGraphSchema).toContain('"file"');
     expect(callGraphSchema).toContain('"directory"');
     expect(callGraphSchema).not.toContain("symbolId");
+    const callGraphPathSchema = JSON.stringify(tools.tools.find((entry) => entry.name === "call_graph_path")?.inputSchema);
+    const contextSchema = JSON.stringify(tools.tools.find((entry) => entry.name === "codebase_context")?.inputSchema);
+    for (const schema of [callGraphPathSchema, contextSchema]) {
+      expect(schema).toContain('"fromFile"');
+      expect(schema).toContain('"fromDirectory"');
+      expect(schema).toContain('"toFile"');
+      expect(schema).toContain('"toDirectory"');
+    }
   });
 
   it("should register all 5 prompts", async () => {
@@ -487,6 +501,10 @@ describe("MCP server tools and prompts", () => {
         symbol: null,
         from: null,
         to: null,
+        fromFile: null,
+        fromDirectory: null,
+        toFile: null,
+        toDirectory: null,
         limit: null,
         maxDepth: null,
         fileType: null,
@@ -580,13 +598,44 @@ describe("MCP server tools and prompts", () => {
   it("should route codebase_context endpoint pairs to call graph paths", async () => {
     const result = await client.callTool({
       name: "codebase_context",
-      arguments: { query: "trace fromNode to toNode", from: "fromNode", to: "toNode", maxDepth: 7 },
+      arguments: {
+        query: "trace fromNode to toNode",
+        from: "fromNode",
+        to: "toNode",
+        fromFile: "src/start.ts",
+        toDirectory: "src",
+        maxDepth: 7,
+      },
     });
 
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain("Path (2 hops)");
     const indexer = indexerMockState.instances.at(-1);
-    expect(indexer?.findCallPath).toHaveBeenCalledWith("fromNode", "toNode", 7);
+    expect(indexer?.findCallPathById).toHaveBeenCalledWith("from-node-id", "to-node-id", 7);
+    expect(content[0].text).not.toContain("from-node-id");
+    expect(content[0].text).not.toContain("to-node-id");
+  });
+
+  it("should execute qualified call_graph_path with nullable optional fields and no ID leakage", async () => {
+    const result = await client.callTool({
+      name: "call_graph_path",
+      arguments: {
+        from: "fromNode",
+        to: "toNode",
+        fromFile: "src/start.ts",
+        fromDirectory: null,
+        toFile: null,
+        toDirectory: "src",
+        maxDepth: null,
+      },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain("Path (2 hops)");
+    expect(content[0].text).not.toContain("from-node-id");
+    expect(content[0].text).not.toContain("to-node-id");
+    const indexer = indexerMockState.instances.at(-1);
+    expect(indexer?.findCallPathById).toHaveBeenCalledWith("from-node-id", "to-node-id", 10);
   });
 
   it("should keep conceptual and graph responses within the minimum token budget", async () => {
@@ -609,7 +658,7 @@ describe("MCP server tools and prompts", () => {
     expect(countContextTokens(conceptualText)).toBeLessThanOrEqual(128);
     expect(conceptualText).not.toContain("full source");
 
-    indexer?.findCallPath.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
+    indexer?.findCallPathById.mockResolvedValueOnce(Array.from({ length: 30 }, (_, index) => ({
       symbolName: `symbol${index}`,
       filePath: `src/path-${index}.ts`,
       line: index + 1,
@@ -651,7 +700,7 @@ describe("MCP server tools and prompts", () => {
 
   it("should recover direct unresolved edges when path traversal returns no hops", async () => {
     const indexer = indexerMockState.instances.at(-1);
-    indexer?.findCallPath.mockResolvedValueOnce([]);
+    indexer?.findCallPathById.mockResolvedValueOnce([]);
     indexer?.getCallers.mockResolvedValueOnce([{
       fromSymbolId: "from-node-id",
       fromSymbolName: "fromNode",

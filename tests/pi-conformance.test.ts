@@ -112,6 +112,13 @@ describe("Pi adapter conformance", () => {
     expect(callGraphParameters).toContain('"file"');
     expect(callGraphParameters).toContain('"directory"');
     expect(callGraphParameters).not.toContain("symbolId");
+    for (const toolName of ["codebase_context", "call_graph_path"]) {
+      const parameters = JSON.stringify(tools.get(toolName)?.parameters);
+      expect(parameters).toContain('"fromFile"');
+      expect(parameters).toContain('"fromDirectory"');
+      expect(parameters).toContain('"toFile"');
+      expect(parameters).toContain('"toDirectory"');
+    }
   });
 
   it("formats caller results like other host adapters", async () => {
@@ -202,7 +209,15 @@ describe("Pi adapter conformance", () => {
 
     const result = await tools.get("call_graph_path")?.execute(
       "tool-call",
-      { from: "createOrder", to: "chargeCard" },
+      {
+        from: "createOrder",
+        to: "chargeCard",
+        fromFile: "src/order.ts",
+        fromDirectory: null,
+        toFile: null,
+        toDirectory: "src",
+        maxDepth: null,
+      },
       new AbortController().signal,
       () => {},
       { cwd: "/repo" },
@@ -212,6 +227,16 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("[start] createOrder (src/order.ts:10)");
     expect(result?.content[0]?.text).toContain("--MethodCall--> chargeCard (src/pay.ts:33)");
     expect(result?.details).toEqual(expect.objectContaining({ resolution: "resolved" }));
+    expect(JSON.stringify(result?.details)).not.toContain("sym_");
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "pi", {
+      from: "createOrder",
+      to: "chargeCard",
+      fromFile: "src/order.ts",
+      fromDirectory: null,
+      toFile: null,
+      toDirectory: "src",
+      maxDepth: null,
+    });
   });
 
   it("routes codebase_context from/to through call-graph lookup with fallback", async () => {
@@ -242,7 +267,15 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10);
+    expect(operationMocks.executeCallGraphPath).toHaveBeenCalledWith("/repo", "pi", {
+      from: "callerFn",
+      to: "targetFn",
+      fromFile: undefined,
+      fromDirectory: undefined,
+      toFile: undefined,
+      toDirectory: undefined,
+      maxDepth: 10,
+    });
     expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", { name: "targetFn", direction: "callers" });
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");
@@ -409,6 +442,10 @@ describe("Pi adapter conformance", () => {
         query: "validation helper",
         from: null,
         to: null,
+        fromFile: null,
+        fromDirectory: null,
+        toFile: null,
+        toDirectory: null,
         symbol: null,
         limit: null,
         maxDepth: null,

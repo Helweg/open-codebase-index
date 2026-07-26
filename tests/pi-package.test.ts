@@ -61,6 +61,8 @@ describe("Pi package integration", () => {
     const searchParams = JSON.stringify(tools.find((tool) => tool.name === "codebase_search")?.parameters);
     const peekParams = JSON.stringify(tools.find((tool) => tool.name === "codebase_peek")?.parameters);
     const callGraphParams = JSON.stringify(tools.find((tool) => tool.name === "call_graph")?.parameters);
+    const callGraphPathParams = JSON.stringify(tools.find((tool) => tool.name === "call_graph_path")?.parameters);
+    const contextParams = JSON.stringify(tools.find((tool) => tool.name === "codebase_context")?.parameters);
     for (const params of [searchParams, peekParams]) {
       expect(params).toContain("blameAuthor");
       expect(params).toContain("blameSha");
@@ -69,5 +71,11 @@ describe("Pi package integration", () => {
     expect(callGraphParams).toContain("file");
     expect(callGraphParams).toContain("directory");
     expect(callGraphParams).not.toContain("symbolId");
+    for (const params of [callGraphPathParams, contextParams]) {
+      expect(params).toContain("fromFile");
+      expect(params).toContain("fromDirectory");
+      expect(params).toContain("toFile");
+      expect(params).toContain("toDirectory");
+    }
   });
 });

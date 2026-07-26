@@ -1237,6 +1237,32 @@ impl Database {
         })
     }
 
+    #[napi]
+    pub fn find_shortest_path_by_id(
+        &self,
+        from_symbol_id: String,
+        to_symbol_id: String,
+        branch: String,
+        max_depth: Option<u32>,
+    ) -> Result<Vec<PathHopData>> {
+        self.with_conn(|conn| {
+            let depth = max_depth.unwrap_or(10);
+            let hops =
+                db::find_shortest_path_by_id(conn, &from_symbol_id, &to_symbol_id, &branch, depth)
+                    .map_err(|e| Error::from_reason(e.to_string()))?;
+            Ok(hops
+                .into_iter()
+                .map(|h| PathHopData {
+                    symbol_id: h.symbol_id,
+                    symbol_name: h.symbol_name,
+                    file_path: h.file_path,
+                    line: h.line,
+                    call_type: h.call_type,
+                })
+                .collect())
+        })
+    }
+
     // ── Branch Symbol methods ────────────────────────────────────────
 
     #[napi]

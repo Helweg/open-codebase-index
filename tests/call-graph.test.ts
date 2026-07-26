@@ -2842,6 +2842,74 @@ main() {
       expect(result[2].filePath).toBe("src/c.ts");
     });
 
+    it("should constrain shortest paths to qualified endpoint IDs", () => {
+      const db = openDb();
+      const symbols: SymbolData[] = [
+        ["sym_start_api", "start", "src/api/start.ts"],
+        ["sym_start_jobs", "start", "src/jobs/start.ts"],
+        ["sym_middle", "middle", "src/middle.ts"],
+        ["sym_end_api", "end", "src/api/end.ts"],
+        ["sym_end_jobs", "end", "src/jobs/end.ts"],
+      ].map(([id, name, filePath]) => ({
+        id,
+        name,
+        filePath,
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 0,
+        language: "typescript",
+      }));
+      db.upsertSymbolsBatch(symbols);
+      db.addSymbolsToBranch("main", symbols.map((symbol) => symbol.id));
+      db.upsertCallEdgesBatch([
+        {
+          id: "edge_jobs_middle",
+          fromSymbolId: "sym_start_jobs",
+          targetName: "middle",
+          toSymbolId: "sym_middle",
+          callType: "Call",
+          confidence: "Direct",
+          line: 2,
+          col: 0,
+          isResolved: true,
+        },
+        {
+          id: "edge_middle_api",
+          fromSymbolId: "sym_middle",
+          targetName: "end",
+          toSymbolId: "sym_end_api",
+          callType: "Call",
+          confidence: "Direct",
+          line: 3,
+          col: 0,
+          isResolved: true,
+        },
+        {
+          id: "edge_api_jobs",
+          fromSymbolId: "sym_start_api",
+          targetName: "end",
+          toSymbolId: "sym_end_jobs",
+          callType: "Call",
+          confidence: "Direct",
+          line: 4,
+          col: 0,
+          isResolved: true,
+        },
+      ]);
+
+      const qualified = db.findShortestPathById("sym_start_jobs", "sym_end_api", "main");
+      const wrongTarget = db.findShortestPathById("sym_start_jobs", "sym_end_jobs", "main");
+
+      expect(qualified.map((hop) => hop.symbolId)).toEqual([
+        "sym_start_jobs",
+        "sym_middle",
+        "sym_end_api",
+      ]);
+      expect(wrongTarget).toEqual([]);
+    });
+
     it("should return empty array when no path exists", () => {
       const db = openDb();
 

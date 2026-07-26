@@ -83,6 +83,10 @@ export const codebase_context: ToolDefinition = tool({
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
     to: z.string().nullable().optional().describe("Target symbol for a dependency path"),
+    fromFile: z.string().nullable().optional().describe("Optional source file path or suffix used to disambiguate the from endpoint"),
+    fromDirectory: z.string().nullable().optional().describe("Optional source directory used to disambiguate the from endpoint"),
+    toFile: z.string().nullable().optional().describe("Optional target file path or suffix used to disambiguate the to endpoint"),
+    toDirectory: z.string().nullable().optional().describe("Optional target directory used to disambiguate the to endpoint"),
     symbol: z.string().nullable().optional().describe("Exact symbol for authoritative definition lookup"),
     limit: z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).nullable().optional().default(10)
       .describe(`Maximum number of results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
@@ -293,14 +297,18 @@ export const call_graph: ToolDefinition = tool({
 
 export const call_graph_path: ToolDefinition = tool({
   description:
-    "Find the shortest known call path between two human-readable symbol names. Ambiguous same-name endpoints are reported with locations instead of being silently selected.",
+    "Find the shortest known call path between two human-readable symbol names. Ambiguous same-name endpoints are reported with locations; retry with fromFile/fromDirectory or toFile/toDirectory to select an endpoint.",
   args: {
     from: z.string().describe("Source function/method name (starting point)"),
     to: z.string().describe("Target function/method name (destination)"),
+    fromFile: z.string().nullable().optional().describe("Optional source file path or suffix used to select one same-name definition"),
+    fromDirectory: z.string().nullable().optional().describe("Optional source directory used to select one same-name definition"),
+    toFile: z.string().nullable().optional().describe("Optional target file path or suffix used to select one same-name definition"),
+    toDirectory: z.string().nullable().optional().describe("Optional target directory used to select one same-name definition"),
     maxDepth: z.number().nullable().optional().default(10).describe("Maximum traversal depth (default: 10)"),
   },
   async execute(args, context) {
-    const result = await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args.from, args.to, args.maxDepth);
+    const result = await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args);
     return result.text;
   },
 });
