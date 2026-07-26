@@ -7,16 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-07-26
+
 ### Added
 
 - **Ollama model discovery**: Added support for arbitrary local embedding models by reading their capabilities, dimensions, and context length from the Ollama API at runtime.
 - **Swift language support**: Added Tree-sitter semantic parsing, nested symbols, source ranges, and case-sensitive call graph extraction for Swift.
-- **PHP 8.x coverage**: Added grammar, semantic chunking, and call graph regression coverage for PHP 8.0 through supported PHP 8.5 syntax, and updated `tree-sitter-php` to 0.24.2.
+- **PHP 8.x coverage**: Expanded semantic chunking and call graph regression coverage for PHP 8.0 through supported PHP 8.5 syntax, and updated `tree-sitter-php` to 0.24.2.
 - **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.
 - **Metal Shading Language**: Added default `.metal` discovery, semantic chunks for Metal declarations, and direct, template, member, and qualified call extraction.
 
 ### Fixed
 
+- **Language-aware call graph lookup**: Preserve case-sensitive caller and path queries for Swift, C, C++, Metal, and other case-sensitive languages while retaining case-insensitive matching for PHP and Apex.
+- **Ollama upgrade safety**: Keep built-in `:latest` model names compatible with existing indexes, bound embedding requests with a timeout, and reject malformed or dimensionally invalid vectors.
+- **PHP call graph resolution**: Resolve same-file PHP function and constructor calls case-insensitively, disambiguate function and class name collisions by call type, and refresh cached PHP call edges after resolution upgrades.
 - **Git worktree index isolation**: Keep project indexes local to each worktree while continuing to inherit project configuration from the main checkout, preventing cross-worktree index mutations and stale absolute paths.
 
 ## [0.17.1] - 2026-07-25
@@ -468,7 +473,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0

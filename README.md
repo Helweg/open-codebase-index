@@ -355,7 +355,7 @@ graph TD
 
 1. **Parsing**: We use `tree-sitter` to intelligently parse your code into meaningful blocks (functions, classes, interfaces). JSDoc comments and docstrings are automatically included with their associated code.
 
-**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Swift, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB†
+**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Swift, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, Metal, JSON, TOML, YAML, Zig, GDScript, MATLAB†
 
 Swift support uses [`tree-sitter-swift` 0.7.3](https://github.com/alex-pinkus/tree-sitter-swift/tree/0.7.3), distributed under the MIT license. It provides Tree-sitter syntax analysis for chunks, symbols, and calls, but does not replace SourceKit semantic analysis.
 
@@ -393,6 +393,7 @@ PHP 8.5 support remains partial in upstream grammar 0.24.2. Final promoted prope
 **/*.{md,mdx}                   **/*.{sh,bash,zsh}
 **/*.{txt,html,htm}              **/*.{cls,trigger}
 **/*.zig                         **/*.gd
+**/*.metal
 ```
 
 Use `include` to replace defaults, or `additionalInclude` to extend (e.g. `"**/*.pdf"`, `"**/*.csv"`).
@@ -1090,11 +1091,20 @@ ollama pull nomic-embed-text
 }
 ```
 
-The built-in `ollama` provider uses Ollama's native `/api/embeddings` endpoint and is the simplest setup when you want to use `nomic-embed-text`.
+The built-in `ollama` provider uses Ollama's native API. It discovers installed embedding-capable models and reads their vector dimensions and context length from `/api/show`.
 
 For the built-in Ollama path, the plugin budgets `nomic-embed-text` against an observed effective input limit of about **2048 tokens**, not the model's higher advertised theoretical context. This keeps batching and chunk text generation aligned with real Ollama embedding runtime behavior.
 
-If you want to use a different Ollama embedding model through its OpenAI-compatible API, use the `custom` provider instead and set `customProvider.baseUrl` to `http://127.0.0.1:11434/v1` so the plugin calls `.../v1/embeddings`.
+To select another installed embedding model, configure it directly:
+
+```json
+{
+  "embeddingProvider": "ollama",
+  "embeddingModel": "qwen3-embedding:0.6b"
+}
+```
+
+When `embeddingModel` is omitted, auto-detection selects the first installed model that advertises embedding capability. Set `OLLAMA_HOST` only to a trusted Ollama server because source text is sent to that endpoint for embedding.
 
 ## 📈 Performance
 
@@ -1155,8 +1165,8 @@ Works with any server that implements the OpenAI `/v1/embeddings` API format (ll
 ```
 Required fields: `baseUrl`, `model`, `dimensions` (positive integer). Optional: `apiKey`, `maxTokens`, `timeoutMs` (default: 30000), `maxBatchSize` (or `max_batch_size`) to cap inputs per `/embeddings` request for servers like text-embeddings-inference. `{env:VAR_NAME}` placeholders are resolved before config validation for fields that are actually used and throw if the referenced environment variable is missing or malformed.
 
-**Custom Ollama models via OpenAI-compatible API**
-If you are running Ollama locally and want to use an embedding model other than the built-in `ollama` setup, point the custom provider at Ollama's OpenAI-compatible base URL with the `/v1` suffix:
+**Ollama through an OpenAI-compatible proxy**
+Use the `custom` provider only when Ollama is exposed through an OpenAI-compatible proxy or when you need to override metadata manually:
 
 ```json
 {
@@ -1173,7 +1183,7 @@ If you are running Ollama locally and want to use an embedding model other than 
 Notes:
 - The plugin appends `/embeddings`, so `baseUrl` should be `http://127.0.0.1:11434/v1`, not just `http://127.0.0.1:11434`.
 - Ollama ignores the API key, but some OpenAI-compatible clients expect one, so a placeholder like `"ollama"` is fine.
-- Make sure `dimensions` matches the actual output size of the model you pulled locally.
+- Make sure `dimensions` matches the actual model output. The built-in `ollama` provider discovers this value automatically and is preferred for direct Ollama connections.
 
 ## ⚠️ Tradeoffs
 

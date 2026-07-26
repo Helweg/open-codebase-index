@@ -574,6 +574,36 @@ describe("OllamaEmbeddingProvider", () => {
     const provider = createOllamaProvider();
     await expect(provider.embedBatch(["hello"])).rejects.toThrow("Ollama embedding API error: 500");
   });
+
+  it("aborts ollama embedding requests after the bounded timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchSpy.mockImplementation(async (_url, init) => new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      }));
+
+      const provider = createOllamaProvider();
+      const assertion = expect(provider.embedBatch(["hello"]))
+        .rejects.toThrow("Ollama embedding request timed out after 120000ms");
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("rejects ollama embeddings with the wrong vector dimensions", async () => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({
+      embedding: new Array(384).fill(0.1),
+    }), { status: 200 }));
+
+    const provider = createOllamaProvider();
+    await expect(provider.embedBatch(["hello"]))
+      .rejects.toThrow("expected 768 finite dimensions");
+  });
 });
 
 describe("Indexer custom provider initialization", () => {

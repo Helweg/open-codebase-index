@@ -102,6 +102,29 @@ describe("embeddings detector", () => {
       expect(fetchSpy).toHaveBeenCalledTimes(1);
     });
 
+    it("canonicalizes auto-detected latest tags for built-in models", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        if (String(input).endsWith("/api/tags")) {
+          return new Response(JSON.stringify({
+            models: [{ name: "nomic-embed-text:latest" }],
+          }));
+        }
+        return new Response(JSON.stringify({
+          capabilities: ["embedding"],
+          model_info: {
+            "nomic-bert.context_length": 2048,
+            "nomic-bert.embedding_length": 768,
+          },
+        }));
+      });
+
+      const provider = await tryDetectProvider();
+
+      expect(provider.provider).toBe("ollama");
+      expect(provider.modelInfo.model).toBe("nomic-embed-text");
+      expect(provider.modelInfo.dimensions).toBe(768);
+    });
+
     it("discovers metadata for an explicitly configured local model", async () => {
       vi.stubEnv("OLLAMA_HOST", "http://localhost:11434/");
       const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

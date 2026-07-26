@@ -234,6 +234,16 @@ interface OllamaShowResponse {
   model_info?: Record<string, unknown>;
 }
 
+function findCatalogOllamaModel(
+  model: string,
+): EmbeddingProviderModelInfo["ollama"] | null {
+  const stableName = model.endsWith(":latest")
+    ? model.slice(0, -":latest".length)
+    : model;
+  return Object.values(EMBEDDING_MODELS.ollama)
+    .find((candidate) => candidate.model === stableName) ?? null;
+}
+
 function getPositiveIntegerMetadata(
   modelInfo: Record<string, unknown>,
   suffix: string,
@@ -299,8 +309,7 @@ async function detectOllamaProvider(model?: string): Promise<ConfiguredProviderI
 
   const requestedModel = model?.trim();
   if (requestedModel) {
-    const catalogModel = Object.values(EMBEDDING_MODELS.ollama)
-      .find((candidate) => candidate.model === requestedModel);
+    const catalogModel = findCatalogOllamaModel(requestedModel);
     if (catalogModel) {
       return { provider: "ollama", credentials, modelInfo: catalogModel };
     }
@@ -312,7 +321,11 @@ async function detectOllamaProvider(model?: string): Promise<ConfiguredProviderI
   for (const candidate of candidates) {
     const modelInfo = await fetchOllamaModelInfo(credentials, candidate);
     if (modelInfo) {
-      return { provider: "ollama", credentials, modelInfo };
+      return {
+        provider: "ollama",
+        credentials,
+        modelInfo: findCatalogOllamaModel(candidate) ?? modelInfo,
+      };
     }
   }
 

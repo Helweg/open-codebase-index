@@ -1320,8 +1320,21 @@ pub fn upsert_call_edges_batch(conn: &mut Connection, edges: &[CallEdgeRow]) -> 
     Ok(())
 }
 
-/// Get all call edges calling a symbol name (filtered by branch)
-/// Uses COLLATE NOCASE for target_name to support case-insensitive languages like PHP.
+fn is_case_insensitive_language(language: &str) -> bool {
+    // Keep this aligned with the SQL IN lists below and CASE_INSENSITIVE_LANGUAGES in the indexer.
+    matches!(language, "apex" | "php")
+}
+
+fn symbol_names_match(language: &str, left: &str, right: &str) -> bool {
+    if is_case_insensitive_language(language) {
+        left.eq_ignore_ascii_case(right)
+    } else {
+        left == right
+    }
+}
+
+/// Get all call edges calling a symbol name (filtered by branch).
+/// Name matching follows the source symbol's language semantics.
 pub fn get_callers(
     conn: &Connection,
     symbol_name: &str,
@@ -1335,7 +1348,11 @@ pub fn get_callers(
             FROM call_edges ce
             INNER JOIN symbols s ON ce.from_symbol_id = s.id
             INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
-            WHERE ce.target_name = ?2 COLLATE NOCASE AND ce.call_type = ?3
+            WHERE (
+                (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
+                OR
+                (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+            ) AND ce.call_type = ?3
             "#,
             vec![branch.to_string(), symbol_name.to_string(), ct.to_string()],
         )
@@ -1346,7 +1363,10 @@ pub fn get_callers(
             FROM call_edges ce
             INNER JOIN symbols s ON ce.from_symbol_id = s.id
             INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
-            WHERE ce.target_name = ?2 COLLATE NOCASE
+            WHERE
+                (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
+                OR
+                (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
             "#,
             vec![branch.to_string(), symbol_name.to_string()],
         )
@@ -1403,7 +1423,11 @@ pub fn get_callers_with_context(
             FROM call_edges ce
             INNER JOIN symbols s ON ce.from_symbol_id = s.id
             INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
-            WHERE ce.target_name = ?2 COLLATE NOCASE AND ce.call_type = ?3
+            WHERE (
+                (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
+                OR
+                (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+            ) AND ce.call_type = ?3
             "#,
             vec![branch.to_string(), symbol_name.to_string(), ct.to_string()],
         )
@@ -1425,7 +1449,10 @@ pub fn get_callers_with_context(
             FROM call_edges ce
             INNER JOIN symbols s ON ce.from_symbol_id = s.id
             INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
-            WHERE ce.target_name = ?2 COLLATE NOCASE
+            WHERE
+                (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
+                OR
+                (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
             "#,
             vec![branch.to_string(), symbol_name.to_string()],
         )
@@ -1592,19 +1619,23 @@ pub fn find_shortest_path(
     // Find all source symbols matching from_name on this branch
     let mut start_stmt = conn.prepare(
         r#"
-        SELECT s.id, s.name, s.file_path, s.start_line
+        SELECT s.id, s.name, s.file_path, s.start_line, s.language
         FROM symbols s
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE s.name = ? COLLATE NOCASE
+        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
+        WHERE
+            (s.language IN ('apex', 'php') AND s.name = ?2 COLLATE NOCASE)
+            OR
+            (s.language NOT IN ('apex', 'php') AND s.name = ?2 COLLATE BINARY)
         "#,
     )?;
-    let starts: Vec<(String, String, String, u32)> = start_stmt
+    let starts: Vec<(String, String, String, u32, String)> = start_stmt
         .query_map(params![branch, from_name], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
                 row.get::<_, String>(2)?,
                 row.get::<_, u32>(3)?,
+                row.get::<_, String>(4)?,
             ))
         })?
         .filter_map(|r| r.ok())
@@ -1635,28 +1666,39 @@ pub fn find_shortest_path(
     // Resolve a target_name to symbol IDs on this branch
     let mut resolve_stmt = conn.prepare(
         r#"
-        SELECT s.id, s.name, s.file_path, s.start_line
+        SELECT s.id, s.name, s.file_path, s.start_line, s.language
         FROM symbols s
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE s.name = ? COLLATE NOCASE
+        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?1
+        WHERE
+            (?2 IN ('apex', 'php') AND s.name = ?3 COLLATE NOCASE)
+            OR
+            (?2 NOT IN ('apex', 'php') AND s.name = ?3 COLLATE BINARY)
         "#,
     )?;
 
-    // BFS state: queue entries are (symbol_id, depth)
+    let mut branch_symbol_language_stmt = conn.prepare(
+        r#"
+        SELECT s.language
+        FROM symbols s
+        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
+        WHERE s.id = ?
+        "#,
+    )?;
+
+    // BFS state: queue entries are (symbol_id, language, depth)
     // parent map: symbol_id -> (parent_symbol_id, call_type, line)
     let mut visited: HashMap<String, (String, String, u32)> = HashMap::new(); // child -> (parent_id, call_type, line)
-    let mut queue: VecDeque<(String, u32)> = VecDeque::new();
+    let mut queue: VecDeque<(String, String, u32)> = VecDeque::new();
 
     // Seed BFS with all start symbols
-    for (sid, _name, _fp, _line) in &starts {
+    for (sid, _name, _fp, _line, language) in &starts {
         visited.insert(sid.clone(), (String::new(), String::new(), 0)); // sentinel parent
-        queue.push_back((sid.clone(), 0));
+        queue.push_back((sid.clone(), language.clone(), 0));
     }
 
-    let target_name_lower = to_name.to_lowercase();
     let mut target_found: Option<String> = None;
 
-    'bfs: while let Some((current_id, depth)) = queue.pop_front() {
+    'bfs: while let Some((current_id, current_language, depth)) = queue.pop_front() {
         if depth >= max_depth {
             continue;
         }
@@ -1675,16 +1717,17 @@ pub fn find_shortest_path(
             .collect();
 
         for (callee_target_name, to_symbol_id, call_type, line) in callees {
-            // Check if target_name matches our target (case-insensitive)
-            if callee_target_name.to_lowercase() == target_name_lower {
+            // Check if target_name matches using the current/source symbol's language.
+            if symbol_names_match(&current_language, &callee_target_name, to_name) {
                 // Resolve the target to real symbol(s) on this branch
-                let resolved_targets: Vec<(String, String, String, u32)> = resolve_stmt
-                    .query_map(params![branch, to_name], |row| {
+                let resolved_targets: Vec<(String, String, String, u32, String)> = resolve_stmt
+                    .query_map(params![branch, &current_language, to_name], |row| {
                         Ok((
                             row.get::<_, String>(0)?,
                             row.get::<_, String>(1)?,
                             row.get::<_, String>(2)?,
                             row.get::<_, u32>(3)?,
+                            row.get::<_, String>(4)?,
                         ))
                     })?
                     .filter_map(|r| r.ok())
@@ -1736,48 +1779,52 @@ pub fn find_shortest_path(
             // If resolved, continue BFS through the resolved symbol (verify it's on branch)
             if let Some(ref resolved_id) = to_symbol_id {
                 if !visited.contains_key(resolved_id) {
-                    // Verify the resolved symbol exists on this branch
-                    let on_branch: bool = conn
-                        .query_row(
-                            "SELECT COUNT(*) FROM branch_symbols WHERE branch = ? AND symbol_id = ?",
-                            params![branch, resolved_id],
-                            |row| row.get::<_, i64>(0),
-                        )
-                        .unwrap_or(0)
-                        > 0;
-                    if on_branch {
+                    // Verify the resolved symbol exists on this branch and carry its language
+                    // into the next BFS expansion.
+                    let resolved_language: Option<String> = branch_symbol_language_stmt
+                        .query_row(params![branch, resolved_id], |row| row.get(0))
+                        .optional()?;
+                    if let Some(resolved_language) = resolved_language {
                         visited.insert(
                             resolved_id.clone(),
                             (current_id.clone(), call_type.clone(), line),
                         );
-                        queue.push_back((resolved_id.clone(), depth + 1));
+                        queue.push_back((resolved_id.clone(), resolved_language, depth + 1));
                     }
                 }
             } else {
                 // Unresolved: try resolving by target_name
                 // Only traverse if unambiguous (single match) to avoid fabricating paths
-                let resolved: Vec<(String, String, String, u32)> = resolve_stmt
-                    .query_map(params![branch, &callee_target_name], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, String>(1)?,
-                            row.get::<_, String>(2)?,
-                            row.get::<_, u32>(3)?,
-                        ))
-                    })?
+                let resolved: Vec<(String, String, String, u32, String)> = resolve_stmt
+                    .query_map(
+                        params![branch, &current_language, &callee_target_name],
+                        |row| {
+                            Ok((
+                                row.get::<_, String>(0)?,
+                                row.get::<_, String>(1)?,
+                                row.get::<_, String>(2)?,
+                                row.get::<_, u32>(3)?,
+                                row.get::<_, String>(4)?,
+                            ))
+                        },
+                    )?
                     .filter_map(|r| r.ok())
                     .collect();
 
                 // Only traverse unambiguous (single) resolution to avoid fabricating paths
                 // through implementations the call graph never actually resolved
                 if resolved.len() == 1 {
-                    let (resolved_id, _name, _fp, _line) = &resolved[0];
+                    let (resolved_id, _name, _fp, _line, resolved_language) = &resolved[0];
                     if !visited.contains_key(resolved_id) {
                         visited.insert(
                             resolved_id.clone(),
                             (current_id.clone(), call_type.clone(), line),
                         );
-                        queue.push_back((resolved_id.clone(), depth + 1));
+                        queue.push_back((
+                            resolved_id.clone(),
+                            resolved_language.clone(),
+                            depth + 1,
+                        ));
                     }
                 }
             }
@@ -2154,6 +2201,39 @@ mod tests {
         (temp_dir, conn)
     }
 
+    fn call_graph_symbol(id: &str, name: &str, language: &str) -> SymbolRow {
+        SymbolRow {
+            id: id.to_string(),
+            file_path: format!("src/{id}"),
+            name: name.to_string(),
+            kind: "function".to_string(),
+            start_line: 1,
+            start_col: 0,
+            end_line: 5,
+            end_col: 0,
+            language: language.to_string(),
+        }
+    }
+
+    fn call_graph_edge(
+        id: &str,
+        from_symbol_id: &str,
+        target_name: &str,
+        to_symbol_id: Option<&str>,
+    ) -> CallEdgeRow {
+        CallEdgeRow {
+            id: id.to_string(),
+            from_symbol_id: from_symbol_id.to_string(),
+            target_name: target_name.to_string(),
+            to_symbol_id: to_symbol_id.map(str::to_string),
+            call_type: "Call".to_string(),
+            confidence: "Direct".to_string(),
+            line: 3,
+            col: 0,
+            is_resolved: to_symbol_id.is_some(),
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn upsert_chunk(
         conn: &Connection,
@@ -2468,6 +2548,163 @@ mod tests {
         assert_eq!(deleted, 1);
         let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
         assert!(callees.is_empty());
+    }
+
+    #[test]
+    fn test_callers_match_target_names_using_source_language() {
+        let (_temp_dir, mut conn) = setup_test_db();
+        let symbols = vec![
+            call_graph_symbol("swift_lower_caller", "swiftLowerCaller", "swift"),
+            call_graph_symbol("swift_upper_caller", "swiftUpperCaller", "swift"),
+            call_graph_symbol("cpp_lower_caller", "cppLowerCaller", "cpp"),
+            call_graph_symbol("cpp_upper_caller", "cppUpperCaller", "cpp"),
+            call_graph_symbol("php_caller", "phpCaller", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch_batch(
+            &mut conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let edges = vec![
+            call_graph_edge("swift_lower_edge", "swift_lower_caller", "load", None),
+            call_graph_edge("swift_upper_edge", "swift_upper_caller", "Load", None),
+            call_graph_edge("cpp_lower_edge", "cpp_lower_caller", "render", None),
+            call_graph_edge("cpp_upper_edge", "cpp_upper_caller", "Render", None),
+            call_graph_edge("php_edge", "php_caller", "handler", None),
+        ];
+        upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let swift_lower = get_callers(&conn, "load", "main", None).unwrap();
+        assert_eq!(swift_lower.len(), 1);
+        assert_eq!(swift_lower[0].id, "swift_lower_edge");
+
+        let swift_upper = get_callers(&conn, "Load", "main", Some("Call")).unwrap();
+        assert_eq!(swift_upper.len(), 1);
+        assert_eq!(swift_upper[0].id, "swift_upper_edge");
+
+        let cpp_lower = get_callers_with_context(&conn, "render", "main", None).unwrap();
+        assert_eq!(cpp_lower.len(), 1);
+        assert_eq!(cpp_lower[0].id, "cpp_lower_edge");
+        assert_eq!(cpp_lower[0].from_symbol_name, "cppLowerCaller");
+
+        let cpp_upper = get_callers_with_context(&conn, "Render", "main", Some("Call")).unwrap();
+        assert_eq!(cpp_upper.len(), 1);
+        assert_eq!(cpp_upper[0].id, "cpp_upper_edge");
+
+        let php = get_callers_with_context(&conn, "HANDLER", "main", None).unwrap();
+        assert_eq!(php.len(), 1);
+        assert_eq!(php[0].id, "php_edge");
+    }
+
+    #[test]
+    fn test_shortest_path_uses_each_source_language_for_name_matching() {
+        let (_temp_dir, mut conn) = setup_test_db();
+        let symbols = vec![
+            call_graph_symbol("swift_start_lower", "start", "swift"),
+            call_graph_symbol("swift_start_upper", "Start", "swift"),
+            call_graph_symbol("swift_target_lower", "load", "swift"),
+            call_graph_symbol("swift_target_upper", "Load", "swift"),
+            call_graph_symbol("cpp_entry", "renderEntry", "cpp"),
+            call_graph_symbol("cpp_target_lower", "render", "cpp"),
+            call_graph_symbol("cpp_target_upper", "Render", "cpp"),
+            call_graph_symbol("php_entry", "PhpEntry", "php"),
+            call_graph_symbol("php_target", "Handle", "php"),
+            call_graph_symbol("swift_bridge_entry", "bridgeEntry", "swift"),
+            call_graph_symbol("php_bridge", "PhpBridge", "php"),
+            call_graph_symbol("php_bridge_target", "Finish", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch_batch(
+            &mut conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let edges = vec![
+            call_graph_edge(
+                "swift_lower_edge",
+                "swift_start_lower",
+                "load",
+                Some("swift_target_lower"),
+            ),
+            call_graph_edge(
+                "swift_upper_edge",
+                "swift_start_upper",
+                "Load",
+                Some("swift_target_upper"),
+            ),
+            call_graph_edge("cpp_edge", "cpp_entry", "render", None),
+            call_graph_edge("php_edge", "php_entry", "handle", None),
+            call_graph_edge(
+                "swift_bridge_edge",
+                "swift_bridge_entry",
+                "PhpBridge",
+                Some("php_bridge"),
+            ),
+            call_graph_edge("php_bridge_edge", "php_bridge", "finish", None),
+        ];
+        upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let swift_lower = find_shortest_path(&conn, "start", "load", "main", 10).unwrap();
+        assert_eq!(
+            swift_lower
+                .iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["swift_start_lower", "swift_target_lower"]
+        );
+        let swift_upper = find_shortest_path(&conn, "Start", "Load", "main", 10).unwrap();
+        assert_eq!(
+            swift_upper
+                .iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["swift_start_upper", "swift_target_upper"]
+        );
+        assert!(find_shortest_path(&conn, "start", "Load", "main", 10)
+            .unwrap()
+            .is_empty());
+
+        let cpp = find_shortest_path(&conn, "renderEntry", "render", "main", 10).unwrap();
+        assert_eq!(
+            cpp.iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["cpp_entry", "cpp_target_lower"]
+        );
+        assert!(
+            find_shortest_path(&conn, "renderEntry", "Render", "main", 10)
+                .unwrap()
+                .is_empty()
+        );
+
+        let php = find_shortest_path(&conn, "phpentry", "HANDLE", "main", 10).unwrap();
+        assert_eq!(
+            php.iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["php_entry", "php_target"]
+        );
+
+        let cross_language =
+            find_shortest_path(&conn, "bridgeEntry", "FINISH", "main", 10).unwrap();
+        assert_eq!(
+            cross_language
+                .iter()
+                .map(|hop| hop.symbol_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["swift_bridge_entry", "php_bridge", "php_bridge_target"]
+        );
     }
 
     #[test]

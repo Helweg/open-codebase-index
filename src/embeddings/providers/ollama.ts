@@ -5,6 +5,7 @@ import { BaseEmbeddingProvider, type EmbeddingBatchResult } from "../provider-ty
 
 export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProviderModelInfo["ollama"]> {
   private static readonly MIN_TRUNCATION_CHARS = 512;
+  private static readonly REQUEST_TIMEOUT_MS = 120_000;
 
   public constructor(
     credentials: ProviderCredentials,
@@ -102,26 +103,51 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   private async embedSingle(text: string): Promise<{ embedding: number[]; tokensUsed: number }> {
-    const response = await fetch(`${this.credentials.baseUrl}/api/embeddings`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: this.modelInfo.model,
-        prompt: text,
-        truncate: false,
-      }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS,
+    );
+    let response: Response;
+    try {
+      response = await fetch(`${this.credentials.baseUrl}/api/embeddings`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.modelInfo.model,
+          prompt: text,
+          truncate: false,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
     if (!response.ok) {
       const error = (await response.text()).slice(0, 500);
       throw new Error(`Ollama embedding API error: ${response.status} - ${error}`);
     }
 
-    const data = (await response.json()) as {
-      embedding: number[];
-    };
+    const data = (await response.json()) as { embedding?: unknown };
+    if (
+      !Array.isArray(data.embedding)
+      || data.embedding.length !== this.modelInfo.dimensions
+      || data.embedding.some((value) => typeof value !== "number" || !Number.isFinite(value))
+    ) {
+      throw new Error(
+        `Ollama returned an invalid embedding; expected ${this.modelInfo.dimensions} finite dimensions`,
+      );
+    }
 
     return {
       embedding: data.embedding,
