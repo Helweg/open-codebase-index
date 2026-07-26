@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-07-26
+
+### Fixed
+
+- **CommonJS package import**: Bundle the ESM-only OpenCode plugin dependency into CommonJS artifacts so the advertised `require("opencode-codebase-index")` entry point works in clean installations, and regression-test both published module formats during every TypeScript build.
+
 ## [0.18.0] - 2026-07-26
 
 ### Added
@@ -473,7 +479,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0

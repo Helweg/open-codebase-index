@@ -1,4 +1,7 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const cliPath = process.argv[2] ?? "dist/cli.js";
 const child = spawn(process.execPath, [cliPath, "--host", "jcode"], {
@@ -25,4 +28,9 @@ const result = await new Promise((resolve, reject) => {
 
 if (!result.survived && result.code !== 0) {
   throw new Error(`Built ESM CLI failed with exit code ${result.code}:\n${stderr}`);
+}
+
+const cjsModule = require("../dist/index.cjs");
+if (typeof cjsModule.default !== "function") {
+  throw new Error("Built CommonJS entry point is missing its default plugin export");
 }

@@ -10,6 +10,7 @@ export default defineConfig({
   treeshake: false,
   bundle: true,
   noExternal: [
+    "@opencode-ai/plugin",
     "chokidar",
     "ignore",
     "p-queue",
@@ -18,7 +19,6 @@ export default defineConfig({
   external: [
     "@modelcontextprotocol/sdk",
     "zod",
-    "@opencode-ai/plugin",
     "@earendil-works/pi-coding-agent",
     "typebox",
     /^node:/,
