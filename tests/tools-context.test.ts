@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { countContextTokens } from "../src/tools/utils.js";
+import { resolveSearchContext } from "../src/tools/context.js";
 
 const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
@@ -167,5 +168,180 @@ describe("native OpenCode codebase_context", () => {
       metadataOnly: true,
     });
     expect(result).toContain("src/fallback.ts:1-4");
+  });
+
+  it("retries scoped conceptual search with unscoped filters when scoped results are empty", async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          filePath: "src/auth.ts",
+          startLine: 1,
+          endLine: 5,
+          name: "authHandler",
+          chunkType: "function",
+          content: "function authHandler() { return true; }",
+          score: 0.9,
+        },
+      ]);
+
+    const result = await resolveSearchContext(
+      {
+        query: "find request helpers",
+        symbol: undefined,
+        limit: 10,
+        tokenBudget: 128,
+        fileType: "ts",
+        directory: "src",
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search,
+      },
+    );
+
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" });
+    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined });
+    expect(result.details?.recovery?.attempts).toEqual([
+      {
+        kind: "conceptual",
+        scope: "scoped",
+        resultCount: 0,
+        relaxedFields: [],
+      },
+      {
+        kind: "conceptual",
+        scope: "unscoped",
+        resultCount: 1,
+        relaxedFields: ["directory", "fileType"],
+      },
+    ]);
+    expect(result.text).toContain("src/auth.ts:1-5");
+    expect(result.text).toContain("Recovery: requested filters had no matches. Showing unscoped results.");
+    expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
+  });
+
+  it("retries inferred symbol conceptual query text when original conceptual query has no matches", async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          filePath: "src/auth.ts",
+          startLine: 1,
+          endLine: 8,
+          name: "getStatus",
+          chunkType: "function",
+          content: "function getStatus() { return 0; }",
+          score: 0.88,
+        },
+      ]);
+
+    const result = await resolveSearchContext(
+      {
+        query: "where is `getStatus` defined",
+        symbol: undefined,
+        limit: 10,
+        tokenBudget: 128,
+        fileType: undefined,
+        directory: undefined,
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search,
+      },
+    );
+
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined });
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined });
+    expect(result.text).toContain("src/auth.ts:1-8");
+    expect(result.text).toContain("Recovery: the original query had no matches. Showing inferred-symbol results.");
+    expect(result.details?.recovery?.successfulAttemptIndex).toBe(2);
+  });
+
+  it("reports explicit-symbol definition miss with recovery details", async () => {
+    const result = await resolveSearchContext(
+      {
+        query: "where is missingDefinition defined",
+        symbol: "missingDefinition",
+        limit: 10,
+        tokenBudget: 128,
+        fileType: undefined,
+        directory: undefined,
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search: vi.fn().mockResolvedValue([]),
+      },
+    );
+
+    expect(result.text).toContain("No definition found for \"missingDefinition\"");
+    expect(result.text).toContain("Explicit symbol lookup only; conceptual search was not attempted.");
+    expect(result.details).toMatchObject({
+      route: "definition",
+      routedQuery: "missingDefinition",
+    });
+    expect(result.details?.recovery?.attempts).toEqual([
+      {
+        kind: "definition",
+        scope: "unscoped",
+        resultCount: 0,
+        relaxedFields: [],
+      },
+    ]);
+    expect(result.details?.recovery?.successfulAttemptIndex).toBeUndefined();
+  });
+
+  it("does not duplicate identical conceptual attempts", async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
+    const result = await resolveSearchContext(
+      {
+        query: "getStatus",
+        symbol: undefined,
+        limit: 10,
+        tokenBudget: 32,
+        fileType: "ts",
+        directory: "src",
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search,
+      },
+    );
+
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" });
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined });
+    expect(result.details?.recovery?.attempts).toHaveLength(3);
+    expect(new Set(result.details?.recovery?.attempts.map((attempt) => JSON.stringify(attempt))).size)
+      .toBe(3);
+  });
+
+  it("fits all-failure output to the provided token budget", async () => {
+    const result = await resolveSearchContext(
+      {
+        query: "where is neverFound defined",
+        symbol: "neverFound",
+        limit: 10,
+        tokenBudget: 64,
+        fileType: "ts",
+        directory: "src",
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search: vi.fn()
+          .mockResolvedValueOnce([])
+          .mockResolvedValueOnce([]),
+      },
+    );
+
+    expect(countContextTokens(result.text)).toBeLessThanOrEqual(64);
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
+    expect(result.details?.route).toBe("definition");
+    expect(result.details?.recovery?.attempts).toHaveLength(1);
   });
 });

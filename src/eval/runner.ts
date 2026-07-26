@@ -89,7 +89,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
             filterByBranch: !!query.expected.branch,
             definitionIntent: true,
           }),
-          search: (searchQuery, limit) => indexer.search(searchQuery, limit, {
+          search: (searchQuery, limit, _scope) => indexer.search(searchQuery, limit, {
             metadataOnly: true,
             filterByBranch: !!query.expected.branch,
             definitionIntent: false,
