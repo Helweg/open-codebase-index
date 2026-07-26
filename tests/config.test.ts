@@ -876,19 +876,21 @@ describe("config schema", () => {
       expect(isValidModel("text-embedding-3-small", "github-copilot")).toBe(true);
       expect(isValidModel("nomic-embed-text", "ollama")).toBe(true);
       expect(isValidModel("mxbai-embed-large", "ollama")).toBe(true);
+      expect(isValidModel("private/embedding-model:v2", "ollama")).toBe(true);
       expect(isValidModel("text-embedding-005", "google")).toBe(true);
       expect(isValidModel("gemini-embedding-001", "google")).toBe(true);
     });
 
     it("should return false for model belonging to a different provider", () => {
       expect(isValidModel("nomic-embed-text", "openai")).toBe(false);
-      expect(isValidModel("text-embedding-3-small", "ollama")).toBe(false);
       expect(isValidModel("gemini-embedding-001", "openai")).toBe(false);
     });
 
     it("should return false for non-existent model", () => {
       expect(isValidModel("nonexistent-model", "openai")).toBe(false);
       expect(isValidModel("gpt-4", "openai")).toBe(false);
+      expect(isValidModel("", "ollama")).toBe(false);
+      expect(isValidModel("   ", "ollama")).toBe(false);
     });
 
     it("should return false for non-string values", () => {

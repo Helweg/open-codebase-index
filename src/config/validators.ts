@@ -29,6 +29,11 @@ export function isValidModel<P extends EmbeddingProvider>(
   value: unknown,
   provider: P
 ): value is ProviderModels[P] {
+  // Ollama exposes model metadata at runtime, so its local model names are not
+  // restricted to the built-in catalog.
+  if (typeof value === "string" && provider === "ollama" && value.trim().length > 0) {
+    return true;
+  }
   return typeof value === "string" && Object.keys(EMBEDDING_MODELS[provider]).includes(value);
 }
 

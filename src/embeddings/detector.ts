@@ -1,4 +1,4 @@
-import { type EmbeddingProvider, type CustomProviderConfig, type BaseModelInfo, getDefaultModelForProvider, isValidModel, autoDetectProviders, EmbeddingModelName, EMBEDDING_MODELS } from "../config";
+import { type EmbeddingProvider, type CustomProviderConfig, type BaseModelInfo, type EmbeddingProviderModelInfo, getDefaultModelForProvider, isValidModel, autoDetectProviders, EmbeddingModelName, EMBEDDING_MODELS } from "../config";
 import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
@@ -22,7 +22,7 @@ export type ConfiguredProviderInfo = {
   [P in EmbeddingProvider]: {
     provider: P;
     credentials: ProviderCredentials;
-    modelInfo: (typeof EMBEDDING_MODELS)[P][keyof (typeof EMBEDDING_MODELS)[P]];
+    modelInfo: EmbeddingProviderModelInfo[P];
   }
 }[EmbeddingProvider] | {
   provider: 'custom';
@@ -61,9 +61,13 @@ function loadOpenCodeAuth(): Record<string, OpenCodeAuth> {
   return {};
 }
 
-export async function detectEmbeddingProvider<P extends EmbeddingProvider>(
-  preferredProvider: P, model?: EmbeddingModelName
+export async function detectEmbeddingProvider(
+  preferredProvider: EmbeddingProvider, model?: EmbeddingModelName
 ): Promise<ConfiguredProviderInfo> {
+  if (preferredProvider === "ollama") {
+    return detectOllamaProvider(model);
+  }
+
   const credentials = await getProviderCredentials(preferredProvider);
   if (credentials) {
     if (!model) {
@@ -79,10 +83,16 @@ export async function detectEmbeddingProvider<P extends EmbeddingProvider>(
       );
     }
     const providerModels = EMBEDDING_MODELS[preferredProvider];
+    const modelInfo = Object.values(providerModels).find((candidate) => candidate.model === model);
+    if (!modelInfo) {
+      throw new Error(
+        `Model '${model}' is not supported by provider '${preferredProvider}'`
+      );
+    }
     return {
       provider: preferredProvider,
       credentials,
-      modelInfo: providerModels[model],
+      modelInfo,
     } as ConfiguredProviderInfo;
   }
   throw new Error(
@@ -92,6 +102,14 @@ export async function detectEmbeddingProvider<P extends EmbeddingProvider>(
 
 export async function tryDetectProvider(): Promise<ConfiguredProviderInfo> {
   for (const provider of autoDetectProviders) {
+    if (provider === "ollama") {
+      const ollamaProvider = await tryDetectOllamaProvider();
+      if (ollamaProvider) {
+        return ollamaProvider;
+      }
+      continue;
+    }
+
     const credentials = await getProviderCredentials(provider);
     if (credentials) {
       return {
@@ -178,40 +196,138 @@ function getGoogleCredentials(): ProviderCredentials | null {
   return null;
 }
 
+async function fetchOllama(url: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function getOllamaCredentials(): Promise<ProviderCredentials | null> {
-  const baseUrl = process.env.OLLAMA_HOST || "http://localhost:11434";
+  const baseUrl = (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/+$/, "");
 
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 2000);
-
-    const response = await fetch(`${baseUrl}/api/tags`, {
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
+    const response = await fetchOllama(`${baseUrl}/api/tags`);
 
     if (response.ok) {
-      const data = await response.json() as { models?: Array<{ name: string }> };
-      const hasEmbeddingModel = data.models?.some(
-        (m: { name: string }) =>
-          m.name.includes("nomic-embed") ||
-          m.name.includes("mxbai-embed") ||
-          m.name.includes("all-minilm")
-      );
-
-      if (hasEmbeddingModel) {
-        return {
-          provider: "ollama",
-          baseUrl,
-        };
-      }
+      return {
+        provider: "ollama",
+        baseUrl,
+      };
     }
   } catch {
     return null;
   }
 
   return null;
+}
+
+interface OllamaTagsResponse {
+  models?: Array<{ name?: string; model?: string }>;
+}
+
+interface OllamaShowResponse {
+  capabilities?: string[];
+  model_info?: Record<string, unknown>;
+}
+
+function getPositiveIntegerMetadata(
+  modelInfo: Record<string, unknown>,
+  suffix: string,
+): number | null {
+  const values = Object.entries(modelInfo)
+    .filter(([key]) => key.endsWith(suffix))
+    .map(([, value]) => value)
+    .filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value > 0);
+
+  return values.length === 1 ? values[0] : null;
+}
+
+async function fetchOllamaModelInfo(
+  credentials: ProviderCredentials,
+  model: string,
+): Promise<EmbeddingProviderModelInfo["ollama"] | null> {
+  const response = await fetchOllama(`${credentials.baseUrl}/api/show`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model }),
+  });
+  if (!response.ok) {
+    return null;
+  }
+
+  const data = await response.json() as OllamaShowResponse;
+  if (!data.capabilities?.includes("embedding") || !data.model_info) {
+    return null;
+  }
+
+  const dimensions = getPositiveIntegerMetadata(data.model_info, ".embedding_length");
+  const maxTokens = getPositiveIntegerMetadata(data.model_info, ".context_length");
+  if (!dimensions || !maxTokens) {
+    return null;
+  }
+
+  return {
+    provider: "ollama",
+    model,
+    dimensions,
+    maxTokens,
+    costPer1MTokens: 0,
+  };
+}
+
+async function listOllamaModels(credentials: ProviderCredentials): Promise<string[]> {
+  const response = await fetchOllama(`${credentials.baseUrl}/api/tags`);
+  if (!response.ok) {
+    return [];
+  }
+
+  const data = await response.json() as OllamaTagsResponse;
+  return [...new Set((data.models ?? [])
+    .map((entry) => entry.name ?? entry.model)
+    .filter((name): name is string => typeof name === "string" && name.trim().length > 0))];
+}
+
+async function detectOllamaProvider(model?: string): Promise<ConfiguredProviderInfo> {
+  const credentials = await getOllamaCredentials();
+  if (!credentials) {
+    throw new Error("Preferred provider 'ollama' is not configured or authenticated");
+  }
+
+  const requestedModel = model?.trim();
+  if (requestedModel) {
+    const catalogModel = Object.values(EMBEDDING_MODELS.ollama)
+      .find((candidate) => candidate.model === requestedModel);
+    if (catalogModel) {
+      return { provider: "ollama", credentials, modelInfo: catalogModel };
+    }
+  }
+
+  const candidates = requestedModel
+    ? [requestedModel]
+    : await listOllamaModels(credentials);
+  for (const candidate of candidates) {
+    const modelInfo = await fetchOllamaModelInfo(credentials, candidate);
+    if (modelInfo) {
+      return { provider: "ollama", credentials, modelInfo };
+    }
+  }
+
+  const detail = model
+    ? `Model '${model}' is not installed or is not embedding-capable`
+    : "No installed embedding-capable Ollama model was found";
+  throw new Error(detail);
+}
+
+async function tryDetectOllamaProvider(): Promise<ConfiguredProviderInfo | null> {
+  try {
+    return await detectOllamaProvider();
+  } catch {
+    return null;
+  }
 }
 
 export function getProviderDisplayName(provider: EmbeddingProvider | 'custom'): string {

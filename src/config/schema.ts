@@ -357,15 +357,12 @@ export const autoDetectProviders: EmbeddingProvider[] = AUTO_DETECT_PROVIDER_ORD
 );
 
 export type ProviderModels = {
-  [P in keyof typeof EMBEDDING_MODELS]: keyof (typeof EMBEDDING_MODELS)[P]
+  [P in keyof typeof EMBEDDING_MODELS]: P extends "ollama"
+    ? string
+    : keyof (typeof EMBEDDING_MODELS)[P]
 }
 
 export type EmbeddingModelName = ProviderModels[keyof ProviderModels];
-
-export type EmbeddingProviderModelInfo = {
-  [P in EmbeddingProvider]: (typeof EMBEDDING_MODELS)[P][keyof (typeof EMBEDDING_MODELS)[P]]
-}
-
 
 /** Shared fields across all embedding model types (built-in and custom) */
 export interface BaseModelInfo {
@@ -373,6 +370,12 @@ export interface BaseModelInfo {
   dimensions: number;
   maxTokens: number;
   costPer1MTokens: number;
+}
+
+export type EmbeddingProviderModelInfo = {
+  [P in EmbeddingProvider]: P extends "ollama"
+    ? BaseModelInfo & { provider: "ollama" }
+    : (typeof EMBEDDING_MODELS)[P][keyof (typeof EMBEDDING_MODELS)[P]]
 }
 
 export type EmbeddingModelInfo = EmbeddingProviderModelInfo[EmbeddingProvider];
