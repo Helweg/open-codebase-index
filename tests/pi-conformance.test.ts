@@ -107,6 +107,32 @@ describe("Pi adapter conformance", () => {
     }));
   });
 
+  it("formats metadata-only peek results with the shared exact-search handoff", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([{
+      filePath: "src/auth.ts",
+      startLine: 4,
+      endLine: 12,
+      name: "validateToken",
+      chunkType: "function",
+      content: "",
+      score: 0.98,
+    }]);
+    const { tools } = await registerPiTools();
+
+    const result = await tools.get("codebase_peek")?.execute(
+      "tool-call",
+      { query: "authentication validation" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(result?.content[0]?.text).toContain('function "validateToken" at src/auth.ts:4-12');
+    expect(result?.content[0]?.text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
+    expect(result?.content[0]?.text).not.toContain("```");
+    expect(result?.details).toEqual(expect.arrayContaining([expect.objectContaining({ name: "validateToken" })]));
+  });
+
   it("formats caller results like other host adapters", async () => {
     operationMocks.getCallGraphData.mockResolvedValue({
       direction: "callers",

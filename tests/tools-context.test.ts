@@ -83,6 +83,28 @@ describe("native OpenCode codebase_context", () => {
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
 
+  it("includes result-derived exact-search handoffs in conceptual packs", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([{
+      filePath: "src/auth.ts",
+      startLine: 12,
+      endLine: 30,
+      name: "validateToken",
+      chunkType: "function",
+      content: "secret source",
+      score: 0.99,
+    }]);
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "how is authentication validated",
+      tokenBudget: 512,
+    }, context);
+
+    expect(result).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
+    expect(result).not.toContain("secret source");
+    expect(countContextTokens(result)).toBeLessThanOrEqual(512);
+  });
+
   it("routes explicit definitions to compact location evidence", async () => {
     operationMocks.implementationLookup.mockResolvedValue([{
       filePath: "src/auth.ts",

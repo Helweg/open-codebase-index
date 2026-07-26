@@ -468,6 +468,7 @@ export async function resolveSearchContext(
           tokenBudget,
           maxResults: limit,
           heading,
+          includeExactSearchHandoff: true,
         }),
       );
     }

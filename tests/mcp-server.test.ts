@@ -473,6 +473,7 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 locations");
+    expect(content[0].text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
   });
 
   it("should execute codebase_peek with null optional fields", async () => {

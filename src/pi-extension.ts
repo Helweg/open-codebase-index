@@ -19,6 +19,7 @@ import {
 } from "./tools/operations.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+  formatCodebasePeek,
   formatDefinitionLookup,
   formatHealthCheck,
   formatIndexStats,
@@ -129,7 +130,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const results = await searchCodebase(projectRoot(ctx), HOST, params.query, { ...params, metadataOnly: true });
-      return text(formatSearchResults(results), results);
+      return text(formatCodebasePeek(results), results);
     },
   });
 

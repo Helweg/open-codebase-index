@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Exact-search handoffs**: Metadata-only semantic discovery and conceptual context packs now return bounded, result-derived symbol suggestions for exact usage or exhaustive-match searches, with handoffs included in context token-budget accounting across OpenCode, MCP, and Pi.
 - **Automatic branch and PR index preparation**: `pr_impact` now safely materializes and indexes missing branch or pull-request commits in isolated hook-disabled worktrees, verifies commit-aware fork-specific catalogs, and reuses or replaces indexes without changing the caller's worktree.
 - **Name-based call graph routing**: Callers, callees, and dependency paths now resolve unique symbol names automatically across native OpenCode, MCP, Pi, and `codebase_context`. Duplicate names return bounded candidate locations with optional file-path disambiguators, while `symbolId` remains an optional compatibility escape hatch.
 - **Self-recovering context lookup**: `codebase_context` now retries empty scoped searches without file filters, retries inferred symbol text after definition-style misses, reports bounded recovery metadata, and keeps all fallback responses within the requested token budget across MCP, native OpenCode, Pi, and evaluation.

@@ -514,6 +514,60 @@ describe("tools utils", () => {
 
       expect(result).toContain("abc1234 | Jane Doe | 2025-03-14 | auth: add session validation");
     });
+
+    it("adds a bounded, deduplicated exact-search handoff from named results", () => {
+      const results: SearchResult[] = ["first", "first", "second", "third", "fourth"].map((name, index) => ({
+        filePath: `src/${index}.ts`,
+        startLine: 1,
+        endLine: 2,
+        content: "",
+        score: 1 - index / 10,
+        chunkType: "function",
+        name,
+      }));
+
+      const result = formatCodebasePeek(results);
+
+      expect(result).toContain('Exact-search handoff: use exact grep/search for "first", "second", "third"');
+      expect(result).not.toContain('grep/search for "first", "second", "third", "fourth"');
+    });
+
+    it("omits anonymous and overlong names while safely quoting exact names", () => {
+      const anonymous = formatCodebasePeek([{
+        filePath: "src/anonymous.ts",
+        startLine: 1,
+        endLine: 2,
+        content: "",
+        score: 1,
+        chunkType: "other",
+      }]);
+      const overlongName = `${"x".repeat(100)}dangerous`;
+      const unsafeName = `dangerous\"\nrm example`;
+      const named = formatCodebasePeek([{
+        filePath: "src/named.ts",
+        startLine: 1,
+        endLine: 2,
+        content: "",
+        score: 1,
+        chunkType: "function",
+        name: overlongName,
+      }, {
+        filePath: "src/short.ts",
+        startLine: 3,
+        endLine: 4,
+        content: "",
+        score: 0.9,
+        chunkType: "function",
+        name: unsafeName,
+      }]);
+      const handoff = named.split("\n\n").at(-1) ?? "";
+
+      expect(anonymous).not.toContain("Exact-search handoff");
+      expect(handoff).toContain("Exact-search handoff");
+      expect(handoff).toContain("\\n");
+      expect(handoff).not.toContain(overlongName);
+      expect(handoff).toContain(JSON.stringify(unsafeName));
+    });
   });
 
   describe("formatHealthCheck", () => {
@@ -912,6 +966,54 @@ describe("tools utils", () => {
       expect(packed.results).toEqual([]);
       expect(packed.candidateCount).toBe(0);
       expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+    });
+
+    it("includes exact-search handoffs only when requested and only for selected evidence", () => {
+      const results: SearchResult[] = Array.from({ length: 4 }, (_, index) => ({
+        filePath: `src/file-${index}.ts`,
+        startLine: 1,
+        endLine: 2,
+        content: "hidden",
+        score: 1 - index / 10,
+        chunkType: "function",
+        name: `symbol${index}`,
+      }));
+
+      const withoutHandoff = buildContextPack(results, { tokenBudget: 2048, maxResults: 2 });
+      const withHandoff = buildContextPack(results, {
+        tokenBudget: 2048,
+        maxResults: 2,
+        includeExactSearchHandoff: true,
+      });
+
+      expect(withoutHandoff.text).not.toContain("Exact-search handoff");
+      expect(withHandoff.text).toContain('exact grep/search for "symbol0", "symbol1"');
+      expect(withHandoff.text).not.toContain('"symbol2"');
+      expect(withHandoff.tokenEstimate).toBe(countContextTokens(withHandoff.text));
+    });
+
+    it("accounts for the handoff while selecting evidence under the minimum token budget", () => {
+      const results: SearchResult[] = Array.from({ length: 8 }, (_, index) => ({
+        filePath: `src/${"long-directory/".repeat(4)}file-${index}.ts`,
+        startLine: 1,
+        endLine: 20,
+        content: "hidden",
+        score: 1 - index / 100,
+        chunkType: "function",
+        name: `exactSearchSymbol${index}`,
+      }));
+
+      const packed = buildContextPack(results, {
+        tokenBudget: MIN_CONTEXT_PACK_TOKEN_BUDGET,
+        includeExactSearchHandoff: true,
+      });
+
+      expect(packed.tokenEstimate).toBe(countContextTokens(packed.text));
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
+      expect(packed.results.length + packed.omittedCount).toBe(results.length);
+      for (const result of packed.results) {
+        expect(packed.text).toContain(result.name!.slice(-20));
+      }
     });
   });
 
