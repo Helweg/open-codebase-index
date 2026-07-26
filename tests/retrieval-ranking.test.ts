@@ -411,6 +411,80 @@ describe("retrieval ranking", () => {
     expect(reranked[0]?.id).toBe("docs");
   });
 
+  it("strongly prefers an exact authoritative symbol over imports, containers, tests, docs, and vendor copies", () => {
+    const candidates: Candidate[] = [
+      { id: "import", score: 0.99, metadata: meta({ filePath: "/repo/src/index.ts", name: "normalizeSession", chunkType: "import_statement", startLine: 1, endLine: 1, hash: "import" }) },
+      { id: "container", score: 0.98, metadata: meta({ filePath: "/repo/src/session.ts", name: "normalizeSession", chunkType: "export_statement", startLine: 10, endLine: 24, hash: "container" }) },
+      { id: "test", score: 0.97, metadata: meta({ filePath: "/repo/tests/session.test.ts", name: "normalizeSession", chunkType: "function", hash: "test" }) },
+      { id: "docs", score: 0.96, metadata: meta({ filePath: "/repo/docs/session.md", name: "normalizeSession", chunkType: "other", hash: "docs" }) },
+      { id: "vendor", score: 0.95, metadata: meta({ filePath: "/repo/vendor/session.ts", name: "normalizeSession", chunkType: "function", hash: "vendor" }) },
+      { id: "definition", score: 0.72, metadata: meta({ filePath: "/repo/src/session.ts", name: "normalizeSession", chunkType: "function_declaration", startLine: 11, endLine: 24, hash: "definition" }) },
+    ];
+
+    const ranked = rerankResults("where is normalizeSession defined", candidates, candidates.length);
+    expect(ranked[0]?.id).toBe("definition");
+    expect(ranked.map((candidate) => candidate.id)).not.toContain("container");
+  });
+
+  it("matches identifiers with deterministic NFKC and case normalization", () => {
+    const candidates: Candidate[] = [
+      { id: "noise", score: 0.99, metadata: meta({ filePath: "/repo/src/noise.ts", name: "CafeServiceFactory", chunkType: "function", hash: "noise" }) },
+      { id: "target", score: 0.6, metadata: meta({ filePath: "/repo/src/cafe.ts", name: "Cafe\u0301Service", chunkType: "class_declaration", hash: "target" }) },
+    ];
+
+    const ranked = rerankResults("where is CAFÉSERVICE implemented", candidates, candidates.length);
+    expect(ranked[0]?.id).toBe("target");
+  });
+
+  it("uses explicit test, docs, config, and call-flow intent instead of always preferring source definitions", () => {
+    const candidates: Candidate[] = [
+      { id: "definition", score: 0.98, metadata: meta({ filePath: "/repo/src/session.ts", name: "resolveSession", chunkType: "function", hash: "definition" }) },
+      { id: "test", score: 0.88, metadata: meta({ filePath: "/repo/tests/session.test.ts", name: "resolveSession test", chunkType: "test_declaration", hash: "test" }) },
+      { id: "docs", score: 0.87, metadata: meta({ filePath: "/repo/docs/session.md", name: "session guide", chunkType: "other", hash: "docs" }) },
+      { id: "config", score: 0.86, metadata: meta({ filePath: "/repo/config/session.yaml", name: "session settings", chunkType: "other", hash: "config" }) },
+      { id: "call-flow", score: 0.85, metadata: meta({ filePath: "/repo/src/call-graph/session-callers.ts", name: "findSessionCallers", chunkType: "function", hash: "call-flow" }) },
+    ];
+
+    expect(rerankResults("tests for resolveSession", candidates, candidates.length)[0]?.id).toBe("test");
+    expect(rerankResults("documentation for resolveSession", candidates, candidates.length)[0]?.id).toBe("docs");
+    expect(rerankResults("session configuration settings", candidates, candidates.length)[0]?.id).toBe("config");
+    expect(rerankResults("who calls resolveSession", candidates, candidates.length)[0]?.id).toBe("call-flow");
+  });
+
+  it("removes nested same-symbol containers without collapsing distinct nested symbols", () => {
+    const candidates: Candidate[] = [
+      { id: "target", score: 0.9, metadata: meta({ filePath: "/repo/src/session.ts", name: "resolveSession", chunkType: "function", startLine: 10, endLine: 20, hash: "target" }) },
+      { id: "container", score: 0.89, metadata: meta({ filePath: "/repo/src/session.ts", name: "resolveSession", chunkType: "export_statement", startLine: 9, endLine: 20, hash: "container" }) },
+      { id: "distinct", score: 0.88, metadata: meta({ filePath: "/repo/src/session.ts", name: "refreshSession", chunkType: "function", startLine: 22, endLine: 30, hash: "distinct" }) },
+    ];
+
+    const ranked = rerankResults("session lifecycle", candidates, candidates.length);
+    expect(ranked.map((candidate) => candidate.id)).toEqual(["target", "distinct"]);
+  });
+
+  it("keeps stable input order for true ties and preserves strong conceptual relevance", () => {
+    const tied: Candidate[] = [
+      { id: "z", score: 0.9, metadata: meta({ filePath: "/repo/src/a.ts", name: "alpha", chunkType: "function", hash: "z" }) },
+      { id: "a", score: 0.9, metadata: meta({ filePath: "/repo/src/b.ts", name: "beta", chunkType: "function", hash: "a" }) },
+    ];
+    const conceptual: Candidate[] = [
+      { id: "relevant", score: 0.96, metadata: meta({ filePath: "/repo/src/recovery.ts", name: "recoverCorruptedIndex", chunkType: "function", hash: "relevant" }) },
+      { id: "generated", score: 0.94, metadata: meta({ filePath: "/repo/generated/recovery.ts", name: "recoverCorruptedIndex", chunkType: "function", hash: "generated" }) },
+      { id: "docs", score: 0.93, metadata: meta({ filePath: "/repo/docs/recovery.md", name: "recovery guide", chunkType: "other", hash: "docs" }) },
+    ];
+
+    expect(rerankResults("unrelated", tied, tied.length).map((candidate) => candidate.id)).toEqual(["z", "a"]);
+    expect(rerankResults("unrelated", tied, tied.length).map((candidate) => candidate.id)).toEqual(["z", "a"]);
+    expect(rerankResults("recover corrupted sqlite index safely", conceptual, conceptual.length)[0]?.id).toBe("relevant");
+
+    const acronymConcept: Candidate[] = [
+      { id: "metrics", score: 0.96, metadata: meta({ filePath: "/repo/src/eval/metrics.ts", name: "computeEvalMetrics", chunkType: "function", hash: "metrics" }) },
+      { id: "acronym", score: 0.9, metadata: meta({ filePath: "/repo/src/constants.ts", name: "MRR", chunkType: "other", hash: "acronym" }) },
+    ];
+    expect(rerankResults("calculate retrieval recall MRR and discounted gain", acronymConcept, acronymConcept.length)[0]?.id)
+      .toBe("metrics");
+  });
+
   it("extracts file path hint from path-constrained implementation query", () => {
     const query = "where is createSystem implementation in packages/react/src/styled-system/system.ts";
     expect(extractFilePathHint(query)).toBe("packages/react/src/styled-system/system.ts");
@@ -444,7 +518,7 @@ describe("retrieval ranking", () => {
     });
     const indexer = new Indexer("/repo", config);
 
-    const firstPath = createTempFile("src/first.ts", "export function firstThing() {\n  return 'first';\n}\n");
+    const firstPath = createTempFile("src/first.ts", "const SECRET_BEFORE = 'private';\nexport function firstThing() {\n  return 'first';\n}\nconst SECRET_AFTER = 'private';\n");
     const secondPath = createTempFile("src/second.ts", "export function secondThing() {\n  return 'second';\n}\n");
     const thirdPath = createTempFile("src/third.ts", "export function thirdThing() {\n  return 'third';\n}\n");
 
@@ -465,7 +539,7 @@ describe("retrieval ranking", () => {
     }) as typeof fetch;
 
     const candidates: Candidate[] = [
-      { id: "first", score: 0.9, metadata: meta({ filePath: firstPath, name: "firstThing", chunkType: "function", startLine: 1, endLine: 3 }) },
+      { id: "first", score: 0.9, metadata: meta({ filePath: firstPath, name: "firstThing", chunkType: "function", startLine: 2, endLine: 4 }) },
       { id: "second", score: 0.89, metadata: meta({ filePath: secondPath, name: "secondThing", chunkType: "function", startLine: 1, endLine: 3 }) },
       { id: "third", score: 0.88, metadata: meta({ filePath: thirdPath, name: "thirdThing", chunkType: "function", startLine: 1, endLine: 3 }) },
     ];
@@ -478,6 +552,8 @@ describe("retrieval ranking", () => {
     expect(rerankBody?.documents?.[0]).toContain("snippet:");
     expect(rerankBody?.documents?.[0]).toContain("export function firstThing()");
     expect(rerankBody?.documents?.[0]).toContain("intent_hint: implementation");
+    expect(rerankBody?.documents?.[0]).not.toContain("SECRET_BEFORE");
+    expect(rerankBody?.documents?.[0]).not.toContain("SECRET_AFTER");
     globalThis.fetch = fetchSpy;
   });
 

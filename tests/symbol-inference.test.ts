@@ -35,4 +35,15 @@ describe("inferExactSymbolFromQuery", () => {
     expect(inferExactSymbolFromQuery("compare getStatus and forceIndex definitions"))
       .toBeUndefined();
   });
+
+  it("does not route explicit test, docs, config, or call-flow queries to definition lookup", () => {
+    expect(inferExactSymbolFromQuery("tests for `getStatus`"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("where is getStatus documentation"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("getStatus configuration settings"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("who calls getStatus"))
+      .toBeUndefined();
+  });
 });

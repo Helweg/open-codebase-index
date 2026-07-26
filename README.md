@@ -407,7 +407,7 @@ Use `include` to replace defaults, or `additionalInclude` to extend (e.g. `"**/*
 2. **Chunking**: Large blocks are split with overlapping windows to preserve context across chunk boundaries.
 3. **Embedding**: These blocks are converted into vector representations using your configured AI provider.
 4. **Storage**: Embeddings are stored in SQLite (deduplicated by content hash) and vectors in `usearch` with F16 quantization for 50% memory savings. A branch catalog tracks which chunks exist on each branch.
-5. **Hybrid Search**: Combines semantic similarity (vectors) with BM25 keyword matching, fuses (`rrf` default, `weighted` fallback), applies deterministic rerank, then filters by current branch/metadata.
+5. **Hybrid Search**: Combines semantic similarity (vectors) with BM25 keyword matching, applies branch and hard metadata scopes before reranking, fuses candidates (`rrf` default, `weighted` fallback), then applies deterministic local intent ranking and optional external reranking.
 
 **Performance characteristics:**
 - **Incremental indexing**: ~50ms check time — only re-embeds changed files
@@ -479,8 +479,12 @@ The plugin exposes these tools to the OpenCode agent:
 **Behavioral semantic retrieval with full content.** Searches code by describing behavior.
 - **Use for**: Discovery when you already want full matching snippets and are ready to inspect implementation text.
 - **Example**: `"find the middleware that sanitizes input"`
-- **Ranking path**: hybrid retrieval → fusion (`search.fusionStrategy`) → deterministic rerank (`search.rerankTopN`) → filters
+- **Ranking path**: hybrid retrieval → branch/directory/file-type/chunk/blame scope → fusion (`search.fusionStrategy`) → deterministic local intent rerank (`search.rerankTopN`) → optional external rerank within local evidence classes → minimum-score filter
 - **Blame filters**: when `indexing.gitBlame.enabled` is `true`, filter with `blameAuthor`, `blameSha`, or `blameSince`.
+
+The local ranker is deterministic and does not call another model. Exact symbol names receive a strong NFKC and case-normalized match signal. Definition and implementation questions prefer authoritative declarations over imports, export wrappers, tests, fixtures, docs, and generated or vendor files. Explicit test, docs, config, and call-flow wording instead promotes the requested evidence class. Natural-language conceptual queries keep retrieval score as the dominant signal, while nested duplicate chunks are removed and remaining evidence is spread across relevant files. True score ties retain input order, then candidate id as a final deterministic fallback.
+
+When an external reranker is enabled, hard directory, file-type, chunk-type, and blame scopes are enforced before any request. The external service receives only candidates already inside that scope and only the candidate's exact indexed line range, without extra surrounding source. Local intent classification, exact-name promotion, duplicate suppression, and evidence-class ordering remain local.
 
 **Writing good queries:**
 

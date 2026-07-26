@@ -1,0 +1,98 @@
+{
+  "version": "1.0.0",
+  "name": "intent-aware-local-ranking",
+  "description": "Synthetic fixed-candidate evaluation for deterministic local post-retrieval ranking on representative coding-agent queries.",
+  "methodology": {
+    "baseline": "Sort the supplied candidate pool by retrieval score descending, then candidate id. This isolates the local post-retrieval ranker from embeddings and candidate generation.",
+    "candidatePools": "Each query uses a hand-labeled, fixed candidate pool containing plausible high-scoring distractors. Candidate pools are not exhaustive repository judgments.",
+    "metrics": "Evidence recall@3 is the fraction of labeled relevant candidate ids present in the first three results. Reciprocal rank uses the first labeled relevant candidate.",
+    "limitations": "This fixture measures deterministic reranking only. It does not measure embedding recall, indexing quality, latency, external rerankers, or end-to-end agent task success."
+  },
+  "topK": 3,
+  "queries": [
+    {
+      "id": "exact-definition",
+      "query": "where is normalizeSession defined",
+      "relevantIds": ["definition"],
+      "candidates": [
+        { "id": "import", "score": 0.99, "filePath": "/repo/src/index.ts", "startLine": 1, "endLine": 1, "chunkType": "import_statement", "name": "normalizeSession" },
+        { "id": "container", "score": 0.98, "filePath": "/repo/src/session.ts", "startLine": 10, "endLine": 24, "chunkType": "export_statement", "name": "normalizeSession" },
+        { "id": "test", "score": 0.97, "filePath": "/repo/tests/session.test.ts", "startLine": 1, "endLine": 20, "chunkType": "function", "name": "normalizeSession" },
+        { "id": "docs", "score": 0.96, "filePath": "/repo/docs/session.md", "startLine": 1, "endLine": 20, "chunkType": "other", "name": "normalizeSession" },
+        { "id": "definition", "score": 0.72, "filePath": "/repo/src/session.ts", "startLine": 11, "endLine": 24, "chunkType": "function_declaration", "name": "normalizeSession" }
+      ]
+    },
+    {
+      "id": "unicode-definition",
+      "query": "where is CAFÉSERVICE implemented",
+      "relevantIds": ["unicode-definition"],
+      "candidates": [
+        { "id": "factory", "score": 0.98, "filePath": "/repo/src/cafe-factory.ts", "startLine": 1, "endLine": 20, "chunkType": "function", "name": "CafeServiceFactory" },
+        { "id": "unicode-docs", "score": 0.96, "filePath": "/repo/docs/cafe.md", "startLine": 1, "endLine": 20, "chunkType": "other", "name": "CaféService" },
+        { "id": "unicode-definition", "score": 0.63, "filePath": "/repo/src/cafe.ts", "startLine": 5, "endLine": 30, "chunkType": "class_declaration", "name": "CaféService" }
+      ]
+    },
+    {
+      "id": "test-intent",
+      "query": "tests for resolveSession",
+      "relevantIds": ["session-test"],
+      "candidates": [
+        { "id": "session-definition", "score": 0.98, "filePath": "/repo/src/session.ts", "startLine": 10, "endLine": 30, "chunkType": "function", "name": "resolveSession" },
+        { "id": "session-docs", "score": 0.94, "filePath": "/repo/docs/session.md", "startLine": 1, "endLine": 20, "chunkType": "other", "name": "resolveSession guide" },
+        { "id": "session-test", "score": 0.86, "filePath": "/repo/tests/session.test.ts", "startLine": 5, "endLine": 35, "chunkType": "test_declaration", "name": "resolveSession test" }
+      ]
+    },
+    {
+      "id": "docs-intent",
+      "query": "documentation for query routing",
+      "relevantIds": ["routing-docs"],
+      "candidates": [
+        { "id": "routing-code", "score": 0.97, "filePath": "/repo/src/routing.ts", "startLine": 1, "endLine": 40, "chunkType": "function", "name": "routeQuery" },
+        { "id": "routing-test", "score": 0.95, "filePath": "/repo/tests/routing.test.ts", "startLine": 1, "endLine": 30, "chunkType": "test_declaration", "name": "routing test" },
+        { "id": "routing-docs", "score": 0.84, "filePath": "/repo/README.md", "startLine": 20, "endLine": 45, "chunkType": "other", "name": "query routing documentation" }
+      ]
+    },
+    {
+      "id": "config-intent",
+      "query": "embedding provider configuration settings",
+      "relevantIds": ["provider-config"],
+      "candidates": [
+        { "id": "provider-code", "score": 0.97, "filePath": "/repo/src/embeddings/provider.ts", "startLine": 1, "endLine": 40, "chunkType": "class_declaration", "name": "EmbeddingProvider" },
+        { "id": "provider-docs", "score": 0.94, "filePath": "/repo/docs/embeddings.md", "startLine": 1, "endLine": 30, "chunkType": "other", "name": "embedding provider guide" },
+        { "id": "provider-config", "score": 0.82, "filePath": "/repo/config/embeddings.yaml", "startLine": 1, "endLine": 20, "chunkType": "other", "name": "embedding provider settings" }
+      ]
+    },
+    {
+      "id": "call-flow-intent",
+      "query": "who calls resolveSession",
+      "relevantIds": ["caller-evidence"],
+      "candidates": [
+        { "id": "resolve-definition", "score": 0.98, "filePath": "/repo/src/session.ts", "startLine": 10, "endLine": 30, "chunkType": "function", "name": "resolveSession" },
+        { "id": "call-docs", "score": 0.93, "filePath": "/repo/docs/call-graph.md", "startLine": 1, "endLine": 20, "chunkType": "other", "name": "call graph guide" },
+        { "id": "caller-evidence", "score": 0.81, "filePath": "/repo/src/call-graph/session-callers.ts", "startLine": 1, "endLine": 35, "chunkType": "function", "name": "findSessionCallers" }
+      ]
+    },
+    {
+      "id": "diverse-evidence",
+      "query": "authenticate requests and refresh session state",
+      "relevantIds": ["auth", "session"],
+      "candidates": [
+        { "id": "auth", "score": 0.97, "filePath": "/repo/src/auth.ts", "startLine": 10, "endLine": 30, "chunkType": "function", "name": "authenticateRequest" },
+        { "id": "auth-container", "score": 0.96, "filePath": "/repo/src/auth.ts", "startLine": 9, "endLine": 30, "chunkType": "export_statement", "name": "authenticateRequest" },
+        { "id": "auth-helper", "score": 0.95, "filePath": "/repo/src/auth.ts", "startLine": 32, "endLine": 45, "chunkType": "function", "name": "parseAuthHeader" },
+        { "id": "session", "score": 0.90, "filePath": "/repo/src/session.ts", "startLine": 1, "endLine": 25, "chunkType": "function", "name": "refreshSession" }
+      ]
+    },
+    {
+      "id": "conceptual-guardrail",
+      "query": "recover corrupted sqlite index safely",
+      "conceptualGuardrail": true,
+      "relevantIds": ["recovery"],
+      "candidates": [
+        { "id": "recovery", "score": 0.96, "filePath": "/repo/src/indexer/recovery.ts", "startLine": 1, "endLine": 45, "chunkType": "function", "name": "recoverCorruptedIndex" },
+        { "id": "generated-recovery", "score": 0.94, "filePath": "/repo/generated/recovery.ts", "startLine": 1, "endLine": 45, "chunkType": "function", "name": "recoverCorruptedIndex" },
+        { "id": "recovery-docs", "score": 0.92, "filePath": "/repo/docs/recovery.md", "startLine": 1, "endLine": 25, "chunkType": "other", "name": "recovery guide" }
+      ]
+    }
+  ]
+}

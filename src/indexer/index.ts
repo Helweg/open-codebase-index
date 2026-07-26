@@ -43,6 +43,17 @@ import { getChangedFiles } from "../tools/changed-files.js";
 import type { PrImpactResult } from "./pr-impact-types.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
 import {
+  analyzeQueryIntent,
+  extractIntentIdentifierHints,
+  isConfigPath,
+  isDocumentationPath as isIntentDocumentationPath,
+  isFixturePath,
+  isLikelyImplementationPath as isIntentImplementationPath,
+  isTestPath,
+  normalizeRankingText,
+  rankIntentAwareCandidates,
+} from "./intent-aware-ranking.js";
+import {
   acquireIndexLock,
   completeLeaseRecovery,
   createLeaseTemporaryPath,
@@ -453,7 +464,7 @@ interface RerankDocumentPayload {
   text: string;
 }
 
-type ExternalRerankBand = "implementation" | "documentation" | "test" | "other";
+type ExternalRerankBand = "implementation" | "documentation" | "test" | "config" | "other";
 
 interface HybridRankOptions {
   fusionStrategy: "weighted" | "rrf";
@@ -711,7 +722,6 @@ function isPathWithinRoot(filePath: string, rootPath: string): boolean {
 }
 
 const rankingQueryTokenCache = new Map<string, Set<string>>();
-const rankingNameTokenCache = new Map<string, Set<string>>();
 const rankingPathTokenCache = new Map<string, Set<string>>();
 const rankingTextTokenCache = new Map<string, Set<string>>();
 const rankHybridResultsCache = new WeakMap<RankedCandidate[], WeakMap<RankedCandidate[], Map<string, RankedCandidate[]>>>();
@@ -722,66 +732,6 @@ const STOPWORDS = new Set([
   "find", "show", "get", "run", "use", "code", "function", "implementation",
   "retrieve", "results", "result", "search", "pipeline", "top", "in", "on", "of",
   "to", "by", "as", "or", "an", "a",
-]);
-
-const TEST_PATH_SEGMENTS = [
-  "tests/",
-  "__tests__/",
-  "/test/",
-  "fixtures/",
-  "benchmark",
-  "README",
-  "ARCHITECTURE",
-  "docs/",
-];
-
-const IMPLEMENTATION_EXCLUDE_PATH_SEGMENTS = [
-  "tests/",
-  "__tests__/",
-  "/test/",
-  "fixtures/",
-  "benchmark",
-  "readme",
-  "architecture",
-  "docs/",
-  "examples/",
-  "example/",
-  ".github/",
-  "/scripts/",
-  "/migrations/",
-  "/generated/",
-];
-
-const SOURCE_INTENT_HINTS = new Set([
-  "implement",
-  "implementation",
-  "function",
-  "method",
-  "class",
-  "logic",
-  "algorithm",
-  "pipeline",
-  "indexer",
-  "where",
-]);
-
-const DOC_TEST_INTENT_HINTS = new Set([
-  "test",
-  "tests",
-  "fixture",
-  "fixtures",
-  "benchmark",
-  "readme",
-  "docs",
-  "documentation",
-]);
-
-const DOC_INTENT_HINTS = new Set([
-  "readme",
-  "docs",
-  "documentation",
-  "guide",
-  "usage",
 ]);
 
 function setBoundedCache(
@@ -803,7 +753,7 @@ function tokenizeTextForRanking(text: string): Set<string> {
     return new Set<string>();
   }
 
-  const lowered = text.toLowerCase();
+  const lowered = normalizeRankingText(text);
   const cache = rankingQueryTokenCache.get(lowered) ?? rankingTextTokenCache.get(lowered);
   if (cache) {
     return cache;
@@ -811,7 +761,7 @@ function tokenizeTextForRanking(text: string): Set<string> {
 
   const tokens = new Set(
     lowered
-      .replace(/[^\w\s]/g, " ")
+      .replace(/[^\p{L}\p{N}_$\s]/gu, " ")
       .split(/\s+/)
       .filter((token) => token.length > 1 && !STOPWORDS.has(token))
   );
@@ -822,14 +772,14 @@ function tokenizeTextForRanking(text: string): Set<string> {
 }
 
 function splitPathTokens(filePath: string): Set<string> {
-  const lowered = filePath.toLowerCase();
+  const lowered = normalizeRankingText(filePath);
   const cache = rankingPathTokenCache.get(lowered);
   if (cache) {
     return cache;
   }
 
   const normalized = lowered
-    .replace(/[^a-z0-9/._-]/g, " ")
+    .replace(/[^\p{L}\p{N}/._-]/gu, " ")
     .split(/[/._-]+/)
     .filter((token) => token.length > 1);
   const tokens = new Set(normalized);
@@ -837,176 +787,73 @@ function splitPathTokens(filePath: string): Set<string> {
   return tokens;
 }
 
-function splitNameTokens(name: string): Set<string> {
-  if (!name) {
-    return new Set<string>();
-  }
-
-  const lowered = name.toLowerCase();
-  const cache = rankingNameTokenCache.get(lowered);
-  if (cache) {
-    return cache;
-  }
-
-  const tokens = new Set(
-    lowered
-      .replace(/[^\w\s]/g, " ")
-      .split(/\s+/)
-      .filter((token) => token.length > 1)
-  );
-  setBoundedCache(rankingNameTokenCache, lowered, tokens);
-  return tokens;
-}
-
-function chunkTypeBoost(chunkType: string): number {
-  switch (chunkType) {
-    case "function":
-    case "function_declaration":
-    case "method":
-    case "method_definition":
-    case "method_declaration":
-    case "protocol_function_declaration":
-    case "init_declaration":
-    case "deinit_declaration":
-    case "subscript_declaration":
-    case "class":
-    case "class_declaration":
-    case "actor_declaration":
-    case "extension_declaration":
-      return 0.2;
-    case "interface":
-    case "type":
-    case "enum":
-    case "enum_declaration":
-    case "struct":
-    case "struct_declaration":
-    case "impl":
-    case "trait":
-    case "protocol_declaration":
-    case "module":
-      return 0.1;
-    default:
-      return 0;
-  }
-}
-
 function isTestOrDocPath(filePath: string): boolean {
-  return TEST_PATH_SEGMENTS.some((segment) => filePath.includes(segment));
+  return isTestPath(filePath) || isFixturePath(filePath) || isIntentDocumentationPath(filePath);
 }
 
 function isLikelyImplementationPath(filePath: string): boolean {
-  const lowered = filePath.toLowerCase();
-  if (IMPLEMENTATION_EXCLUDE_PATH_SEGMENTS.some((segment) => lowered.includes(segment))) {
-    return false;
-  }
-
-  const ext = lowered.split(".").pop() ?? "";
-  if (["md", "mdx", "txt", "rst", "adoc", "snap", "json", "yaml", "yml", "lock"].includes(ext)) {
-    return false;
-  }
-
-  return true;
+  return isIntentImplementationPath(filePath);
 }
 
 function isDocumentationPath(filePath: string): boolean {
-  const lowered = filePath.toLowerCase();
-  const ext = lowered.split(".").pop() ?? "";
-  return lowered.includes("readme") || ["md", "mdx", "rst", "adoc", "txt"].includes(ext);
+  return isIntentDocumentationPath(filePath);
 }
 
 function classifyExternalRerankBand(
   candidate: RankedCandidate,
-  preferSourcePaths: boolean,
-  docIntent: boolean
+  intent: ReturnType<typeof analyzeQueryIntent>
 ): ExternalRerankBand {
   const isDocOrTest = isTestOrDocPath(candidate.metadata.filePath);
   const isDocumentation = isDocumentationPath(candidate.metadata.filePath);
+  const isTest = isTestPath(candidate.metadata.filePath) || isFixturePath(candidate.metadata.filePath);
+  const isConfig = isConfigPath(candidate.metadata.filePath);
   const isImplementation = isLikelyImplementationPath(candidate.metadata.filePath) &&
     isImplementationChunkType(candidate.metadata.chunkType);
 
-  if (preferSourcePaths) {
+  if (intent.preferSourcePaths) {
     if (isImplementation) return "implementation";
+    if (isConfig) return "config";
     if (isDocumentation) return "documentation";
-    if (isDocOrTest) return "test";
+    if (isTest || isDocOrTest) return "test";
     return "other";
   }
 
-  if (docIntent) {
+  if (intent.primary === "docs") {
     if (isDocumentation) return "documentation";
+    if (isConfig) return "config";
     if (isImplementation) return "implementation";
-    if (isDocOrTest) return "test";
+    if (isTest || isDocOrTest) return "test";
+    return "other";
+  }
+
+  if (intent.primary === "test") {
+    if (isTest || isDocOrTest) return "test";
+    if (isDocumentation) return "documentation";
+    if (isConfig) return "config";
+    if (isImplementation) return "implementation";
+    return "other";
+  }
+
+  if (intent.primary === "config") {
+    if (isConfig) return "config";
+    if (isImplementation) return "implementation";
+    if (isDocumentation) return "documentation";
+    if (isTest || isDocOrTest) return "test";
     return "other";
   }
 
   if (isImplementation) return "implementation";
+  if (isConfig) return "config";
   if (isDocumentation) return "documentation";
-  if (isDocOrTest) return "test";
+  if (isTest || isDocOrTest) return "test";
   return "other";
 }
 
-function classifyQueryIntent(tokens: string[]): "source" | "doc_test" | "neutral" {
-  const sourceIntentHits = tokens.filter((t) => SOURCE_INTENT_HINTS.has(t)).length;
-  const docTestIntentHits = tokens.filter((t) => DOC_TEST_INTENT_HINTS.has(t)).length;
-
-  if (sourceIntentHits === 0 && docTestIntentHits === 0) {
-    return "neutral";
-  }
-
-  if (sourceIntentHits > docTestIntentHits) {
-    return "source";
-  }
-
-  if (docTestIntentHits > sourceIntentHits) {
-    return "doc_test";
-  }
-
-  return "neutral";
-}
-
 function classifyQueryIntentRaw(query: string): "source" | "doc_test" | "neutral" {
-  const lowerQuery = query.toLowerCase();
-  const docTestRawHits = Array.from(DOC_TEST_INTENT_HINTS).filter((hint) =>
-    new RegExp(`\\b${hint}\\b`).test(lowerQuery)
-  ).length;
-  const sourceRawHits = [
-    "implement",
-    "implementation",
-    "implements",
-    "function",
-    "method",
-    "class",
-    "logic",
-    "algorithm",
-    "pipeline",
-    "indexer",
-  ].filter((hint) => new RegExp(`\\b${hint}\\b`).test(lowerQuery)).length;
-
-  if (docTestRawHits > sourceRawHits) {
-    return "doc_test";
-  }
-
-  if (sourceRawHits > docTestRawHits && sourceRawHits > 0) {
-    return "source";
-  }
-
-  const hasWhereIsPattern = /\bwhere\s+is\b/.test(lowerQuery);
-  const hasIdentifierHints = extractIdentifierHints(query).length > 0;
-  if (hasWhereIsPattern && hasIdentifierHints && docTestRawHits === 0) {
-    return "source";
-  }
-
-  const queryTokens = Array.from(tokenizeTextForRanking(query));
-  return classifyQueryIntent(queryTokens);
-}
-
-function classifyDocIntent(tokens: string[]): "docs" | "test" | "mixed" | "none" {
-  const docHits = tokens.filter((t) => DOC_INTENT_HINTS.has(t)).length;
-  const testHits = tokens.filter((t) => ["test", "tests", "fixture", "fixtures", "benchmark"].includes(t)).length;
-
-  if (docHits > 0 && testHits === 0) return "docs";
-  if (testHits > 0 && docHits === 0) return "test";
-  if (testHits > 0 || docHits > 0) return "mixed";
-  return "none";
+  const intent = analyzeQueryIntent(query);
+  if (intent.primary === "test" || intent.primary === "docs") return "doc_test";
+  if (intent.preferSourcePaths) return "source";
+  return "neutral";
 }
 
 function isImplementationChunkType(chunkType: string): boolean {
@@ -1036,15 +883,7 @@ function isImplementationChunkType(chunkType: string): boolean {
 }
 
 function extractIdentifierHints(query: string): string[] {
-  const identifiers = query.match(/[A-Za-z_][A-Za-z0-9_]*/g) ?? [];
-  return identifiers
-    .filter((id) => id.length >= 3)
-    .filter((id) => {
-      const lower = id.toLowerCase();
-      if (STOPWORDS.has(lower)) return false;
-      return /[A-Z]/.test(id) || id.includes("_") || id.endsWith("Results") || id.endsWith("Result");
-    })
-    .map((id) => id.toLowerCase());
+  return extractIntentIdentifierHints(query);
 }
 
 function extractCodeTermHints(query: string): string[] {
@@ -1056,9 +895,12 @@ function extractCodeTermHints(query: string): string[] {
 }
 
 function normalizeIdentifierVariants(identifier: string): string[] {
-  const lower = identifier.toLowerCase();
-  const compact = lower.replace(/[^a-z0-9]/g, "");
-  const snake = compact.replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase();
+  const lower = normalizeRankingText(identifier);
+  const compact = lower.replace(/[^\p{L}\p{N}]/gu, "");
+  const snake = identifier
+    .normalize("NFKC")
+    .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, "$1_$2")
+    .toLowerCase();
   const kebab = snake.replace(/_/g, "-");
   const variants = [lower, compact, snake, kebab].filter((value) => value.length > 0);
   return Array.from(new Set(variants));
@@ -1309,129 +1151,7 @@ export function rerankResults(
   rerankTopN: number,
   options?: { prioritizeSourcePaths?: boolean }
 ): RankedCandidate[] {
-  if (rerankTopN <= 0 || candidates.length <= 1) {
-    return candidates;
-  }
-
-  const topN = Math.min(rerankTopN, candidates.length);
-  const queryTokens = tokenizeTextForRanking(query);
-  if (queryTokens.size === 0) {
-    return candidates;
-  }
-
-  const queryTokenList = Array.from(queryTokens);
-  const docIntent = classifyDocIntent(queryTokenList);
-  const preferSourcePaths = options?.prioritizeSourcePaths ?? classifyQueryIntentRaw(query) === "source";
-  const identifierHints = extractIdentifierHints(query);
-
-  const head = candidates.slice(0, topN).map((candidate, idx) => {
-    const pathTokens = splitPathTokens(candidate.metadata.filePath);
-    const nameTokens = splitNameTokens(candidate.metadata.name ?? "");
-    const chunkTypeTokens = tokenizeTextForRanking(candidate.metadata.chunkType);
-    let exactOrPrefixNameHits = 0;
-    let pathOverlap = 0;
-    let chunkTypeHits = 0;
-
-    for (const token of queryTokenList) {
-      if (nameTokens.has(token)) {
-        exactOrPrefixNameHits += 1;
-      } else {
-        for (const nameToken of nameTokens) {
-          if (nameToken.startsWith(token) || token.startsWith(nameToken)) {
-            exactOrPrefixNameHits += 1;
-            break;
-          }
-        }
-      }
-
-      if (pathTokens.has(token)) {
-        pathOverlap += 1;
-      }
-
-      if (chunkTypeTokens.has(token)) {
-        chunkTypeHits += 1;
-      }
-    }
-
-    const likelyTestOrDoc = isTestOrDocPath(candidate.metadata.filePath);
-    const lowerPath = candidate.metadata.filePath.toLowerCase();
-    const lowerName = (candidate.metadata.name ?? "").toLowerCase();
-    const hasIdentifierMatch = identifierHints.some((id) => lowerPath.includes(id) || lowerName.includes(id));
-
-    const implementationPathBoost = preferSourcePaths && isLikelyImplementationPath(candidate.metadata.filePath) ? 0.08 : 0;
-    const isReadmePath = candidate.metadata.filePath.toLowerCase().includes("readme");
-    const testDocPenalty = preferSourcePaths && likelyTestOrDoc ? 0.12 : 0;
-    const readmeDocBoost = !preferSourcePaths && isReadmePath ? 0.08 : 0;
-    const identifierBoost = hasIdentifierMatch ? 0.12 : 0;
-    const tokenCoverage = queryTokenList.length > 0
-      ? (exactOrPrefixNameHits + pathOverlap + chunkTypeHits) / queryTokenList.length
-      : 0;
-    const coverageBoost = Math.min(0.12, tokenCoverage * 0.06);
-
-    const deterministicBoost =
-      exactOrPrefixNameHits * 0.08 +
-      pathOverlap * 0.03 +
-      chunkTypeHits * 0.02 +
-      coverageBoost +
-      identifierBoost +
-      implementationPathBoost -
-      testDocPenalty +
-      readmeDocBoost +
-      chunkTypeBoost(candidate.metadata.chunkType);
-
-    return {
-      candidate,
-      boostedScore: candidate.score + deterministicBoost,
-      originalIndex: idx,
-      hasIdentifierMatch,
-      implementationChunk: isImplementationChunkType(candidate.metadata.chunkType),
-      isLikelyImplementationPath: isLikelyImplementationPath(candidate.metadata.filePath),
-      isTestOrDocPath: likelyTestOrDoc,
-      isReadmePath,
-    };
-  });
-
-  head.sort((a, b) => {
-    if (b.boostedScore !== a.boostedScore) return b.boostedScore - a.boostedScore;
-    if (b.candidate.score !== a.candidate.score) return b.candidate.score - a.candidate.score;
-    if (a.originalIndex !== b.originalIndex) return a.originalIndex - b.originalIndex;
-    return a.candidate.id.localeCompare(b.candidate.id);
-  });
-
-  if (preferSourcePaths) {
-    head.sort((a, b) => {
-      const aId = a.hasIdentifierMatch ? 1 : 0;
-      const bId = b.hasIdentifierMatch ? 1 : 0;
-      if (aId !== bId) return bId - aId;
-
-      const aImpl = a.implementationChunk ? 1 : 0;
-      const bImpl = b.implementationChunk ? 1 : 0;
-      if (aImpl !== bImpl) return bImpl - aImpl;
-
-      const aImplementationPath = a.isLikelyImplementationPath ? 1 : 0;
-      const bImplementationPath = b.isLikelyImplementationPath ? 1 : 0;
-      if (aImplementationPath !== bImplementationPath) return bImplementationPath - aImplementationPath;
-
-      const aTestDoc = a.isTestOrDocPath ? 1 : 0;
-      const bTestDoc = b.isTestOrDocPath ? 1 : 0;
-      if (aTestDoc !== bTestDoc) return aTestDoc - bTestDoc;
-
-      return 0;
-    });
-  } else if (docIntent === "docs") {
-    head.sort((a, b) => {
-      const aReadme = a.isReadmePath ? 1 : 0;
-      const bReadme = b.isReadmePath ? 1 : 0;
-      if (aReadme !== bReadme) return bReadme - aReadme;
-      return 0;
-    });
-  }
-
-  const shouldDiversify = !(preferSourcePaths && identifierHints.length > 0);
-  const diversifiedHead = diversifyEntriesByFileAndSymbol(head, (entry) => entry.candidate, shouldDiversify);
-
-  const tail = candidates.slice(topN);
-  return [...diversifiedHead.map((entry) => entry.candidate), ...tail];
+  return rankIntentAwareCandidates(query, candidates, rerankTopN, options);
 }
 
 function diversifyEntriesByFileAndSymbol<T>(
@@ -2001,22 +1721,25 @@ export function selectIndexableChunks<T extends { chunkType: string }>(
   return selectChunksWithFileCoverage(indexableChunks, limit);
 }
 
-function matchesSearchFilters(
+function matchesHardSearchFilters(
   candidate: RankedCandidate,
-  options: SearchFilterOptions | undefined,
-  minScore: number
+  options: SearchFilterOptions | undefined
 ): boolean {
-  if (candidate.score < minScore) return false;
-
   if (options?.fileType) {
     const ext = candidate.metadata.filePath.split(".").pop()?.toLowerCase();
-    if (ext !== options.fileType.toLowerCase().replace(/^\./, "")) return false;
+    const requestedExtension = options.fileType.trim().toLowerCase().replace(/^\./, "");
+    if (ext !== requestedExtension) return false;
   }
 
   if (options?.directory) {
-    const normalizedDir = options.directory.replace(/^\/|\/$/g, "");
-    if (!candidate.metadata.filePath.includes(`/${normalizedDir}/`) &&
-      !candidate.metadata.filePath.includes(`${normalizedDir}/`)) return false;
+    const normalizedPath = candidate.metadata.filePath.replace(/\\/g, "/");
+    const normalizedDir = options.directory.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
+    const isAbsoluteDirectory = normalizedDir.startsWith("/");
+    const matchesDirectory = isAbsoluteDirectory
+      ? normalizedPath === normalizedDir || normalizedPath.startsWith(`${normalizedDir}/`)
+      : normalizedPath === normalizedDir || normalizedPath.startsWith(`${normalizedDir}/`) ||
+        normalizedPath.includes(`/${normalizedDir}/`) || normalizedPath.endsWith(`/${normalizedDir}`);
+    if (!matchesDirectory) return false;
   }
 
   if (options?.chunkType && candidate.metadata.chunkType !== options.chunkType) {
@@ -2042,6 +1765,14 @@ function matchesSearchFilters(
   }
 
   return true;
+}
+
+function matchesSearchFilters(
+  candidate: RankedCandidate,
+  options: SearchFilterOptions | undefined,
+  minScore: number
+): boolean {
+  return candidate.score >= minScore && matchesHardSearchFilters(candidate, options);
 }
 
 function unionCandidates(
@@ -3032,9 +2763,9 @@ export class Indexer {
       return candidates;
     }
 
-    const queryTokens = Array.from(tokenizeTextForRanking(query));
-    const preferSourcePaths = classifyQueryIntentRaw(query) === "source";
-    const docIntent = classifyDocIntent(queryTokens) === "docs";
+    const queryIntent = analyzeQueryIntent(query);
+    const preferSourcePaths = queryIntent.preferSourcePaths;
+    const docIntent = queryIntent.primary === "docs";
 
     if (options?.definitionIntent === true) {
       return candidates;
@@ -3051,19 +2782,24 @@ export class Indexer {
       ["implementation", []],
       ["documentation", []],
       ["test", []],
+      ["config", []],
       ["other", []],
     ]);
 
     for (const candidate of head) {
-      const band = classifyExternalRerankBand(candidate, preferSourcePaths, docIntent);
+      const band = classifyExternalRerankBand(candidate, queryIntent);
       grouped.get(band)?.push(candidate);
     }
 
     const orderedBands: ExternalRerankBand[] = preferSourcePaths
-      ? ["implementation", "other", "documentation", "test"]
-      : docIntent
-        ? ["documentation", "implementation", "other", "test"]
-        : ["implementation", "other", "documentation", "test"];
+      ? ["implementation", "other", "config", "documentation", "test"]
+      : queryIntent.primary === "docs"
+        ? ["documentation", "implementation", "config", "other", "test"]
+        : queryIntent.primary === "test"
+          ? ["test", "implementation", "other", "documentation", "config"]
+          : queryIntent.primary === "config"
+            ? ["config", "implementation", "other", "documentation", "test"]
+            : ["implementation", "other", "config", "documentation", "test"];
 
     try {
       const rerankedHead: RankedCandidate[] = [];
@@ -3193,8 +2929,8 @@ export class Indexer {
     try {
       const fileContent = await fsPromises.readFile(candidate.metadata.filePath, "utf-8");
       const lines = fileContent.split("\n");
-      const snippetStartLine = Math.max(1, candidate.metadata.startLine - 2);
-      const snippetEndLine = Math.min(lines.length, candidate.metadata.endLine + 2);
+      const snippetStartLine = Math.max(1, candidate.metadata.startLine);
+      const snippetEndLine = Math.min(lines.length, candidate.metadata.endLine);
       const snippet = lines.slice(snippetStartLine - 1, snippetEndLine).join("\n").trim();
       parts.push("snippet:");
       parts.push(snippet.length > 0 ? snippet : "[empty]");
@@ -5366,6 +5102,12 @@ export class Indexer {
     const keywordCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && keywordResults.length > 0 && prefilteredKeyword.length === 0)
       ? keywordResults
       : prefilteredKeyword;
+    const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
+      matchesHardSearchFilters(candidate, options)
+    );
+    const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
+      matchesHardSearchFilters(candidate, options)
+    );
     const prefilterMs = performance.now() - prefilterStartTime;
 
     if (this.config.scope !== "global" && branchChunkIds && branchChunkIds.size === 0) {
@@ -5390,7 +5132,7 @@ export class Indexer {
     const rankingHybridWeight = embedding === undefined && fusionStrategy === "weighted"
       ? 1
       : effectiveHybridWeight;
-    const combined = rankHybridResults(query, semanticCandidates, keywordCandidates, {
+    const combined = rankHybridResults(query, scopedSemanticCandidates, scopedKeywordCandidates, {
       fusionStrategy,
       rrfK,
       rerankTopN,
@@ -5407,14 +5149,14 @@ export class Indexer {
     const rescued = promoteIdentifierMatches(
       query,
       rerankedCombined,
-      semanticCandidates,
-      keywordCandidates,
+      scopedSemanticCandidates,
+      scopedKeywordCandidates,
       database,
       branchChunkIds,
       sourceIntent
     );
 
-    const union = unionCandidates(semanticCandidates, keywordCandidates);
+    const union = unionCandidates(scopedSemanticCandidates, scopedKeywordCandidates);
 
     const deterministicIdentifierLane = buildDeterministicIdentifierPass(
       query,
