@@ -136,7 +136,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         return { content: [{ type: "text", text: "No matching code found. Try a different query or run index_codebase first." }] };
       }
 
-      return { content: [{ type: "text", text: `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}\n\nUse Read tool to examine specific files.` }] };
+      return { content: [{ type: "text", text: `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}` }] };
     },
   );
 

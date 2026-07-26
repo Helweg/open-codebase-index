@@ -17,6 +17,7 @@ export interface ContextPackOptions {
   tokenBudget?: number;
   heading?: string;
   maxResults?: number;
+  includeExactSearchHandoff?: boolean;
 }
 
 export interface ContextPackResult {
@@ -141,6 +142,43 @@ function compactEvidenceValue(value: string, maxChars: number): string {
   return `…${characters.slice(-(maxChars - 1)).join("")}`;
 }
 
+const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;
+const MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS = 64;
+
+function compactEvidenceName(value: string): string {
+  return compactEvidenceValue(value, MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS);
+}
+
+function formatExactSearchHandoff(results: SearchResult[]): string | null {
+  const suggestedNames: string[] = [];
+  const seen = new Set<string>();
+
+  for (const result of results) {
+    const rawName = result.name?.trim();
+    if (!rawName) {
+      continue;
+    }
+
+    if (seen.has(rawName)) {
+      continue;
+    }
+
+    seen.add(rawName);
+    suggestedNames.push(compactEvidenceName(rawName));
+
+    if (suggestedNames.length >= MAX_EXACT_SEARCH_HANDOFF_NAMES) {
+      break;
+    }
+  }
+
+  if (suggestedNames.length === 0) {
+    return null;
+  }
+
+  const quotedNames = suggestedNames.map((name) => JSON.stringify(name)).join(", ");
+  return `Exact-search handoff: use exact grep/search for ${quotedNames} to find usages or exhaustive matches.`;
+}
+
 function formatContextEvidence(result: SearchResult, index: number): string {
   const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
   const path = compactEvidenceValue(result.filePath, 120);
@@ -154,6 +192,7 @@ function formatContextPack(
   duplicateCount: number,
   limitOmittedCount: number,
   budgetOmittedCount: number,
+  includeExactSearchHandoff: boolean,
 ): string {
   const lines = selected.map((result, index) => formatContextEvidence(result, index + 1));
   const notes: string[] = [];
@@ -163,7 +202,8 @@ function formatContextPack(
   const footer = notes.length > 0
     ? `Selected ${selected.length} of ${candidateCount} candidates; ${notes.join("; ")}.`
     : `Selected ${selected.length} of ${candidateCount} candidates.`;
-  return `${heading}\n\n${lines.join("\n")}\n\n${footer}`;
+  const handoff = includeExactSearchHandoff ? formatExactSearchHandoff(selected) : null;
+  return [heading, lines.join("\n"), footer, handoff].filter(Boolean).join("\n\n");
 }
 
 export function buildContextPack(results: SearchResult[], options: ContextPackOptions = {}): ContextPackResult {
@@ -171,6 +211,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const tokenBudget = clampContextPackTokenBudget(options.tokenBudget);
   const heading = compactEvidenceValue(options.heading?.trim() || "Codebase evidence", 160);
   const maxResults = Math.max(0, Math.floor(options.maxResults ?? results.length));
+  const includeExactSearchHandoff = options.includeExactSearchHandoff ?? false;
   const candidateCount = results.length;
   const deduplicated = deduplicateContextCandidates(rankContextCandidates(results));
   const diversified = diversifyContextCandidates(deduplicated);
@@ -178,7 +219,15 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const selectable = diversified.slice(0, maxResults);
   const limitOmittedCount = deduplicated.length - selectable.length;
   let selected: SearchResult[] = [];
-  let text = formatContextPack(heading, selected, candidateCount, duplicateCount, limitOmittedCount, selectable.length);
+  let text = formatContextPack(
+    heading,
+    selected,
+    candidateCount,
+    duplicateCount,
+    limitOmittedCount,
+    selectable.length,
+    includeExactSearchHandoff,
+  );
 
   for (let count = 1; count <= selectable.length; count += 1) {
     const candidateSelection = selectable.slice(0, count);
@@ -190,6 +239,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       duplicateCount,
       limitOmittedCount,
       budgetOmittedCount,
+      includeExactSearchHandoff,
     );
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;
@@ -402,7 +452,8 @@ export function formatCodebasePeek(results: SearchResult[]): string {
     return `[${idx + 1}] ${r.chunkType} ${name} at ${location} (score: ${r.score.toFixed(2)})${formatBlame(r)}`;
   });
 
-  return formatted.join("\n");
+  const handoff = formatExactSearchHandoff(results);
+  return handoff ? `${formatted.join("\n")}\n\n${handoff}` : formatted.join("\n");
 }
 
 export function formatHealthCheck(result: HealthCheckResult): string {
