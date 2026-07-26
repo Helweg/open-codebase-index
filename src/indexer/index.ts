@@ -53,7 +53,7 @@ import {
   type IndexMutationOperation,
 } from "./index-lock.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -61,7 +61,7 @@ export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", 
 // sync with the matching branch in native/src/call_extractor.rs.
 export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex", "php"]);
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "2";
+const CALL_GRAPH_RESOLUTION_VERSION = "3";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -83,6 +83,9 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "enum_declaration",
   "function_definition",
   "class_definition",
+  "class_specifier",
+  "struct_specifier",
+  "namespace_definition",
   "decorated_definition",
   "method_declaration",
   "type_declaration",
@@ -107,6 +110,22 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "const_statement",
   "class_name_statement",
 ]);
+
+const C_FAMILY_TYPE_SYMBOL_CHUNK_TYPES = new Set(["class_specifier", "struct_specifier"]);
+
+function isCompatibleCFamilyCallTarget(
+  language: string,
+  callType: string,
+  symbolKind: string,
+): boolean {
+  if (language !== "c" && language !== "cpp") return true;
+  if (symbolKind === "namespace_definition") return callType === "Import";
+  const isTypeSymbol = C_FAMILY_TYPE_SYMBOL_CHUNK_TYPES.has(symbolKind);
+  if (callType === "Constructor" || callType === "Inherits" || callType === "Implements") {
+    return isTypeSymbol;
+  }
+  return !isTypeSymbol;
+}
 
 function float32ArrayToBuffer(arr: number[]): Buffer {
   const float32 = new Float32Array(arr);
@@ -3947,11 +3966,13 @@ export class Indexer {
       currentFileHashes.set(f.path, currentHash);
 
       const cachedHashMatches = this.fileHashCache.get(f.path) === currentHash;
-      const needsPhpCallGraphRefresh = cachedHashMatches &&
+      const needsCallGraphRefresh = cachedHashMatches &&
         needsCallGraphResolutionMigration &&
-        database.getChunksByFile(f.path).some((chunk) => chunk.language === "php");
+        database.getChunksByFile(f.path).some((chunk) =>
+          chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+        );
 
-      if (cachedHashMatches && !needsPhpCallGraphRefresh) {
+      if (cachedHashMatches && !needsCallGraphRefresh) {
         unchangedFilePaths.add(f.path);
         this.logger.recordCacheHit();
       } else {
@@ -4275,6 +4296,9 @@ export class Indexer {
               );
             }
           }
+          candidates = candidates?.filter((symbol) =>
+            isCompatibleCFamilyCallTarget(fileLanguage, edge.callType, symbol.kind)
+          );
           if (candidates && candidates.length === 1) {
             database.resolveCallEdge(edge.id, candidates[0].id);
           }

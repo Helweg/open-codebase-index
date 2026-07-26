@@ -1,5 +1,6 @@
 use crate::types::Language;
 use anyhow::{anyhow, Result};
+use std::collections::{HashMap, HashSet};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -29,6 +30,66 @@ pub struct CallSite {
     pub confidence: Confidence,
 }
 
+struct CallExclusion {
+    start_byte: usize,
+    end_byte: usize,
+    include_method_calls: bool,
+}
+
+fn exclusion_scope(
+    node: tree_sitter::Node<'_>,
+    root: tree_sitter::Node<'_>,
+) -> (usize, usize, bool) {
+    let mut current = Some(node);
+    let mut declaration = None;
+    let mut block_end = None;
+    let mut is_parameter = false;
+
+    while let Some(ancestor) = current {
+        match ancestor.kind() {
+            "preproc_def" | "preproc_function_def" => {
+                return (ancestor.end_byte(), root.end_byte(), true);
+            }
+            "parameter_declaration" => is_parameter = true,
+            "declaration" => declaration = Some((ancestor.start_byte(), ancestor.end_byte())),
+            "for_statement" | "for_range_loop" | "if_statement" | "while_statement"
+            | "switch_statement"
+                if block_end.is_none() =>
+            {
+                block_end = Some(ancestor.end_byte());
+            }
+            "compound_statement" if block_end.is_none() => block_end = Some(ancestor.end_byte()),
+            "lambda_expression" => {
+                let start = declaration
+                    .map(|(start, _)| start)
+                    .unwrap_or_else(|| ancestor.start_byte());
+                let end = block_end.unwrap_or_else(|| ancestor.end_byte());
+                return (start, end, node.kind() == "field_identifier");
+            }
+            "function_definition" => {
+                let start = declaration
+                    .map(|(start, _)| start)
+                    .unwrap_or_else(|| ancestor.start_byte());
+                let end = block_end.unwrap_or_else(|| ancestor.end_byte());
+                return (start, end, node.kind() == "field_identifier");
+            }
+            _ => {}
+        }
+        current = ancestor.parent();
+    }
+
+    if is_parameter {
+        if let Some((start, end)) = declaration {
+            return (start, end, node.kind() == "field_identifier");
+        }
+    }
+
+    let start = declaration
+        .map(|(start, _)| start)
+        .unwrap_or(root.start_byte());
+    (start, root.end_byte(), node.kind() == "field_identifier")
+}
+
 pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>> {
     let language = Language::from_string(language_name);
     let ts_language = match language {
@@ -45,6 +106,8 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
         Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
         Language::Bash => tree_sitter_bash::LANGUAGE.into(),
+        Language::C => tree_sitter_c::LANGUAGE.into(),
+        Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
         _ => return Ok(vec![]),
     };
 
@@ -73,6 +136,8 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         Language::Matlab => include_str!("../queries/matlab-calls.scm"),
         Language::Apex => include_str!("../queries/apex-calls.scm"),
         Language::Bash => include_str!("../queries/bash-calls.scm"),
+        Language::C => include_str!("../queries/c-calls.scm"),
+        Language::Cpp => include_str!("../queries/cpp-calls.scm"),
         _ => return Ok(vec![]),
     };
 
@@ -89,10 +154,81 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let import_namespace_idx = query.capture_index_for_name("import.namespace");
     let inherits_name_idx = query.capture_index_for_name("inherits.name");
     let implements_name_idx = query.capture_index_for_name("implements.name");
+    let constructor_type_idx = query.capture_index_for_name("constructor.type");
+    let excluded_name_idx = query.capture_index_for_name("excluded.name");
+    let indirect_type_idx = query.capture_index_for_name("indirect.type");
+    let indirect_variable_type_idx = query.capture_index_for_name("indirect.variable_type");
+    let indirect_variable_idx = query.capture_index_for_name("indirect.variable");
+    let text_bytes = content.as_bytes();
+
+    let root = tree.root_node();
+    let mut exclusions: HashMap<String, Vec<CallExclusion>> = HashMap::new();
+    let mut indirect_types = HashSet::new();
+    if excluded_name_idx.is_some() || indirect_type_idx.is_some() {
+        let mut exclusion_cursor = QueryCursor::new();
+        let mut exclusion_matches = exclusion_cursor.captures(&query, tree.root_node(), text_bytes);
+        while let Some((match_, _)) = exclusion_matches.next() {
+            for capture in match_.captures {
+                if excluded_name_idx == Some(capture.index) {
+                    let text = capture.node.utf8_text(text_bytes).unwrap_or("");
+                    let (start_byte, end_byte, include_method_calls) =
+                        exclusion_scope(capture.node, root);
+                    exclusions
+                        .entry(text.to_string())
+                        .or_default()
+                        .push(CallExclusion {
+                            start_byte,
+                            end_byte,
+                            include_method_calls,
+                        });
+                }
+                if indirect_type_idx == Some(capture.index) {
+                    let text = capture.node.utf8_text(text_bytes).unwrap_or("");
+                    indirect_types.insert(text.to_string());
+                }
+            }
+        }
+    }
+
+    if !indirect_types.is_empty()
+        && indirect_variable_type_idx.is_some()
+        && indirect_variable_idx.is_some()
+    {
+        let mut variable_cursor = QueryCursor::new();
+        let mut variables = variable_cursor.captures(&query, tree.root_node(), text_bytes);
+        while let Some((match_, _)) = variables.next() {
+            let mut variable_type = None;
+            let mut variable_name = None;
+
+            for capture in match_.captures {
+                let text = capture.node.utf8_text(text_bytes).unwrap_or("");
+                if indirect_variable_type_idx == Some(capture.index) {
+                    variable_type = Some(text);
+                }
+                if indirect_variable_idx == Some(capture.index) {
+                    variable_name = Some((text, capture.node));
+                }
+            }
+
+            if let (Some(type_name), Some((name, name_node))) = (variable_type, variable_name) {
+                if indirect_types.contains(type_name) {
+                    let (start_byte, end_byte, include_method_calls) =
+                        exclusion_scope(name_node, root);
+                    exclusions
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(CallExclusion {
+                            start_byte,
+                            end_byte,
+                            include_method_calls,
+                        });
+                }
+            }
+        }
+    }
 
     let mut cursor = QueryCursor::new();
     let mut calls = Vec::new();
-    let text_bytes = content.as_bytes();
 
     let mut captures_iter = cursor.captures(&query, tree.root_node(), text_bytes);
 
@@ -100,10 +236,16 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         let mut callee_name: Option<String> = None;
         let mut call_type: Option<CallType> = None;
         let mut position: Option<(u32, u32)> = None;
+        let mut callee_byte = None;
+        let mut constructor_type = None;
 
         for capture in match_.captures {
             let node = capture.node;
             let text = node.utf8_text(text_bytes).unwrap_or("");
+
+            if constructor_type_idx == Some(capture.index) {
+                constructor_type = Some(text);
+            }
 
             if let Some(idx) = callee_name_idx {
                 if capture.index == idx {
@@ -112,6 +254,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
                         let start = node.start_position();
                         position = Some((start.row as u32 + 1, start.column as u32));
                     }
+                    callee_byte = Some(node.start_byte());
                 }
             }
 
@@ -200,12 +343,29 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         // @call is only for direct function calls
         // So we need to check if the call was already classified as a method call
         if let (Some(name), Some(ct), Some(pos)) = (callee_name, call_type, position) {
-            // PHP and Apex are case-insensitive at the language level; normalize
-            // callee names to lowercase so that HELPER() matches symbol `helper`
-            // during resolution and lookup. Constructor names keep their original
-            // casing because they need to match class declarations (which are
-            // resolved by exact name in this codebase). Import, Inherits, and
-            // Implements names similarly preserve their casing.
+            if ct == CallType::Constructor
+                && constructor_type.is_some_and(|type_name| type_name != name)
+            {
+                continue;
+            }
+
+            if matches!(language, Language::C | Language::Cpp)
+                && matches!(ct, CallType::Call | CallType::MethodCall)
+                && callee_byte.is_some_and(|byte| {
+                    exclusions.get(&name).is_some_and(|matching_exclusions| {
+                        matching_exclusions.iter().any(|exclusion| {
+                            byte >= exclusion.start_byte
+                                && byte <= exclusion.end_byte
+                                && (ct == CallType::Call || exclusion.include_method_calls)
+                        })
+                    })
+                })
+            {
+                continue;
+            }
+
+            // PHP and Apex are case-insensitive, so normalize ordinary calls
+            // to lowercase to match their indexed symbols.
             let normalized_name = if (language == Language::Php || language == Language::Apex)
                 && ct != CallType::Import
                 && ct != CallType::Constructor
@@ -861,5 +1021,194 @@ mod tests {
         let names: Vec<&str> = inherits.iter().map(|c| c.callee_name.as_str()).collect();
         assert!(names.contains(&"Base"));
         assert!(names.contains(&"Client"));
+    }
+
+    #[test]
+    fn test_c_calls_and_conservative_exclusions() {
+        let code = r#"
+#include <stdio.h>
+#define call_helper(value) helper(value)
+#define helper_alias helper
+typedef int (*callback_fn)(int);
+typedef int callback_signature(int);
+int declared_only(int value);
+int helper(int value) { return value + 1; }
+int API_CALL(int value) { return value; }
+int direct_target(void) { return 1; }
+int call_direct(void) { return direct_target(); }
+int use_pointer(int (*direct_target)(void)) { return direct_target(); }
+int run(callback_fn callback, callback_signature *signature) {
+    callback_fn local_callback = callback;
+    int direct = helper(1);
+    int macro_value = call_helper(2);
+    int indirect = callback(3);
+    int local_indirect = local_callback(4);
+    int signature_indirect = signature(5);
+    int alias_value = helper_alias(6);
+    return API_CALL(printf("%d", direct + macro_value + indirect + local_indirect + signature_indirect + alias_value));
+}
+"#;
+        let calls = extract_calls(code, "c").unwrap();
+
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "helper" && call.call_type == CallType::Call));
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "printf" && call.call_type == CallType::Call));
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "API_CALL" && call.call_type == CallType::Call));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.callee_name == "direct_target")
+                .count(),
+            1,
+            "Expected the call outside the pointer parameter's scope only: {:?}",
+            calls
+        );
+        assert!(
+            calls
+                .iter()
+                .any(|call| call.callee_name.contains("stdio.h")
+                    && call.call_type == CallType::Import)
+        );
+        assert!(!calls.iter().any(|call| matches!(
+            call.callee_name.as_str(),
+            "call_helper"
+                | "helper_alias"
+                | "callback"
+                | "local_callback"
+                | "signature"
+                | "declared_only"
+        )));
+    }
+
+    #[test]
+    fn test_cpp_calls_constructors_namespaces_and_exclusions() {
+        let code = r#"
+#include "widget.hpp"
+#define run_widget(value) helper(value)
+#define helper_alias helper
+using Callback = int (*)(int);
+using CallbackSignature = int(int);
+using LoopCallback = int (*)();
+using namespace project::detail;
+int helper(int value) { return value + 1; }
+template <typename T> T identity(T value) { return value; }
+struct Table { Callback dispatch; };
+int callback(void) { return 1; }
+int loop_scope(LoopCallback initial) {
+    for (LoopCallback callback = initial; false;) { callback(); }
+    return callback();
+}
+int field_call(Table* table) { return table->dispatch(); }
+int lambda_target(void) { return 1; }
+int lambda_scope(void) {
+    auto indirect = [](int (*lambda_target)(void)) { return lambda_target(); };
+    return lambda_target();
+}
+int indirect_run(int (*run)(int)) { return run(1); }
+int method_run(Widget* widget) { return widget->run(); }
+Widget make_widget();
+int run(Widget* widget, Callback callback, CallbackSignature* signature) {
+    Callback local_callback = callback;
+    Widget stack(0);
+    Widget braced{0};
+    Widget copied = Widget(0);
+    Widget from_factory = make_widget();
+    Widget vexing();
+    project::detail::RemoteWidget remote_stack(1);
+    auto* heap = new Widget(1);
+    auto* remote = new project::detail::RemoteWidget(2);
+    int direct = project::detail::normalize(helper(3));
+    int member = widget->run() + Widget{4}.run();
+    int macro_value = run_widget(5);
+    int indirect = callback(6);
+    int local_indirect = local_callback(7);
+    int signature_indirect = signature(8);
+    int alias_value = helper_alias(9);
+    return direct + member + macro_value + indirect + local_indirect + signature_indirect + alias_value + identity<int>(10);
+}
+"#;
+        let calls = extract_calls(code, "cpp").unwrap();
+
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "helper" && call.call_type == CallType::Call));
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "project::detail::normalize"
+                && call.call_type == CallType::Call));
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "run" && call.call_type == CallType::MethodCall));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    call.callee_name == "run" && call.call_type == CallType::MethodCall
+                })
+                .count(),
+            3,
+            "Expected member calls to survive an unrelated pointer named run: {:?}",
+            calls
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.callee_name == "callback")
+                .count(),
+            1,
+            "Expected the direct call after the for-loop scope only: {:?}",
+            calls
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| call.callee_name == "lambda_target")
+                .count(),
+            1,
+            "Expected the direct call outside the lambda parameter's scope only: {:?}",
+            calls
+        );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    call.callee_name == "Widget" && call.call_type == CallType::Constructor
+                })
+                .count(),
+            5,
+            "Expected stack, braced, copy-initialized, heap, and temporary constructors: {:?}",
+            calls
+        );
+        assert!(calls
+            .iter()
+            .any(|call| { call.callee_name == "make_widget" && call.call_type == CallType::Call }));
+        assert!(!calls.iter().any(|call| call.callee_name == "vexing"));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    call.callee_name == "project::detail::RemoteWidget"
+                        && call.call_type == CallType::Constructor
+                })
+                .count(),
+            2
+        );
+        assert!(calls.iter().any(|call| {
+            call.callee_name == "project::detail" && call.call_type == CallType::Import
+        }));
+        assert!(!calls.iter().any(|call| matches!(
+            call.callee_name.as_str(),
+            "run_widget"
+                | "helper_alias"
+                | "local_callback"
+                | "signature"
+                | "dispatch"
+                | "identity"
+        )));
     }
 }

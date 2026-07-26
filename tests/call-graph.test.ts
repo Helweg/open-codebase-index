@@ -24,6 +24,28 @@ describe("call-graph", () => {
     return d;
   }
 
+  function buildFileSymbols(filePath: string, content: string): SymbolData[] {
+    const parsed = parseFiles([{ path: filePath, content }])[0];
+    const symbols: SymbolData[] = [];
+
+    for (const chunk of parsed.chunks) {
+      if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
+      symbols.push({
+        id: `sym_${hashContent(filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`,
+        filePath,
+        name: chunk.name,
+        kind: chunk.chunkType,
+        startLine: chunk.startLine,
+        startCol: 0,
+        endLine: chunk.endLine,
+        endCol: 0,
+        language: chunk.language,
+      });
+    }
+
+    return symbols;
+  }
+
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "call-graph-test-"));
     _dbs = [];
@@ -860,6 +882,383 @@ const math = @import("math.zig");
       expect(importCalls.length).toBeGreaterThanOrEqual(2);
       expect(importCalls.some((c) => c.calleeName.includes("std"))).toBe(true);
       expect(importCalls.some((c) => c.calleeName.includes("math.zig"))).toBe(true);
+    });
+  });
+
+  describe("C call graph", () => {
+    const filePath = path.join(fixturesDir, "c-calls.c");
+    const content = fs.readFileSync(filePath, "utf-8");
+
+    it("should extract conservative C calls and includes", () => {
+      const calls = extractCalls(content, "c");
+      const callNames = calls.map((call) => call.calleeName);
+      const imports = calls.filter((call) => call.callType === "Import");
+
+      expect(CALL_GRAPH_LANGUAGES.has("c")).toBe(true);
+      expect(calls.find((call) => call.calleeName === "helper")?.callType).toBe("Call");
+      expect(callNames).toContain("compute");
+      expect(callNames).toContain("printf");
+      expect(callNames).toContain("external_api");
+      expect(imports.some((call) => call.calleeName.includes("stdio.h"))).toBe(true);
+      expect(imports.some((call) => call.calleeName.includes("helpers.h"))).toBe(true);
+
+      expect(callNames).not.toContain("declared_only");
+      expect(callNames).not.toContain("call_helper");
+      expect(callNames).not.toContain("helper_alias");
+      expect(callNames).not.toContain("callback");
+      expect(callNames).not.toContain("local_callback");
+    });
+
+    it("should preserve C function symbols and resolve a same-file call", () => {
+      const db = openDb();
+      const symbols = buildFileSymbols(filePath, content);
+      const names = symbols.map((symbol) => symbol.name);
+
+      expect(names).toContain("helper");
+      expect(names).toContain("compute");
+      expect(names).toContain("invoke");
+      expect(names).toContain("inspect");
+      expect(names).toContain("external_api");
+      expect(names).toContain("main");
+
+      const helper = symbols.find((symbol) => symbol.name === "helper");
+      const compute = symbols.find((symbol) => symbol.name === "compute");
+      expect(helper).toBeDefined();
+      expect(compute).toBeDefined();
+
+      const helperCall = extractCalls(content, "c").find(
+        (call) =>
+          call.calleeName === "helper" &&
+          call.line >= compute!.startLine &&
+          call.line <= compute!.endLine,
+      );
+      expect(helperCall).toBeDefined();
+
+      db.upsertSymbolsBatch(symbols);
+      const edge: CallEdgeData = {
+        id: "edge_c_helper",
+        fromSymbolId: compute!.id,
+        targetName: helperCall!.calleeName,
+        callType: helperCall!.callType,
+        confidence: helperCall!.confidence,
+        line: helperCall!.line,
+        col: helperCall!.column,
+        isResolved: false,
+      };
+      db.upsertCallEdgesBatch([edge]);
+      const candidates = symbols.filter((symbol) => symbol.name === edge.targetName);
+      expect(candidates).toHaveLength(1);
+      db.resolveCallEdge(edge.id, candidates[0].id);
+      db.addSymbolsToBranchBatch("test", symbols.map((symbol) => symbol.id));
+
+      const callees = db.getCallees(compute!.id, "test");
+      expect(callees).toHaveLength(1);
+      expect(callees[0].targetName).toBe("helper");
+      expect(callees[0].toSymbolId).toBe(helper!.id);
+      expect(callees[0].isResolved).toBe(true);
+    });
+  });
+
+  describe("C++ call graph", () => {
+    const filePath = path.join(fixturesDir, "cpp-calls.cpp");
+    const content = fs.readFileSync(filePath, "utf-8");
+
+    it("should extract conservative C++ calls, constructors, namespaces, and includes", () => {
+      const calls = extractCalls(content, "cpp");
+      const callNames = calls.map((call) => call.calleeName);
+      const imports = calls.filter((call) => call.callType === "Import");
+      const constructors = calls.filter((call) => call.callType === "Constructor");
+      const runCalls = calls.filter(
+        (call) => call.calleeName === "run" && call.callType === "MethodCall",
+      );
+
+      expect(CALL_GRAPH_LANGUAGES.has("cpp")).toBe(true);
+      expect(calls.find((call) => call.calleeName === "helper")?.callType).toBe("Call");
+      expect(
+        calls.find((call) => call.calleeName === "project::detail::normalize")?.callType,
+      ).toBe("Call");
+      expect(runCalls).toHaveLength(4);
+      expect(constructors.filter((call) => call.calleeName === "Widget")).toHaveLength(5);
+      expect(
+        constructors.filter((call) => call.calleeName === "project::detail::RemoteWidget"),
+      ).toHaveLength(2);
+      expect(constructors.some((call) => call.calleeName === "Point")).toBe(true);
+      expect(imports.some((call) => call.calleeName.includes("memory"))).toBe(true);
+      expect(imports.some((call) => call.calleeName.includes("widget.hpp"))).toBe(true);
+      expect(imports.some((call) => call.calleeName.includes("project::detail"))).toBe(true);
+
+      expect(callNames).not.toContain("declared_only");
+      expect(callNames).not.toContain("run_widget");
+      expect(callNames).not.toContain("helper_alias");
+      expect(callNames).not.toContain("callback");
+      expect(callNames).not.toContain("local_callback");
+      expect(callNames).not.toContain("signature");
+      expect(callNames).not.toContain("identity");
+      expect(callNames).not.toContain("vexing");
+      expect(calls.find((call) => call.calleeName === "make_widget")?.callType).toBe("Call");
+    });
+
+    it("should preserve short C++ class and struct symbols", () => {
+      const shortTypes = parseFiles([{
+        path: "short.cpp",
+        content: "class Tag {};\nstruct Tiny {};\n",
+      }])[0].chunks;
+
+      expect(shortTypes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "Tag", chunkType: "class_specifier" }),
+        expect.objectContaining({ name: "Tiny", chunkType: "struct_specifier" }),
+      ]));
+    });
+
+    it("should preserve C++ symbols and resolve same-file calls and constructors", () => {
+      const db = openDb();
+      const symbols = buildFileSymbols(filePath, content);
+      const names = symbols.map((symbol) => symbol.name);
+
+      expect(names).toContain("Widget");
+      expect(names).toContain("Point");
+      expect(names).toContain("project");
+      expect(names).toContain("helper");
+      expect(names).toContain("process");
+
+      const widget = symbols.find((symbol) => symbol.name === "Widget");
+      const point = symbols.find((symbol) => symbol.name === "Point");
+      const helper = symbols.find((symbol) => symbol.name === "helper");
+      const process = symbols.find((symbol) => symbol.name === "process");
+      expect(widget).toBeDefined();
+      expect(point).toBeDefined();
+      expect(helper).toBeDefined();
+      expect(process).toBeDefined();
+
+      const processCalls = extractCalls(content, "cpp").filter(
+        (call) => call.line >= process!.startLine && call.line <= process!.endLine,
+      );
+      const helperCall = processCalls.find((call) => call.calleeName === "helper");
+      const widgetConstructor = processCalls.find(
+        (call) => call.calleeName === "Widget" && call.callType === "Constructor",
+      );
+      const pointConstructor = processCalls.find(
+        (call) => call.calleeName === "Point" && call.callType === "Constructor",
+      );
+      expect(helperCall).toBeDefined();
+      expect(widgetConstructor).toBeDefined();
+      expect(pointConstructor).toBeDefined();
+
+      db.upsertSymbolsBatch(symbols);
+      const edges: CallEdgeData[] = [
+        {
+          id: "edge_cpp_helper",
+          fromSymbolId: process!.id,
+          targetName: helperCall!.calleeName,
+          callType: helperCall!.callType,
+          confidence: helperCall!.confidence,
+          line: helperCall!.line,
+          col: helperCall!.column,
+          isResolved: false,
+        },
+        {
+          id: "edge_cpp_widget",
+          fromSymbolId: process!.id,
+          targetName: widgetConstructor!.calleeName,
+          callType: widgetConstructor!.callType,
+          confidence: widgetConstructor!.confidence,
+          line: widgetConstructor!.line,
+          col: widgetConstructor!.column,
+          isResolved: false,
+        },
+        {
+          id: "edge_cpp_point",
+          fromSymbolId: process!.id,
+          targetName: pointConstructor!.calleeName,
+          callType: pointConstructor!.callType,
+          confidence: pointConstructor!.confidence,
+          line: pointConstructor!.line,
+          col: pointConstructor!.column,
+          isResolved: false,
+        },
+      ];
+      db.upsertCallEdgesBatch(edges);
+      for (const edge of edges) {
+        const candidates = symbols.filter((symbol) => symbol.name === edge.targetName);
+        expect(candidates).toHaveLength(1);
+        db.resolveCallEdge(edge.id, candidates[0].id);
+      }
+      db.addSymbolsToBranchBatch("test", symbols.map((symbol) => symbol.id));
+
+      const callees = db.getCallees(process!.id, "test");
+      expect(callees.find((edge) => edge.targetName === "helper")?.toSymbolId).toBe(helper!.id);
+      expect(callees.find((edge) => edge.targetName === "Widget")?.toSymbolId).toBe(widget!.id);
+      expect(callees.find((edge) => edge.targetName === "Point")?.toSymbolId).toBe(point!.id);
+      expect(callees.filter((edge) => edge.isResolved)).toHaveLength(3);
+    });
+  });
+
+  describe("C and C++ indexing integration", () => {
+    it("should build and resolve same-file edges through the Indexer", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+        return new Response(
+          JSON.stringify({
+            data: inputs.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+            usage: { total_tokens: Math.max(1, inputs.length) },
+          }),
+          { status: 200 },
+        );
+      });
+
+      fs.mkdirSync(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/main\n");
+      fs.writeFileSync(
+        path.join(tempDir, ".git", "refs", "heads", "main"),
+        "1111111111111111111111111111111111111111\n",
+      );
+      fs.copyFileSync(path.join(fixturesDir, "c-calls.c"), path.join(tempDir, "main.c"));
+      fs.copyFileSync(path.join(fixturesDir, "cpp-calls.cpp"), path.join(tempDir, "main.cpp"));
+
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-model",
+          dimensions: 8,
+        },
+        indexing: { watchFiles: false },
+      });
+      const indexer = new Indexer(tempDir, config);
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const compute = symbols.find(
+          (symbol) => symbol.name === "compute" && symbol.language === "c",
+        );
+        const invoke = symbols.find(
+          (symbol) => symbol.name === "invoke" && symbol.language === "c",
+        );
+        const inspect = symbols.find(
+          (symbol) => symbol.name === "inspect" && symbol.language === "c",
+        );
+        const cMain = symbols.find(
+          (symbol) => symbol.name === "main" && symbol.language === "c",
+        );
+        const process = symbols.find(
+          (symbol) => symbol.name === "process" && symbol.language === "cpp",
+        );
+        expect(compute).toBeDefined();
+        expect(invoke).toBeDefined();
+        expect(inspect).toBeDefined();
+        expect(cMain).toBeDefined();
+        expect(process).toBeDefined();
+
+        const cCallees = await indexer.getCallees(compute!.id);
+        const cHelper = cCallees.find((edge) => edge.targetName === "helper");
+        expect(cHelper?.isResolved).toBe(true);
+        expect(cHelper?.toSymbolId).toBeDefined();
+
+        const invokeCallees = await indexer.getCallees(invoke!.id);
+        expect(invokeCallees.some((edge) => edge.targetName === "callback")).toBe(false);
+        expect(invokeCallees.some((edge) => edge.targetName === "local_callback")).toBe(false);
+
+        const mainCallees = await indexer.getCallees(cMain!.id);
+        expect(mainCallees.some((edge) => edge.targetName === "call_helper")).toBe(false);
+        expect(mainCallees.some((edge) => edge.targetName === "helper_alias")).toBe(false);
+
+        const inspectCallees = await indexer.getCallees(inspect!.id);
+        const externalApiCall = inspectCallees.find((edge) => edge.targetName === "external_api");
+        expect(externalApiCall).toBeDefined();
+        expect(externalApiCall?.isResolved).toBe(false);
+
+        const cppCallees = await indexer.getCallees(process!.id);
+        const cppHelper = cppCallees.find((edge) => edge.targetName === "helper");
+        const widgetConstructor = cppCallees.find(
+          (edge) => edge.targetName === "Widget" && edge.callType === "Constructor",
+        );
+        const pointConstructor = cppCallees.find(
+          (edge) => edge.targetName === "Point" && edge.callType === "Constructor",
+        );
+        expect(cppHelper?.isResolved).toBe(true);
+        expect(widgetConstructor?.isResolved).toBe(true);
+        expect(pointConstructor?.isResolved).toBe(true);
+        const qualifiedNormalize = cppCallees.find(
+          (edge) => edge.targetName === "project::detail::normalize",
+        );
+        expect(qualifiedNormalize).toBeDefined();
+        expect(qualifiedNormalize?.isResolved).toBe(false);
+        expect(cppCallees.some((edge) => edge.targetName === "run_widget")).toBe(false);
+        expect(cppCallees.some((edge) => edge.targetName === "helper_alias")).toBe(false);
+        expect(cppCallees.some((edge) => edge.targetName === "callback")).toBe(false);
+        expect(cppCallees.some((edge) => edge.targetName === "local_callback")).toBe(false);
+        expect(cppCallees.some((edge) => edge.targetName === "signature")).toBe(false);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("should reprocess unchanged C files after a call-graph version upgrade", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+        return new Response(
+          JSON.stringify({
+            data: inputs.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+            usage: { total_tokens: Math.max(1, inputs.length) },
+          }),
+          { status: 200 },
+        );
+      });
+      fs.writeFileSync(
+        path.join(tempDir, "main.c"),
+        "int helper(int value) { return value + 1; }\nint caller(void) { return helper(1); }\n",
+      );
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-model",
+          dimensions: 8,
+        },
+        indexing: { watchFiles: false },
+      });
+
+      CALL_GRAPH_LANGUAGES.delete("c");
+      let indexer = new Indexer(tempDir, config);
+      try {
+        await indexer.index();
+        const caller = (await indexer.getSymbolsForBranch()).find(
+          (symbol) => symbol.name === "caller",
+        );
+        expect(caller).toBeDefined();
+        expect(await indexer.getCallees(caller!.id)).toHaveLength(0);
+      } finally {
+        await indexer.close();
+        CALL_GRAPH_LANGUAGES.add("c");
+      }
+
+      const database = new Database(path.join(tempDir, ".opencode", "index", "codebase.db"));
+      database.setMetadata("index.callGraphResolutionVersion", "2");
+      database.close();
+      const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+
+      indexer = new Indexer(tempDir, config);
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const caller = symbols.find((symbol) => symbol.name === "caller");
+        const helper = symbols.find((symbol) => symbol.name === "helper");
+        const edge = (await indexer.getCallees(caller!.id)).find(
+          (candidate) => candidate.targetName === "helper",
+        );
+        expect(edge).toMatchObject({
+          isResolved: true,
+          toSymbolId: helper!.id,
+        });
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
     });
   });
 
