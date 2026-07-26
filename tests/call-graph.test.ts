@@ -443,6 +443,74 @@ function buildReport(): string {
           fetchSpy.mockRestore();
         }
       });
+
+      it("reprocesses unchanged PHP files after the PHP 8 grammar upgrade", async () => {
+        const projectDir = path.join(tempDir, "php-grammar-upgrade-project");
+        fs.mkdirSync(projectDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(projectDir, "relative.php"),
+          `<?php
+namespace App;
+function helper(): string { return "ok"; }
+function caller(): string { return namespace\\helper(); }
+`,
+          "utf-8",
+        );
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+          const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+          return new Response(
+            JSON.stringify({
+              data: inputs.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+              usage: { total_tokens: Math.max(1, inputs.length) },
+            }),
+            { status: 200 },
+          );
+        });
+        const config = parseConfig({
+          embeddingProvider: "custom",
+          customProvider: {
+            baseUrl: "http://localhost:11434/v1",
+            model: "mock-model",
+            dimensions: 8,
+          },
+          indexing: { watchFiles: false },
+        });
+
+        CALL_GRAPH_LANGUAGES.delete("php");
+        let indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const caller = (await indexer.getSymbolsForBranch()).find(
+            (symbol) => symbol.name === "caller",
+          );
+          expect(caller).toBeDefined();
+          expect(await indexer.getCallees(caller!.id)).toHaveLength(0);
+        } finally {
+          await indexer.close();
+          CALL_GRAPH_LANGUAGES.add("php");
+        }
+
+        const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        database.setMetadata("index.callGraphResolutionVersion", "3");
+        database.close();
+        const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+        indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const caller = (await indexer.getSymbolsForBranch()).find(
+            (symbol) => symbol.name === "caller",
+          );
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "helper",
+          );
+          expect(edge).toBeDefined();
+          expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
+        } finally {
+          await indexer.close();
+          fetchSpy.mockRestore();
+        }
+      });
     });
 
     describe("apex call extraction", () => {

@@ -361,26 +361,26 @@ graph TD
 
 **Additional Supported Formats (line-based chunking)**: TXT, HTML, HTM, Markdown, Shell scripts
 
-#### Compatibilité PHP 8.x vérifiée
+#### Verified PHP 8.x compatibility
 
-Le support PHP utilise [`tree-sitter-php` 0.24.2](https://github.com/tree-sitter/tree-sitter-php/releases/tag/v0.24.2), distribué sous licence MIT. La matrice suivante est couverte par le fixture de régression [`php-8-features.php`](tests/fixtures/call-graph/php-8-features.php) et par les tests Rust et Vitest :
+PHP support uses [`tree-sitter-php` 0.24.2](https://github.com/tree-sitter/tree-sitter-php/releases/tag/v0.24.2), distributed under the MIT license. The regression fixture [`php-8-features.php`](tests/fixtures/call-graph/php-8-features.php) and the Rust and Vitest suites cover the following matrix:
 
-| Version | Constructions vérifiées |
+| Version | Verified syntax |
 |---|---|
-| PHP 8.0 | attributs, arguments nommés, propriétés promues, types union, opérateur nullsafe et expressions `match` |
-| PHP 8.1 | enums avec constantes, propriétés `readonly`, types intersection et callables de première classe |
-| PHP 8.2 | classes `readonly` et types DNF |
-| PHP 8.3 | constantes typées et accès dynamique aux constantes de classe |
-| PHP 8.4 | property hooks, visibilité asymétrique et chaînage sur `new` sans parenthèses |
-| PHP 8.5 | attributs sur les constantes et opérateur pipe `|>` |
+| PHP 8.0 | attributes, named arguments, promoted properties, union types, the nullsafe operator, and `match` expressions |
+| PHP 8.1 | enums with constants, `readonly` properties, intersection types, and first-class callables |
+| PHP 8.2 | `readonly` classes and DNF types |
+| PHP 8.3 | typed constants and dynamic class-constant access |
+| PHP 8.4 | property hooks, asymmetric visibility, and unparenthesized chaining on `new` |
+| PHP 8.5 | attributes on constants and the pipe operator `|>` |
 
-Le parsing sémantique vérifie les noms et types de chunks pour les fonctions, classes, interfaces, traits et `enum_declaration`. Les méthodes restent incluses dans le chunk de leur conteneur au lieu de devenir des chunks autonomes.
+Semantic parsing verifies chunk names and types for functions, classes, interfaces, traits, and `enum_declaration`. Methods remain inside their containing chunk rather than becoming standalone chunks.
 
-Le graphe d'appels distingue les invocations réelles des références de callable : `foo(...)`, `$object->method(...)` et `Type::method(...)` seuls ne créent pas d'arête, tandis que ces mêmes callables utilisés comme opérandes directs ou parenthésés de `|>` sont enregistrés, car le pipe les invoque. Les appels qualifiés et relatifs `namespace\foo()`, appels nullsafe, statiques, constructeurs, arguments nommés, corps de `match`, property hooks et méthodes d'enum sont également couverts.
+The call graph distinguishes invocations from callable references. Standalone `foo(...)`, `$object->method(...)`, and `Type::method(...)` references do not create edges, while the same callables used as direct or parenthesized `|>` operands are recorded because the pipe invokes them. Coverage also includes qualified and relative `namespace\foo()` calls, nullsafe and static calls, constructors, named arguments, `match` bodies, property hooks, and enum methods.
 
-Le graphe reste limité aux cibles nommées résolubles statiquement : les appels comme `$callable()`, `$object->$method()` et `new $class()`, les expressions `include`/`require` et les relations `extends`/`implements` ne sont pas ajoutés par cette contribution.
+The graph remains limited to statically resolvable named targets. Dynamic calls such as `$callable()`, `$object->$method()`, and `new $class()`, `include` and `require` expressions, and `extends` and `implements` relationships are outside this contribution.
 
-PHP 8.5 reste partiel dans la grammaire upstream 0.24.2 : les propriétés promues `final` et `clone($object, [...])` produisent encore des nœuds `ERROR`. Ces deux syntaxes ne sont donc pas revendiquées comme prises en charge.
+PHP 8.5 support remains partial in upstream grammar 0.24.2. Final promoted properties and `clone($object, [...])` still produce `ERROR` nodes, so this project does not claim support for those two forms.
 
 **Default File Patterns**:
 ```

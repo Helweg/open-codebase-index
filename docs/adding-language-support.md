@@ -249,15 +249,15 @@ npm run build
 npm run test:run
 ```
 
-## Note pratique pour PHP
+## Practical note for PHP
 
-PHP est déjà branché aux trois niveaux : découverte des fichiers, parsing sémantique et graphe d'appels. Toute évolution doit donc préserver ensemble `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts` et leurs tests.
+PHP is already integrated at all three levels: file discovery, semantic parsing, and call graph extraction. Changes must therefore preserve `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts`, and their tests together.
 
-Un test de contenu `parseFile()` ne suffit pas à prouver la compatibilité d'une syntaxe : Tree-sitter peut retourner des chunks malgré des nœuds `ERROR`. Les tests de grammaire PHP doivent aussi vérifier `!tree.root_node().has_error()` en Rust, puis contrôler les noms et types de chunks exposés par NAPI.
+A `parseFile()` content assertion alone does not prove syntax compatibility because Tree-sitter can return chunks while the tree still contains `ERROR` nodes. PHP grammar tests must also assert `!tree.root_node().has_error()` in Rust, then verify the chunk names and types exposed through NAPI.
 
-Les tests de graphe doivent enfin distinguer une invocation d'une référence de callable de première classe. Par exemple, `foo(...)` ne constitue pas un appel, sauf lorsqu'il est utilisé comme opérande du pipe PHP 8.5 `|>`.
+Call graph tests must distinguish an invocation from a first-class callable reference. For example, `foo(...)` is not a call unless it is used as an operand of the PHP 8.5 pipe operator `|>`.
 
-La matrice testée et les limites restantes de `tree-sitter-php` 0.24.2 sont documentées dans la section « Compatibilité PHP 8.x vérifiée » du `README.md`.
+The tested matrix and remaining `tree-sitter-php` 0.24.2 limitations are documented in the README's "Verified PHP 8.x compatibility" section.
 
 ## One-line summary
 

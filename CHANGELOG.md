@@ -9,17 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **PHP 8.x coverage**: Added grammar, semantic chunking, and call graph regression coverage for PHP 8.0 through supported PHP 8.5 syntax, and updated `tree-sitter-php` to 0.24.2.
 - **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.
-- **PHP 8.x coverage**: Added fixtures and parser, semantic chunk, and call-graph tests for PHP 8.0 through 8.4 plus supported PHP 8.5 syntax.
-
-### Changed
-
-- **PHP grammar**: Updated `tree-sitter-php` from 0.23.11 to 0.24.2 for enum constants, attributes on constants, and the `|>` pipe operator.
-
-### Fixed
-
-- **PHP call graph**: Exclude first-class callable references, retain direct and parenthesized PHP 8.5 pipe operands as invocations, and preserve relative `namespace\...` call extraction.
-- **Language support guide**: Corrected the outdated PHP parser and call-graph integration note.
 
 ## [0.17.1] - 2026-07-25
 
