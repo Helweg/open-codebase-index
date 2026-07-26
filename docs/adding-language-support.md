@@ -52,6 +52,7 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 - `native/src/parser.rs` uses the correct tree-sitter grammar
 - semantic chunks are produced for the main declaration types
 - `tests/native.test.ts` covers the language
+- the grammar license is verified and its notice is included in the published package when required
 - docs are updated if user-facing support claims changed
 - `npm run build`, `npm run typecheck`, `npm run lint`, and `npm run test:run` all pass
 
@@ -103,6 +104,7 @@ Use this exact sequence:
 - [ ] Check whether the extensions are already present in `src/config/constants.ts`
 - [ ] Add the language to `Language`, `from_extension()`, `as_str()`, and `from_string()` in `native/src/types.rs`
 - [ ] Add the grammar crate in `native/Cargo.toml` if needed
+- [ ] Verify the grammar license and distribute its third-party notice when required
 - [ ] Add parser selection, comment node kinds, and semantic node kinds in `native/src/parser.rs`
 - [ ] Add one parser test in `tests/native.test.ts`
 - [ ] Run `npm run build` and `npm run test:run`
@@ -111,6 +113,7 @@ Use this exact sequence:
 - [ ] Add the language and chunk types to `src/indexer/index.ts`
 - [ ] Add call-graph tests in `tests/call-graph.test.ts`
 - [ ] Update `README.md` if supported-language claims changed
+- [ ] Verify the third-party notice with `npm pack --dry-run --ignore-scripts`
 - [ ] Run full verification: `npm run build`, `npm run typecheck`, `npm run lint`, `npm run test:run`
 
 ## What each file needs

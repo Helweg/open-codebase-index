@@ -127,6 +127,20 @@ describe("files utilities", () => {
         )
       ).toBe(true);
     });
+
+    it("should include Swift files by default", () => {
+      const filter = createIgnoreFilter(tempDir);
+
+      expect(
+        shouldIncludeFile(
+          path.join(tempDir, "Sources", "App.swift"),
+          tempDir,
+          DEFAULT_INCLUDE,
+          DEFAULT_EXCLUDE,
+          filter
+        )
+      ).toBe(true);
+    });
   });
 
   describe("collectFiles", () => {

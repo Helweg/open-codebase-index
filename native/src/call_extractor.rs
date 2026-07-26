@@ -131,6 +131,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         Language::JavaScript | Language::JavaScriptJsx => tree_sitter_javascript::LANGUAGE.into(),
         Language::Python => tree_sitter_python::LANGUAGE.into(),
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         Language::Go => tree_sitter_go::LANGUAGE.into(),
         Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
         Language::Zig => tree_sitter_zig::LANGUAGE.into(),
@@ -161,6 +162,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         }
         Language::Python => include_str!("../queries/python-calls.scm"),
         Language::Rust => include_str!("../queries/rust-calls.scm"),
+        Language::Swift => include_str!("../queries/swift-calls.scm"),
         Language::Go => include_str!("../queries/go-calls.scm"),
         Language::Php => include_str!("../queries/php-calls.scm"),
         Language::Zig => include_str!("../queries/zig-calls.scm"),
@@ -542,6 +544,175 @@ mod tests {
             "Expected method call, got: {:?}",
             calls
         );
+    }
+
+    #[test]
+    fn test_swift_direct_member_optional_and_wrapped_calls() {
+        let code = r#"
+class Child: Base {
+    func run() async throws {
+        direct()
+        try await asyncWork()
+        object.method()
+        Self.staticMethod()
+        self.helper()
+        super.finish()
+        optional?.refresh()
+        client.fetch().decode()
+        withTaskGroup { group in group.cancelAll() }
+    }
+}
+"#;
+        let calls = extract_calls(code, "swift").unwrap();
+
+        for expected in ["direct", "asyncWork", "withTaskGroup"] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| call.callee_name == expected && call.call_type == CallType::Call),
+                "Expected direct Swift call {expected}, got: {calls:?}"
+            );
+        }
+
+        for expected in [
+            "method",
+            "staticMethod",
+            "helper",
+            "finish",
+            "refresh",
+            "fetch",
+            "decode",
+            "cancelAll",
+        ] {
+            assert!(
+                calls.iter().any(|call| {
+                    call.callee_name == expected && call.call_type == CallType::MethodCall
+                }),
+                "Expected Swift method call {expected}, got: {calls:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_swift_subscripts_are_not_calls() {
+        let code = r#"
+func read() {
+    _ = values[id]
+    _ = object.items[index]
+    array[0].run()
+    dictionary[key]?.refresh()
+}
+"#;
+        let calls = extract_calls(code, "swift").unwrap();
+
+        for unexpected in ["values", "items", "array", "dictionary"] {
+            assert!(
+                !calls.iter().any(|call| call.callee_name == unexpected),
+                "Swift subscript base {unexpected} must not be a call: {calls:?}"
+            );
+        }
+        for expected in ["run", "refresh"] {
+            assert!(
+                calls.iter().any(|call| {
+                    call.callee_name == expected && call.call_type == CallType::MethodCall
+                }),
+                "Expected Swift method call {expected}, got: {calls:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_swift_constructors_and_generic_calls() {
+        let code = r#"
+func build() {
+    _ = Widget()
+    _ = Models.Widget()
+    _ = Box<Int>()
+    _ = Models.Box<Int>()
+    _ = generic<Int>()
+    _ = object.method<Int>()
+    _ = Widget.init()
+    _ = .init()
+}
+"#;
+        let calls = extract_calls(code, "swift").unwrap();
+
+        for expected in ["Widget", "Box", "init"] {
+            assert!(
+                calls.iter().any(|call| {
+                    call.callee_name == expected && call.call_type == CallType::Constructor
+                }),
+                "Expected Swift constructor {expected}, got: {calls:?}"
+            );
+        }
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "generic" && call.call_type == CallType::Call));
+        assert!(calls.iter().any(|call| {
+            call.callee_name == "method" && call.call_type == CallType::MethodCall
+        }));
+    }
+
+    #[test]
+    fn test_swift_imports_inheritance_and_conformities() {
+        let code = r#"
+import Foundation
+import struct Foundation.Date
+
+protocol ChildProtocol: ParentProtocol {}
+class Child: Base, Runnable, Sendable {}
+struct Value: Runnable {}
+actor Worker: Runnable {}
+extension Value: Sendable {}
+struct NoncopyableToken: ~Copyable {}
+"#;
+        let calls = extract_calls(code, "swift").unwrap();
+
+        for expected in ["Foundation", "Date"] {
+            assert!(
+                calls
+                    .iter()
+                    .any(|call| call.callee_name == expected && call.call_type == CallType::Import),
+                "Expected Swift import {expected}, got: {calls:?}"
+            );
+        }
+        for expected in ["Base", "ParentProtocol"] {
+            assert!(
+                calls.iter().any(|call| {
+                    call.callee_name == expected && call.call_type == CallType::Inherits
+                }),
+                "Expected Swift inheritance {expected}, got: {calls:?}"
+            );
+        }
+        for expected in ["Runnable", "Sendable"] {
+            assert!(
+                calls.iter().any(|call| {
+                    call.callee_name == expected && call.call_type == CallType::Implements
+                }),
+                "Expected Swift conformance {expected}, got: {calls:?}"
+            );
+        }
+        assert!(
+            !calls.iter().any(|call| call.callee_name == "Copyable"),
+            "A suppressed Swift constraint must not become a positive relation: {calls:?}"
+        );
+    }
+
+    #[test]
+    fn test_swift_identifiers_preserve_case() {
+        let code = "func caller() { load(); Load(); doThing(); DoThing() }";
+        let calls = extract_calls(code, "swift").unwrap();
+        let names = calls
+            .iter()
+            .map(|call| call.callee_name.as_str())
+            .collect::<Vec<_>>();
+
+        for expected in ["load", "Load", "doThing", "DoThing"] {
+            assert!(
+                names.contains(&expected),
+                "Swift identifier case should be preserved: {calls:?}"
+            );
+        }
     }
 
     #[test]
