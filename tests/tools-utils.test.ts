@@ -532,7 +532,7 @@ describe("tools utils", () => {
       expect(result).not.toContain('grep/search for "first", "second", "third", "fourth"');
     });
 
-    it("omits handoffs for anonymous results and safely quotes compacted names", () => {
+    it("omits anonymous and overlong names while safely quoting exact names", () => {
       const anonymous = formatCodebasePeek([{
         filePath: "src/anonymous.ts",
         startLine: 1,
@@ -541,13 +541,22 @@ describe("tools utils", () => {
         score: 1,
         chunkType: "other",
       }]);
-      const unsafeName = `${"x".repeat(100)}\"\nrm -rf example`;
+      const overlongName = `${"x".repeat(100)}dangerous`;
+      const unsafeName = `dangerous\"\nrm example`;
       const named = formatCodebasePeek([{
         filePath: "src/named.ts",
         startLine: 1,
         endLine: 2,
         content: "",
         score: 1,
+        chunkType: "function",
+        name: overlongName,
+      }, {
+        filePath: "src/short.ts",
+        startLine: 3,
+        endLine: 4,
+        content: "",
+        score: 0.9,
         chunkType: "function",
         name: unsafeName,
       }]);
@@ -556,7 +565,8 @@ describe("tools utils", () => {
       expect(anonymous).not.toContain("Exact-search handoff");
       expect(handoff).toContain("Exact-search handoff");
       expect(handoff).toContain("\\n");
-      expect(handoff).not.toContain(unsafeName);
+      expect(handoff).not.toContain(overlongName);
+      expect(handoff).toContain(JSON.stringify(unsafeName));
     });
   });
 
@@ -990,7 +1000,7 @@ describe("tools utils", () => {
         content: "hidden",
         score: 1 - index / 100,
         chunkType: "function",
-        name: `veryLongExactSearchSymbol${index}${"x".repeat(50)}`,
+        name: `exactSearchSymbol${index}`,
       }));
 
       const packed = buildContextPack(results, {

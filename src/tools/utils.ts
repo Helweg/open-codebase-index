@@ -145,10 +145,6 @@ function compactEvidenceValue(value: string, maxChars: number): string {
 const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;
 const MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS = 64;
 
-function compactEvidenceName(value: string): string {
-  return compactEvidenceValue(value, MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS);
-}
-
 function formatExactSearchHandoff(results: SearchResult[]): string | null {
   const suggestedNames: string[] = [];
   const seen = new Set<string>();
@@ -159,12 +155,16 @@ function formatExactSearchHandoff(results: SearchResult[]): string | null {
       continue;
     }
 
+    if (Array.from(rawName).length > MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS) {
+      continue;
+    }
+
     if (seen.has(rawName)) {
       continue;
     }
 
     seen.add(rawName);
-    suggestedNames.push(compactEvidenceName(rawName));
+    suggestedNames.push(rawName);
 
     if (suggestedNames.length >= MAX_EXACT_SEARCH_HANDOFF_NAMES) {
       break;
