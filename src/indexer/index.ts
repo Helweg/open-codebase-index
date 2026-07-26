@@ -2181,10 +2181,21 @@ export class Indexer {
 
   private getCanonicalPath(targetPath: string): string {
     const resolved = path.resolve(targetPath);
-    try {
-      return realpathSync.native(resolved);
-    } catch {
-      return resolved;
+    const missingParts: string[] = [];
+    let candidate = resolved;
+
+    while (true) {
+      try {
+        return path.join(realpathSync.native(candidate), ...missingParts);
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTDIR") return resolved;
+
+        const parent = path.dirname(candidate);
+        if (parent === candidate) return resolved;
+        missingParts.unshift(path.basename(candidate));
+        candidate = parent;
+      }
     }
   }
 
@@ -2608,15 +2619,14 @@ export class Indexer {
       return { chunkIds, symbolIds };
     }
 
-    const projectRootPath = path.resolve(this.projectRoot);
     const projectLocalFilePaths = new Set<string>([
       ...Array.from(this.fileHashCache.keys()).filter(
-        (filePath) => this.isFileInCurrentScope(filePath, roots) && isPathWithinRoot(filePath, projectRootPath)
+        (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
       ),
       ...(this.store?.getAllMetadata() ?? [])
         .map(({ metadata }) => metadata.filePath)
         .filter(
-          (filePath) => this.isFileInCurrentScope(filePath, roots) && isPathWithinRoot(filePath, projectRootPath)
+          (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
         ),
     ]);
 
@@ -2668,7 +2678,14 @@ export class Indexer {
   }
 
   private isFileInCurrentScope(filePath: string, roots: string[]): boolean {
-    return roots.some((root) => isPathWithinRoot(filePath, root));
+    if (roots.some((root) => isPathWithinRoot(filePath, root))) return true;
+    const canonicalFilePath = this.getCanonicalPath(filePath);
+    return roots.some((root) => isPathWithinRoot(canonicalFilePath, root));
+  }
+
+  private isFileInProjectRoot(filePath: string): boolean {
+    if (isPathWithinRoot(filePath, this.projectRoot)) return true;
+    return isPathWithinRoot(this.getCanonicalPath(filePath), this.getCanonicalPath(this.projectRoot));
   }
 
   private clearScopedFileHashCache(roots: string[]): void {
@@ -2788,9 +2805,8 @@ export class Indexer {
       ...scopedEntries.map(({ metadata }) => metadata.filePath),
     ]);
 
-    const projectRootPath = path.resolve(this.projectRoot);
     const projectLocalFilePaths = new Set<string>(
-      Array.from(filePaths).filter((filePath) => isPathWithinRoot(filePath, projectRootPath))
+      Array.from(filePaths).filter((filePath) => this.isFileInProjectRoot(filePath))
     );
 
     const removedChunkIds = new Set<string>(scopedEntries.map(({ key }) => key));
@@ -2803,7 +2819,7 @@ export class Indexer {
 
     const projectLocalChunkIds = new Set<string>(
       scopedEntries
-        .filter(({ metadata }) => isPathWithinRoot(metadata.filePath, projectRootPath))
+        .filter(({ metadata }) => this.isFileInProjectRoot(metadata.filePath))
         .map(({ key }) => key)
     );
     for (const filePath of projectLocalFilePaths) {
@@ -4239,7 +4255,6 @@ export class Indexer {
     const restrictExistingChunksToBranch = this.branchNameOverride !== undefined
       || previousBranchChunkIds.length > 0
       || database.getAllBranches().length > 0;
-    const projectRootPath = path.resolve(this.projectRoot);
     const forceScopedReembed = scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
     const failedForcedChunkIds = new Set<string>();
 
@@ -4392,7 +4407,7 @@ export class Indexer {
       }
       if (
         restrictExistingChunksToBranch
-        && isPathWithinRoot(metadata.filePath, projectRootPath)
+        && this.isFileInProjectRoot(metadata.filePath)
         && !previousBranchChunkIdSet.has(key)
       ) {
         continue;

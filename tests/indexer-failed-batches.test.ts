@@ -1309,6 +1309,7 @@ describe("indexer failed batch recovery", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(kbFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalKbFile = fs.realpathSync.native(kbFile);
 
     const kbPrompt = "export function sharedDoc() { return 'shared'; }";
     let failSharedKbEmbedding = false;
@@ -1375,7 +1376,7 @@ describe("indexer failed batch recovery", () => {
     expect(failedStats.failedChunks).toBeGreaterThan(0);
     expect(db.getMetadata(`index.forceReembed.${projectHash}`)).toBe("true");
 
-    const sharedChunkId = db.getChunksByFile(kbFile)[0]?.chunkId;
+    const sharedChunkId = db.getChunksByFile(canonicalKbFile)[0]?.chunkId;
     expect(sharedChunkId).toBeTruthy();
     expect(db.chunkExistsOnBranch(projectABranch, sharedChunkId!)).toBe(false);
 

@@ -10,6 +10,10 @@ import { Indexer } from "../src/indexer/index.js";
 import { Database, InvertedIndex, VectorStore } from "../src/native/index.js";
 import { hashContent } from "../src/native/index.js";
 
+function canonicalPath(filePath: string): string {
+  return fs.realpathSync.native(filePath);
+}
+
 describe("indexer clearIndex force rebuild", () => {
   let tempDir: string;
   let sourceFile: string;
@@ -145,6 +149,60 @@ describe("indexer clearIndex force rebuild", () => {
     expect(embeddingBuffer).not.toBeNull();
     const floatCount = embeddingBuffer!.byteLength / Float32Array.BYTES_PER_ELEMENT;
     expect(floatCount).toBe(4);
+  });
+
+  it("removes a deleted file indexed through a symlinked global project root", async () => {
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const physicalProjectRoot = path.join(tempDir, "physical-project");
+    const projectRoot = path.join(tempDir, "project-alias");
+    const sourcePath = path.join(projectRoot, "src", "removed.ts");
+    const physicalSourcePath = path.join(physicalProjectRoot, "src", "removed.ts");
+    fs.mkdirSync(path.dirname(physicalSourcePath), { recursive: true });
+    fs.writeFileSync(physicalSourcePath, "export const removed = true;\n", "utf-8");
+    fs.symlinkSync(physicalProjectRoot, projectRoot, "dir");
+
+    const indexer = createIndexer(projectRoot, 8, "global");
+    await indexer.index();
+
+    const db = trackDb(new Database(path.join(tempHome, ".opencode", "global-index", "codebase.db")));
+    expect(db.getChunksByFile(sourcePath).length).toBeGreaterThan(0);
+
+    fs.unlinkSync(sourcePath);
+    await indexer.index();
+
+    expect(db.getChunksByFile(sourcePath)).toHaveLength(0);
+    const fileHashes = JSON.parse(
+      fs.readFileSync(path.join(tempHome, ".opencode", "global-index", "file-hashes.json"), "utf-8")
+    ) as Record<string, string>;
+    expect(fileHashes[sourcePath]).toBeUndefined();
+  });
+
+  it("clears legacy branch ownership through an equivalent symlinked project root", async () => {
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const physicalProjectRoot = path.join(tempDir, "physical-project");
+    const projectRoot = path.join(tempDir, "project-alias");
+    const sourcePath = path.join(physicalProjectRoot, "src", "owned.ts");
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.writeFileSync(sourcePath, "export const owned = true;\n", "utf-8");
+    fs.symlinkSync(physicalProjectRoot, projectRoot, "dir");
+
+    await createIndexer(physicalProjectRoot, 8, "global").index();
+
+    const db = trackDb(new Database(path.join(tempHome, ".opencode", "global-index", "codebase.db")));
+    const chunk = db.getChunksByFile(sourcePath)[0];
+    const physicalBranch = `${hashContent(path.resolve(physicalProjectRoot)).slice(0, 16)}:default`;
+    const legacyBranch = "feature/old";
+    db.addChunksToBranchBatch(legacyBranch, [chunk.chunkId]);
+
+    await createIndexer(projectRoot, 8, "global").clearIndex();
+
+    expect(db.chunkExistsOnBranch(legacyBranch, chunk.chunkId)).toBe(false);
+    expect(db.chunkExistsOnBranch(physicalBranch, chunk.chunkId)).toBe(true);
+    expect(db.getChunk(chunk.chunkId)).not.toBeNull();
   });
 
   it("marks older embedding strategy metadata as incompatible until force rebuild", async () => {
@@ -766,6 +824,7 @@ describe("indexer clearIndex force rebuild", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(kbFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalKbFile = canonicalPath(kbFile);
 
     const kbPrompt = "export function sharedDoc() { return 'shared'; }";
     let failSharedKbEmbedding = false;
@@ -833,7 +892,7 @@ describe("indexer clearIndex force rebuild", () => {
     expect(failedStats.failedChunks).toBeGreaterThan(0);
     expect(db.getMetadata(`index.forceReembed.${projectAHash}`)).toBe("true");
 
-    const sharedChunkId = db.getChunksByFile(kbFile)[0]?.chunkId;
+    const sharedChunkId = db.getChunksByFile(canonicalKbFile)[0]?.chunkId;
     expect(sharedChunkId).toBeTruthy();
     expect(db.chunkExistsOnBranch(projectABranch, sharedChunkId!)).toBe(false);
 
@@ -1101,6 +1160,7 @@ describe("indexer clearIndex force rebuild", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return 'a'; }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return 'b'; }\n", "utf-8");
     fs.writeFileSync(kbFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalKbFile = canonicalPath(kbFile);
 
     const createKbIndexer = (projectRoot: string) => trackIndexer(new Indexer(projectRoot, parseConfig({
       embeddingProvider: "custom",
@@ -1126,10 +1186,10 @@ describe("indexer clearIndex force rebuild", () => {
     const db = trackDb(new Database(dbPath));
     expect(db.getChunksByFile(projectAFile)).toHaveLength(0);
     expect(db.getChunksByFile(projectBFile).length).toBeGreaterThan(0);
-    expect(db.getChunksByFile(kbFile).length).toBeGreaterThan(0);
+    expect(db.getChunksByFile(canonicalKbFile).length).toBeGreaterThan(0);
 
     const searchResults = await createKbIndexer(projectB).search("sharedDoc", 5);
-    expect(searchResults.some((result) => result.filePath === kbFile)).toBe(true);
+    expect(searchResults.some((result) => result.filePath === canonicalKbFile)).toBe(true);
   });
 
   it("keeps legacy global branch catalogs readable across repos until each project is reindexed", async () => {
@@ -1415,6 +1475,7 @@ describe("indexer clearIndex force rebuild", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(sharedFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalSharedFile = canonicalPath(sharedFile);
 
     const createKbIndexer = (projectRoot: string) => trackIndexer(new Indexer(projectRoot, parseConfig({
       embeddingProvider: "custom",
@@ -1439,7 +1500,7 @@ describe("indexer clearIndex force rebuild", () => {
     const db = trackDb(new Database(dbPath));
     const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
     const projectAProjectChunk = db.getChunksByFile(projectAFile)[0];
-    const sharedChunk = db.getChunksByFile(sharedFile)[0];
+    const sharedChunk = db.getChunksByFile(canonicalSharedFile)[0];
     const foreignLegacyBranch = "feature/test";
 
     db.addChunksToBranchBatch(foreignLegacyBranch, [sharedChunk.chunkId]);
@@ -1557,6 +1618,7 @@ describe("indexer clearIndex force rebuild", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return 'a'; }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(sharedFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalSharedFile = canonicalPath(sharedFile);
 
     const createKbIndexer = (projectRoot: string) => trackIndexer(new Indexer(projectRoot, parseConfig({
       embeddingProvider: "custom",
@@ -1581,16 +1643,16 @@ describe("indexer clearIndex force rebuild", () => {
     const db = trackDb(new Database(dbPath));
     const projectABranch = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
     const projectBBranch = `${hashContent(path.resolve(projectB)).slice(0, 16)}:default`;
-    const sharedChunk = db.getChunksByFile(sharedFile)[0];
+    const sharedChunk = db.getChunksByFile(canonicalSharedFile)[0];
 
     db.deleteBranchChunksForBranch(projectABranch, [sharedChunk.chunkId]);
     db.deleteBranchChunksForBranch(projectBBranch, [sharedChunk.chunkId]);
-    db.deleteChunksByFile(sharedFile);
+    db.deleteChunksByFile(canonicalSharedFile);
     db.upsertChunksBatch([
       {
         chunkId: sharedChunk.chunkId,
         contentHash: sharedChunk.contentHash,
-        filePath: sharedFile,
+        filePath: canonicalSharedFile,
         startLine: sharedChunk.startLine,
         endLine: sharedChunk.endLine,
         nodeType: sharedChunk.nodeType,
@@ -1603,7 +1665,7 @@ describe("indexer clearIndex force rebuild", () => {
     await createKbIndexer(projectA).clearIndex();
 
     expect(db.chunkExistsOnBranch(projectABranch, sharedChunk.chunkId)).toBe(false);
-    expect(db.getChunksByFile(sharedFile)).toHaveLength(0);
+    expect(db.getChunksByFile(canonicalSharedFile)).toHaveLength(0);
   });
 
   it("preserves resolved call edges for shared symbols kept by another global project", async () => {

@@ -161,7 +161,7 @@ function changed(): number {
     expect(featureSymbols.length).toBeGreaterThan(0);
     expect(featureSymbols.some((symbol) => symbol.filePath.startsWith(repo + path.sep))).toBe(true);
     expect(featureSymbols.some((symbol) => symbol.filePath.includes("codebase-index-branch-"))).toBe(false);
-    expect(featureSymbols.some((symbol) => symbol.filePath === path.join(knowledgeBase, "external.ts"))).toBe(true);
+    expect(featureSymbols.some((symbol) => symbol.filePath === fs.realpathSync.native(path.join(knowledgeBase, "external.ts")))).toBe(true);
     expect(db.getMetadata(branchCommitMetadataKey("feature"))).toBe(featureCommit);
 
     expect(db.getBranchChunkIds("main").sort()).toEqual(mainChunkIds);
@@ -265,7 +265,7 @@ function advancedChange(): number {
       commit: featureCommit,
       source: "pull-ref",
     });
-    const localRepositoryIdentity = `local:${repo}`;
+    const localRepositoryIdentity = `local:${fs.realpathSync.native(repo)}`;
     const catalogIdentity = createPullRequestCatalogIdentity(
       localRepositoryIdentity,
       7,

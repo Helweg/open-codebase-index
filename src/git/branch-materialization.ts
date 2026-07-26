@@ -421,13 +421,38 @@ async function pathExists(targetPath: string): Promise<boolean> {
   return fsPromises.stat(targetPath).then(() => true, () => false);
 }
 
+async function canonicalizePath(targetPath: string): Promise<string> {
+  const resolved = path.resolve(targetPath);
+  const missingParts: string[] = [];
+  let candidate = resolved;
+
+  while (true) {
+    try {
+      return path.join(await fsPromises.realpath(candidate), ...missingParts);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
+
+      const parent = path.dirname(candidate);
+      if (parent === candidate) return resolved;
+      missingParts.unshift(path.basename(candidate));
+      candidate = parent;
+    }
+  }
+}
+
 async function isWorktreeRegistered(projectRoot: string, worktreePath: string): Promise<boolean> {
   const output = await runGitRaw(projectRoot, ["worktree", "list", "--porcelain", "-z"]);
-  const target = path.resolve(worktreePath);
-  return output
+  const target = await canonicalizePath(worktreePath);
+  const worktreePaths = output
     .split("\0")
     .filter((entry) => entry.startsWith("worktree "))
-    .some((entry) => path.resolve(entry.slice("worktree ".length)) === target);
+    .map((entry) => entry.slice("worktree ".length));
+
+  for (const registeredPath of worktreePaths) {
+    if (await canonicalizePath(registeredPath) === target) return true;
+  }
+  return false;
 }
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
@@ -451,7 +476,7 @@ async function pruneExactMissingWorktreeRegistration(
     throw error;
   }
 
-  const target = path.resolve(worktreePath);
+  const target = await canonicalizePath(worktreePath);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const registrationPath = path.join(registrationsRoot, entry.name);
@@ -467,7 +492,7 @@ async function pruneExactMissingWorktreeRegistration(
     const resolvedGitdirPath = path.isAbsolute(gitdirPath)
       ? gitdirPath
       : path.resolve(registrationPath, gitdirPath);
-    if (path.resolve(path.dirname(resolvedGitdirPath)) !== target) continue;
+    if (await canonicalizePath(path.dirname(resolvedGitdirPath)) !== target) continue;
     await fsPromises.rm(registrationPath, { recursive: true, force: true });
     return true;
   }
