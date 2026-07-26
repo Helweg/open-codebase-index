@@ -48,19 +48,6 @@ function resolveWorktreeFallbackPath(projectRoot: string, relativePath: string):
   return existsSync(fallbackPath) ? fallbackPath : null;
 }
 
-export function resolveWorktreeFallbackProjectIndexPath(projectRoot: string, host: HostMode): string | null {
-  const inheritedHostPath = resolveWorktreeFallbackPath(projectRoot, getProjectIndexRelativePath(host));
-  if (inheritedHostPath) {
-    return inheritedHostPath;
-  }
-
-  if (host !== "opencode") {
-    return resolveWorktreeFallbackPath(projectRoot, OPENCODE_PROJECT_INDEX_RELATIVE_PATH);
-  }
-
-  return null;
-}
-
 export function getHostProjectConfigRelativePath(host: HostMode): string {
   return getProjectConfigRelativePath(host);
 }
@@ -191,6 +178,11 @@ export function resolveProjectIndexPath(
   }
 
   if (hasHostProjectConfig(projectRoot, host)) {
+    return localIndexPath;
+  }
+
+  // A worktree may inherit project configuration, but never a mutable project index.
+  if (resolveWorktreeMainRepoRoot(projectRoot)) {
     return localIndexPath;
   }
 

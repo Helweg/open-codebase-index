@@ -1,11 +1,10 @@
 import { existsSync, realpathSync, statSync } from "fs";
 import * as path from "path";
-import { loadProjectConfigLayer, materializeLocalProjectConfig } from "../config/merger.js";
 import { parseConfig, type ParsedCodebaseIndexConfig } from "../config/schema.js";
-import { getHostProjectIndexRelativePath, getHostProjectConfigRelativePath, resolveProjectIndexPath, resolveWorktreeFallbackProjectIndexPath } from "../config/paths.js";
+import { getHostProjectConfigRelativePath } from "../config/paths.js";
 import type { HostMode } from "../config/host.js";
 import { Indexer } from "../indexer/index.js";
-import { isIndexLockContentionError, withIndexLock } from "../indexer/index-lock.js";
+import { isIndexLockContentionError } from "../indexer/index-lock.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
@@ -108,16 +107,6 @@ export function refreshIndexerForDirectory(
   const indexer = new Indexer(projectRoot, config, host);
   indexerCache.set(key, indexer);
   configCache.set(key, config);
-}
-
-export function shouldForceLocalizeProjectIndex(projectRoot: string | undefined, host: HostMode = "opencode"): boolean {
-  const root = getProjectRoot(projectRoot, host);
-  const localIndexPath = path.join(root, getHostProjectIndexRelativePath(host));
-  if (existsSync(localIndexPath)) {
-    return false;
-  }
-  const inheritedIndexPath = resolveWorktreeFallbackProjectIndexPath(root, host);
-  return inheritedIndexPath !== null;
 }
 
 export async function searchCodebase(
@@ -235,9 +224,7 @@ export async function runIndexCodebase(
   | IndexBusyResult
 > {
   const root = getProjectRoot(projectRoot, host);
-  const key = getIndexerCacheKey(root, host);
-  let indexer = getIndexerForProject(root, host);
-  const runtimeConfig = configCache.get(key)!;
+  const indexer = getIndexerForProject(root, host);
 
   try {
     if (args.estimateOnly) {
@@ -261,20 +248,7 @@ export async function runIndexCodebase(
       });
     };
 
-    let stats: IndexStats;
-    if (args.force && shouldForceLocalizeProjectIndex(root, host)) {
-      const inheritedIndexPath = resolveProjectIndexPath(root, runtimeConfig.scope, host);
-      stats = await withIndexLock(inheritedIndexPath, "force-index", async () => {
-        materializeLocalProjectConfig(root, loadProjectConfigLayer(root, host), host);
-        refreshIndexerForDirectory(root, host, runtimeConfig);
-        indexer = getIndexerForProject(root, host);
-        return runIndex(indexer);
-      }, { completeRecoveries: false });
-    } else {
-      stats = await runIndex(indexer);
-    }
-
-    return { kind: "stats", stats };
+    return { kind: "stats", stats: await runIndex(indexer) };
   } catch (error) {
     const busyResult = getIndexBusyResult(error);
     if (!busyResult) throw error;

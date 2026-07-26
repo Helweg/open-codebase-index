@@ -203,7 +203,7 @@ describe("indexer clearIndex force rebuild", () => {
     invertedLoad.mockRestore();
   });
 
-  it("rejects force clearing an inherited project index from a fresh worktree", async () => {
+  it("clears only the worktree-local index when project config is inherited", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo");
     const worktreeDir = path.join(tempDir, "worktree-feature");
     const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
@@ -214,52 +214,43 @@ describe("indexer clearIndex force rebuild", () => {
     fs.mkdirSync(path.dirname(mainSourceFile), { recursive: true });
     fs.mkdirSync(worktreeGitDir, { recursive: true });
     fs.mkdirSync(worktreeDir, { recursive: true });
-
     fs.writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
     fs.writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
     fs.writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
     fs.writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
     fs.writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
+    fs.writeFileSync(path.join(mainRepoDir, ".opencode", "codebase-index.json"), JSON.stringify({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-8d", dimensions: 8 },
+      indexing: { watchFiles: false, retries: 0, retryDelayMs: 1 },
+    }, null, 2));
+    fs.writeFileSync(mainSourceFile, "export function alpha() { return 'a'; }\n");
 
-    fs.writeFileSync(
-      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
-      JSON.stringify({
-        embeddingProvider: "custom",
-        customProvider: {
-          baseUrl: "http://localhost:11434/v1",
-          model: "mock-8d",
-          dimensions: 8,
-        },
-        indexing: {
-          watchFiles: false,
-          retries: 0,
-          retryDelayMs: 1,
-        },
-      }, null, 2),
-      "utf-8"
-    );
-    fs.writeFileSync(mainSourceFile, "export function alpha() { return 'a'; }\n", "utf-8");
-
-    embeddingDimensions = 8;
     await createIndexer(mainRepoDir, 8).index();
+    const mainDb = trackDb(new Database(path.join(mainRepoDir, ".opencode", "index", "codebase.db")));
+    const mainStatsBefore = mainDb.getStats();
 
-    const inheritedIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
-    await expect(inheritedIndexer.clearIndex()).rejects.toThrow(
-      "Project-scoped force rebuild is unsafe while using an inherited worktree index"
-    );
+    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
+    await expect(worktreeIndexer.clearIndex()).resolves.toBeUndefined();
+
+    expect(mainDb.getStats()).toEqual(mainStatsBefore);
+    const localDb = trackDb(new Database(path.join(worktreeDir, ".opencode", "index", "codebase.db")));
+    expect(localDb.getStats().chunkCount).toBe(0);
+    expect(localDb.getStats().embeddingCount).toBe(0);
   });
 
-  it("preserves an inherited project index when its crashed owner needs recovery", async () => {
+  it("ignores a crashed main-index owner when indexing from an isolated worktree", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo-recovery");
     const worktreeDir = path.join(tempDir, "worktree-recovery");
     const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "recovery");
     const mainSourceFile = path.join(mainRepoDir, "src", "index.ts");
+    const worktreeSourceFile = path.join(worktreeDir, "src", "index.ts");
 
     fs.mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
     fs.mkdirSync(path.join(mainRepoDir, ".opencode"), { recursive: true });
     fs.mkdirSync(path.dirname(mainSourceFile), { recursive: true });
+    fs.mkdirSync(path.dirname(worktreeSourceFile), { recursive: true });
     fs.mkdirSync(worktreeGitDir, { recursive: true });
-    fs.mkdirSync(worktreeDir, { recursive: true });
     fs.writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
     fs.writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
     fs.writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
@@ -272,29 +263,23 @@ describe("indexer clearIndex force rebuild", () => {
       indexing: { watchFiles: false, retries: 0, retryDelayMs: 1 },
     }, null, 2));
     fs.writeFileSync(mainSourceFile, "export function preserved() { return true; }\n");
+    fs.writeFileSync(worktreeSourceFile, "export function isolated() { return true; }\n");
 
     const mainIndexer = createIndexer(mainRepoDir, 8);
     await mainIndexer.index();
     await mainIndexer.close();
-    const inheritedIndexPath = path.join(mainRepoDir, ".opencode", "index");
-    const lockPath = path.join(inheritedIndexPath, "indexing.lock");
+    const mainIndexPath = path.join(mainRepoDir, ".opencode", "index");
+    const lockPath = path.join(mainIndexPath, "indexing.lock");
     fs.mkdirSync(lockPath);
     fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
-      pid: 2_147_483_647,
-      hostname: os.hostname(),
-      startedAt: new Date().toISOString(),
-      operation: "index",
-      token: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      pid: 2_147_483_647, hostname: os.hostname(), startedAt: new Date().toISOString(),
+      operation: "index", token: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     }));
 
-    const inheritedIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
-    await expect(inheritedIndexer.index()).rejects.toThrow(
-      "Interrupted indexing recovery is unsafe while using an inherited worktree index"
-    );
-
-    expect(fs.existsSync(path.join(inheritedIndexPath, "codebase.db"))).toBe(true);
-    expect(fs.existsSync(path.join(inheritedIndexPath, "vectors"))).toBe(true);
-    expect(fs.readdirSync(inheritedIndexPath).some((name) => name.startsWith("indexing.lock.recovery."))).toBe(true);
+    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
+    await expect(worktreeIndexer.index()).resolves.toMatchObject({ failedChunks: 0 });
+    expect(fs.existsSync(path.join(worktreeDir, ".opencode", "index", "codebase.db"))).toBe(true);
+    expect(fs.existsSync(lockPath)).toBe(true);
   });
 
   it("allows codex force clearing a local legacy OpenCode project index", async () => {

@@ -8,6 +8,29 @@ import { loadMergedConfig } from "../src/config/merger.js";
 import { parseConfig } from "../src/config/schema.js";
 import { resolveProjectConfigPath, resolveProjectIndexPath, resolveWritableProjectConfigPath } from "../src/config/paths.js";
 import { Indexer } from "../src/indexer/index.js";
+import { Database } from "../src/native/index.js";
+
+function snapshotProjectIndex(indexPath: string): {
+  stats: ReturnType<Database["getStats"]>;
+  branches: Array<{ branch: string; chunks: Array<ReturnType<Database["getChunk"]>> }>;
+  fileHashes: string;
+} {
+  const database = new Database(path.join(indexPath, "codebase.db"));
+  try {
+    const branches = database.getAllBranches().sort().map((branch) => ({
+      branch,
+      chunks: database.getBranchChunkIds(branch).sort().map((chunkId) => database.getChunk(chunkId)),
+    }));
+
+    return {
+      stats: database.getStats(),
+      branches,
+      fileHashes: fs.readFileSync(path.join(indexPath, "file-hashes.json"), "utf-8"),
+    };
+  } finally {
+    database.close();
+  }
+}
 
 describe("worktree fallback (issue #60)", () => {
   let tempDir: string;
@@ -93,6 +116,7 @@ describe("worktree fallback (issue #60)", () => {
 
     try {
       vi.stubEnv("HOME", homeDir);
+      vi.stubEnv("USERPROFILE", homeDir);
       const globalConfigPath = path.join(homeDir, ".config", "opencode", "codebase-index.json");
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, '{"debug":', "utf-8");
@@ -113,6 +137,7 @@ describe("worktree fallback (issue #60)", () => {
 
     try {
       vi.stubEnv("HOME", homeDir);
+      vi.stubEnv("USERPROFILE", homeDir);
       const globalConfigPath = path.join(homeDir, ".config", "opencode", "codebase-index.json");
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, '{"debug":', "utf-8");
@@ -128,7 +153,9 @@ describe("worktree fallback (issue #60)", () => {
   });
 
   it("keeps project object overrides as wholesale replacements instead of deep-merging", () => {
-    const globalConfigPath = path.join(os.homedir(), ".config", "opencode", "codebase-index.json");
+    vi.stubEnv("HOME", tempDir);
+    vi.stubEnv("USERPROFILE", tempDir);
+    const globalConfigPath = path.join(tempDir, ".config", "opencode", "codebase-index.json");
 
     fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
     fs.writeFileSync(
@@ -204,17 +231,90 @@ describe("worktree fallback (issue #60)", () => {
     expect(loaded.knowledgeBases).toEqual(["docs/reference"]);
   });
 
-  it("resolves the project index path to the main repo when the worktree has no local index", async () => {
+  it("keeps the project index local when the worktree inherits its config", async () => {
     const config = parseConfig(loadMergedConfig(worktreeDir));
     const indexer = new Indexer(worktreeDir, config);
     try {
       const status = await indexer.getStatus();
 
-      expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(path.join(mainRepoDir, ".opencode", "index"));
-      expect(status.indexPath).toBe(path.join(mainRepoDir, ".opencode", "index"));
+      expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(path.join(worktreeDir, ".opencode", "index"));
+      expect(status.indexPath).toBe(path.join(worktreeDir, ".opencode", "index"));
       expect(status.currentBranch).toBe("feature/x/y");
     } finally {
       await indexer.close();
+    }
+  });
+
+  it("does not mutate the main index when indexing and searching from a worktree", async () => {
+    const homeDir = path.join(tempDir, "home");
+    fs.mkdirSync(homeDir, { recursive: true });
+    vi.stubEnv("HOME", homeDir);
+    vi.stubEnv("USERPROFILE", homeDir);
+
+    const sourceContent = "export function worktreeIsolationMarker() { return 'isolated-worktree-index'; }\n";
+    const mainSourcePath = path.join(mainRepoDir, "src", "worktree-marker.ts");
+    const worktreeSourcePath = path.join(worktreeDir, "src", "worktree-marker.ts");
+    fs.mkdirSync(path.dirname(mainSourcePath), { recursive: true });
+    fs.mkdirSync(path.dirname(worktreeSourcePath), { recursive: true });
+    fs.writeFileSync(mainSourcePath, sourceContent, "utf-8");
+    fs.writeFileSync(worktreeSourcePath, sourceContent, "utf-8");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      const texts = Array.isArray(body.input) ? body.input : [];
+      const data = texts.map((text) => {
+        const seed = Array.from(text).reduce((sum, character) => sum + character.charCodeAt(0), 0);
+        return {
+          embedding: Array.from({ length: 8 }, (_, index) => ((seed + index * 17) % 997) / 997),
+        };
+      });
+
+      return new Response(JSON.stringify({
+        data,
+        usage: { total_tokens: Math.max(1, texts.length * 8) },
+      }), { status: 200 });
+    });
+
+    const mainConfig = parseConfig(loadMergedConfig(mainRepoDir));
+    const worktreeConfig = parseConfig(loadMergedConfig(worktreeDir));
+    const mainIndexer = new Indexer(mainRepoDir, mainConfig);
+    const worktreeIndexer = new Indexer(worktreeDir, worktreeConfig);
+    const indexers = [mainIndexer, worktreeIndexer];
+
+    try {
+      await mainIndexer.index();
+      await mainIndexer.close();
+
+      const mainIndexPath = path.join(mainRepoDir, ".opencode", "index");
+      const mainSnapshotBefore = snapshotProjectIndex(mainIndexPath);
+
+      await worktreeIndexer.index();
+      await worktreeIndexer.close();
+
+      const worktreeIndexPath = path.join(worktreeDir, ".opencode", "index");
+      expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(worktreeIndexPath);
+      expect(snapshotProjectIndex(mainIndexPath)).toEqual(mainSnapshotBefore);
+
+      const worktreeSnapshot = snapshotProjectIndex(worktreeIndexPath);
+      const worktreeChunks = worktreeSnapshot.branches.flatMap((entry) => entry.chunks);
+      expect(worktreeChunks.length).toBeGreaterThan(0);
+      expect(worktreeChunks.every((chunk) =>
+        chunk !== null && chunk.filePath.startsWith(`${path.resolve(worktreeDir)}${path.sep}`)
+      )).toBe(true);
+
+      const mainReader = new Indexer(mainRepoDir, mainConfig);
+      const worktreeReader = new Indexer(worktreeDir, worktreeConfig);
+      indexers.push(mainReader, worktreeReader);
+      const [mainResults, worktreeResults] = await Promise.all([
+        mainReader.search("worktreeIsolationMarker", 5, { metadataOnly: true, filterByBranch: false }),
+        worktreeReader.search("worktreeIsolationMarker", 5, { metadataOnly: true, filterByBranch: false }),
+      ]);
+
+      expect(mainResults[0]?.filePath).toBe(mainSourcePath);
+      expect(worktreeResults[0]?.filePath).toBe(worktreeSourcePath);
+    } finally {
+      await Promise.all(indexers.map((indexer) => indexer.close()));
+      fetchSpy.mockRestore();
     }
   });
 
