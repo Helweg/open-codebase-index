@@ -29,6 +29,11 @@ export function isValidModel<P extends EmbeddingProvider>(
   value: unknown,
   provider: P
 ): value is ProviderModels[P] {
+  // For ollama, accept any model string — users can run any model locally.
+  // The hardcoded catalog is for defaults only, not for restricting user choice.
+  if (typeof value === "string" && provider === "ollama" && value.length > 0) {
+    return true;
+  }
   return typeof value === "string" && Object.keys(EMBEDDING_MODELS[provider]).includes(value);
 }
 

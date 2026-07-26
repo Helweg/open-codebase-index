@@ -89,6 +89,34 @@ export const EMBEDDING_MODELS = {
       maxTokens: 512,
       costPer1MTokens: 0.00,
     },
+    "qwen3-embedding": {
+      provider: "ollama",
+      model: "qwen3-embedding",
+      dimensions: 4096,
+      maxTokens: 32768,
+      costPer1MTokens: 0.00,
+    },
+    "snowflake-arctic-embed": {
+      provider: "ollama",
+      model: "snowflake-arctic-embed",
+      dimensions: 1024,
+      maxTokens: 8192,
+      costPer1MTokens: 0.00,
+    },
+    "snowflake-arctic-embed2": {
+      provider: "ollama",
+      model: "snowflake-arctic-embed2",
+      dimensions: 1024,
+      maxTokens: 8192,
+      costPer1MTokens: 0.00,
+    },
+    "all-minilm": {
+      provider: "ollama",
+      model: "all-minilm",
+      dimensions: 384,
+      maxTokens: 512,
+      costPer1MTokens: 0.00,
+    },
   },
   "github-copilot": {
     "text-embedding-3-small": {

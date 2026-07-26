@@ -195,9 +195,10 @@ async function getOllamaCredentials(): Promise<ProviderCredentials | null> {
       const data = await response.json() as { models?: Array<{ name: string }> };
       const hasEmbeddingModel = data.models?.some(
         (m: { name: string }) =>
-          m.name.includes("nomic-embed") ||
-          m.name.includes("mxbai-embed") ||
-          m.name.includes("all-minilm")
+          m.name.includes("embed") ||
+          m.name.includes("minilm") ||
+          m.name.includes("e5-") ||
+          m.name.includes("bge-")
       );
 
       if (hasEmbeddingModel) {
