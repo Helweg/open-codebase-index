@@ -90,6 +90,38 @@ fn exclusion_scope(
     (start, root.end_byte(), node.kind() == "field_identifier")
 }
 
+fn is_first_class_callable(node: tree_sitter::Node<'_>) -> bool {
+    let Some(arguments) = node.child_by_field_name("arguments") else {
+        return false;
+    };
+    let mut cursor = arguments.walk();
+    let found = arguments
+        .named_children(&mut cursor)
+        .any(|child| child.kind() == "variadic_placeholder");
+    found
+}
+
+fn is_pipe_callable(mut node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
+    while let Some(parent) = node.parent() {
+        if parent.kind() == "parenthesized_expression" {
+            node = parent;
+            continue;
+        }
+
+        if parent.kind() != "binary_expression" || parent.child_by_field_name("right") != Some(node)
+        {
+            return false;
+        }
+
+        return parent
+            .child_by_field_name("operator")
+            .and_then(|operator| operator.utf8_text(source).ok())
+            == Some("|>");
+    }
+
+    false
+}
+
 pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>> {
     let language = Language::from_string(language_name);
     let ts_language = match language {
@@ -233,6 +265,26 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let mut captures_iter = cursor.captures(&query, tree.root_node(), text_bytes);
 
     while let Some((match_, _)) = captures_iter.next() {
+        // A `foo(...)` reference is a call only when the PHP pipe invokes it,
+        // including when it is wrapped in parentheses.
+        let is_callable_reference = language == Language::Php
+            && match_.captures.iter().any(|capture| {
+                let is_call_capture = call_idx.map(|idx| capture.index == idx).unwrap_or(false)
+                    || method_call_idx
+                        .map(|idx| capture.index == idx)
+                        .unwrap_or(false)
+                    || static_call_idx
+                        .map(|idx| capture.index == idx)
+                        .unwrap_or(false);
+
+                is_call_capture
+                    && is_first_class_callable(capture.node)
+                    && !is_pipe_callable(capture.node, text_bytes)
+            });
+        if is_callable_reference {
+            continue;
+        }
+
         let mut callee_name: Option<String> = None;
         let mut call_type: Option<CallType> = None;
         let mut position: Option<(u32, u32)> = None;
@@ -557,6 +609,81 @@ mod tests {
             "Expected nullsafe method call, got: {:?}",
             calls
         );
+    }
+
+    #[test]
+    fn test_php_first_class_callable_references_are_not_calls() {
+        let code = r#"<?php
+function refs($obj, $args) {
+    $refs = [
+        callableOnly( ... ),
+        $obj->method(/* before */ ... /* after */),
+        Foo::create(...),
+    ];
+    direct();
+    named(value: build());
+    spread(...$args);
+    $obj->spread(...$args);
+    Foo::spread(...$args);
+}
+"#;
+        let calls = extract_calls(code, "php").unwrap();
+        let call_names: Vec<&str> = calls.iter().map(|call| call.callee_name.as_str()).collect();
+
+        assert!(
+            !call_names.contains(&"callableonly")
+                && !call_names.contains(&"method")
+                && !call_names.contains(&"create"),
+            "Expected first-class callable references to be excluded, got: {:?}",
+            call_names
+        );
+        assert!(call_names.contains(&"direct"));
+        assert!(call_names.contains(&"named"));
+        assert!(call_names.contains(&"build"));
+        assert!(call_names.contains(&"spread"));
+    }
+
+    #[test]
+    fn test_php_pipe_callable_operands_are_calls() {
+        let code = r#"<?php
+$result = $value
+    |> (trim(...))
+    |> ($obj->format(...))
+    |> (Foo::create(...));
+"#;
+        let calls = extract_calls(code, "php").unwrap();
+
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "trim" && call.call_type == CallType::Call));
+        assert!(calls.iter().any(|call| {
+            call.callee_name == "format" && call.call_type == CallType::MethodCall
+        }));
+        assert!(calls.iter().any(|call| {
+            call.callee_name == "create" && call.call_type == CallType::MethodCall
+        }));
+    }
+
+    #[test]
+    fn test_php_relative_names_are_extracted() {
+        let code = r#"<?php
+namespace App;
+
+namespace\helper();
+$thing = new namespace\Thing();
+$result = $value |> namespace\filter(...);
+"#;
+        let calls = extract_calls(code, "php").unwrap();
+
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "helper" && call.call_type == CallType::Call));
+        assert!(calls.iter().any(|call| {
+            call.callee_name == "Thing" && call.call_type == CallType::Constructor
+        }));
+        assert!(calls
+            .iter()
+            .any(|call| call.callee_name == "filter" && call.call_type == CallType::Call));
     }
 
     #[test]

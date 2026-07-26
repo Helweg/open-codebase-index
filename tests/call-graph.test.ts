@@ -245,6 +245,34 @@ describe("call-graph", () => {
         expect(importNames).toContain("StringHelper");
         expect(importNames).toContain("ArrayHelper");
       });
+
+      it("should distinguish PHP 8.x calls from first-class callable references", () => {
+        const content = fs.readFileSync(path.join(fixturesDir, "php-8-features.php"), "utf-8");
+        const calls = extractCalls(content, "php");
+        const callNames = calls.map((call) => call.calleeName);
+
+        expect(callNames).toContain("displayname");
+        expect(callNames).toContain("fallback");
+        expect(callNames).toContain("normalize");
+        expect(callNames).toContain("formatstatus");
+        expect(callNames).toContain("now");
+        expect(callNames).toContain("trim");
+        expect(callNames).toContain("strtolower");
+        expect(callNames).toContain("format");
+        expect(callNames).toContain("create");
+        expect(calls).toContainEqual(
+          expect.objectContaining({ calleeName: "Job", callType: "Constructor" }),
+        );
+        expect(calls).toContainEqual(
+          expect.objectContaining({ calleeName: "Profile", callType: "Constructor" }),
+        );
+
+        expect(callNames).not.toContain("callableonly");
+        expect(callNames).not.toContain("methodonly");
+        expect(callNames).not.toContain("staticonly");
+        expect(callNames).not.toContain("featureflag");
+        expect(callNames).not.toContain("attribute");
+      });
     });
 
     describe("php same-file case-insensitive resolution", () => {
@@ -409,6 +437,74 @@ function buildReport(): string {
             isResolved: true,
             toSymbolId: target!.id,
           });
+          expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
+        } finally {
+          await indexer.close();
+          fetchSpy.mockRestore();
+        }
+      });
+
+      it("reprocesses unchanged PHP files after the PHP 8 grammar upgrade", async () => {
+        const projectDir = path.join(tempDir, "php-grammar-upgrade-project");
+        fs.mkdirSync(projectDir, { recursive: true });
+        fs.writeFileSync(
+          path.join(projectDir, "relative.php"),
+          `<?php
+namespace App;
+function helper(): string { return "ok"; }
+function caller(): string { return namespace\\helper(); }
+`,
+          "utf-8",
+        );
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+          const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+          return new Response(
+            JSON.stringify({
+              data: inputs.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+              usage: { total_tokens: Math.max(1, inputs.length) },
+            }),
+            { status: 200 },
+          );
+        });
+        const config = parseConfig({
+          embeddingProvider: "custom",
+          customProvider: {
+            baseUrl: "http://localhost:11434/v1",
+            model: "mock-model",
+            dimensions: 8,
+          },
+          indexing: { watchFiles: false },
+        });
+
+        CALL_GRAPH_LANGUAGES.delete("php");
+        let indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const caller = (await indexer.getSymbolsForBranch()).find(
+            (symbol) => symbol.name === "caller",
+          );
+          expect(caller).toBeDefined();
+          expect(await indexer.getCallees(caller!.id)).toHaveLength(0);
+        } finally {
+          await indexer.close();
+          CALL_GRAPH_LANGUAGES.add("php");
+        }
+
+        const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        database.setMetadata("index.callGraphResolutionVersion", "3");
+        database.close();
+        const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+        indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const caller = (await indexer.getSymbolsForBranch()).find(
+            (symbol) => symbol.name === "caller",
+          );
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "helper",
+          );
+          expect(edge).toBeDefined();
           expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
         } finally {
           await indexer.close();

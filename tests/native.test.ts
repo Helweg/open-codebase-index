@@ -188,6 +188,38 @@ trait Timestampable {
       expect(chunks.some((c) => c.content.includes("trait Timestampable"))).toBe(true);
     });
 
+    it("should preserve PHP 8.x semantic declarations and names", () => {
+      const content = fs.readFileSync(
+        path.join(__dirname, "fixtures", "call-graph", "php-8-features.php"),
+        "utf-8",
+      );
+      const chunks = parseFile("php-8-features.php", content);
+
+      const job = chunks.find((chunk) => chunk.name === "Job");
+      expect(job?.chunkType).toBe("class_declaration");
+      expect(job?.content).toContain("public int|string $id");
+      expect(job?.content).toContain("match ($label)");
+
+      const status = chunks.find((chunk) => chunk.name === "Status");
+      expect(status?.chunkType).toBe("enum_declaration");
+      expect(status?.content).toContain("public const string LABEL");
+
+      expect(chunks.find((chunk) => chunk.name === "Cacheable")?.chunkType).toBe(
+        "interface_declaration",
+      );
+      expect(chunks.find((chunk) => chunk.name === "Timestamps")?.chunkType).toBe(
+        "trait_declaration",
+      );
+
+      const profile = chunks.find((chunk) => chunk.name === "Profile");
+      expect(profile?.content).toContain("private(set)");
+      expect(profile?.content).toContain("public string $slug");
+
+      const pipeline = chunks.find((chunk) => chunk.name === "pipeline");
+      expect(pipeline?.chunkType).toBe("function_definition");
+      expect(pipeline?.content).toContain("|> (trim(...))");
+    });
+
     it("should parse Apex classes (.cls) with methods and constructors", () => {
       const content = `
 public with sharing class AccountService {

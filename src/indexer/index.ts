@@ -61,7 +61,7 @@ export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", 
 // sync with the matching branch in native/src/call_extractor.rs.
 export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex", "php"]);
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "3";
+const CALL_GRAPH_RESOLUTION_VERSION = "4";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
