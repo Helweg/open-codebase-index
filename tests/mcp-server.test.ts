@@ -30,7 +30,6 @@ vi.mock("../src/git/index.js", () => ({
 
 const mergerMocks = vi.hoisted(() => ({
   loadProjectConfigLayer: vi.fn(() => ({})),
-  materializeLocalProjectConfig: vi.fn(),
 }));
 
 const indexerMockState = vi.hoisted(() => ({
@@ -244,7 +243,6 @@ describe("MCP server tools and prompts", () => {
     indexerMockState.instances.length = 0;
     mergerMocks.loadProjectConfigLayer.mockReset();
     mergerMocks.loadProjectConfigLayer.mockReturnValue({});
-    mergerMocks.materializeLocalProjectConfig.mockReset();
     mockIndexResult = {
       totalFiles: 10,
       totalChunks: 50,
@@ -778,7 +776,7 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Estimate");
   });
 
-  it("should preserve runtime config on force refresh after localizing inherited project state", async () => {
+  it("should preserve runtime config on force refresh", async () => {
     mergerMocks.loadProjectConfigLayer.mockReturnValue({ knowledgeBases: ["docs/reference"] });
 
     const runtimeConfig = parseConfig({
@@ -806,60 +804,11 @@ describe("MCP server tools and prompts", () => {
     });
 
     expect(result.content).toBeDefined();
-    expect(mergerMocks.materializeLocalProjectConfig).toHaveBeenCalledWith(
-      "/tmp/test-project",
-      mergerMocks.loadProjectConfigLayer.mock.results.at(-1)?.value,
-      "opencode",
-    );
 
-    expect(indexerMockState.constructorArgs.length).toBeGreaterThanOrEqual(3);
-    expect(indexerMockState.constructorArgs.slice(-2)).toEqual([
-      ["/tmp/test-project", runtimeConfig],
-      ["/tmp/test-project", runtimeConfig],
-    ]);
+    expect(indexerMockState.constructorArgs.length).toBeGreaterThanOrEqual(2);
+    expect(indexerMockState.constructorArgs.at(-1)).toEqual(["/tmp/test-project", runtimeConfig]);
     expect(indexerMockState.instances[0]?.initialize).not.toHaveBeenCalled();
     expect(indexerMockState.instances[0]?.getStatus).not.toHaveBeenCalled();
-  });
-
-  it("should materialize only the project config layer during MCP force localization", async () => {
-    mergerMocks.loadProjectConfigLayer.mockReturnValue({ knowledgeBases: ["docs/reference"] });
-
-    const runtimeConfig = parseConfig({
-      embeddingProvider: "custom",
-      customProvider: {
-        baseUrl: "https://runtime.example.com/v1",
-        model: "runtime-model",
-        dimensions: 1024,
-        apiKey: "runtime-key",
-      },
-      scope: "project",
-      search: {
-        maxResults: 25,
-      },
-    });
-    server = createMcpServer("/tmp/test-project", runtimeConfig);
-    client = new Client({ name: "test-client", version: "1.0.0" });
-
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    await Promise.all([
-      server.connect(serverTransport),
-      client.connect(clientTransport),
-    ]);
-
-    await client.callTool({
-      name: "index_codebase",
-      arguments: { force: true },
-    });
-
-    expect(mergerMocks.materializeLocalProjectConfig).toHaveBeenCalledWith(
-      "/tmp/test-project",
-      { knowledgeBases: ["docs/reference"] },
-      "opencode",
-    );
-    expect(indexerMockState.constructorArgs.slice(-2)).toEqual([
-      ["/tmp/test-project", runtimeConfig],
-      ["/tmp/test-project", runtimeConfig],
-    ]);
   });
 
   it("should execute index_health_check tool", async () => {

@@ -107,10 +107,13 @@ describe("knowledge base tool config refresh", () => {
     indexerInstances.length = 0;
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-tools-test-"));
     kbDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-source-"));
+    vi.stubEnv("HOME", path.join(tempDir, "home"));
+    vi.stubEnv("USERPROFILE", path.join(tempDir, "home"));
     initializeTools(tempDir, parseConfig({ indexing: { watchFiles: false } }));
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(kbDir, { recursive: true, force: true });
   });
@@ -335,6 +338,7 @@ describe("knowledge base tool config refresh", () => {
 
     try {
       vi.stubEnv("HOME", homeDir);
+      vi.stubEnv("USERPROFILE", homeDir);
       const globalConfigPath = path.join(homeDir, ".config", "opencode", "codebase-index.json");
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(
@@ -407,7 +411,7 @@ describe("knowledge base tool config refresh", () => {
     expect(indexerInstances.at(-1)?.config.knowledgeBases).toEqual([path.normalize(kbDir)]);
   });
 
-  it("localizes force rebuilds before probing inherited project indexes", async () => {
+  it("keeps inherited project config during a worktree force rebuild", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo");
     const worktreeDir = path.join(tempDir, "worktree-feature");
     const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
@@ -438,11 +442,15 @@ describe("knowledge base tool config refresh", () => {
     });
 
     expect(indexerInstances[0]?.getStatus).not.toHaveBeenCalled();
-    expect(indexerInstances.length).toBeGreaterThanOrEqual(2);
-    const localConfig = JSON.parse(fs.readFileSync(path.join(worktreeDir, ".opencode", "codebase-index.json"), "utf-8")) as {
-      knowledgeBases?: string[];
-    };
-    expect(localConfig.knowledgeBases).toEqual(["docs/reference"]);
+    expect(indexerInstances).toHaveLength(1);
+    expect(fs.existsSync(path.join(worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
+      JSON.stringify({ knowledgeBases: ["docs/updated"] }, null, 2),
+      "utf-8"
+    );
+    expect((loadMergedConfig(worktreeDir) as { knowledgeBases?: string[] }).knowledgeBases).toEqual(["docs/updated"]);
   });
 
   it("does not snapshot global-only settings when materializing a local config boundary", async () => {
@@ -453,6 +461,7 @@ describe("knowledge base tool config refresh", () => {
 
     try {
       vi.stubEnv("HOME", homeDir);
+      vi.stubEnv("USERPROFILE", homeDir);
       fs.mkdirSync(path.join(homeDir, ".config", "opencode"), { recursive: true });
       fs.writeFileSync(
         path.join(homeDir, ".config", "opencode", "codebase-index.json"),

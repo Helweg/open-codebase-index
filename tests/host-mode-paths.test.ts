@@ -186,19 +186,17 @@ describe("host-aware path resolution", () => {
     expect(loaded.knowledgeBases).toEqual(["legacy-global-docs"]);
   });
 
-  it("falls back to legacy worktree index when codex index is absent", () => {
-    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+  it.each([
+    ["opencode", ".opencode"],
+    ["codex", ".codebase-index"],
+    ["pi", ".codebase-index"],
+    ["jcode", ".codebase-index"],
+    ["claude", ".claude"],
+  ] as const)("keeps the %s project index local when only the main repo has an index", (host, indexDir) => {
+    fs.mkdirSync(path.join(mainRepoDir, indexDir, "index"), { recursive: true });
 
-    expect(resolveProjectIndexPath(worktreeDir, "project", "codex")).toBe(
-      path.join(mainRepoDir, ".opencode", "index"),
-    );
-  });
-
-  it("falls back to legacy worktree index when jcode index is absent", () => {
-    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
-
-    expect(resolveProjectIndexPath(worktreeDir, "project", "jcode")).toBe(
-      path.join(mainRepoDir, ".opencode", "index"),
+    expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
+      path.join(worktreeDir, indexDir, "index"),
     );
   });
 
@@ -256,23 +254,17 @@ describe("host-aware path resolution", () => {
     );
   });
 
-  it("prefers codex-index inheritance before legacy when both exist", () => {
-    fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
-    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+  it.each(["codex", "pi", "jcode"] as const)(
+    "does not inherit the main repo's %s index when native and legacy indexes both exist",
+    (host) => {
+      fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
+      fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
 
-    expect(resolveProjectIndexPath(worktreeDir, "project", "codex")).toBe(
-      path.join(mainRepoDir, ".codebase-index", "index"),
-    );
-  });
-
-  it("prefers jcode-index inheritance before legacy when both exist", () => {
-    fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
-    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
-
-    expect(resolveProjectIndexPath(worktreeDir, "project", "jcode")).toBe(
-      path.join(mainRepoDir, ".codebase-index", "index"),
-    );
-  });
+      expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
+        path.join(worktreeDir, ".codebase-index", "index"),
+      );
+    },
+  );
 
   it("falls back to legacy global index for codex host when codex-native global index is absent", () => {
     fs.mkdirSync(path.join(homeDir, ".opencode", "global-index"), { recursive: true });

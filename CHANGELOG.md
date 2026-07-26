@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.
 - **Metal Shading Language**: Added default `.metal` discovery, semantic chunks for Metal declarations, and direct, template, member, and qualified call extraction.
 
+### Fixed
+
+- **Git worktree index isolation**: Keep project indexes local to each worktree while continuing to inherit project configuration from the main checkout, preventing cross-worktree index mutations and stale absolute paths.
+
 ## [0.17.1] - 2026-07-25
 
 ### Fixed

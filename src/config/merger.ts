@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 
-import { resolveGlobalConfigPath, resolveProjectConfigPath, resolveWritableProjectConfigPath } from "./paths.js";
+import { resolveGlobalConfigPath, resolveProjectConfigPath } from "./paths.js";
 import type { HostMode } from "./host.js";
 import { resolveInheritedKnowledgeBaseEntries } from "./rebase.js";
 
@@ -113,17 +113,6 @@ function loadJsonFile(filePath: string): unknown {
 
 export function loadConfigFile(filePath: string): unknown {
   return loadJsonFile(filePath);
-}
-
-export function materializeLocalProjectConfig(
-  projectRoot: string,
-  config: unknown,
-  host: HostMode = "opencode",
-): string {
-  const localConfigPath = resolveWritableProjectConfigPath(projectRoot, host);
-  mkdirSync(path.dirname(localConfigPath), { recursive: true });
-  writeFileSync(localConfigPath, JSON.stringify(config, null, 2), "utf-8");
-  return localConfigPath;
 }
 
 export function loadProjectConfigLayer(projectRoot: string, host: HostMode = "opencode"): Record<string, unknown> {
