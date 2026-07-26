@@ -1,6 +1,6 @@
 import type { HostMode } from "../config/host.js";
 
-export const EFFECTIVENESS_METRICS_SCHEMA_VERSION = 1 as const;
+export const EFFECTIVENESS_METRICS_SCHEMA_VERSION = 2 as const;
 export const MAX_EFFECTIVENESS_COUNTER = 1_000_000_000;
 
 export const EFFECTIVENESS_TOOL_ROUTES = [
@@ -71,7 +71,8 @@ export interface EffectivenessMetricsSnapshot {
     storage: "memory-only";
     lifetime: "process";
     reset: "index_metrics-reset-or-process-exit";
-    maxCounterValue: typeof MAX_EFFECTIVENESS_COUNTER;
+    maxCounterValue: number;
+    dimensions: "bounded-host-and-category-only";
   };
   totalCalls: number;
   toolRoute: CounterMap<typeof EFFECTIVENESS_TOOL_ROUTES>;
@@ -147,16 +148,16 @@ function allowedValue<T extends readonly string[]>(
     : fallback;
 }
 
-function increment<T extends string>(counters: Record<T, number>, key: T): void {
-  counters[key] = Math.min(MAX_EFFECTIVENESS_COUNTER, counters[key] + 1);
-}
-
 function cloneCounterMap<T extends string>(counters: Record<T, number>): Record<T, number> {
   return { ...counters };
 }
 
 export class EffectivenessMetrics {
-  private snapshot = this.createEmptySnapshot();
+  private snapshot: EffectivenessMetricsSnapshot;
+
+  constructor(private readonly counterCap = MAX_EFFECTIVENESS_COUNTER) {
+    this.snapshot = this.createEmptySnapshot();
+  }
 
   private createEmptySnapshot(): EffectivenessMetricsSnapshot {
     return {
@@ -165,7 +166,8 @@ export class EffectivenessMetrics {
         storage: "memory-only",
         lifetime: "process",
         reset: "index_metrics-reset-or-process-exit",
-        maxCounterValue: MAX_EFFECTIVENESS_COUNTER,
+        maxCounterValue: this.counterCap,
+        dimensions: "bounded-host-and-category-only",
       },
       totalCalls: 0,
       toolRoute: emptyCounterMap(EFFECTIVENESS_TOOL_ROUTES),
@@ -181,9 +183,11 @@ export class EffectivenessMetrics {
     };
   }
 
+  private increment<T extends string>(counters: Record<T, number>, key: T): void {
+    counters[key] = Math.min(this.counterCap, counters[key] + 1);
+  }
+
   record(event: EffectivenessMetricEvent): void {
-    // All mutations are synchronous and contain no await points, so concurrent
-    // Promise completions cannot observe a partially applied event in Node.js.
     const route = allowedValue(event.route, EFFECTIVENESS_TOOL_ROUTES, "other");
     const host = allowedValue(event.host, EFFECTIVENESS_HOST_MODES, "other");
     const outcome = allowedValue(event.outcome, EFFECTIVENESS_OUTCOMES, "error");
@@ -195,17 +199,17 @@ export class EffectivenessMetrics {
     const recoveryUsed = event.recoveryUsed === true ? "yes" : "no";
     const exactHandoffEmitted = event.exactHandoffEmitted === true ? "yes" : "no";
 
-    this.snapshot.totalCalls = Math.min(MAX_EFFECTIVENESS_COUNTER, this.snapshot.totalCalls + 1);
-    increment(this.snapshot.toolRoute, route);
-    increment(this.snapshot.hostMode, host);
-    increment(this.snapshot.outcome, outcome);
-    increment(this.snapshot.recoveryUsed, recoveryUsed);
-    increment(this.snapshot.resultCount, resultCountBucket(event.resultCount));
-    increment(this.snapshot.latency, latencyBucket(event.latencyMs));
-    increment(this.snapshot.tokenBudget, tokenBudgetBucket(event.tokenBudget));
-    increment(this.snapshot.returnedTokenEstimate, returnedTokenBucket(event.returnedTokenEstimate));
-    increment(this.snapshot.exactHandoffEmitted, exactHandoffEmitted);
-    increment(this.snapshot.scopeRelaxation, scopeRelaxation);
+    this.snapshot.totalCalls = Math.min(this.counterCap, this.snapshot.totalCalls + 1);
+    this.increment(this.snapshot.toolRoute, route);
+    this.increment(this.snapshot.hostMode, host);
+    this.increment(this.snapshot.outcome, outcome);
+    this.increment(this.snapshot.recoveryUsed, recoveryUsed);
+    this.increment(this.snapshot.resultCount, resultCountBucket(event.resultCount));
+    this.increment(this.snapshot.latency, latencyBucket(event.latencyMs));
+    this.increment(this.snapshot.tokenBudget, tokenBudgetBucket(event.tokenBudget));
+    this.increment(this.snapshot.returnedTokenEstimate, returnedTokenBucket(event.returnedTokenEstimate));
+    this.increment(this.snapshot.exactHandoffEmitted, exactHandoffEmitted);
+    this.increment(this.snapshot.scopeRelaxation, scopeRelaxation);
   }
 
   getSnapshot(): EffectivenessMetricsSnapshot {
@@ -228,4 +232,47 @@ export class EffectivenessMetrics {
   reset(): void {
     this.snapshot = this.createEmptySnapshot();
   }
+}
+
+let processCollector: EffectivenessMetrics | undefined;
+
+export function recordProcessEffectiveness(event: EffectivenessMetricEvent): void {
+  (processCollector ??= new EffectivenessMetrics()).record(event);
+}
+
+export function getProcessEffectivenessMetrics(): EffectivenessMetricsSnapshot {
+  return processCollector?.getSnapshot() ?? new EffectivenessMetrics().getSnapshot();
+}
+
+export function resetProcessEffectivenessMetrics(): void {
+  processCollector = undefined;
+}
+
+export function isProcessEffectivenessCollectorAllocated(): boolean {
+  return processCollector !== undefined;
+}
+
+export function formatEffectivenessMetrics(snapshot: EffectivenessMetricsSnapshot): string {
+  const formatCounters = (counters: Record<string, number>): string => Object.entries(counters)
+    .map(([bucket, count]) => `${bucket}=${count}`)
+    .join(", ");
+  const lines = [
+    `Privacy-safe effectiveness (schema v${snapshot.schemaVersion}):`,
+    `  Retention: ${snapshot.retention.storage}, ${snapshot.retention.lifetime}-lifetime; reset with index_metrics(reset=true) or process exit`,
+    `  Dimensions: ${snapshot.retention.dimensions}`,
+    `  Counter cap: ${snapshot.retention.maxCounterValue.toLocaleString()}`,
+    `  Total tool calls: ${snapshot.totalCalls}`,
+    `  Tool route: ${formatCounters(snapshot.toolRoute)}`,
+    `  Host mode: ${formatCounters(snapshot.hostMode)}`,
+    `  Outcome: ${formatCounters(snapshot.outcome)}`,
+    `  Recovery used: ${formatCounters(snapshot.recoveryUsed)}`,
+    `  Result-count bucket: ${formatCounters(snapshot.resultCount)}`,
+    `  Latency bucket: ${formatCounters(snapshot.latency)}`,
+    `  Token-budget bucket: ${formatCounters(snapshot.tokenBudget)}`,
+    `  Returned-token estimate: ${formatCounters(snapshot.returnedTokenEstimate)}`,
+    `  Exact handoff emitted: ${formatCounters(snapshot.exactHandoffEmitted)}`,
+    `  Scope relaxation: ${formatCounters(snapshot.scopeRelaxation)}`,
+    "  Privacy: no queries, response text, source, symbols, paths, repository names, user identity, or stable identifiers are retained.",
+  ];
+  return lines.join("\n");
 }

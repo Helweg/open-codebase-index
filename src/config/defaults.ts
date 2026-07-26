@@ -62,6 +62,5 @@ export function getDefaultDebugConfig(): DebugConfig {
     logGc: true,
     logBranch: true,
     metrics: true,
-    effectivenessMetrics: false,
   };
 }

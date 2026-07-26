@@ -15,7 +15,7 @@ import {
   removeKnowledgeBase,
   runIndexCodebase,
   runIndexHealthCheck,
-  searchCodebase,
+  searchCodebaseWithEffectiveness,
 } from "./tools/operations.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
@@ -109,11 +109,15 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String({ description: "Filter to chunks last changed on or after this date" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, {
+      return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "search", params.query, {
         ...params,
-        effectivenessRoute: "search",
+      }, (results) => {
+        const renderedText = results.length === 0
+          ? "No matching code found. Try a different query or run index_codebase first."
+          : formatSearchResults(results);
+        const output = text(renderedText, results);
+        return { output, text: output.content[0].text };
       });
-      return text(formatSearchResults(results), results);
     },
   });
 
@@ -132,12 +136,13 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, {
+      return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "peek", params.query, {
         ...params,
         metadataOnly: true,
-        effectivenessRoute: "peek",
+      }, (results) => {
+        const output = text(formatCodebasePeek(results), results);
+        return { output, text: output.content[0].text };
       });
-      return text(formatCodebasePeek(results), results);
     },
   });
 

@@ -530,10 +530,12 @@ Checks if the index is ready and healthy.
 Maintenance tool to remove stale entries from deleted files and orphaned embeddings/chunks from the database.
 
 ### `index_metrics`
-Returns collected metrics about indexing and search performance. Requires `debug.enabled` and `debug.metrics` to be `true`.
+Returns collected metrics about indexing and search performance. Operational metrics require `debug.enabled` and `debug.metrics` to be `true`.
 - **Metrics include**: Files indexed, chunks created, cache hit rate, search timing breakdown, GC stats, embedding API call stats.
-- **Privacy-safe effectiveness metrics**: Set `debug.effectivenessMetrics` to `true` to opt in to fixed route/host/outcome counters and bounded result-count, latency, token-budget, and returned-token histograms. They are disabled by default, memory-only, process-scoped, and never retain queries, source, symbols, paths, repository names, or stable identifiers.
-- **Reset**: Pass `reset: true` to clear both operational and effectiveness metrics before returning the new zeroed snapshot.
+- **Privacy-safe effectiveness metrics**: Set top-level `effectivenessMetrics.enabled` to `true`. This path does not enable debug logging. It records only fixed route/host/outcome counters and bounded result-count, latency, token-budget, and returned-token histograms. Counters are disabled by default, memory-only, fixed-cardinality, and process-lifetime across Indexer replacement and configuration-watcher refresh. One process-wide collector aggregates opted-in calls without project or repository identity dimensions. It never retains queries, response text, source, symbols, paths, repository names, user identity, or stable identifiers.
+- **Effectiveness-only privacy boundary**: With only `effectivenessMetrics.enabled` set, `debug.enabled` remains `false`, `index_logs` remains disabled, operational debug metrics remain off, and no query, path, source, secret, or response text is emitted by metrics output or written to index files. Only the bounded aggregate snapshot is returned by `index_metrics`.
+- **Debug logging is separate**: Explicitly enabling `debug.enabled` with `debug.logSearch` preserves the existing diagnostic behavior and may retain raw queries and repository details in memory. Do not enable debug search logs when only privacy-safe aggregates are wanted.
+- **Reset**: Pass `reset: true` to clear both operational and process-wide effectiveness metrics before returning the new zeroed snapshot. Process exit also clears effectiveness metrics because they are never persisted.
 
 ### `index_logs`
 Returns recent debug logs with optional filtering.
@@ -835,8 +837,10 @@ Zero-config by default (uses `auto` mode). Customize in `.opencode/codebase-inde
     "logCache": true,                         // Log cache hits/misses
     "logGc": true,                            // Log garbage collection
     "logBranch": true,                        // Log branch detection
-    "metrics": false,                         // Enable operational metrics collection
-    "effectivenessMetrics": false             // Opt in to privacy-safe repository-tool aggregates
+    "metrics": false                          // Enable operational metrics collection
+  },
+  "effectivenessMetrics": {
+    "enabled": false                          // Opt in without enabling debug logs
   }
 }
 ```
@@ -909,7 +913,8 @@ String values in `codebase-index.json` can reference environment variables with 
 | `logGc` | `true` | Log garbage collection operations |
 | `logBranch` | `true` | Log branch detection and switches |
 | `metrics` | `false` | Enable metrics collection (indexing stats, search timing, cache performance) |
-| `effectivenessMetrics` | `false` | Opt in to memory-only, fixed-cardinality repository-tool effectiveness counters. Requires `enabled` and `metrics`; stores no queries, code, symbols, paths, repo names, or stable identifiers. |
+| **effectivenessMetrics** | | |
+| `enabled` | `false` | Independently opt in to memory-only, fixed-cardinality repository-tool effectiveness counters. Does not enable debug logs; stores no queries, response text, code, symbols, paths, repo names, user identity, or stable identifiers. |
 
 ### Recovery warnings in debug logs
 
@@ -949,9 +954,9 @@ CI usage split:
 
 - `npm run eval:smoke`: harness smoke check with local mock embeddings (used in main CI)
 - `npm run eval:ci`: real quality gate against baseline/budget (for scheduled/manual quality workflow)
-- `npm run eval:effectiveness`: deterministic offline synthetic-fixture report comparing `codebase_context` and `codebase_peek` token output with a defined exact-read/grep-style baseline. It performs no network calls and writes `benchmarks/baselines/privacy-safe-effectiveness.json`.
+- `npm run eval:effectiveness`: deterministic offline synthetic-fixture formatting report. Every route receives the same capped ranked result list and final-response token budget. Evidence is credited only when its literal marker is visible in returned text. The baseline emits only exact matching source lines, performs no arbitrary complete reads, makes no network calls, and writes `benchmarks/baselines/privacy-safe-effectiveness.json`.
 
-The effectiveness report includes median/p95 `cl100k_base` token counts and evidence recall. It intentionally reports only aggregate fixture measurements and makes no causal claim about agent improvement or production repositories.
+The effectiveness report includes median/p95 `cl100k_base` token counts and final-text evidence recall. Context and peek are metadata-oriented in this benchmark, so they receive no content-evidence credit unless the marker is actually visible in their response. The exact-search snippet baseline uses oracle markers and excludes discovery cost. The report does not measure retrieval quality, latency, end-to-end agent success, causal impact, or production-repository performance.
 
 For `eval-quality.yml`, the default CI path uses **GitHub Models** with the workflow `GITHUB_TOKEN` plus `models: read`, so you do not need a separate OpenAI API key just to run the scheduled gate.
 

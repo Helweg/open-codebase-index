@@ -4,6 +4,7 @@ import {
   getCallGraphData,
   getCallGraphPath,
   implementationLookup,
+  isToolEffectivenessEnabled,
   recordToolEffectiveness,
   searchCodebase,
 } from "./operations.js";
@@ -635,11 +636,12 @@ export async function resolveCodebaseContext(
   host: HostMode,
   input: CodebaseContextInput,
 ): Promise<CodebaseContextResult> {
-  const startedAt = performance.now();
+  const metricsEnabled = isToolEffectivenessEnabled(projectRoot, host);
+  const startedAt = metricsEnabled ? performance.now() : 0;
   try {
     const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
     const details = result.details;
-    if (details) {
+    if (metricsEnabled && details) {
       const resultCount = contextResultCount(details);
       recordToolEffectiveness(projectRoot, host, {
         route: contextRoute(details.route),
@@ -656,16 +658,18 @@ export async function resolveCodebaseContext(
     }
     return result;
   } catch (error) {
-    recordToolEffectiveness(projectRoot, host, {
-      route: expectedContextRoute(input),
-      host,
-      outcome: "error",
-      resultCount: 0,
-      latencyMs: performance.now() - startedAt,
-      tokenBudget: input.tokenBudget ?? undefined,
-      returnedTokenEstimate: 0,
-      scopeRelaxation: "none",
-    });
+    if (metricsEnabled) {
+      recordToolEffectiveness(projectRoot, host, {
+        route: expectedContextRoute(input),
+        host,
+        outcome: "error",
+        resultCount: 0,
+        latencyMs: performance.now() - startedAt,
+        tokenBudget: input.tokenBudget ?? undefined,
+        returnedTokenEstimate: 0,
+        scopeRelaxation: "none",
+      });
+    }
     throw error;
   }
 }

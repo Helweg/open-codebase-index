@@ -103,8 +103,13 @@ export interface DebugConfig {
   logGc: boolean;
   logBranch: boolean;
   metrics: boolean;
-  /** Opt-in privacy-safe repository tool effectiveness counters and histograms. */
+  /** @deprecated Ignored. Use top-level effectivenessMetrics.enabled. */
   effectivenessMetrics?: boolean;
+}
+
+export interface EffectivenessMetricsConfig {
+  /** Opt in to process-lifetime, memory-only repository tool aggregates. */
+  enabled: boolean;
 }
 
 export interface CustomProviderConfig {
@@ -137,6 +142,8 @@ export interface CodebaseIndexConfig {
   indexing?: Partial<IndexingConfig>;
   search?: Partial<SearchConfig>;
   debug?: Partial<DebugConfig>;
+  /** Privacy-safe effectiveness aggregation, independent from debug logging. */
+  effectivenessMetrics?: Partial<EffectivenessMetricsConfig>;
   /** Reranking configuration for improving search result quality */
   reranker?: Partial<RerankerConfig>;
   /** External directories to index as knowledge bases (absolute or relative paths) */
@@ -153,6 +160,7 @@ export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
   indexing: IndexingConfig;
   search: SearchConfig;
   debug: DebugConfig;
+  effectivenessMetrics: EffectivenessMetricsConfig;
   reranker?: RerankerConfig;
   knowledgeBases: string[];
   additionalInclude: string[];
@@ -219,9 +227,15 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     logGc: typeof rawDebug.logGc === "boolean" ? rawDebug.logGc : defaultDebug.logGc,
     logBranch: typeof rawDebug.logBranch === "boolean" ? rawDebug.logBranch : defaultDebug.logBranch,
     metrics: typeof rawDebug.metrics === "boolean" ? rawDebug.metrics : defaultDebug.metrics,
-    effectivenessMetrics: typeof rawDebug.effectivenessMetrics === "boolean"
-      ? rawDebug.effectivenessMetrics
-      : defaultDebug.effectivenessMetrics,
+  };
+
+  const rawEffectivenessMetrics = (
+    input.effectivenessMetrics && typeof input.effectivenessMetrics === "object"
+      ? input.effectivenessMetrics
+      : {}
+  ) as Record<string, unknown>;
+  const effectivenessMetrics: EffectivenessMetricsConfig = {
+    enabled: rawEffectivenessMetrics.enabled === true,
   };
 
   const rawKnowledgeBases = input.knowledgeBases;
@@ -336,6 +350,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     indexing,
     search,
     debug,
+    effectivenessMetrics,
     reranker,
     knowledgeBases,
   };

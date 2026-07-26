@@ -1,5 +1,10 @@
 import type { SearchResult } from "../indexer/index.js";
-import { buildContextPack, countContextTokens, formatCodebasePeek } from "../tools/utils.js";
+import {
+  buildContextPack,
+  countContextTokens,
+  fitTextToContextBudget,
+  formatCodebasePeek,
+} from "../tools/utils.js";
 
 export interface EffectivenessFixtureResult extends SearchResult {
   evidenceIds: string[];
@@ -11,11 +16,6 @@ export interface EffectivenessFixture {
   maxResults: number;
   expectedEvidenceIds: string[];
   semanticResults: EffectivenessFixtureResult[];
-  baseline: {
-    grepOutput: string;
-    exactReadOutput: string;
-    evidenceIds: string[];
-  };
 }
 
 export interface FixtureRouteMeasurement {
@@ -27,7 +27,7 @@ export interface FixtureEffectivenessMeasurement {
   id: string;
   context: FixtureRouteMeasurement;
   peek: FixtureRouteMeasurement;
-  exactReadGrepBaseline: FixtureRouteMeasurement;
+  exactSearchSnippetBaseline: FixtureRouteMeasurement;
 }
 
 interface AggregateRouteMeasurement {
@@ -43,22 +43,30 @@ interface AggregateRouteMeasurement {
 }
 
 export interface EffectivenessEvaluationReport {
-  schemaVersion: 1;
+  schemaVersion: 3;
   benchmark: "privacy-safe-repository-tool-effectiveness";
   methodology: {
     fixtures: "versioned-synthetic-offline";
+    queryModel: string;
+    sourceCorpus: string;
+    maxResultsCap: string;
+    tokenBudgetParity: string;
     networkCalls: 0;
+    warmupRuns: 0;
+    measuredRunsPerFixture: 1;
+    timing: "not-measured-deterministic-format-and-token-evaluation-only";
     tokenizer: "cl100k_base";
     tokenStatistic: "median-and-nearest-rank-p95-across-fixtures";
-    evidenceRecall: "expected-evidence-items-covered-divided-by-expected-evidence-items";
-    exactReadGrepBaseline: string;
+    evidenceRecall: string;
+    determinism: string;
+    exactSearchSnippetBaseline: string;
     limitation: string;
   };
   fixtureCount: number;
   routes: {
     context: AggregateRouteMeasurement;
     peek: AggregateRouteMeasurement;
-    exactReadGrepBaseline: AggregateRouteMeasurement;
+    exactSearchSnippetBaseline: AggregateRouteMeasurement;
   };
   comparisons: {
     contextMedianTokenRatioToBaseline: number;
@@ -66,62 +74,57 @@ export interface EffectivenessEvaluationReport {
   };
 }
 
-function evidenceRecall(expectedEvidenceIds: string[], coveredEvidenceIds: Iterable<string>): number {
+export function effectivenessEvidenceMarker(evidenceId: string): string {
+  return `[[effectiveness-evidence:${evidenceId}]]`;
+}
+
+function evidenceRecall(expectedEvidenceIds: string[], routeText: string): number {
   if (expectedEvidenceIds.length === 0) return 1;
-  const covered = new Set(coveredEvidenceIds);
-  const hits = expectedEvidenceIds.filter((id) => covered.has(id)).length;
+  const hits = expectedEvidenceIds.filter((id) => routeText.includes(effectivenessEvidenceMarker(id))).length;
   return hits / expectedEvidenceIds.length;
 }
 
-function selectedEvidence(
-  selected: SearchResult[],
-  fixtureResults: EffectivenessFixtureResult[],
-): string[] {
-  const byResult = new Map<SearchResult, string[]>();
-  for (const result of fixtureResults) {
-    byResult.set(result, result.evidenceIds);
-  }
-  return selected.flatMap((result) => byResult.get(result) ?? []);
-}
-
-function exactReadGrepText(fixture: EffectivenessFixture): string {
-  return [
-    "Exact grep output:",
-    fixture.baseline.grepOutput,
-    "",
-    "Exact file reads:",
-    fixture.baseline.exactReadOutput,
-  ].join("\n");
+function exactSearchSnippetText(
+  fixture: EffectivenessFixture,
+  selectedResults: EffectivenessFixtureResult[],
+): string {
+  const markers = fixture.expectedEvidenceIds.map(effectivenessEvidenceMarker);
+  const matches = selectedResults.flatMap((result) => result.content
+    .split("\n")
+    .map((line, index) => ({ line, lineNumber: result.startLine + index }))
+    .filter(({ line }) => markers.some((marker) => line.includes(marker)))
+    .map(({ line, lineNumber }) => `${result.filePath}:${lineNumber}:${line.trim()}`));
+  return matches.length > 0
+    ? `Exact-search matching lines:\n${matches.join("\n")}`
+    : "Exact-search matching lines:\nNo matching evidence lines.";
 }
 
 export function evaluateEffectivenessFixture(fixture: EffectivenessFixture): FixtureEffectivenessMeasurement {
-  const context = buildContextPack(fixture.semanticResults, {
+  const cappedResults = fixture.semanticResults.slice(0, fixture.maxResults);
+  const context = buildContextPack(cappedResults, {
     tokenBudget: fixture.tokenBudget,
-    maxResults: fixture.maxResults,
+    maxResults: cappedResults.length,
     includeExactSearchHandoff: true,
   });
-  const peekText = formatCodebasePeek(fixture.semanticResults);
-  const baselineText = exactReadGrepText(fixture);
+  const peek = fitTextToContextBudget(formatCodebasePeek(cappedResults), fixture.tokenBudget);
+  const baseline = fitTextToContextBudget(
+    exactSearchSnippetText(fixture, cappedResults),
+    fixture.tokenBudget,
+  );
 
   return {
     id: fixture.id,
     context: {
       tokens: countContextTokens(context.text),
-      evidenceRecall: evidenceRecall(
-        fixture.expectedEvidenceIds,
-        selectedEvidence(context.results, fixture.semanticResults),
-      ),
+      evidenceRecall: evidenceRecall(fixture.expectedEvidenceIds, context.text),
     },
     peek: {
-      tokens: countContextTokens(peekText),
-      evidenceRecall: evidenceRecall(
-        fixture.expectedEvidenceIds,
-        fixture.semanticResults.flatMap((result) => result.evidenceIds),
-      ),
+      tokens: peek.tokenEstimate,
+      evidenceRecall: evidenceRecall(fixture.expectedEvidenceIds, peek.text),
     },
-    exactReadGrepBaseline: {
-      tokens: countContextTokens(baselineText),
-      evidenceRecall: evidenceRecall(fixture.expectedEvidenceIds, fixture.baseline.evidenceIds),
+    exactSearchSnippetBaseline: {
+      tokens: baseline.tokenEstimate,
+      evidenceRecall: evidenceRecall(fixture.expectedEvidenceIds, baseline.text),
     },
   };
 }
@@ -151,7 +154,7 @@ function fixed(value: number): number {
 
 function aggregate(
   measurements: FixtureEffectivenessMeasurement[],
-  route: "context" | "peek" | "exactReadGrepBaseline",
+  route: "context" | "peek" | "exactSearchSnippetBaseline",
 ): AggregateRouteMeasurement {
   const tokens = measurements.map((measurement) => measurement[route].tokens);
   const recalls = measurements.map((measurement) => measurement[route].evidenceRecall);
@@ -174,28 +177,36 @@ export function buildEffectivenessEvaluationReport(
   const measurements = fixtures.map(evaluateEffectivenessFixture);
   const context = aggregate(measurements, "context");
   const peek = aggregate(measurements, "peek");
-  const exactReadGrepBaseline = aggregate(measurements, "exactReadGrepBaseline");
-  const baselineMedian = exactReadGrepBaseline.tokens.median;
+  const exactSearchSnippetBaseline = aggregate(measurements, "exactSearchSnippetBaseline");
+  const baselineMedian = exactSearchSnippetBaseline.tokens.median;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     benchmark: "privacy-safe-repository-tool-effectiveness",
     methodology: {
       fixtures: "versioned-synthetic-offline",
+      queryModel: "Five checked-in scenario labels map to fixed ranked synthetic results; no retrieval model or embedding provider runs during this report.",
+      sourceCorpus: "Every route starts from the same fixed ranked synthetic result objects. Context and peek format their actual metadata-oriented response text, while the baseline emits only exact matching lines from those same objects.",
+      maxResultsCap: "Every route receives only the first fixture.maxResults ranked results before formatting.",
+      tokenBudgetParity: "Every final route response is constrained by the same fixture.tokenBudget before token counting or evidence scoring.",
       networkCalls: 0,
+      warmupRuns: 0,
+      measuredRunsPerFixture: 1,
+      timing: "not-measured-deterministic-format-and-token-evaluation-only",
       tokenizer: "cl100k_base",
       tokenStatistic: "median-and-nearest-rank-p95-across-fixtures",
-      evidenceRecall: "expected-evidence-items-covered-divided-by-expected-evidence-items",
-      exactReadGrepBaseline:
-        "For each synthetic fixture, concatenate deterministic exact-match lines with complete reads of the exact fixture files selected by those matches, then count the full response tokens.",
+      evidenceRecall: "Expected evidence markers visibly present in the final budgeted route text divided by expected evidence markers. Metadata-only results receive no hidden content credit.",
+      determinism: "No clocks, randomness, embeddings, repository indexing, or network calls affect the generated aggregate report.",
+      exactSearchSnippetBaseline:
+        "An oracle exact-search baseline emits only matching source lines from the capped ranked chunks. It performs no arbitrary or complete file reads and excludes discovery cost.",
       limitation:
-        "This report describes only the checked-in synthetic fixtures. It does not establish causal agent improvement or production-repository performance.",
+        "This synthetic formatting benchmark fixes rankings and uses oracle evidence markers. It does not measure retrieval quality, latency, end-to-end agent success, causal impact, or production-repository performance. Context and peek responses are metadata-oriented here, so content evidence is credited only if its literal marker is visible in returned text.",
     },
     fixtureCount: fixtures.length,
     routes: {
       context,
       peek,
-      exactReadGrepBaseline,
+      exactSearchSnippetBaseline,
     },
     comparisons: {
       contextMedianTokenRatioToBaseline: fixed(baselineMedian === 0 ? 0 : context.tokens.median / baselineMedian),

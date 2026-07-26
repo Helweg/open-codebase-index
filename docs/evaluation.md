@@ -29,7 +29,9 @@ Generate the deterministic privacy-safe effectiveness report without embeddings,
 npm run eval:effectiveness
 ```
 
-This command evaluates versioned synthetic fixtures only. It compares the production context packer and metadata-only peek formatter with a defined exact-read/grep-style baseline: deterministic exact-match lines plus complete reads of the exact synthetic fixture files selected by those matches. The checked-in report at `benchmarks/baselines/privacy-safe-effectiveness.json` contains only aggregate median/p95 `cl100k_base` token counts, evidence recall, and token ratios. It contains no fixture source, symbols, paths, repository names, queries, or identifiers, and it does not claim causal agent improvement or production performance.
+This command evaluates five versioned synthetic scenarios only. Each scenario supplies one fixed ranked result list. Context, peek, and the exact-search snippet baseline receive the same first `maxResults` objects and the same final-response `tokenBudget`. Evidence recall is computed only from evidence markers visibly present in each final budgeted response. Context and peek are metadata-oriented here, so fixture result metadata does not receive hidden source-evidence credit. The oracle baseline emits only exact matching source lines from the capped objects and performs no arbitrary or complete file reads. There are no warmups, one deterministic formatting/token-count run per fixture, no latency measurements, and no embeddings, repository indexing, randomness, clocks, or network calls. Tokens use `cl100k_base`; reports aggregate median and nearest-rank p95 token counts plus mean/median/minimum final-text evidence recall across fixtures. The generator is run twice during validation and the outputs must be byte-identical.
+
+The checked-in report at `benchmarks/baselines/privacy-safe-effectiveness.json` contains aggregate methodology and route statistics only. It contains no fixture source, symbols, paths, repository names, queries, scenario IDs, or evidence identifiers. This is a synthetic formatting comparison with fixed rankings and oracle markers. It excludes discovery cost and does not measure retrieval quality, latency, end-to-end agent success, causal impact, or production-repository performance.
 
 Evaluation comparisons require the same dataset name, version, and query count. Use the
 agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
@@ -58,7 +60,7 @@ The eval runner accepts `--config <path>` and loads the same config shape used b
 Expected field shapes at the eval config boundary:
 
 - `knowledgeBases`, `additionalInclude`, `include`, `exclude` must be arrays of strings
-- `customProvider`, `indexing`, `search`, `debug`, `reranker` must be objects when present
+- `customProvider`, `indexing`, `search`, `debug`, `effectivenessMetrics`, `reranker` must be objects when present
 - malformed JSON fails with a file-specific parse error before evaluation starts
 
 Relative path handling during eval config materialization is also important when `--reindex` creates a local `.opencode/codebase-index.json` boundary:
@@ -279,8 +281,8 @@ Context response budgets and response-token metrics use the `cl100k_base` tokeni
 The separate `npm run eval:effectiveness` report uses:
 
 - median and nearest-rank p95 returned-token counts across synthetic fixtures
-- evidence recall = expected evidence items covered / expected evidence items
-- a versioned exact-read/grep baseline defined in the report methodology
+- final-text evidence recall = expected literal evidence markers visible after route budgeting / expected evidence markers
+- a versioned oracle exact-search snippet baseline that emits matching lines only and excludes discovery cost
 - byte-stable JSON output with no network calls and no raw fixture content in the report
 
 ## Artifact layout

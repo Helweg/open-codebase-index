@@ -5,10 +5,13 @@ import { resolveSearchContext } from "../src/tools/context.js";
 
 const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
+  searchCodebaseWithEffectiveness: vi.fn(),
   implementationLookup: vi.fn(),
   getCallGraphPath: vi.fn(),
   getCallGraphData: vi.fn(),
   recordToolEffectiveness: vi.fn(),
+  isToolEffectivenessEnabled: vi.fn(() => true),
+  getIndexMetrics: vi.fn(() => ({ text: "metrics" })),
 }));
 
 vi.mock("../src/tools/operations.js", async () => {
@@ -16,14 +19,17 @@ vi.mock("../src/tools/operations.js", async () => {
   return {
     ...actual,
     searchCodebase: operationMocks.searchCodebase,
+    searchCodebaseWithEffectiveness: operationMocks.searchCodebaseWithEffectiveness,
     implementationLookup: operationMocks.implementationLookup,
     getCallGraphPath: operationMocks.getCallGraphPath,
     getCallGraphData: operationMocks.getCallGraphData,
     recordToolEffectiveness: operationMocks.recordToolEffectiveness,
+    isToolEffectivenessEnabled: operationMocks.isToolEffectivenessEnabled,
+    getIndexMetrics: operationMocks.getIndexMetrics,
   };
 });
 
-import { codebase_context, codebase_peek, codebase_search } from "../src/tools/index.js";
+import { codebase_context, codebase_peek, codebase_search, index_metrics } from "../src/tools/index.js";
 
 const context = { worktree: "/repo" };
 const commonArgs = {
@@ -42,7 +48,34 @@ const commonArgs = {
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    operationMocks.isToolEffectivenessEnabled.mockReturnValue(true);
     operationMocks.searchCodebase.mockResolvedValue([]);
+    operationMocks.searchCodebaseWithEffectiveness.mockImplementation(
+      async (projectRoot, host, route, query, options, render) => {
+        try {
+          const results = await operationMocks.searchCodebase(projectRoot, host, query, options);
+          const rendered = render(results);
+          operationMocks.recordToolEffectiveness(projectRoot, host, {
+            route,
+            host,
+            outcome: results.length > 0 ? "success" : "no-result",
+            resultCount: results.length,
+            returnedTokenEstimate: countContextTokens(rendered.text),
+            exactHandoffEmitted: rendered.text.includes("Exact-search handoff:"),
+          });
+          return rendered.output;
+        } catch (error) {
+          operationMocks.recordToolEffectiveness(projectRoot, host, {
+            route,
+            host,
+            outcome: "error",
+            resultCount: 0,
+            returnedTokenEstimate: 0,
+          });
+          throw error;
+        }
+      },
+    );
     operationMocks.implementationLookup.mockResolvedValue([]);
     operationMocks.getCallGraphPath.mockResolvedValue({
       from: { status: "not_found", name: "", candidates: [], totalCandidates: 0 },
@@ -70,10 +103,9 @@ describe("native OpenCode codebase_context", () => {
       blameSha: undefined,
       blameSince: undefined,
     }, context);
-    expect(operationMocks.searchCodebase).toHaveBeenLastCalledWith("/repo", "opencode", "request routing", expect.objectContaining({
+    expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", "peek", "request routing", expect.objectContaining({
       metadataOnly: true,
-      effectivenessRoute: "peek",
-    }));
+    }), expect.any(Function));
 
     await codebase_search.execute({
       query: "request routing",
@@ -86,9 +118,76 @@ describe("native OpenCode codebase_context", () => {
       blameSha: undefined,
       blameSince: undefined,
     }, context);
-    expect(operationMocks.searchCodebase).toHaveBeenLastCalledWith("/repo", "opencode", "request routing", expect.objectContaining({
-      effectivenessRoute: "search",
+    expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenLastCalledWith(
+      "/repo",
+      "opencode",
+      "search",
+      "request routing",
+      expect.any(Object),
+      expect.any(Function),
+    );
+  });
+
+  it("records OpenCode tokens from final text once and treats formatter failures as errors", async () => {
+    operationMocks.searchCodebase.mockResolvedValueOnce([]);
+    const output = await codebase_search.execute({
+      query: "no matches",
+      limit: 5,
+      fileType: undefined,
+      directory: undefined,
+      chunkType: undefined,
+      contextLines: undefined,
+      blameAuthor: undefined,
+      blameSha: undefined,
+      blameSince: undefined,
+    }, context);
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", expect.objectContaining({
+      route: "search",
+      outcome: "no-result",
+      returnedTokenEstimate: countContextTokens(output),
     }));
+
+    operationMocks.recordToolEffectiveness.mockClear();
+    const broken = {
+      startLine: 1,
+      endLine: 2,
+      name: "broken",
+      chunkType: "function",
+      content: "source",
+      score: 0.9,
+      get filePath(): string {
+        throw new Error("OpenCode formatter failed");
+      },
+    };
+    operationMocks.searchCodebase.mockResolvedValueOnce([broken]);
+    await expect(codebase_search.execute({
+      query: "broken formatter",
+      limit: 5,
+      fileType: undefined,
+      directory: undefined,
+      chunkType: undefined,
+      contextLines: undefined,
+      blameAuthor: undefined,
+      blameSha: undefined,
+      blameSince: undefined,
+    }, context)).rejects.toThrow("OpenCode formatter failed");
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", expect.objectContaining({
+      route: "search",
+      outcome: "error",
+      returnedTokenEstimate: 0,
+    }));
+  });
+
+  it("forwards OpenCode metrics reset without recording another tool event", async () => {
+    operationMocks.getIndexMetrics.mockClear();
+    operationMocks.recordToolEffectiveness.mockClear();
+
+    await index_metrics.execute({ reset: true }, context);
+
+    expect(operationMocks.getIndexMetrics).toHaveBeenCalledWith("/repo", "opencode", { reset: true });
+    expect(operationMocks.recordToolEffectiveness).not.toHaveBeenCalled();
   });
 
   it("records bounded context recovery and scope-relaxation categories", async () => {

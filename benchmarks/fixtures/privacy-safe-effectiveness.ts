@@ -2,13 +2,17 @@ import type {
   EffectivenessFixture,
   EffectivenessFixtureResult,
 } from "../../src/eval/effectiveness-report.js";
+import { effectivenessEvidenceMarker } from "../../src/eval/effectiveness-report.js";
 
-export const EFFECTIVENESS_FIXTURE_SCHEMA_VERSION = 1 as const;
+export const EFFECTIVENESS_FIXTURE_SCHEMA_VERSION = 2 as const;
 
-function sourceBlock(name: string, marker: string, lines: number): string {
-  const body = Array.from({ length: lines }, (_, index) =>
-    `  const step${index + 1} = ${JSON.stringify(`${marker}-${index + 1}`)};`
-  ).join("\n");
+function sourceBlock(name: string, evidenceId: string, topic: string, lines: number): string {
+  const body = [
+    `  const evidence = ${JSON.stringify(effectivenessEvidenceMarker(evidenceId))};`,
+    ...Array.from({ length: lines - 1 }, (_, index) =>
+      `  const step${index + 1} = ${JSON.stringify(`${topic}-${index + 1}`)};`
+    ),
+  ].join("\n");
   return `export function ${name}() {\n${body}\n  return true;\n}`;
 }
 
@@ -24,7 +28,7 @@ function result(
     filePath,
     startLine,
     endLine: startLine + 18,
-    content: sourceBlock(name, marker, 16),
+    content: sourceBlock(name, evidenceId, marker, 16),
     score,
     chunkType: "function",
     name,
@@ -66,24 +70,14 @@ function fixture(
     distractorEvidence,
     `${topic}-example`,
   );
+  const semanticResults = [primary, secondary, distractor];
 
   return {
     id: `fixture-${index}`,
     tokenBudget: index % 2 === 0 ? 256 : 384,
     maxResults,
     expectedEvidenceIds: [primaryEvidence, secondaryEvidence],
-    semanticResults: [primary, secondary, distractor],
-    baseline: {
-      grepOutput: [
-        `${primary.filePath}:${primary.startLine}:${primary.name}`,
-        `${secondary.filePath}:${secondary.startLine}:${secondary.name}`,
-      ].join("\n"),
-      exactReadOutput: [
-        `FILE ${primary.filePath}\n${sourceBlock(primaryName, `${topic}-primary-read`, 34)}`,
-        `FILE ${secondary.filePath}\n${sourceBlock(secondaryName, `${topic}-secondary-read`, 30)}`,
-      ].join("\n\n"),
-      evidenceIds: [primaryEvidence, secondaryEvidence],
-    },
+    semanticResults,
   };
 }
 

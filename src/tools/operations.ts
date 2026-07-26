@@ -7,11 +7,17 @@ import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { isIndexLockContentionError } from "../indexer/index-lock.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
-import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
+import { calculatePercentage, countContextTokens, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
-import type { EffectivenessMetricEvent } from "../utils/effectiveness-metrics.js";
+import {
+  formatEffectivenessMetrics,
+  getProcessEffectivenessMetrics,
+  recordProcessEffectiveness,
+  resetProcessEffectivenessMetrics,
+  type EffectivenessMetricEvent,
+} from "../utils/effectiveness-metrics.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
 
 type IndexerCacheKey = `${HostMode}::${string}`;
@@ -29,32 +35,6 @@ const indexerCache = new Map<IndexerCacheKey, Indexer>();
 const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>();
 const defaultProjectRoots = new Map<HostMode, string>();
 const MAX_CALL_GRAPH_CANDIDATES = 5;
-const EMPTY_RESULT_TOKEN_ESTIMATE = 16;
-const MAX_HANDOFF_NAME_CHARS = 64;
-
-function estimateReturnedSearchTokens(results: SearchResult[], metadataOnly: boolean): number {
-  if (results.length === 0) return EMPTY_RESULT_TOKEN_ESTIMATE;
-  const characterEstimate = results.reduce((total, result) => {
-    const metadataCharacters = result.filePath.length
-      + (result.name?.length ?? 0)
-      + result.chunkType.length
-      + 48;
-    return total + metadataCharacters + (metadataOnly ? 0 : result.content.length);
-  }, 0);
-  return Math.max(1, Math.ceil(characterEstimate / 4));
-}
-
-function emitsExactSearchHandoff(results: SearchResult[], metadataOnly: boolean): boolean {
-  if (!metadataOnly) return false;
-  return results.some((result) => {
-    const name = result.name?.trim();
-    return Boolean(
-      name
-      && name.length <= MAX_HANDOFF_NAME_CHARS * 2
-      && Array.from(name).length <= MAX_HANDOFF_NAME_CHARS,
-    );
-  });
-}
 
 export interface CallGraphSymbolCandidate {
   filePath: string;
@@ -245,6 +225,43 @@ function getIndexerCacheKey(projectRoot: string, host: HostMode): IndexerCacheKe
   return `${host}::${projectRoot}`;
 }
 
+function rawEffectivenessMetricsEnabled(rawConfig: unknown): boolean {
+  if (!rawConfig || typeof rawConfig !== "object") return false;
+  const value = (rawConfig as Record<string, unknown>).effectivenessMetrics;
+  return Boolean(value && typeof value === "object" && (value as Record<string, unknown>).enabled === true);
+}
+
+export function isToolEffectivenessEnabled(
+  projectRoot: string | undefined,
+  host: HostMode,
+): boolean {
+  try {
+    const root = getProjectRoot(projectRoot, host);
+    const cached = configCache.get(getIndexerCacheKey(root, host));
+    if (cached) return cached.effectivenessMetrics.enabled;
+    return rawEffectivenessMetricsEnabled(loadRuntimeConfig(root, host));
+  } catch {
+    // Metrics are best-effort and must never alter repository tool behavior.
+    return false;
+  }
+}
+
+function safelyRecordToolEffectiveness(event: EffectivenessMetricEvent): void {
+  try {
+    recordProcessEffectiveness(event);
+  } catch {
+    // Metrics are best-effort and must never alter repository tool behavior.
+  }
+}
+
+function safelyCountReturnedTokens(text: string): number {
+  try {
+    return countContextTokens(text);
+  } catch {
+    return 0;
+  }
+}
+
 function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer {
   const key = getIndexerCacheKey(projectRoot, host);
   const cached = indexerCache.get(key);
@@ -252,19 +269,21 @@ function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer {
     return cached;
   }
 
-  const config = parseConfig(loadRuntimeConfig(projectRoot, host));
+  let config = configCache.get(key);
+  if (!config) {
+    config = parseConfig(loadRuntimeConfig(projectRoot, host));
+    configCache.set(key, config);
+  }
   const indexer = new Indexer(projectRoot, config, host);
   indexerCache.set(key, indexer);
-  configCache.set(key, config);
   return indexer;
 }
 
 export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode = "opencode"): void {
   defaultProjectRoots.set(host, projectRoot);
   const key = getIndexerCacheKey(projectRoot, host);
-  const indexer = new Indexer(projectRoot, config, host);
-  indexerCache.set(key, indexer);
   configCache.set(key, config);
+  indexerCache.set(key, new Indexer(projectRoot, config, host));
 }
 
 export function getSharedIndexer(host: HostMode = "opencode"): Indexer {
@@ -281,11 +300,8 @@ export function recordToolEffectiveness(
   host: HostMode,
   event: EffectivenessMetricEvent,
 ): void {
-  try {
-    getIndexerForProject(projectRoot, host).getLogger().recordEffectiveness(event);
-  } catch {
-    // Observability must never alter or mask repository tool behavior.
-  }
+  if (!isToolEffectivenessEnabled(projectRoot, host)) return;
+  safelyRecordToolEffectiveness(event);
 }
 
 export function refreshIndexerForDirectory(
@@ -294,9 +310,8 @@ export function refreshIndexerForDirectory(
   config: ParsedCodebaseIndexConfig = parseConfig(loadRuntimeConfig(projectRoot, host)),
 ): void {
   const key = getIndexerCacheKey(projectRoot, host);
-  const indexer = new Indexer(projectRoot, config, host);
-  indexerCache.set(key, indexer);
   configCache.set(key, config);
+  indexerCache.set(key, new Indexer(projectRoot, config, host));
 }
 
 export async function searchCodebase(
@@ -314,45 +329,58 @@ export async function searchCodebase(
     blameAuthor?: string;
     blameSha?: string;
     blameSince?: string;
-    effectivenessRoute?: "peek" | "search";
   } = {},
 ): Promise<SearchResult[]> {
   const indexer = getIndexerForProject(projectRoot, host);
-  const startedAt = performance.now();
+  return indexer.search(query, options.limit, {
+    fileType: options.fileType,
+    directory: options.directory,
+    chunkType: options.chunkType,
+    contextLines: options.contextLines,
+    metadataOnly: options.metadataOnly,
+    definitionIntent: options.definitionIntent,
+    blameAuthor: options.blameAuthor,
+    blameSha: options.blameSha,
+    blameSince: options.blameSince,
+  });
+}
+
+export async function searchCodebaseWithEffectiveness<T>(
+  projectRoot: string | undefined,
+  host: HostMode,
+  route: "peek" | "search",
+  query: string,
+  options: Parameters<typeof searchCodebase>[3],
+  render: (results: SearchResult[]) => { output: T; text: string },
+): Promise<T> {
+  const metricsEnabled = isToolEffectivenessEnabled(projectRoot, host);
+  const startedAt = metricsEnabled ? performance.now() : 0;
   try {
-    const results = await indexer.search(query, options.limit, {
-      fileType: options.fileType,
-      directory: options.directory,
-      chunkType: options.chunkType,
-      contextLines: options.contextLines,
-      metadataOnly: options.metadataOnly,
-      definitionIntent: options.definitionIntent,
-      blameAuthor: options.blameAuthor,
-      blameSha: options.blameSha,
-      blameSince: options.blameSince,
-    });
-    if (options.effectivenessRoute) {
-      indexer.getLogger().recordEffectiveness({
-        route: options.effectivenessRoute,
+    const results = await searchCodebase(projectRoot, host, query, options);
+    const rendered = render(results);
+    if (metricsEnabled) {
+      safelyRecordToolEffectiveness({
+        route,
         host,
         outcome: results.length > 0 ? "success" : "no-result",
         resultCount: results.length,
         latencyMs: performance.now() - startedAt,
-        returnedTokenEstimate: estimateReturnedSearchTokens(results, options.metadataOnly === true),
-        exactHandoffEmitted: emitsExactSearchHandoff(results, options.metadataOnly === true),
+        returnedTokenEstimate: safelyCountReturnedTokens(rendered.text),
+        exactHandoffEmitted: rendered.text.includes("Exact-search handoff:"),
         scopeRelaxation: "none",
       });
     }
-    return results;
+    return rendered.output;
   } catch (error) {
-    if (options.effectivenessRoute) {
-      indexer.getLogger().recordEffectiveness({
-        route: options.effectivenessRoute,
+    if (metricsEnabled) {
+      safelyRecordToolEffectiveness({
+        route,
         host,
         outcome: "error",
         resultCount: 0,
         latencyMs: performance.now() - startedAt,
         returnedTokenEstimate: 0,
+        exactHandoffEmitted: false,
         scopeRelaxation: "none",
       });
     }
@@ -553,34 +581,64 @@ export async function getIndexMetrics(
   projectRoot: string | undefined,
   host: HostMode,
   args: { reset?: boolean } = {},
-): Promise<{ enabled: boolean; metricsEnabled: boolean; text: string }> {
-  const indexer = getIndexerForProject(projectRoot, host);
-  const logger = indexer.getLogger();
+): Promise<{ enabled: boolean; metricsEnabled: boolean; effectivenessMetricsEnabled: boolean; text: string }> {
+  const root = getProjectRoot(projectRoot, host);
+  const key = getIndexerCacheKey(root, host);
+  const cachedIndexer = indexerCache.get(key);
+  let config = configCache.get(key);
+  let rawEffectivenessEnabled = false;
+
   if (args.reset === true) {
-    logger.resetMetrics();
+    resetProcessEffectivenessMetrics();
+    try {
+      cachedIndexer?.getLogger().resetMetrics();
+    } catch {
+      // Effectiveness reset must succeed independently from operational metrics.
+    }
   }
+
+  try {
+    const rawConfig = loadRuntimeConfig(root, host);
+    rawEffectivenessEnabled = rawEffectivenessMetricsEnabled(rawConfig);
+    config ??= parseConfig(rawConfig);
+    configCache.set(key, config);
+  } catch {
+    // An explicitly enabled process collector remains viewable and resettable
+    // even when unrelated configuration is invalid.
+  }
+
   const resetNotice = args.reset === true ? "Metrics reset.\n\n" : "";
+  const effectivenessMetricsEnabled = config?.effectivenessMetrics.enabled ?? rawEffectivenessEnabled;
+  const debugEnabled = config?.debug.enabled === true;
+  const operationalMetricsEnabled = debugEnabled && config?.debug.metrics === true;
 
-  if (!logger.isEnabled()) {
+  if (!operationalMetricsEnabled && !effectivenessMetricsEnabled) {
     return {
-      enabled: false,
+      enabled: debugEnabled,
       metricsEnabled: false,
-      text: `${resetNotice}Debug mode is disabled. Enable it in your config:\n\n\`\`\`json\n{\n  "debug": {\n    "enabled": true,\n    "metrics": true\n  }\n}\n\`\`\``,
+      effectivenessMetricsEnabled: false,
+      text: `${resetNotice}Metrics collection is disabled. Enable privacy-safe aggregate telemetry without debug logs:\n\n\`\`\`json\n{\n  "effectivenessMetrics": {\n    "enabled": true\n  }\n}\n\`\`\``,
     };
   }
 
-  if (!logger.isMetricsEnabled()) {
-    return {
-      enabled: true,
-      metricsEnabled: false,
-      text: `${resetNotice}Metrics collection is disabled. Enable it in your config:\n\n\`\`\`json\n{\n  "debug": {\n    "enabled": true,\n    "metrics": true\n  }\n}\n\`\`\``,
-    };
+  const sections: string[] = [];
+  if (operationalMetricsEnabled) {
+    try {
+      const logger = cachedIndexer?.getLogger() ?? getIndexerForProject(root, host).getLogger();
+      sections.push(logger.formatMetrics());
+    } catch {
+      sections.push("Operational metrics are unavailable.");
+    }
+  }
+  if (effectivenessMetricsEnabled) {
+    sections.push(formatEffectivenessMetrics(getProcessEffectivenessMetrics()));
   }
 
   return {
-    enabled: true,
-    metricsEnabled: true,
-    text: `${resetNotice}${logger.formatMetrics()}`,
+    enabled: debugEnabled,
+    metricsEnabled: operationalMetricsEnabled,
+    effectivenessMetricsEnabled,
+    text: `${resetNotice}${sections.join("\n\n")}`,
   };
 }
 
