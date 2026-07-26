@@ -6,10 +6,11 @@ import { parseConfig } from "../src/config/schema.js";
 import { extractCalls, Database, hashContent, parseFiles } from "../src/native/index.js";
 import type { SymbolData, CallEdgeData } from "../src/native/index.js";
 import {
+  Indexer,
   CALL_GRAPH_LANGUAGES,
   CALL_GRAPH_SYMBOL_CHUNK_TYPES,
   CASE_INSENSITIVE_LANGUAGES,
-  Indexer,
+  findEnclosingSymbol,
 } from "../src/indexer/index.js";
 
 const fixturesDir = path.join(__dirname, "fixtures", "call-graph");
@@ -684,7 +685,10 @@ end
         for (const chunk of parsed[0].chunks) {
           if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
           fileSymbols.push({
-            id: `sym_${hashContent(filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`,
+            id: `sym_${hashContent(
+              filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" +
+              chunk.startLine + ":" + (chunk.startCol ?? 0),
+            ).slice(0, 16)}`,
             filePath,
             name: chunk.name,
             kind: chunk.chunkType,
@@ -736,14 +740,17 @@ end
       for (const chunk of parsed[0].chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
         fileSymbols.push({
-          id: `sym_${hashContent(triggerPath + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`,
+          id: `sym_${hashContent(
+            triggerPath + ":" + chunk.name + ":" + chunk.chunkType + ":" +
+            chunk.startLine + ":" + (chunk.startCol ?? 0),
+          ).slice(0, 16)}`,
           filePath: triggerPath,
           name: chunk.name,
           kind: chunk.chunkType,
           startLine: chunk.startLine,
-          startCol: 0,
+          startCol: chunk.startCol ?? 0,
           endLine: chunk.endLine,
-          endCol: 0,
+          endCol: chunk.endCol ?? 0,
           language: chunk.language,
         });
       }
@@ -1358,6 +1365,396 @@ const math = @import("math.zig");
     });
   });
 
+  describe("swift call graph", () => {
+    const buildSwiftSymbols = (
+      filePath: string,
+      content: string,
+    ): SymbolData[] => {
+      const parsed = parseFiles([{ path: filePath, content }]);
+      return parsed[0].chunks
+        .filter(
+          (chunk) =>
+            !!chunk.name &&
+            CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType),
+        )
+        .map((chunk) => ({
+          id: `sym_${hashContent(
+            filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" +
+            chunk.startLine + ":" + (chunk.startCol ?? 0),
+          ).slice(0, 16)}`,
+          filePath,
+          name: chunk.name!,
+          kind: chunk.chunkType,
+          startLine: chunk.startLine,
+          startCol: chunk.startCol ?? 0,
+          endLine: chunk.endLine,
+          endCol: chunk.endCol ?? 0,
+          language: chunk.language,
+        }));
+    };
+
+    it("should enable case-sensitive Swift symbols and call extraction", () => {
+      expect(CALL_GRAPH_LANGUAGES.has("swift")).toBe(true);
+      expect(CASE_INSENSITIVE_LANGUAGES.has("swift")).toBe(false);
+      for (const chunkType of [
+        "actor_declaration",
+        "extension_declaration",
+        "protocol_declaration",
+        "protocol_function_declaration",
+        "init_declaration",
+        "deinit_declaration",
+        "subscript_declaration",
+      ]) {
+        expect(CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunkType)).toBe(true);
+      }
+
+      const calls = extractCalls(
+        "func caller() { load(); Load(); object.refresh(); Widget() }",
+        "swift",
+      );
+      expect(calls.some((call) => call.calleeName === "load")).toBe(true);
+      expect(calls.some((call) => call.calleeName === "Load")).toBe(true);
+      expect(calls.find((call) => call.calleeName === "refresh")?.callType).toBe(
+        "MethodCall",
+      );
+      expect(calls.find((call) => call.calleeName === "Widget")?.callType).toBe(
+        "Constructor",
+      );
+    });
+
+    it("should not treat Swift subscripts as calls", () => {
+      const calls = extractCalls(
+        `func read() {
+    _ = values[id]
+    _ = object.items[index]
+    array[0].run()
+    dictionary[key]?.refresh()
+}`,
+        "swift",
+      );
+
+      for (const subscriptBase of ["values", "items", "array", "dictionary"]) {
+        expect(calls.some((call) => call.calleeName === subscriptBase)).toBe(false);
+      }
+      expect(calls.some((call) => call.calleeName === "run")).toBe(true);
+      expect(calls.some((call) => call.calleeName === "refresh")).toBe(true);
+    });
+
+    it("should extract Swift imports, inheritance and conformities", () => {
+      const content = `
+import Foundation
+import struct Foundation.Date
+
+protocol ChildProtocol: ParentProtocol {}
+class Child: Base, Runnable, Sendable {}
+struct Value: Runnable {}
+struct NoncopyableToken: ~Copyable {}
+`;
+      const calls = extractCalls(content, "swift");
+
+      expect(calls.some(
+        (call) => call.calleeName === "Foundation" && call.callType === "Import",
+      )).toBe(true);
+      expect(calls.some(
+        (call) => call.calleeName === "Date" && call.callType === "Import",
+      )).toBe(true);
+      expect(calls.some(
+        (call) => call.calleeName === "Base" && call.callType === "Inherits",
+      )).toBe(true);
+      expect(calls.some(
+        (call) =>
+          call.calleeName === "ParentProtocol" &&
+          call.callType === "Inherits",
+      )).toBe(true);
+      expect(calls.some(
+        (call) => call.calleeName === "Runnable" && call.callType === "Implements",
+      )).toBe(true);
+      expect(calls.some(
+        (call) => call.calleeName === "Sendable" && call.callType === "Implements",
+      )).toBe(true);
+      expect(calls.some((call) => call.calleeName === "Copyable")).toBe(false);
+    });
+
+    it("should create nested Swift symbols and prefer the narrowest enclosure", () => {
+      const filePath = path.join(
+        fixturesDir,
+        "..",
+        "swift",
+        "ModernService.swift",
+      );
+      const content = fs.readFileSync(filePath, "utf-8");
+      const symbols = buildSwiftSymbols(filePath, content);
+
+      expect(symbols.some(
+        (symbol) =>
+          symbol.name === "UserRepository" &&
+          symbol.kind === "class_declaration",
+      )).toBe(true);
+      expect(symbols.some(
+        (symbol) => symbol.name === "loadNames" && symbol.kind === "method_declaration",
+      )).toBe(true);
+
+      const loadCall = extractCalls(content, "swift").find(
+        (call) =>
+          call.calleeName === "load" &&
+          content.split("\n")[call.line - 1]?.includes("self.load"),
+      );
+      expect(loadCall).toBeDefined();
+
+      const enclosing = findEnclosingSymbol(symbols, loadCall!.line);
+      expect(enclosing?.name).toBe("loadNames");
+      expect(enclosing?.kind).toBe("method_declaration");
+    });
+
+    it("should not attach a preceding top-level call to a documented Swift symbol", () => {
+      const filePath = path.join(tempDir, "CommentRange.swift");
+      const content = `helper()
+/// Documentation.
+func documented() {}
+`;
+      const symbols = buildSwiftSymbols(filePath, content);
+      const helperCall = extractCalls(content, "swift").find(
+        (call) => call.calleeName === "helper",
+      );
+
+      expect(helperCall?.line).toBe(1);
+      expect(findEnclosingSymbol(symbols, helperCall!.line)).toBeUndefined();
+    });
+
+    it("should prefer a Swift method over its one-line type container", () => {
+      const filePath = path.join(tempDir, "OneLine.swift");
+      const content = "struct S { func f() { g() }; func g() {} }";
+      const symbols = buildSwiftSymbols(filePath, content);
+      const call = extractCalls(content, "swift").find(
+        (site) => site.calleeName === "g",
+      );
+
+      expect(call).toBeDefined();
+      expect(findEnclosingSymbol(symbols, call!.line)?.name).toBe("f");
+    });
+
+    it("should distinguish multiple Swift methods on the same line", () => {
+      const filePath = path.join(tempDir, "SameLineMethods.swift");
+      const content =
+        "struct S { func f() {}; func g() { h() }; func h() {} }";
+      const symbols = buildSwiftSymbols(filePath, content);
+      const call = extractCalls(content, "swift").find(
+        (site) => site.calleeName === "h",
+      );
+
+      expect(call).toBeDefined();
+      expect(
+        findEnclosingSymbol(symbols, call!.line, call!.column)?.name,
+      ).toBe("g");
+    });
+
+    it("should persist and resolve a same-file Swift call from its method", () => {
+      const db = openDb();
+      const filePath = path.join(tempDir, "Runner.swift");
+      const content = `
+func helper() -> Int { 42 }
+
+struct Runner {
+    func run() -> Int {
+        helper()
+    }
+}
+`;
+      const symbols = buildSwiftSymbols(filePath, content);
+      db.upsertSymbolsBatch(symbols);
+
+      const helper = symbols.find((symbol) => symbol.name === "helper");
+      const run = symbols.find((symbol) => symbol.name === "run");
+      const call = extractCalls(content, "swift").find(
+        (site) => site.calleeName === "helper",
+      );
+      expect(helper).toBeDefined();
+      expect(run).toBeDefined();
+      expect(call).toBeDefined();
+      expect(findEnclosingSymbol(symbols, call!.line)?.id).toBe(run!.id);
+
+      const edge: CallEdgeData = {
+        id: "edge_swift_helper",
+        fromSymbolId: run!.id,
+        targetName: call!.calleeName,
+        callType: call!.callType,
+        confidence: "Direct",
+        line: call!.line,
+        col: call!.column,
+        isResolved: false,
+      };
+      db.upsertCallEdgesBatch([edge]);
+      db.resolveCallEdge(edge.id, helper!.id);
+      db.addSymbolsToBranchBatch("main", symbols.map((symbol) => symbol.id));
+
+      const callees = db.getCallees(run!.id, "main");
+      expect(callees).toHaveLength(1);
+      expect(callees[0].targetName).toBe("helper");
+      expect(callees[0].toSymbolId).toBe(helper!.id);
+      expect(callees[0].isResolved).toBe(true);
+    });
+
+    it("should resolve Swift calls, preserve overloads and reparse cached files after upgrade", async () => {
+      fs.writeFileSync(
+        path.join(tempDir, "Runner.swift"),
+        `func helper() -> Int { 42 }
+struct Runner {
+    func run() -> Int { helper() }
+}
+`,
+        "utf-8",
+      );
+      fs.writeFileSync(
+        path.join(tempDir, "Overloads.swift"),
+        "func choose(_ value: Int) {}; func choose(_ value: String) {}; func caller() { choose(1) }\n",
+        "utf-8",
+      );
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(
+        async (_url, init) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as {
+            input?: string[];
+          };
+          const texts = Array.isArray(body.input) ? body.input : [];
+          return new Response(
+            JSON.stringify({
+              data: texts.map((_text, index) => ({
+                embedding: Array.from(
+                  { length: 8 },
+                  (_unused, dimension) => (index + dimension + 1) / 10,
+                ),
+              })),
+              usage: { total_tokens: Math.max(1, texts.length) },
+            }),
+            { status: 200 },
+          );
+        },
+      );
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-embedding-model",
+          dimensions: 8,
+          requestIntervalMs: 0,
+        },
+        indexing: {
+          watchFiles: false,
+          retries: 0,
+          retryDelayMs: 1,
+        },
+      });
+      const indexer = new Indexer(tempDir, config);
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const helper = symbols.find((symbol) => symbol.name === "helper");
+        const run = symbols.find((symbol) => symbol.name === "run");
+        const caller = symbols.find((symbol) => symbol.name === "caller");
+        const chooseSymbols = symbols.filter(
+          (symbol) => symbol.name === "choose",
+        );
+        expect(helper).toBeDefined();
+        expect(run).toBeDefined();
+        expect(caller).toBeDefined();
+        expect(chooseSymbols).toHaveLength(2);
+        expect(new Set(chooseSymbols.map((symbol) => symbol.id)).size).toBe(2);
+
+        const runCallees = await indexer.getCallees(run!.id);
+        const helperEdge = runCallees.find(
+          (edge) => edge.targetName === "helper",
+        );
+        expect(helperEdge?.isResolved).toBe(true);
+        expect(helperEdge?.toSymbolId).toBe(helper!.id);
+
+        const callerCallees = await indexer.getCallees(caller!.id);
+        const overloadEdge = callerCallees.find(
+          (edge) => edge.targetName === "choose",
+        );
+        expect(overloadEdge?.isResolved).toBe(false);
+        expect(overloadEdge?.toSymbolId).toBeUndefined();
+
+        const database = new Database(
+          path.join(tempDir, ".opencode", "index", "codebase.db"),
+        );
+        database.deleteSymbolsByFile(path.join(tempDir, "Runner.swift"));
+        database.deleteMetadata("index.parser.swiftVersion");
+        database.close();
+        expect(
+          (await indexer.getSymbolsForBranch()).some(
+            (symbol) => symbol.name === "run",
+          ),
+        ).toBe(false);
+
+        const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+        await indexer.index();
+        expect(
+          (await indexer.getSymbolsForBranch()).some(
+            (symbol) => symbol.name === "run",
+          ),
+        ).toBe(true);
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("should leave overloaded Swift targets ambiguous", () => {
+      const filePath = path.join(tempDir, "Overloads.swift");
+      const content = `
+func helper(_ value: Int) {}
+func helper(_ value: String) {}
+func caller() { helper(1) }
+`;
+      const symbols = buildSwiftSymbols(filePath, content);
+      const helperCandidates = symbols.filter(
+        (symbol) => symbol.name === "helper",
+      );
+      const helperCall = extractCalls(content, "swift").find(
+        (call) => call.calleeName === "helper",
+      );
+
+      expect(helperCandidates).toHaveLength(2);
+      expect(helperCall).toBeDefined();
+      expect(helperCandidates.length === 1).toBe(false);
+    });
+  });
+
+  describe("symbol enclosure", () => {
+    it("should exclude a call at a Tree-sitter end-column boundary", () => {
+      const filePath = path.join(tempDir, "Boundary.js");
+      const content =
+        "function f(){ const reallyLongVariableName = 1234567890; }g()";
+      const parsed = parseFiles([{ path: filePath, content }]);
+      const functionChunk = parsed[0].chunks.find(
+        (chunk) => chunk.name === "f",
+      );
+      const call = extractCalls(content, "javascript").find(
+        (site) => site.calleeName === "g",
+      );
+      expect(functionChunk).toBeDefined();
+      expect(call).toBeDefined();
+
+      const symbol: SymbolData = {
+        id: "sym_boundary",
+        filePath,
+        name: "f",
+        kind: functionChunk!.chunkType,
+        startLine: functionChunk!.startLine,
+        startCol: functionChunk!.startCol ?? 0,
+        endLine: functionChunk!.endLine,
+        endCol: functionChunk!.endCol ?? 0,
+        language: functionChunk!.language,
+      };
+      expect(call!.column).toBe(symbol.endCol);
+      expect(
+        findEnclosingSymbol([symbol], call!.line, call!.column),
+      ).toBeUndefined();
+    });
+  });
+
   describe("bash call extraction", () => {
     it("should extract direct command and function calls", () => {
       const content = `
@@ -1461,7 +1858,10 @@ main() {
       for (const chunk of parsed[0].chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
         fileSymbols.push({
-          id: `sym_${hashContent(filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`,
+          id: `sym_${hashContent(
+            filePath + ":" + chunk.name + ":" + chunk.chunkType + ":" +
+            chunk.startLine + ":" + (chunk.startCol ?? 0),
+          ).slice(0, 16)}`,
           filePath,
           name: chunk.name,
           kind: chunk.chunkType,

@@ -355,7 +355,9 @@ graph TD
 
 1. **Parsing**: We use `tree-sitter` to intelligently parse your code into meaningful blocks (functions, classes, interfaces). JSDoc comments and docstrings are automatically included with their associated code.
 
-**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB†
+**Supported Languages (Tree-sitter semantic parsing)**: TypeScript, JavaScript, Python, Rust, Swift, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB†
+
+Swift support uses [`tree-sitter-swift` 0.7.3](https://github.com/alex-pinkus/tree-sitter-swift/tree/0.7.3), distributed under the MIT license. It provides Tree-sitter syntax analysis for chunks, symbols, and calls, but does not replace SourceKit semantic analysis.
 
 † MATLAB (`.m`) is opt-in — see below.
 
@@ -536,7 +538,9 @@ Returns recent debug logs with optional filtering.
 
 ### `call_graph`
 
-Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, and C++.
+Query the call graph to find callers or callees of a function/method. Automatically built during indexing for TypeScript, JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, and C++.
+
+For Swift, resolution remains name-based, so overloads, extension duplicates, and protocol dispatch can remain ambiguous. Syntax alone cannot always distinguish a superclass from a protocol conformance or an enum raw-value type from a protocol. Constructor classification uses an uppercase ASCII initial heuristic while retaining the exact name for resolution. `tree-sitter-swift` 0.7.3 also has limitations around `sending`, abbreviated collection constructors such as `[Int]()`, and some generic calls after `self`, `super`, optional chaining, or chained calls. The index does not infer SourceKit semantics for these cases.
 
 - **Use for**: Understanding code flow, tracing dependencies, impact analysis.
 - **Parameters**: `name` (function name), `direction` (`callers` or `callees`), `symbolId` (required for `callees`, returned by previous queries), `relationshipType` (optional: `Call`, `MethodCall`, `Constructor`, `Import`, `Inherits`, `Implements`).
@@ -1262,7 +1266,7 @@ The Rust native module handles performance-critical operations:
 - **usearch**: High-performance vector similarity search with F16 quantization
 - **SQLite**: Persistent storage for embeddings, chunks, branch catalog, symbols, and call edges
 - **BM25 inverted index**: Fast keyword search for hybrid retrieval
-- **Call graph extraction**: Tree-sitter query-based extraction of function calls, method calls, constructors, and imports (TypeScript/JavaScript, Python, Go, Rust, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, C++)
+- **Call graph extraction**: Tree-sitter query-based extraction of function calls, method calls, constructors, and imports (TypeScript/JavaScript, Python, Go, Rust, Swift, PHP, Apex, Zig, GDScript, MATLAB, Bash, C, C++)
 - **xxhash**: Fast content hashing for change detection
 
 Rebuild with: `npm run build:native` (requires Rust toolchain)
@@ -1284,3 +1288,5 @@ Windows builds use scalar distance functions instead of SIMD — functionally id
 ## License
 
 MIT
+
+Notices for third-party components distributed with the package are available in [`THIRD_PARTY_LICENSES.md`](./THIRD_PARTY_LICENSES.md).

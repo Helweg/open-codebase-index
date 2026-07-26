@@ -53,7 +53,7 @@ import {
   type IndexMutationOperation,
 } from "./index-lock.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -101,6 +101,14 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "test_declaration",
   "struct_declaration",
   "union_declaration",
+  // Synthetic Swift declarations or declarations specific to tree-sitter-swift.
+  "actor_declaration",
+  "extension_declaration",
+  "protocol_declaration",
+  "protocol_function_declaration",
+  "init_declaration",
+  "deinit_declaration",
+  "subscript_declaration",
   // GDScript declarations whose names participate in the call graph.
   // `function_definition` and `class_definition` are already in the set
   // above (shared with Python/C/Bash and Python, respectively).
@@ -125,6 +133,73 @@ function isCompatibleCFamilyCallTarget(
     return isTypeSymbol;
   }
   return !isTypeSymbol;
+}
+
+const EXECUTABLE_SYMBOL_CHUNK_TYPES = new Set([
+  "function_declaration",
+  "function",
+  "arrow_function",
+  "method_definition",
+  "function_definition",
+  "method_declaration",
+  "function_item",
+  "protocol_function_declaration",
+  "init_declaration",
+  "deinit_declaration",
+  "subscript_declaration",
+  "constructor_definition",
+  "trigger_declaration",
+  "test_declaration",
+]);
+
+// A type and its methods often cover the same lines. The shortest range is the
+// most precise symbol to own an edge. For equal ranges, executable symbols are
+// more specific than container types.
+export function findEnclosingSymbol(
+  symbols: readonly SymbolData[],
+  line: number,
+  column?: number,
+): SymbolData | undefined {
+  let best: SymbolData | undefined;
+
+  for (const symbol of symbols) {
+    if (line < symbol.startLine || line > symbol.endLine) continue;
+    if (
+      column !== undefined &&
+      ((line === symbol.startLine && column < symbol.startCol) ||
+        (line === symbol.endLine && column >= symbol.endCol))
+    ) {
+      continue;
+    }
+    if (!best) {
+      best = symbol;
+      continue;
+    }
+
+    const span = symbol.endLine - symbol.startLine;
+    const bestSpan = best.endLine - best.startLine;
+    const isNarrowerPositionRange = column !== undefined &&
+      span === bestSpan &&
+      symbol.startLine === best.startLine &&
+      symbol.endLine === best.endLine &&
+      symbol.startCol >= best.startCol &&
+      symbol.endCol <= best.endCol &&
+      (symbol.startCol > best.startCol || symbol.endCol < best.endCol);
+    const isMoreSpecificTie = span === bestSpan &&
+      symbol.startLine === best.startLine &&
+      EXECUTABLE_SYMBOL_CHUNK_TYPES.has(symbol.kind) &&
+      !EXECUTABLE_SYMBOL_CHUNK_TYPES.has(best.kind);
+    if (
+      span < bestSpan ||
+      (span === bestSpan && symbol.startLine > best.startLine) ||
+      isNarrowerPositionRange ||
+      isMoreSpecificTie
+    ) {
+      best = symbol;
+    }
+  }
+
+  return best;
 }
 
 function float32ArrayToBuffer(arr: number[]): Buffer {
@@ -405,6 +480,7 @@ interface IndexCompatibility {
 
 const INDEX_METADATA_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
+const SWIFT_PARSER_VERSION = "1";
 const RANKING_TOKEN_CACHE_LIMIT = 4096;
 const RANK_HYBRID_CACHE_LIMIT = 256;
 
@@ -773,15 +849,25 @@ function chunkTypeBoost(chunkType: string): number {
     case "function_declaration":
     case "method":
     case "method_definition":
+    case "method_declaration":
+    case "protocol_function_declaration":
+    case "init_declaration":
+    case "deinit_declaration":
+    case "subscript_declaration":
     case "class":
     case "class_declaration":
+    case "actor_declaration":
+    case "extension_declaration":
       return 0.2;
     case "interface":
     case "type":
     case "enum":
+    case "enum_declaration":
     case "struct":
+    case "struct_declaration":
     case "impl":
     case "trait":
+    case "protocol_declaration":
     case "module":
       return 0.1;
     default:
@@ -915,11 +1001,21 @@ function isImplementationChunkType(chunkType: string): boolean {
     "function_declaration",
     "method",
     "method_definition",
+    "method_declaration",
+    "protocol_function_declaration",
+    "init_declaration",
+    "deinit_declaration",
+    "subscript_declaration",
     "class",
     "class_declaration",
+    "actor_declaration",
+    "extension_declaration",
     "interface",
+    "protocol_declaration",
     "type",
     "enum",
+    "enum_declaration",
+    "struct_declaration",
     "module",
   ].includes(chunkType);
 }
@@ -2207,6 +2303,16 @@ export class Indexer {
 
     const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
     return `index.callGraphResolutionVersion.${projectHash}`;
+  }
+
+  private getSwiftParserVersionMetadataKey(): string {
+    const key = "index.parser.swiftVersion";
+    if (this.config.scope !== "global") {
+      return key;
+    }
+
+    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
+    return `${key}.${projectHash}`;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -3936,6 +4042,18 @@ export class Indexer {
 
     this.loadFileHashCache();
 
+    const swiftParserMetadataKey = this.getSwiftParserVersionMetadataKey();
+    const reparseCachedSwiftFiles =
+      database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
+    if (
+      reparseCachedSwiftFiles &&
+      Array.from(this.fileHashCache.keys()).some(
+        (filePath) => path.extname(filePath).toLowerCase() === ".swift",
+      )
+    ) {
+      this.logger.info("Reindexing cached Swift files for parser support");
+    }
+
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
     const { files, skipped } = await collectFiles(
       this.projectRoot,
@@ -3971,8 +4089,11 @@ export class Indexer {
         database.getChunksByFile(f.path).some((chunk) =>
           chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
         );
+      const requiresSwiftParserUpgrade =
+        reparseCachedSwiftFiles &&
+        path.extname(f.path).toLowerCase() === ".swift";
 
-      if (cachedHashMatches && !needsCallGraphRefresh) {
+      if (cachedHashMatches && !needsCallGraphRefresh && !requiresSwiftParserUpgrade) {
         unchangedFilePaths.add(f.path);
         this.logger.recordCacheHit();
       } else {
@@ -4210,16 +4331,19 @@ export class Indexer {
       for (const chunk of parsed.chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
 
-        const symbolId = `sym_${hashContent(parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" + chunk.startLine).slice(0, 16)}`;
+        const symbolId = `sym_${hashContent(
+          parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" +
+          chunk.startLine + ":" + (chunk.startCol ?? 0),
+        ).slice(0, 16)}`;
         const symbol: SymbolData = {
           id: symbolId,
           filePath: parsed.path,
           name: chunk.name,
           kind: chunk.chunkType,
           startLine: chunk.startLine,
-          startCol: 0,
+          startCol: chunk.startCol ?? 0,
           endLine: chunk.endLine,
-          endCol: 0,
+          endCol: chunk.endCol ?? 0,
           language: chunk.language,
         };
         fileSymbols.push(symbol);
@@ -4257,8 +4381,10 @@ export class Indexer {
 
       const edges: CallEdgeData[] = [];
       for (const site of callSites) {
-        const enclosingSymbol = fileSymbols.find(
-          (sym) => site.line >= sym.startLine && site.line <= sym.endLine
+        const enclosingSymbol = findEnclosingSymbol(
+          fileSymbols,
+          site.line,
+          site.column,
         );
         if (!enclosingSymbol) continue;
 
@@ -4362,6 +4488,7 @@ export class Indexer {
         this.saveFileHashCache();
         this.saveFailedBatches([]);
       }
+      database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -4390,6 +4517,7 @@ export class Indexer {
         this.saveFileHashCache();
         this.saveFailedBatches([]);
       }
+      database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -4706,6 +4834,7 @@ export class Indexer {
     if (forceScopedReembed && failedForcedChunkIds.size === 0) {
       database.deleteMetadata(this.getProjectForceReembedMetadataKey());
     }
+    database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
     this.saveIndexMetadata(configuredProviderInfo);
     this.indexCompatibility = { compatible: true };
 

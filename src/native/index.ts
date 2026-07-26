@@ -103,7 +103,9 @@ export interface FileInput {
 export interface CodeChunk {
   content: string;
   startLine: number;
+  startCol?: number;
   endLine: number;
+  endCol?: number;
   chunkType: ChunkType;
   name?: string;
   language: string;
@@ -246,7 +248,9 @@ function mapChunk(c: any): CodeChunk {
   return {
     content: c.content,
     startLine: c.startLine ?? c.start_line,
+    startCol: c.startCol ?? c.start_col,
     endLine: c.endLine ?? c.end_line,
+    endCol: c.endCol ?? c.end_col,
     chunkType: (c.chunkType ?? c.chunk_type) as ChunkType,
     name: c.name ?? undefined,
     language: c.language,
@@ -396,6 +400,7 @@ function getEmbeddingHeaderParts(chunk: CodeChunk, filePath: string): string[] {
     javascript: "JavaScript",
     python: "Python",
     rust: "Rust",
+    swift: "Swift",
     go: "Go",
     java: "Java",
   };
@@ -405,7 +410,16 @@ function getEmbeddingHeaderParts(chunk: CodeChunk, filePath: string): string[] {
     function: "function",
     arrow_function: "arrow function",
     method_definition: "method",
+    method_declaration: "method",
+    protocol_function_declaration: "protocol requirement",
+    init_declaration: "initializer",
+    deinit_declaration: "deinitializer",
+    subscript_declaration: "subscript",
     class_declaration: "class",
+    actor_declaration: "actor",
+    extension_declaration: "extension",
+    protocol_declaration: "protocol",
+    struct_declaration: "struct",
     interface_declaration: "interface",
     type_alias_declaration: "type alias",
     enum_declaration: "enum",

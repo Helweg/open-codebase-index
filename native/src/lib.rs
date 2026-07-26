@@ -202,7 +202,9 @@ pub struct ParsedFile {
 pub struct CodeChunk {
     pub content: String,
     pub start_line: u32,
+    pub start_col: u32,
     pub end_line: u32,
+    pub end_col: u32,
     pub chunk_type: String,
     pub name: Option<String>,
     pub language: String,
