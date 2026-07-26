@@ -74,9 +74,14 @@ function trimOrUndefined(value: string | undefined): string | undefined {
 }
 
 function normalizeCallGraphPath(value: string): string {
-  const normalized = value.trim().replace(/\\/g, "/").replace(/\/+/g, "/");
-  const withoutDotPrefix = normalized.replace(/^\.\/+/, "");
-  return withoutDotPrefix.length > 1 ? withoutDotPrefix.replace(/\/+$/, "") : withoutDotPrefix;
+  let normalized = path.posix.normalize(value.trim().replaceAll("\\", "/"));
+  if (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+  while (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
 }
 
 function isAbsoluteCallGraphPath(value: string): boolean {
