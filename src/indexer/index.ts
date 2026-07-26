@@ -6049,13 +6049,12 @@ export class Indexer {
 
         const currentSymbol = symbolsById.get(current.symbolId);
         if (!currentSymbol) continue;
-
         for (const edge of database.getCallees(current.symbolId, branchKey)) {
-          let nextSymbolId = edge.toSymbolId && symbolsById.has(edge.toSymbolId)
-            ? edge.toSymbolId
-            : undefined;
+          let nextSymbolId: string | undefined;
 
-          if (!nextSymbolId) {
+          if (edge.toSymbolId && symbolsById.has(edge.toSymbolId)) {
+            nextSymbolId = edge.toSymbolId;
+          } else if (edge.toSymbolId === undefined) {
             const caseInsensitive = CASE_INSENSITIVE_LANGUAGES.has(currentSymbol.language);
             const matchingTargets = symbols.filter((candidate) => caseInsensitive
               ? candidate.name.toLowerCase() === edge.targetName.toLowerCase()
