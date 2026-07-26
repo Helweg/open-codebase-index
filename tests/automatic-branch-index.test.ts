@@ -29,6 +29,8 @@ function commitFile(repo: string, content: string, message: string): string {
 describe("automatic branch index preparation", () => {
   let tempDir: string;
   let repo: string;
+  let knowledgeBase: string;
+  let mainCommit: string;
   let featureCommit: string;
   let indexer: Indexer;
   let fetchSpy: ReturnType<typeof vi.spyOn>;
@@ -36,11 +38,17 @@ describe("automatic branch index preparation", () => {
   beforeEach(async () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "automatic-branch-index-test-"));
     repo = path.join(tempDir, "repo");
+    knowledgeBase = path.join(tempDir, "external-knowledge-base");
     fs.mkdirSync(repo);
+    fs.mkdirSync(knowledgeBase);
+    fs.writeFileSync(
+      path.join(knowledgeBase, "external.ts"),
+      "export function externalKnowledge(): number { return 42; }\n",
+    );
     git(repo, ["init", "-b", "main"]);
     git(repo, ["config", "user.email", "test@example.com"]);
     git(repo, ["config", "user.name", "Test User"]);
-    commitFile(repo, `// Main branch implementation
+    mainCommit = commitFile(repo, `// Main branch implementation
 function baseValue(): number {
   const seed = 1;
   const adjusted = seed + 1;
@@ -92,6 +100,7 @@ function changed(): number {
         dimensions: 8,
       },
       indexing: { watchFiles: false, autoGc: false },
+      knowledgeBases: [knowledgeBase],
     });
     indexer = new Indexer(repo, config);
     await indexer.index();
@@ -109,6 +118,10 @@ function changed(): number {
   }
 
   it("prepares a missing local branch once, reuses embeddings, and leaves the current worktree unchanged", async () => {
+    const initialDb = await database();
+    const mainChunkIds = initialDb.getBranchChunkIds("main").sort();
+    const mainSymbolIds = initialDb.getBranchSymbolIds("main").sort();
+    const mainSymbolNames = initialDb.getSymbolsForBranch("main").map((symbol) => symbol.name).sort();
     const beforeHead = git(repo, ["rev-parse", "HEAD"]);
     const beforeStatus = git(repo, ["status", "--porcelain"]);
     const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
@@ -131,8 +144,15 @@ function changed(): number {
     const db = await database();
     const featureSymbols = db.getSymbolsForBranch("feature");
     expect(featureSymbols.length).toBeGreaterThan(0);
-    expect(featureSymbols.every((symbol) => symbol.filePath.startsWith(repo + path.sep))).toBe(true);
+    expect(featureSymbols.some((symbol) => symbol.filePath.startsWith(repo + path.sep))).toBe(true);
     expect(featureSymbols.some((symbol) => symbol.filePath.includes("codebase-index-branch-"))).toBe(false);
+    expect(featureSymbols.some((symbol) => symbol.filePath === path.join(knowledgeBase, "external.ts"))).toBe(true);
+
+    expect(db.getBranchChunkIds("main").sort()).toEqual(mainChunkIds);
+    expect(db.getBranchSymbolIds("main").sort()).toEqual(mainSymbolIds);
+    expect(db.getSymbolsForBranch("main").map((symbol) => symbol.name).sort()).toEqual(mainSymbolNames);
+    expect(mainChunkIds.every((chunkId) => db.getChunk(chunkId) !== null)).toBe(true);
+    expect(db.getBranchChunkIds("feature").every((chunkId) => !mainChunkIds.includes(chunkId))).toBe(true);
 
     const fetchesAfterPreparation = fetchSpy.mock.calls.length;
     expect(fetchesAfterPreparation).toBeGreaterThan(fetchesBefore);
@@ -141,8 +161,62 @@ function changed(): number {
     expect(fetchSpy.mock.calls.length).toBe(fetchesAfterPreparation);
   });
 
-  it("prepares an existing local PR head without gh or a network fetch", async () => {
+  it("reindexes an advanced branch OID and reclaims only stale secondary data", async () => {
+    await indexer.getPrImpact({ branch: "feature" });
+    const db = await database();
+    const mainChunkIds = db.getBranchChunkIds("main").sort();
+    const mainSymbolIds = db.getBranchSymbolIds("main").sort();
+    const oldFeatureChunkIds = db.getBranchChunkIds("feature").sort();
+
+    git(repo, ["checkout", "feature"]);
+    const advancedCommit = commitFile(
+      repo,
+      `function advancedHelper(): number {
+  return 7;
+}
+
+function advancedChange(): number {
+  return advancedHelper() * 2;
+}
+`,
+      "advance feature",
+    );
+    git(repo, ["checkout", "main"]);
+
+    const advanced = await indexer.getPrImpact({ branch: "feature" });
+    expect(advanced.indexPreparation).toMatchObject({
+      prepared: true,
+      branch: "feature",
+      commit: advancedCommit,
+    });
+    expect(advanced.directSymbols.map((symbol) => symbol.name)).toContain("advancedChange");
+
+    const refreshedDb = await database();
+    const newFeatureChunkIds = refreshedDb.getBranchChunkIds("feature").sort();
+    const staleFeatureOnlyIds = oldFeatureChunkIds.filter((chunkId) => !newFeatureChunkIds.includes(chunkId));
+    expect(staleFeatureOnlyIds.length).toBeGreaterThan(0);
+    expect(staleFeatureOnlyIds.every((chunkId) => refreshedDb.getChunk(chunkId) === null)).toBe(true);
+    expect(refreshedDb.getBranchChunkIds("main").sort()).toEqual(mainChunkIds);
+    expect(refreshedDb.getBranchSymbolIds("main").sort()).toEqual(mainSymbolIds);
+    expect(mainChunkIds.every((chunkId) => refreshedDb.getChunk(chunkId) !== null)).toBe(true);
+
+    const reused = await indexer.getPrImpact({ branch: "feature" });
+    expect(reused.indexPreparation).toEqual({ prepared: false, branch: "feature" });
+  });
+
+  it("uses an authoritative local PR merge ref when gh metadata is unavailable", async () => {
     git(repo, ["update-ref", "refs/pull/7/head", featureCommit]);
+    const mergeCommit = git(repo, [
+      "commit-tree",
+      `${featureCommit}^{tree}`,
+      "-p",
+      mainCommit,
+      "-p",
+      featureCommit,
+      "-m",
+      "synthetic PR merge",
+    ]);
+    git(repo, ["update-ref", "refs/pull/7/merge", mergeCommit]);
     const fetchesBefore = fetchSpy.mock.calls.length;
 
     const result = await indexer.getPrImpact({ pr: 7 });

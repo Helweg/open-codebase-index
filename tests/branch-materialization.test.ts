@@ -95,6 +95,8 @@ describe("branch materialization", () => {
     git(tempDir, ["init", "--bare", remote]);
     git(repo, ["remote", "add", "origin", remote]);
     git(repo, ["push", "origin", "feature"]);
+    git(repo, ["fetch", "origin", "refs/heads/feature"]);
+    const fetchHeadBefore = fs.readFileSync(path.join(repo, ".git", "FETCH_HEAD"), "utf8");
     git(repo, ["branch", "-D", "feature"]);
     git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
     expect(() => git(repo, ["rev-parse", "--verify", "refs/remotes/origin/feature"])).toThrow();
@@ -106,6 +108,45 @@ describe("branch materialization", () => {
 
     expect(result.value).toBe(featureCommit);
     expect(result.info).toMatchObject({ source: "remote-fetch", fetched: true, commit: featureCommit });
+    expect(fs.readFileSync(path.join(repo, ".git", "FETCH_HEAD"), "utf8")).toBe(fetchHeadBefore);
+    expect(git(repo, ["for-each-ref", "--format=%(refname)", "refs/codebase-index"])).toBe("");
+  });
+
+  it("fetches an exact missing PR OID without gh checkout and removes the temporary ref", async () => {
+    const remote = path.join(tempDir, "pr-remote.git");
+    git(tempDir, ["init", "--bare", remote]);
+    git(repo, ["remote", "add", "origin", remote]);
+    git(repo, ["push", "origin", "main", "feature"]);
+    git(remote, ["update-ref", "refs/pull/9/head", featureCommit]);
+    git(repo, ["branch", "-D", "feature"]);
+    git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
+    git(repo, ["reflog", "expire", "--expire=now", "--all"]);
+    git(repo, ["gc", "--prune=now"]);
+    expect(() => git(repo, ["cat-file", "-e", `${featureCommit}^{commit}`])).toThrow();
+
+    const result = await withMaterializedBranch(
+      { projectRoot: repo, branch: "pr/9", ref: featureCommit, pr: 9 },
+      async (worktreePath) => git(worktreePath, ["rev-parse", "HEAD"]),
+    );
+
+    expect(result.value).toBe(featureCommit);
+    expect(result.info).toMatchObject({ source: "pull-ref", fetched: true, commit: featureCommit });
+    expect(git(repo, ["for-each-ref", "--format=%(refname)", "refs/codebase-index"])).toBe("");
+  });
+
+  it("suppresses repository post-checkout hooks while adding the temporary worktree", async () => {
+    const marker = path.join(tempDir, "post-checkout-ran");
+    const hook = path.join(repo, ".git", "hooks", "post-checkout");
+    fs.mkdirSync(path.dirname(hook), { recursive: true });
+    fs.writeFileSync(hook, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
+    fs.chmodSync(hook, 0o755);
+
+    await withMaterializedBranch(
+      { projectRoot: repo, branch: "feature" },
+      async () => undefined,
+    );
+
+    expect(fs.existsSync(marker)).toBe(false);
   });
 
   it("cleans up the temporary worktree when indexing fails", async () => {
@@ -122,6 +163,42 @@ describe("branch materialization", () => {
 
     expect(fs.existsSync(path.dirname(materializedPath))).toBe(false);
     expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
+    expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);
+  });
+
+  it("prunes a stale registration when the materialized directory disappears", async () => {
+    const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
+
+    await expect(withMaterializedBranch(
+      { projectRoot: repo, branch: "feature" },
+      async (worktreePath) => {
+        fs.rmSync(worktreePath, { recursive: true, force: true });
+        throw new Error("primary indexing failure");
+      },
+    )).rejects.toThrow("primary indexing failure");
+
+    expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
+  });
+
+  it("reports the original operation error when cleanup also fails", async () => {
+    const gitDir = path.join(repo, ".git");
+    const hiddenGitDir = path.join(repo, ".git-hidden");
+
+    try {
+      await expect(withMaterializedBranch(
+        { projectRoot: repo, branch: "feature" },
+        async () => {
+          fs.renameSync(gitDir, hiddenGitDir);
+          throw new Error("primary indexing failure");
+        },
+      )).rejects.toThrow(/primary indexing failure.*Cleanup also failed/);
+    } finally {
+      if (fs.existsSync(hiddenGitDir)) {
+        fs.renameSync(hiddenGitDir, gitDir);
+      }
+      git(repo, ["worktree", "prune", "--expire", "now"]);
+    }
+
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);
   });
 
