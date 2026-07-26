@@ -34,7 +34,7 @@ import {
   implementationLookup,
   runIndexCodebase,
   runIndexHealthCheck,
-  searchCodebase,
+  searchCodebaseWithEffectiveness,
 } from "../tools/operations.js";
 import { CHUNK_TYPE_ENUM, type McpServerRuntime } from "./shared.js";
 
@@ -88,7 +88,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
     },
     async (args) => {
-      const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
+      return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "search", args.query, {
         limit: args.limit ?? 5,
         fileType: args.fileType,
         directory: args.directory,
@@ -97,13 +97,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
+      }, (results) => {
+        const text = results.length === 0
+          ? "No matching code found. Try a different query or run index_codebase first."
+          : `Found ${results.length} results for "${args.query}":\n\n${formatSearchResults(results, "score")}`;
+        return { output: { content: [{ type: "text" as const, text }] }, text };
       });
-
-      if (results.length === 0) {
-        return { content: [{ type: "text", text: "No matching code found. Try a different query or run index_codebase first." }] };
-      }
-
-      return { content: [{ type: "text", text: `Found ${results.length} results for "${args.query}":\n\n${formatSearchResults(results, "score")}` }] };
     },
   );
 
@@ -121,7 +120,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
     },
     async (args) => {
-      const results = await searchCodebase(runtime.projectRoot, runtime.host, args.query, {
+      return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "peek", args.query, {
         limit: args.limit ?? 10,
         fileType: args.fileType,
         directory: args.directory,
@@ -130,13 +129,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
+      }, (results) => {
+        const text = results.length === 0
+          ? "No matching code found. Try a different query or run index_codebase first."
+          : `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}`;
+        return { output: { content: [{ type: "text" as const, text }] }, text };
       });
-
-      if (results.length === 0) {
-        return { content: [{ type: "text", text: "No matching code found. Try a different query or run index_codebase first." }] };
-      }
-
-      return { content: [{ type: "text", text: `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}` }] };
     },
   );
 
@@ -185,10 +183,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "index_metrics",
-    "Get metrics and performance statistics for the codebase index. Requires debug.enabled=true and debug.metrics=true in config.",
-    {},
-    async () => {
-      const result = await getIndexMetrics(runtime.projectRoot, runtime.host);
+    "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Metrics are memory-only. Set reset=true to clear them before reading. Operational metrics require debug.enabled=true and debug.metrics=true. Privacy-safe aggregates require only effectivenessMetrics.enabled=true.",
+    {
+      reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
+    },
+    async (args) => {
+      const result = await getIndexMetrics(runtime.projectRoot, runtime.host, { reset: args.reset });
       return { content: [{ type: "text", text: result.text }] };
     },
   );

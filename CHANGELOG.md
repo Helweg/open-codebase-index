@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Privacy-safe effectiveness metrics**: Added independent top-level opt-in, process-lifetime memory-only, schema-versioned fixed counters and histograms for repository tool routes, hosts, outcomes, recovery, result counts, latency, token budgets, returned-token estimates, exact-search handoffs, and scope relaxation across OpenCode, MCP, and Pi. The process-wide collector survives Indexer and config-watcher refreshes without repository or user identity dimensions, supports explicit reset, and has adversarial privacy, saturation, disabled-overhead, final-response, and error-path coverage.
+- **Offline effectiveness evaluation**: Added deterministic synthetic fixtures and a no-network formatting report with equal `maxResults` and final-response token budgets across routes. Evidence is credited only when visible in returned text, and the oracle exact-search baseline emits only matching lines without arbitrary complete reads. The report states that fixed rankings and markers do not measure retrieval quality, latency, end-to-end agent success, causal impact, or production performance.
+
 ### Changed
 
 - **Exact-search handoffs**: Metadata-only semantic discovery and conceptual context packs now return bounded, result-derived symbol suggestions for exact usage or exhaustive-match searches, with handoffs included in context token-budget accounting across OpenCode, MCP, and Pi.

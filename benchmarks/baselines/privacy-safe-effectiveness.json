@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 3,
+  "benchmark": "privacy-safe-repository-tool-effectiveness",
+  "methodology": {
+    "fixtures": "versioned-synthetic-offline",
+    "queryModel": "Five checked-in scenario labels map to fixed ranked synthetic results; no retrieval model or embedding provider runs during this report.",
+    "sourceCorpus": "Every route starts from the same fixed ranked synthetic result objects. Context and peek format their actual metadata-oriented response text, while the baseline emits only exact matching lines from those same objects.",
+    "maxResultsCap": "Every route receives only the first fixture.maxResults ranked results before formatting.",
+    "tokenBudgetParity": "Every final route response is constrained by the same fixture.tokenBudget before token counting or evidence scoring.",
+    "networkCalls": 0,
+    "warmupRuns": 0,
+    "measuredRunsPerFixture": 1,
+    "timing": "not-measured-deterministic-format-and-token-evaluation-only",
+    "tokenizer": "cl100k_base",
+    "tokenStatistic": "median-and-nearest-rank-p95-across-fixtures",
+    "evidenceRecall": "Expected evidence markers visibly present in the final budgeted route text divided by expected evidence markers. Metadata-only results receive no hidden content credit.",
+    "determinism": "No clocks, randomness, embeddings, repository indexing, or network calls affect the generated aggregate report.",
+    "exactSearchSnippetBaseline": "An oracle exact-search baseline emits only matching source lines from the capped ranked chunks. It performs no arbitrary or complete file reads and excludes discovery cost.",
+    "limitation": "This synthetic formatting benchmark fixes rankings and uses oracle evidence markers. It does not measure retrieval quality, latency, end-to-end agent success, causal impact, or production-repository performance. Context and peek responses are metadata-oriented here, so content evidence is credited only if its literal marker is visible in returned text."
+  },
+  "fixtureCount": 5,
+  "routes": {
+    "context": {
+      "tokens": {
+        "median": 94,
+        "p95": 94
+      },
+      "evidenceRecall": {
+        "mean": 0,
+        "median": 0,
+        "minimum": 0
+      }
+    },
+    "peek": {
+      "tokens": {
+        "median": 84,
+        "p95": 84
+      },
+      "evidenceRecall": {
+        "mean": 0,
+        "median": 0,
+        "minimum": 0
+      }
+    },
+    "exactSearchSnippetBaseline": {
+      "tokens": {
+        "median": 55,
+        "p95": 55
+      },
+      "evidenceRecall": {
+        "mean": 0.9,
+        "median": 1,
+        "minimum": 0.5
+      }
+    }
+  },
+  "comparisons": {
+    "contextMedianTokenRatioToBaseline": 1.7091,
+    "peekMedianTokenRatioToBaseline": 1.5273
+  }
+}

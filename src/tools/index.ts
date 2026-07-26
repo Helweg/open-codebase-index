@@ -33,7 +33,7 @@ import {
   removeKnowledgeBase,
   runIndexCodebase,
   runIndexHealthCheck,
-  searchCodebase,
+  searchCodebaseWithEffectiveness,
 } from "./operations.js";
 import { pr_impact } from "./pr-impact.js";
 import {
@@ -117,7 +117,7 @@ export const codebase_peek: ToolDefinition = tool({
     blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date (e.g., 2025-01-01)"),
   },
   async execute(args, context) {
-    const results = await searchCodebase(context?.worktree, DEFAULT_HOST, args.query, {
+    return searchCodebaseWithEffectiveness(context?.worktree, DEFAULT_HOST, "peek", args.query, {
       limit: args.limit ?? 10,
       fileType: args.fileType,
       directory: args.directory,
@@ -126,9 +126,10 @@ export const codebase_peek: ToolDefinition = tool({
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
+    }, (results) => {
+      const text = formatCodebasePeek(results);
+      return { output: text, text };
     });
-
-    return formatCodebasePeek(results);
   },
 });
 
@@ -173,10 +174,12 @@ export const index_health_check: ToolDefinition = tool({
 
 export const index_metrics: ToolDefinition = tool({
   description:
-    "Get metrics and performance statistics for the codebase index. Shows indexing stats, search timings, cache hit rates, and API usage. Requires debug.enabled=true and debug.metrics=true in config.",
-  args: {},
-  async execute(_args, context) {
-    return (await getIndexMetrics(context?.worktree, DEFAULT_HOST)).text;
+    "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Use reset=true to clear in-memory metrics before reading. Operational metrics require debug.enabled=true and debug.metrics=true. Privacy-safe aggregates require only effectivenessMetrics.enabled=true.",
+  args: {
+    reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
+  },
+  async execute(args, context) {
+    return (await getIndexMetrics(context?.worktree, DEFAULT_HOST, { reset: args.reset })).text;
   },
 });
 
@@ -236,7 +239,7 @@ export const codebase_search: ToolDefinition = tool({
     blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date (e.g., 2025-01-01)"),
   },
   async execute(args, context) {
-    const results = await searchCodebase(context?.worktree, DEFAULT_HOST, args.query, {
+    return searchCodebaseWithEffectiveness(context?.worktree, DEFAULT_HOST, "search", args.query, {
       limit: args.limit ?? 5,
       fileType: args.fileType,
       directory: args.directory,
@@ -245,13 +248,12 @@ export const codebase_search: ToolDefinition = tool({
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
+    }, (results) => {
+      const text = results.length === 0
+        ? "No matching code found. Try a different query or run index_codebase first."
+        : formatSearchResults(results, "score");
+      return { output: text, text };
     });
-
-    if (results.length === 0) {
-      return "No matching code found. Try a different query or run index_codebase first.";
-    }
-
-    return formatSearchResults(results, "score");
   },
 });
 

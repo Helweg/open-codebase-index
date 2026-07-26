@@ -15,7 +15,7 @@ import {
   removeKnowledgeBase,
   runIndexCodebase,
   runIndexHealthCheck,
-  searchCodebase,
+  searchCodebaseWithEffectiveness,
 } from "./tools/operations.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
@@ -109,8 +109,15 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String({ description: "Filter to chunks last changed on or after this date" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, params);
-      return text(formatSearchResults(results), results);
+      return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "search", params.query, {
+        ...params,
+      }, (results) => {
+        const renderedText = results.length === 0
+          ? "No matching code found. Try a different query or run index_codebase first."
+          : formatSearchResults(results);
+        const output = text(renderedText, results);
+        return { output, text: output.content[0].text };
+      });
     },
   });
 
@@ -129,8 +136,13 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, { ...params, metadataOnly: true });
-      return text(formatCodebasePeek(results), results);
+      return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "peek", params.query, {
+        ...params,
+        metadataOnly: true,
+      }, (results) => {
+        const output = text(formatCodebasePeek(results), results);
+        return { output, text: output.content[0].text };
+      });
     },
   });
 
@@ -211,10 +223,12 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "index_metrics",
     label: "Index Metrics",
-    description: "Return collected performance metrics when debug metrics are enabled.",
-    parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const result = await getIndexMetrics(projectRoot(ctx), HOST);
+    description: "Return operational metrics and opt-in memory-only privacy-safe effectiveness counters.",
+    parameters: Type.Object({
+      reset: Type.Optional(Type.Boolean({ description: "Reset in-memory metrics before returning the snapshot" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await getIndexMetrics(projectRoot(ctx), HOST, { reset: params.reset });
       return text(result.text, result);
     },
   });

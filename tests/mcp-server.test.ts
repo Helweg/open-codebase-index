@@ -7,10 +7,31 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import * as fs from "fs";
 import { estimateTokens } from "../src/utils/cost.js";
 import { countContextTokens } from "../src/tools/utils.js";
+import {
+  getProcessEffectivenessMetrics,
+  isProcessEffectivenessCollectorAllocated,
+  resetProcessEffectivenessMetrics,
+  type EffectivenessMetricsSnapshot,
+} from "../src/utils/effectiveness-metrics.js";
+import {
+  initializeTools,
+  searchCodebaseWithEffectiveness,
+} from "../src/tools/operations.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
 }));
+
+function returnedTokenBucket(tokens: number): keyof EffectivenessMetricsSnapshot["returnedTokenEstimate"] {
+  if (tokens === 0) return "0";
+  if (tokens <= 127) return "1-127";
+  if (tokens <= 255) return "128-255";
+  if (tokens <= 511) return "256-511";
+  if (tokens <= 1199) return "512-1199";
+  if (tokens <= 1999) return "1200-1999";
+  if (tokens <= 3999) return "2000-3999";
+  return "4000+";
+}
 
 vi.mock("fs", async () => {
   const actual = await vi.importActual<typeof import("fs")>("fs");
@@ -33,6 +54,7 @@ const mergerMocks = vi.hoisted(() => ({
 }));
 
 const indexerMockState = vi.hoisted(() => ({
+  constructorError: undefined as Error | undefined,
   constructorArgs: [] as Array<[string, unknown]>,
   instances: [] as Array<{
     initialize: ReturnType<typeof vi.fn>;
@@ -45,6 +67,10 @@ const indexerMockState = vi.hoisted(() => ({
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
+}));
+
+const loggerMocks = vi.hoisted(() => ({
+  resetMetrics: vi.fn(),
 }));
 
 function graphSymbol(id: string, name: string, filePath: string, startLine = 1) {
@@ -61,7 +87,10 @@ function graphSymbol(id: string, name: string, filePath: string, startLine = 1) 
   };
 }
 
-vi.mock("../src/config/merger.js", () => mergerMocks);
+vi.mock("../src/config/merger.js", () => ({
+  loadMergedConfig: mergerMocks.loadProjectConfigLayer,
+  loadProjectConfigLayer: mergerMocks.loadProjectConfigLayer,
+}));
 
 let mockIndexResult = {
   totalFiles: 10,
@@ -111,6 +140,7 @@ let mockHealthCheckResult = {
 vi.mock("../src/indexer/index.js", () => {
   class MockIndexer {
     constructor(projectRoot: string, config: unknown) {
+      if (indexerMockState.constructorError) throw indexerMockState.constructorError;
       indexerMockState.constructorArgs.push([projectRoot, config]);
       indexerMockState.instances.push({
         initialize: this.initialize,
@@ -268,6 +298,7 @@ vi.mock("../src/indexer/index.js", () => {
     getLogger = vi.fn().mockReturnValue({
       isEnabled: vi.fn().mockReturnValue(false),
       isMetricsEnabled: vi.fn().mockReturnValue(false),
+      resetMetrics: loggerMocks.resetMetrics,
       getLogs: vi.fn().mockReturnValue([]),
       getLogsByCategory: vi.fn().mockReturnValue([]),
       getLogsByLevel: vi.fn().mockReturnValue([]),
@@ -290,7 +321,7 @@ vi.mock("../src/indexer/index.js", () => {
 
 describe("createMcpServer", () => {
   it("should create a server instance", () => {
-    const config = parseConfig({});
+    const config = parseConfig({ effectivenessMetrics: { enabled: true } });
     const server = createMcpServer("/tmp/test-project", config);
 
     expect(server).toBeDefined();
@@ -311,9 +342,12 @@ describe("MCP server tools and prompts", () => {
   let server: ReturnType<typeof createMcpServer>;
 
   beforeEach(async () => {
+    resetProcessEffectivenessMetrics();
+    loggerMocks.resetMetrics.mockClear();
     fs.mkdirSync(`${testMainRepo}/.opencode/index`, { recursive: true });
     indexerMockState.constructorArgs.length = 0;
     indexerMockState.instances.length = 0;
+    indexerMockState.constructorError = undefined;
     mergerMocks.loadProjectConfigLayer.mockReset();
     mergerMocks.loadProjectConfigLayer.mockReturnValue({});
     mockIndexResult = {
@@ -350,7 +384,7 @@ describe("MCP server tools and prompts", () => {
       filePaths: [],
     };
 
-    const config = parseConfig({});
+    const config = parseConfig({ effectivenessMetrics: { enabled: true } });
     server = createMcpServer("/tmp/test-project", config);
     client = new Client({ name: "test-client", version: "1.0.0" });
 
@@ -362,6 +396,7 @@ describe("MCP server tools and prompts", () => {
   });
 
   afterEach(async () => {
+    resetProcessEffectivenessMetrics();
     await client.close();
     fs.rmSync(testMainRepo, { recursive: true, force: true });
   });
@@ -436,6 +471,13 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 results");
     expect(content[0].text).toContain("validateToken");
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(1);
+    expect(snapshot.toolRoute.search).toBe(1);
+    expect(snapshot.hostMode.opencode).toBe(1);
+    expect(snapshot.outcome.success).toBe(1);
+    expect(snapshot.resultCount["1"]).toBe(1);
+    expect(snapshot.returnedTokenEstimate[returnedTokenBucket(countContextTokens(content[0].text ?? ""))]).toBe(1);
   });
 
   it("should execute codebase_search with null optional fields", async () => {
@@ -474,6 +516,165 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 locations");
     expect(content[0].text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(1);
+    expect(snapshot.toolRoute.peek).toBe(1);
+    expect(snapshot.hostMode.opencode).toBe(1);
+    expect(snapshot.outcome.success).toBe(1);
+    expect(snapshot.exactHandoffEmitted.yes).toBe(1);
+    expect(snapshot.returnedTokenEstimate[returnedTokenBucket(countContextTokens(content[0].text ?? ""))]).toBe(1);
+  });
+
+  it("should record no-result and error outcomes without retaining error content", async () => {
+    const search = indexerMockState.instances[0].search;
+    search.mockResolvedValueOnce([]);
+    await client.callTool({
+      name: "codebase_peek",
+      arguments: { query: "no result query" },
+    });
+    expect(getProcessEffectivenessMetrics()).toMatchObject({
+      totalCalls: 1,
+      toolRoute: { peek: 1 },
+      outcome: { "no-result": 1 },
+      resultCount: { "0": 1 },
+    });
+
+    const secretError = "sk-private-error-content-must-not-persist";
+    search.mockRejectedValueOnce(new Error(secretError));
+    await client.callTool({
+      name: "codebase_search",
+      arguments: { query: "failing query" },
+    });
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(2);
+    expect(snapshot.toolRoute.search).toBe(1);
+    expect(snapshot.outcome.error).toBe(1);
+    expect(snapshot.returnedTokenEstimate["0"]).toBe(1);
+    expect(JSON.stringify(snapshot)).not.toContain(secretError);
+  });
+
+  it("should count an MCP formatter failure as one error instead of success", async () => {
+    indexerMockState.instances[0].search.mockResolvedValueOnce([{
+      startLine: 1,
+      endLine: 2,
+      name: "broken",
+      chunkType: "function",
+      content: "source",
+      score: 0.9,
+      get filePath(): string {
+        throw new Error("MCP formatter failed");
+      },
+    }]);
+    await client.callTool({
+      name: "codebase_search",
+      arguments: { query: "broken formatter" },
+    });
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(1);
+    expect(snapshot.toolRoute.search).toBe(1);
+    expect(snapshot.hostMode.opencode).toBe(1);
+    expect(snapshot.outcome.error).toBe(1);
+    expect(snapshot.returnedTokenEstimate["0"]).toBe(1);
+  });
+
+  it("should safely count constructor and invalid-config failures exactly once per attempted call", async () => {
+    const constructorRoot = `/tmp/effectiveness-constructor-error-${process.pid}`;
+    const enabledConfig = parseConfig({ effectivenessMetrics: { enabled: true } });
+    indexerMockState.constructorError = new Error("secret constructor detail");
+    expect(() => initializeTools(constructorRoot, enabledConfig, "opencode")).toThrow();
+    await expect(searchCodebaseWithEffectiveness(
+      constructorRoot,
+      "opencode",
+      "search",
+      "secret query",
+      {},
+      (results) => ({ output: results, text: "unreachable" }),
+    )).rejects.toThrow("secret constructor detail");
+    indexerMockState.constructorError = undefined;
+
+    const configRoot = `/tmp/effectiveness-config-error-${process.pid}`;
+    mergerMocks.loadProjectConfigLayer.mockReturnValue({
+      effectivenessMetrics: { enabled: true },
+      reranker: { enabled: true, provider: "custom" },
+    });
+    await expect(searchCodebaseWithEffectiveness(
+      configRoot,
+      "opencode",
+      "peek",
+      "another secret query",
+      { metadataOnly: true },
+      (results) => ({ output: results, text: "unreachable" }),
+    )).rejects.toThrow();
+
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(2);
+    expect(snapshot.toolRoute.search).toBe(1);
+    expect(snapshot.toolRoute.peek).toBe(1);
+    expect(snapshot.outcome.error).toBe(2);
+    expect(snapshot.returnedTokenEstimate["0"]).toBe(2);
+    expect(JSON.stringify(snapshot)).not.toContain("secret");
+  });
+
+  it("should not allocate or record effectiveness state for a disabled host call", async () => {
+    const disabledServer = createMcpServer(
+      `/tmp/effectiveness-disabled-host-${process.pid}`,
+      parseConfig(undefined),
+    );
+    const disabledClient = new Client({ name: "disabled-test-client", version: "1.0.0" });
+    const [disabledClientTransport, disabledServerTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      disabledServer.connect(disabledServerTransport),
+      disabledClient.connect(disabledClientTransport),
+    ]);
+    resetProcessEffectivenessMetrics();
+
+    try {
+      await disabledClient.callTool({
+        name: "codebase_search",
+        arguments: { query: "disabled metrics query" },
+      });
+      expect(isProcessEffectivenessCollectorAllocated()).toBe(false);
+      expect(getProcessEffectivenessMetrics().totalCalls).toBe(0);
+    } finally {
+      await disabledClient.close();
+    }
+  });
+
+  it("should preserve Jcode host token, outcome, single-count, and reset parity", async () => {
+    const jcodeServer = createMcpServer(
+      "/tmp/jcode-test-project",
+      parseConfig({ effectivenessMetrics: { enabled: true } }),
+      "jcode",
+    );
+    const jcodeClient = new Client({ name: "jcode-test-client", version: "1.0.0" });
+    const [jcodeClientTransport, jcodeServerTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      jcodeServer.connect(jcodeServerTransport),
+      jcodeClient.connect(jcodeClientTransport),
+    ]);
+    resetProcessEffectivenessMetrics();
+    loggerMocks.resetMetrics.mockClear();
+
+    const result = await jcodeClient.callTool({
+      name: "codebase_search",
+      arguments: { query: "jcode search" },
+    });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    const snapshot = getProcessEffectivenessMetrics();
+    expect(snapshot.totalCalls).toBe(1);
+    expect(snapshot.toolRoute.search).toBe(1);
+    expect(snapshot.hostMode.jcode).toBe(1);
+    expect(snapshot.outcome.success).toBe(1);
+    expect(snapshot.resultCount["1"]).toBe(1);
+    expect(snapshot.returnedTokenEstimate[returnedTokenBucket(countContextTokens(text))]).toBe(1);
+
+    loggerMocks.resetMetrics.mockImplementationOnce(() => {
+      throw new Error("operational reset failed");
+    });
+    const reset = await jcodeClient.callTool({ name: "index_metrics", arguments: { reset: true } });
+    expect(getProcessEffectivenessMetrics().totalCalls).toBe(0);
+    expect((reset.content as Array<{ text?: string }>)[0]?.text).toContain("Metrics reset.");
+    await jcodeClient.close();
   });
 
   it("should execute codebase_peek with null optional fields", async () => {
@@ -1146,6 +1347,21 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
+  });
+
+  it("should reset in-memory metrics through index_metrics", async () => {
+    await client.callTool({
+      name: "codebase_search",
+      arguments: { query: "seed metrics before reset" },
+    });
+    expect(getProcessEffectivenessMetrics().totalCalls).toBe(1);
+    const result = await client.callTool({
+      name: "index_metrics",
+      arguments: { reset: true },
+    });
+
+    expect(getProcessEffectivenessMetrics().totalCalls).toBe(0);
+    expect((result.content as Array<{ text?: string }>)[0]?.text).toContain("Metrics reset.");
   });
 
   it("should execute index_logs tool", async () => {

@@ -9,7 +9,11 @@ const operationMocks = vi.hoisted(() => ({
   getIndexHealthCheck: vi.fn(),
   runIndexHealthCheck: vi.fn(),
   searchCodebase: vi.fn(),
+  searchCodebaseWithEffectiveness: vi.fn(),
   implementationLookup: vi.fn(),
+  recordToolEffectiveness: vi.fn(),
+  getIndexMetrics: vi.fn(() => ({ text: "" })),
+  isToolEffectivenessEnabled: vi.fn(() => true),
 }));
 
 vi.mock("../src/tools/operations.js", () => ({
@@ -18,7 +22,7 @@ vi.mock("../src/tools/operations.js", () => ({
   getCallGraphData: operationMocks.getCallGraphData,
   getCallGraphPath: operationMocks.getCallGraphPath,
   getIndexHealthCheck: operationMocks.getIndexHealthCheck,
-  getIndexMetrics: vi.fn(() => ({ text: "" })),
+  getIndexMetrics: operationMocks.getIndexMetrics,
   getIndexStatus: vi.fn(),
   getPrImpact: vi.fn(),
   implementationLookup: operationMocks.implementationLookup,
@@ -27,7 +31,10 @@ vi.mock("../src/tools/operations.js", () => ({
   runIndexCodebase: vi.fn(),
   runIndexHealthCheck: operationMocks.runIndexHealthCheck,
   searchCodebase: operationMocks.searchCodebase,
+  searchCodebaseWithEffectiveness: operationMocks.searchCodebaseWithEffectiveness,
+  recordToolEffectiveness: operationMocks.recordToolEffectiveness,
   getIndexLogs: vi.fn(() => ({ text: "" })),
+  isToolEffectivenessEnabled: operationMocks.isToolEffectivenessEnabled,
 }));
 
 interface RegisteredTool {
@@ -81,7 +88,38 @@ describe("Pi adapter conformance", () => {
     operationMocks.getIndexHealthCheck.mockReset();
     operationMocks.runIndexHealthCheck.mockReset();
     operationMocks.searchCodebase.mockReset();
+    operationMocks.searchCodebaseWithEffectiveness.mockReset();
+    operationMocks.searchCodebaseWithEffectiveness.mockImplementation(
+      async (projectRoot, host, route, query, options, render) => {
+        try {
+          const results = await operationMocks.searchCodebase(projectRoot, host, query, options);
+          const rendered = render(results);
+          operationMocks.recordToolEffectiveness(projectRoot, host, {
+            route,
+            host,
+            outcome: results.length > 0 ? "success" : "no-result",
+            resultCount: results.length,
+            returnedTokenEstimate: countContextTokens(rendered.text),
+            exactHandoffEmitted: rendered.text.includes("Exact-search handoff:"),
+          });
+          return rendered.output;
+        } catch (error) {
+          operationMocks.recordToolEffectiveness(projectRoot, host, {
+            route,
+            host,
+            outcome: "error",
+            resultCount: 0,
+            returnedTokenEstimate: 0,
+          });
+          throw error;
+        }
+      },
+    );
     operationMocks.implementationLookup.mockReset();
+    operationMocks.recordToolEffectiveness.mockReset();
+    operationMocks.isToolEffectivenessEnabled.mockReset();
+    operationMocks.isToolEffectivenessEnabled.mockReturnValue(true);
+    operationMocks.getIndexMetrics.mockClear();
   });
 
   it("registers codebase_context first as the preferred gateway route", async () => {
@@ -131,6 +169,76 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
     expect(result?.content[0]?.text).not.toContain("```");
     expect(result?.details).toEqual(expect.arrayContaining([expect.objectContaining({ name: "validateToken" })]));
+    expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenCalledWith("/repo", "pi", "peek", "authentication validation", expect.objectContaining({
+      metadataOnly: true,
+    }), expect.any(Function));
+  });
+
+  it("marks full-content search for effectiveness aggregation", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([]);
+    const { tools } = await registerPiTools();
+
+    const result = await tools.get("codebase_search")?.execute(
+      "tool-call",
+      { query: "request routing" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenCalledWith(
+      "/repo",
+      "pi",
+      "search",
+      "request routing",
+      expect.any(Object),
+      expect.any(Function),
+    );
+    expect(result?.content[0]?.text).toBe("No matching code found. Try a different query or run index_codebase first.");
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "pi", expect.objectContaining({
+      outcome: "no-result",
+      returnedTokenEstimate: countContextTokens(result?.content[0]?.text ?? ""),
+    }));
+  });
+
+  it("records Pi formatter failures as one error and forwards metrics reset", async () => {
+    const broken = {
+      startLine: 1,
+      endLine: 2,
+      name: "broken",
+      chunkType: "function",
+      content: "source",
+      score: 0.9,
+      get filePath(): string {
+        throw new Error("Pi formatter failed");
+      },
+    };
+    operationMocks.searchCodebase.mockResolvedValueOnce([broken]);
+    const { tools } = await registerPiTools();
+
+    await expect(tools.get("codebase_search")?.execute(
+      "tool-call",
+      { query: "broken formatter" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    )).rejects.toThrow("Pi formatter failed");
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "pi", expect.objectContaining({
+      route: "search",
+      outcome: "error",
+      returnedTokenEstimate: 0,
+    }));
+
+    await tools.get("index_metrics")?.execute(
+      "tool-call",
+      { reset: true },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+    expect(operationMocks.getIndexMetrics).toHaveBeenCalledWith("/repo", "pi", { reset: true });
   });
 
   it("formats caller results like other host adapters", async () => {

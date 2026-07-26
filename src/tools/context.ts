@@ -4,6 +4,8 @@ import {
   getCallGraphData,
   getCallGraphPath,
   implementationLookup,
+  isToolEffectivenessEnabled,
+  recordToolEffectiveness,
   searchCodebase,
 } from "./operations.js";
 import { inferExactSymbolFromQuery } from "./symbol-inference.js";
@@ -48,6 +50,7 @@ export interface CodebaseContextResult {
     routedQuery?: string;
     tokenBudget: number;
     tokenEstimate: number;
+    resultCount?: number;
     truncated?: boolean;
     candidateCount?: number;
     deduplicatedCount?: number;
@@ -494,16 +497,18 @@ export async function resolveSearchContext(
 function fittedDetails(
   route: "path" | "direct-edge",
   fitted: ReturnType<typeof fitTextToContextBudget>,
+  resultCount: number,
 ): NonNullable<CodebaseContextResult["details"]> {
   return {
     route,
     tokenBudget: fitted.tokenBudget,
     tokenEstimate: fitted.tokenEstimate,
     truncated: fitted.truncated,
+    resultCount,
   };
 }
 
-export async function resolveCodebaseContext(
+async function resolveCodebaseContextUnmeasured(
   projectRoot: string | undefined,
   host: HostMode,
   input: CodebaseContextInput,
@@ -536,7 +541,7 @@ export async function resolveCodebaseContext(
       );
       return {
         text: fitted.text,
-        details: fittedDetails("path", fitted),
+        details: fittedDetails("path", fitted, path.path.length),
       };
     }
 
@@ -544,7 +549,7 @@ export async function resolveCodebaseContext(
       const fitted = fitTextToContextBudget(pathText, tokenBudget);
       return {
         text: fitted.text,
-        details: fittedDetails("path", fitted),
+        details: fittedDetails("path", fitted, 0),
       };
     }
     const resolvedFrom = path.from;
@@ -566,7 +571,7 @@ export async function resolveCodebaseContext(
       );
       return {
         text: fitted.text,
-        details: fittedDetails("direct-edge", fitted),
+        details: fittedDetails("direct-edge", fitted, 1),
       };
     }
 
@@ -576,7 +581,7 @@ export async function resolveCodebaseContext(
     );
     return {
       text: fitted.text,
-      details: fittedDetails("path", fitted),
+      details: fittedDetails("path", fitted, 0),
     };
   }
 
@@ -593,4 +598,78 @@ export async function resolveCodebaseContext(
       metadataOnly: true,
     }),
   });
+}
+
+function contextRoute(
+  route: NonNullable<CodebaseContextResult["details"]>["route"],
+): "context-conceptual" | "context-definition" | "context-path" | "context-direct-edge" {
+  return `context-${route}`;
+}
+
+function contextScopeRelaxation(
+  details: NonNullable<CodebaseContextResult["details"]>,
+): "none" | "directory" | "file-type" | "both" {
+  const fields = new Set(details.recovery?.attempts.flatMap((attempt) => attempt.relaxedFields) ?? []);
+  if (fields.has("directory") && fields.has("fileType")) return "both";
+  if (fields.has("directory")) return "directory";
+  if (fields.has("fileType")) return "file-type";
+  return "none";
+}
+
+function contextResultCount(details: NonNullable<CodebaseContextResult["details"]>): number {
+  return details.selectedCount ?? details.resultCount ?? 0;
+}
+
+function contextRecoveryUsed(details: NonNullable<CodebaseContextResult["details"]>): boolean {
+  const attempts = details.recovery?.attempts ?? [];
+  return attempts.length > 1 || attempts.some((attempt) => attempt.relaxedFields.length > 0);
+}
+
+function expectedContextRoute(input: CodebaseContextInput): "context-conceptual" | "context-definition" | "context-path" {
+  if (trimOrUndefined(input.from) && trimOrUndefined(input.to)) return "context-path";
+  if (trimOrUndefined(input.symbol)) return "context-definition";
+  return "context-conceptual";
+}
+
+export async function resolveCodebaseContext(
+  projectRoot: string | undefined,
+  host: HostMode,
+  input: CodebaseContextInput,
+): Promise<CodebaseContextResult> {
+  const metricsEnabled = isToolEffectivenessEnabled(projectRoot, host);
+  const startedAt = metricsEnabled ? performance.now() : 0;
+  try {
+    const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
+    const details = result.details;
+    if (metricsEnabled && details) {
+      const resultCount = contextResultCount(details);
+      recordToolEffectiveness(projectRoot, host, {
+        route: contextRoute(details.route),
+        host,
+        outcome: resultCount > 0 ? "success" : "no-result",
+        recoveryUsed: contextRecoveryUsed(details),
+        resultCount,
+        latencyMs: performance.now() - startedAt,
+        tokenBudget: details.tokenBudget,
+        returnedTokenEstimate: details.tokenEstimate,
+        exactHandoffEmitted: result.text.includes("Exact-search handoff:"),
+        scopeRelaxation: contextScopeRelaxation(details),
+      });
+    }
+    return result;
+  } catch (error) {
+    if (metricsEnabled) {
+      recordToolEffectiveness(projectRoot, host, {
+        route: expectedContextRoute(input),
+        host,
+        outcome: "error",
+        resultCount: 0,
+        latencyMs: performance.now() - startedAt,
+        tokenBudget: input.tokenBudget ?? undefined,
+        returnedTokenEstimate: 0,
+        scopeRelaxation: "none",
+      });
+    }
+    throw error;
+  }
 }
