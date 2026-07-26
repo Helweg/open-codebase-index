@@ -53,7 +53,7 @@ import {
   type IndexMutationOperation,
 } from "./index-lock.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -481,6 +481,7 @@ interface IndexCompatibility {
 const INDEX_METADATA_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
 const SWIFT_PARSER_VERSION = "1";
+const METAL_PARSER_VERSION = "1";
 const RANKING_TOKEN_CACHE_LIMIT = 4096;
 const RANK_HYBRID_CACHE_LIMIT = 256;
 
@@ -2315,6 +2316,16 @@ export class Indexer {
     return `${key}.${projectHash}`;
   }
 
+  private getMetalParserVersionMetadataKey(): string {
+    const key = "index.parser.metalVersion";
+    if (this.config.scope !== "global") {
+      return key;
+    }
+
+    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
+    return `${key}.${projectHash}`;
+  }
+
   private hasProjectForceReembedPending(): boolean {
     return this.config.scope === "global" && this.database?.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
   }
@@ -4045,6 +4056,9 @@ export class Indexer {
     const swiftParserMetadataKey = this.getSwiftParserVersionMetadataKey();
     const reparseCachedSwiftFiles =
       database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
+    const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
+    const reparseCachedMetalFiles =
+      database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
     if (
       reparseCachedSwiftFiles &&
       Array.from(this.fileHashCache.keys()).some(
@@ -4052,6 +4066,14 @@ export class Indexer {
       )
     ) {
       this.logger.info("Reindexing cached Swift files for parser support");
+    }
+    if (
+      reparseCachedMetalFiles &&
+      Array.from(this.fileHashCache.keys()).some(
+        (filePath) => path.extname(filePath).toLowerCase() === ".metal",
+      )
+    ) {
+      this.logger.info("Reindexing cached Metal files for parser support");
     }
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
@@ -4092,8 +4114,16 @@ export class Indexer {
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles &&
         path.extname(f.path).toLowerCase() === ".swift";
+      const requiresMetalParserUpgrade =
+        reparseCachedMetalFiles &&
+        path.extname(f.path).toLowerCase() === ".metal";
 
-      if (cachedHashMatches && !needsCallGraphRefresh && !requiresSwiftParserUpgrade) {
+      if (
+        cachedHashMatches &&
+        !needsCallGraphRefresh &&
+        !requiresSwiftParserUpgrade &&
+        !requiresMetalParserUpgrade
+      ) {
         unchangedFilePaths.add(f.path);
         this.logger.recordCacheHit();
       } else {
@@ -4331,6 +4361,25 @@ export class Indexer {
       for (const chunk of parsed.chunks) {
         if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
 
+        // Large Metal functions are split into overlapping chunks. Keep one symbol
+        // spanning the full declaration so same-file resolution does not treat the
+        // fragments as ambiguous overloads.
+        const existingMetalSymbol = chunk.language === "metal"
+          ? fileSymbols.find((symbol) =>
+              symbol.name === chunk.name
+              && symbol.kind === chunk.chunkType
+              && symbol.startLine <= chunk.endLine
+              && chunk.startLine <= symbol.endLine
+            )
+          : undefined;
+        if (existingMetalSymbol) {
+          existingMetalSymbol.startLine = Math.min(existingMetalSymbol.startLine, chunk.startLine);
+          existingMetalSymbol.endLine = Math.max(existingMetalSymbol.endLine, chunk.endLine);
+          existingMetalSymbol.startCol = Math.min(existingMetalSymbol.startCol, chunk.startCol ?? 0);
+          existingMetalSymbol.endCol = Math.max(existingMetalSymbol.endCol, chunk.endCol ?? 0);
+          continue;
+        }
+
         const symbolId = `sym_${hashContent(
           parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" +
           chunk.startLine + ":" + (chunk.startCol ?? 0),
@@ -4489,6 +4538,7 @@ export class Indexer {
         this.saveFailedBatches([]);
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
+      database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -4518,6 +4568,7 @@ export class Indexer {
         this.saveFailedBatches([]);
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
+      database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -4835,6 +4886,7 @@ export class Indexer {
       database.deleteMetadata(this.getProjectForceReembedMetadataKey());
     }
     database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
+    database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
     this.saveIndexMetadata(configuredProviderInfo);
     this.indexCompatibility = { compatible: true };
 
