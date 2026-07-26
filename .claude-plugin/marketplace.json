@@ -10,7 +10,7 @@
       "name": "codebase-index",
       "description": "Semantic code search and codebase graph tools for Claude Code",
       "source": "./",
-      "version": "0.17.1"
+      "version": "0.18.0"
     }
   ]
 }

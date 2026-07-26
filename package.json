@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.17.1",
+  "version": "0.18.0",
   "description": "Semantic codebase indexing and search for OpenCode - find code by meaning, not just keywords",
   "type": "module",
   "main": "dist/index.js",
