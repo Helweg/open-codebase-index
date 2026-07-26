@@ -328,17 +328,17 @@ export async function resolveSearchContext(
     const baseDetails = base.details as NonNullable<CodebaseContextResult["details"]>;
     const successIndex = findSuccessfulAttemptIndex(route, attempts);
     const note = recoveryPrefix(attempts, successIndex);
-    const fitted = fitTextToContextBudget(note ? `${base.text}\n\n${note}` : base.text, tokenBudget);
+    const fitted = fitTextToContextBudget(note ? `${note}\n\n${base.text}` : base.text, tokenBudget);
     return {
       text: fitted.text,
-        details: {
-          ...baseDetails,
-          tokenBudget: fitted.tokenBudget,
-          tokenEstimate: fitted.tokenEstimate,
-          truncated: fitted.truncated,
-          recovery: buildRecoveryDetails(attempts, successIndex),
-        },
-      };
+      details: {
+        ...baseDetails,
+        tokenBudget: fitted.tokenBudget,
+        tokenEstimate: fitted.tokenEstimate,
+        truncated: fitted.truncated,
+        recovery: buildRecoveryDetails(attempts, successIndex),
+      },
+    };
   };
 
   if (lookupSymbol) {
