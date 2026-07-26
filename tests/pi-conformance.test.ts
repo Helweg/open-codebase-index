@@ -110,6 +110,15 @@ describe("Pi adapter conformance", () => {
   it("formats caller results like other host adapters", async () => {
     operationMocks.getCallGraphData.mockResolvedValue({
       direction: "callers",
+      resolution: {
+        status: "resolved",
+        name: "validateToken",
+        symbolId: "sym_validate",
+        filePath: "src/auth.ts",
+        startLine: 4,
+        kind: "function",
+        matchedBy: "name",
+      },
       callers: [{
         fromSymbolName: "entryPoint",
         fromSymbolFilePath: "src/app.ts",
@@ -131,7 +140,7 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(result?.content[0]?.text).toContain("\"validateToken\" is called by 1 function(s)");
+    expect(result?.content[0]?.text).toContain("\"validateToken\" at src/auth.ts:4 is called by 1 function(s)");
     expect(result?.content[0]?.text).toContain("entryPoint in src/app.ts");
     expect(result?.details).toEqual(expect.objectContaining({ direction: "callers" }));
   });
@@ -139,6 +148,15 @@ describe("Pi adapter conformance", () => {
   it("formats callee results like other host adapters", async () => {
     operationMocks.getCallGraphData.mockResolvedValue({
       direction: "callees",
+      resolution: {
+        status: "resolved",
+        name: "entryPoint",
+        symbolId: "sym_entry",
+        filePath: "src/app.ts",
+        startLine: 10,
+        kind: "function",
+        matchedBy: "name",
+      },
       callers: [],
       callees: [{
         targetName: "validateToken",
@@ -159,15 +177,25 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(result?.content[0]?.text).toContain("[1] \u2192 validateToken (Call) at line 21 [resolved: sym_validate]");
+    expect(result?.content[0]?.text).toContain("[1] \u2192 validateToken (Call) at line 21 [resolved]");
     expect(result?.details).toEqual(expect.objectContaining({ direction: "callees" }));
   });
 
   it("formats call path results like other host adapters", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue([
-      { symbolName: "createOrder", filePath: "src/order.ts", line: 10, callType: "Call" },
-      { symbolName: "chargeCard", filePath: "src/pay.ts", line: 33, callType: "MethodCall" },
-    ]);
+    operationMocks.getCallGraphPath.mockResolvedValue({
+      from: {
+        status: "resolved", name: "createOrder", symbolId: "sym_order", filePath: "src/order.ts",
+        startLine: 10, kind: "function", matchedBy: "name",
+      },
+      to: {
+        status: "resolved", name: "chargeCard", symbolId: "sym_charge", filePath: "src/pay.ts",
+        startLine: 33, kind: "function", matchedBy: "name",
+      },
+      path: [
+        { symbolName: "createOrder", filePath: "src/order.ts", line: 10, callType: "source" },
+        { symbolName: "chargeCard", filePath: "src/pay.ts", line: 33, callType: "MethodCall" },
+      ],
+    });
     const { tools } = await registerPiTools();
 
     const result = await tools.get("call_graph_path")?.execute(
@@ -181,13 +209,27 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("Path (2 hops):");
     expect(result?.content[0]?.text).toContain("[start] createOrder (src/order.ts:10)");
     expect(result?.content[0]?.text).toContain("--MethodCall--> chargeCard (src/pay.ts:33)");
-    expect(result?.details).toHaveLength(2);
+    expect(result?.details).toEqual(expect.objectContaining({ path: expect.any(Array) }));
   });
 
   it("routes codebase_context from/to through call-graph lookup with fallback", async () => {
-    operationMocks.getCallGraphPath.mockResolvedValue([]);
+    operationMocks.getCallGraphPath.mockResolvedValue({
+      from: {
+        status: "resolved", name: "callerFn", symbolId: "sym_caller", filePath: "src/app.ts",
+        startLine: 10, kind: "function", matchedBy: "name",
+      },
+      to: {
+        status: "resolved", name: "targetFn", symbolId: "sym_target", filePath: "src/target.ts",
+        startLine: 1, kind: "function", matchedBy: "name",
+      },
+      path: [],
+    });
     operationMocks.getCallGraphData.mockResolvedValue({
       direction: "callers",
+      resolution: {
+        status: "resolved", name: "targetFn", symbolId: "sym_target", filePath: "src/target.ts",
+        startLine: 1, kind: "function", matchedBy: "name",
+      },
       callers: [{
         fromSymbolName: "callerFn",
         fromSymbolFilePath: "src/app.ts",
@@ -209,8 +251,12 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10);
-    expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", { name: "targetFn", direction: "callers" });
+    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10, undefined, undefined);
+    expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", {
+      name: "targetFn",
+      direction: "callers",
+      filePath: undefined,
+    });
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");
     expect(result?.content[0]?.text).toContain("edge is unresolved");

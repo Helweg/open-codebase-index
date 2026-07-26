@@ -60,11 +60,13 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "codebase_context",
     label: "Codebase Context",
-    description: "PREFERRED FIRST TOOL for any repository question. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow.",
+    description: "PREFERRED FIRST TOOL for any repository question. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow. Use fromFilePath/toFilePath only when duplicate path endpoints are reported.",
     parameters: Type.Object({
       query: Type.String({ description: "Natural language description of what code you're trying to locate" }),
       from: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Source symbol when asking for a dependency path." })),
       to: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Target symbol when asking for a dependency path." })),
+      fromFilePath: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional source file path used to disambiguate duplicate source names." })),
+      toFilePath: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Optional target file path used to disambiguate duplicate target names." })),
       symbol: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Exact symbol name for an authoritative definition lookup." })),
       limit: Type.Optional(Type.Union([
         Type.Integer({ minimum: MIN_CONTEXT_RESULT_LIMIT, maximum: MAX_CONTEXT_RESULT_LIMIT }),

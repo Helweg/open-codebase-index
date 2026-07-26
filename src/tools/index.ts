@@ -7,9 +7,8 @@ import { formatCostEstimate } from "../utils/cost.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCodebasePeek,
-  formatCallGraphCallees,
-  formatCallGraphCallers,
-  formatCallGraphPath,
+  formatCallGraphPathResult,
+  formatCallGraphResult,
   formatDefinitionLookup,
   formatHealthCheck,
   formatIndexStats,
@@ -81,11 +80,13 @@ export function getIndexerForProject(directory: string): Indexer {
 
 export const codebase_context: ToolDefinition = tool({
   description:
-    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, symbol for definitions, or only query for conceptual discovery.",
+    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for definitions; or provide only query for conceptual discovery.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
     to: z.string().nullable().optional().describe("Target symbol for a dependency path"),
+    fromFilePath: z.string().nullable().optional().describe("Optional source file path used only to disambiguate duplicate source names"),
+    toFilePath: z.string().nullable().optional().describe("Optional target file path used only to disambiguate duplicate target names"),
     symbol: z.string().nullable().optional().describe("Exact symbol for authoritative definition lookup"),
     limit: z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).nullable().optional().default(10)
       .describe(`Maximum number of results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
@@ -278,39 +279,42 @@ export const implementation_lookup: ToolDefinition = tool({
 
 export const call_graph: ToolDefinition = tool({
   description:
-    "Query the call graph to find callers or callees of a function/method. Use to understand code flow and dependencies between functions."
+    "Query the call graph by function or method name to find direct callers or callees. Unique names resolve automatically; use filePath only when duplicate names are reported."
     + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
   args: {
     name: z.string().describe("Function or method name to query"),
     direction: z.enum(["callers", "callees"]).default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
-    symbolId: z.string().optional().describe("Symbol ID (required for 'callees' direction, returned by previous call_graph queries)"),
+    filePath: z.string().optional().describe("Optional file path used to disambiguate duplicate symbol names"),
+    symbolId: z.string().optional().describe("Optional backward-compatible symbol ID escape hatch"),
     relationshipType: z.enum(RELATIONSHIP_TYPE_VALUES).optional().describe("Filter by relationship type. Omit to show all."),
   },
   async execute(args, context) {
-    if (args.direction === "callees") {
-      if (!args.symbolId) {
-        return "Error: 'symbolId' is required when direction is 'callees'. First use direction='callers' to find the symbol ID.";
-      }
-      const { callees } = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
-      return formatCallGraphCallees(args.symbolId, callees, args.relationshipType);
-    }
-
-    const { callers } = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
-    return formatCallGraphCallers(args.name, callers, args.relationshipType);
+    const graph = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
+    return formatCallGraphResult(graph);
   },
 });
 
 export const call_graph_path: ToolDefinition = tool({
   description:
-    "Find the shortest connection path between two symbols in the call graph. Given a source and target function/method name, returns the chain of calls connecting them.",
+    "Find the shortest connection path between two named symbols. Unique names resolve automatically; use fromFilePath or toFilePath only when duplicate endpoint names are reported.",
   args: {
     from: z.string().describe("Source function/method name (starting point)"),
     to: z.string().describe("Target function/method name (destination)"),
+    fromFilePath: z.string().optional().describe("Optional source file path used to disambiguate duplicate source names"),
+    toFilePath: z.string().optional().describe("Optional target file path used to disambiguate duplicate target names"),
     maxDepth: z.number().optional().default(10).describe("Maximum traversal depth (default: 10)"),
   },
   async execute(args, context) {
-    const path = await getCallGraphPath(context?.worktree, DEFAULT_HOST, args.from, args.to, args.maxDepth);
-    return formatCallGraphPath(args.from, args.to, path);
+    const path = await getCallGraphPath(
+      context?.worktree,
+      DEFAULT_HOST,
+      args.from,
+      args.to,
+      args.maxDepth,
+      args.fromFilePath,
+      args.toFilePath,
+    );
+    return formatCallGraphPathResult(path);
   },
 });
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Name-based call graph routing**: Callers, callees, and dependency paths now resolve unique symbol names automatically across native OpenCode, MCP, Pi, and `codebase_context`. Duplicate names return bounded candidate locations with optional file-path disambiguators, while `symbolId` remains an optional compatibility escape hatch.
 - **Self-recovering context lookup**: `codebase_context` now retries empty scoped searches without file filters, retries inferred symbol text after definition-style misses, reports bounded recovery metadata, and keeps all fallback responses within the requested token budget across MCP, native OpenCode, Pi, and evaluation.
 
 ## [0.18.1] - 2026-07-26

@@ -1,5 +1,5 @@
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
-import type { CallEdgeData, PathHopData } from "../native/index.js";
+import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolution } from "./operations.js";
 import type { LogEntry } from "../utils/logger.js";
 import { get_encoding } from "tiktoken";
 
@@ -454,42 +454,83 @@ export function formatLogs(logs: LogEntry[]): string {
   }).join("\n");
 }
 
-export function formatCallGraphCallers(name: string, callers: CallEdgeData[], relationshipType?: string): string {
-  if (callers.length === 0) {
-    return `No callers found for "${name}"${relationshipType ? ` with type ${relationshipType}` : ""}. It may not be called by any tracked function, or the index needs updating.`;
+function formatCallGraphCandidates(resolution: Exclude<CallGraphSymbolResolution, { status: "resolved" }>): string {
+  if (resolution.candidates.length === 0) return "";
+  const lines = resolution.candidates.map((candidate) =>
+    `- ${candidate.filePath}:${candidate.startLine} (${candidate.kind})`);
+  if (resolution.totalCandidates > resolution.candidates.length) {
+    lines.push(`- ...and ${resolution.totalCandidates - resolution.candidates.length} more`);
+  }
+  return `\nCandidates:\n${lines.join("\n")}`;
+}
+
+function formatCallGraphResolution(
+  resolution: CallGraphSymbolResolution,
+  label: "symbol" | "source symbol" | "target symbol",
+  filePathParameter: "filePath" | "fromFilePath" | "toFilePath",
+): string | null {
+  if (resolution.status === "resolved") return null;
+  if (resolution.invalidSymbolId) {
+    return `No active ${label} matched the supplied symbolId. Omit symbolId and retry with name${resolution.filePath ? ` and ${filePathParameter}` : ""}.`;
   }
 
-  const formatted = callers.map((edge, index) => {
+  const candidates = formatCallGraphCandidates(resolution);
+  if (resolution.status === "ambiguous") {
+    return `Ambiguous ${label} "${resolution.name}". Pass ${filePathParameter} to choose one location.${candidates}`;
+  }
+  if (resolution.filePath && resolution.totalCandidates > 0) {
+    return `No ${label} named "${resolution.name}" matched ${filePathParameter}="${resolution.filePath}". Choose one of the available locations.${candidates}`;
+  }
+  return `No indexed ${label} named "${resolution.name}" was found. Check the spelling or refresh the index.`;
+}
+
+export function formatCallGraphResult(result: CallGraphDataResult): string {
+  const resolutionFailure = formatCallGraphResolution(result.resolution, "symbol", "filePath");
+  if (resolutionFailure) return resolutionFailure;
+  if (result.resolution.status !== "resolved") return "Unable to resolve the requested symbol.";
+
+  const resolution = result.resolution;
+  const relationship = result.relationshipType ? ` with type ${result.relationshipType}` : "";
+  const location = `${resolution.filePath}:${resolution.startLine}`;
+  if (result.direction === "callers") {
+    if (result.callers.length === 0) {
+      return `No callers found for "${resolution.name}" at ${location}${relationship}. It may not be called by any tracked function, or the index needs updating.`;
+    }
+    const formatted = result.callers.map((edge, index) => {
+      const confidence = edge.confidence !== "Direct" ? ` [${edge.confidence.toLowerCase()}]` : "";
+      return `[${index + 1}] \u2190 from ${edge.fromSymbolName ?? "<unknown>"} in ${edge.fromSymbolFilePath ?? "<unknown file>"} (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? " [resolved]" : " [unresolved]"}`;
+    });
+    return `"${resolution.name}" at ${location} is called by ${result.callers.length} function(s):\n\n${formatted.join("\n")}`;
+  }
+
+  if (result.callees.length === 0) {
+    return `No callees found for "${resolution.name}" at ${location}${relationship}. The function may not call any other tracked functions.`;
+  }
+  const formatted = result.callees.map((edge, index) => {
     const confidence = edge.confidence !== "Direct" ? ` [${edge.confidence.toLowerCase()}]` : "";
-    return `[${index + 1}] \u2190 from ${edge.fromSymbolName ?? "<unknown>"} in ${edge.fromSymbolFilePath ?? "<unknown file>"} [${edge.fromSymbolId}] (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? " [resolved]" : " [unresolved]"}`;
+    return `[${index + 1}] \u2192 ${edge.targetName} (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? " [resolved]" : " [unresolved]"}`;
   });
-
-  return `"${name}" is called by ${callers.length} function(s):\n\n${formatted.join("\n")}`;
+  return `"${resolution.name}" at ${location} calls ${result.callees.length} function(s):\n\n${formatted.join("\n")}`;
 }
 
-export function formatCallGraphCallees(symbolId: string, callees: CallEdgeData[], relationshipType?: string): string {
-  if (callees.length === 0) {
-    return `No callees found for symbol ${symbolId}${relationshipType ? ` with type ${relationshipType}` : ""}. The function may not call any other tracked functions.`;
+export function formatCallGraphPathResult(result: CallGraphPathResult): string {
+  const failures = [
+    formatCallGraphResolution(result.from, "source symbol", "fromFilePath"),
+    formatCallGraphResolution(result.to, "target symbol", "toFilePath"),
+  ].filter((failure): failure is string => failure !== null);
+  if (failures.length > 0) return failures.join("\n\n");
+
+  if (result.path.length === 0) {
+    return `No path found between "${result.from.name}" and "${result.to.name}". They may be in disconnected components, or the call graph index needs updating.`;
   }
 
-  return callees.map((edge, index) => {
-    const confidence = edge.confidence !== "Direct" ? ` [${edge.confidence.toLowerCase()}]` : "";
-    return `[${index + 1}] \u2192 ${edge.targetName} (${edge.callType})${confidence} at line ${edge.line}${edge.isResolved ? ` [resolved: ${edge.toSymbolId}]` : " [unresolved]"}`;
-  }).join("\n");
-}
-
-export function formatCallGraphPath(from: string, to: string, path: PathHopData[]): string {
-  if (path.length === 0) {
-    return `No path found between "${from}" and "${to}". They may be in disconnected components, or the call graph index needs updating.`;
-  }
-
-  const formatted = path.map((hop, index) => {
+  const formatted = result.path.map((hop, index) => {
     const prefix = index === 0 ? "[start]" : `--${hop.callType}-->`;
     const location = hop.filePath ? ` (${hop.filePath}:${hop.line})` : "";
     return `${prefix} ${hop.symbolName}${location}`;
   });
 
-  return `Path (${path.length} hops):\n${formatted.join("\n")}`;
+  return `Path (${result.path.length} hops):\n${formatted.join("\n")}`;
 }
 
 function formatResultHeader(result: SearchResult, index: number): string {

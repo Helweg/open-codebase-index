@@ -5962,6 +5962,34 @@ export class Indexer {
     return results;
   }
 
+  async getCallersForSymbol(
+    symbolId: string,
+    targetName: string,
+    includeUnresolved: boolean,
+    callTypeFilter?: string,
+  ): Promise<CallEdgeData[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    const seen = new Set<string>();
+    const results: CallEdgeData[] = [];
+
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      const branchSymbolIds = new Set(database.getBranchSymbolIds(branchKey));
+      if (!branchSymbolIds.has(symbolId)) continue;
+
+      for (const edge of database.getCallersWithContext(targetName, branchKey, callTypeFilter)) {
+        const matchesResolvedSymbol = edge.toSymbolId === symbolId;
+        const safelyMatchesUnresolvedSymbol = includeUnresolved && !edge.toSymbolId;
+        if ((!matchesResolvedSymbol && !safelyMatchesUnresolvedSymbol) || seen.has(edge.id)) continue;
+
+        seen.add(edge.id);
+        results.push(edge);
+      }
+    }
+
+    return results;
+  }
+
   async getCallees(symbolId: string, callTypeFilter?: string): Promise<CallEdgeData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
@@ -5993,6 +6021,105 @@ export class Indexer {
     }
 
     return shortest;
+  }
+
+  async findCallPathBySymbolIds(
+    fromSymbolId: string,
+    toSymbolId: string,
+    maxDepth = 10,
+  ): Promise<PathHopData[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    let shortest: PathHopData[] = [];
+
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      const symbols = database.getSymbolsForBranch(branchKey);
+      const symbolsById = new Map(symbols.map((symbol) => [symbol.id, symbol]));
+      if (!symbolsById.has(fromSymbolId) || !symbolsById.has(toSymbolId)) continue;
+
+      const parentBySymbolId = new Map<string, { parentId: string; callType: string }>();
+      const visited = new Set([fromSymbolId]);
+      const queue: Array<{ symbolId: string; depth: number }> = [{ symbolId: fromSymbolId, depth: 0 }];
+      let queueIndex = 0;
+      let found = fromSymbolId === toSymbolId;
+
+      while (!found && queueIndex < queue.length) {
+        const current = queue[queueIndex++];
+        if (current.depth >= maxDepth) continue;
+
+        const currentSymbol = symbolsById.get(current.symbolId);
+        if (!currentSymbol) continue;
+        for (const edge of database.getCallees(current.symbolId, branchKey)) {
+          let nextSymbolId: string | undefined;
+
+          if (edge.toSymbolId && symbolsById.has(edge.toSymbolId)) {
+            nextSymbolId = edge.toSymbolId;
+          } else if (edge.toSymbolId === undefined) {
+            const caseInsensitive = CASE_INSENSITIVE_LANGUAGES.has(currentSymbol.language);
+            const matchingTargets = symbols.filter((candidate) => caseInsensitive
+              ? candidate.name.toLowerCase() === edge.targetName.toLowerCase()
+              : candidate.name === edge.targetName);
+            if (matchingTargets.length === 1) {
+              nextSymbolId = matchingTargets[0].id;
+            }
+          }
+
+          if (!nextSymbolId || visited.has(nextSymbolId)) continue;
+          visited.add(nextSymbolId);
+          parentBySymbolId.set(nextSymbolId, {
+            parentId: current.symbolId,
+            callType: edge.callType,
+          });
+
+          if (nextSymbolId === toSymbolId) {
+            found = true;
+            break;
+          }
+
+          queue.push({ symbolId: nextSymbolId, depth: current.depth + 1 });
+        }
+      }
+
+      if (!found) continue;
+
+      const path: PathHopData[] = [];
+      let currentSymbolId = toSymbolId;
+      while (true) {
+        const symbol = symbolsById.get(currentSymbolId);
+        if (!symbol) break;
+        const parent = parentBySymbolId.get(currentSymbolId);
+        path.push({
+          symbolId: symbol.id,
+          symbolName: symbol.name,
+          filePath: symbol.filePath,
+          line: symbol.startLine,
+          callType: parent?.callType ?? "source",
+        });
+        if (!parent) break;
+        currentSymbolId = parent.parentId;
+      }
+      path.reverse();
+
+      if (path.length > 0 && (shortest.length === 0 || path.length < shortest.length)) {
+        shortest = path;
+      }
+    }
+
+    return shortest;
+  }
+
+  async getCallGraphSymbols(): Promise<SymbolData[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    const symbols = new Map<string, SymbolData>();
+
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      for (const symbol of database.getSymbolsForBranch(branchKey)) {
+        symbols.set(symbol.id, symbol);
+      }
+    }
+
+    return [...symbols.values()];
   }
 
   async getSymbolsForBranch(branch?: string): Promise<SymbolData[]> {

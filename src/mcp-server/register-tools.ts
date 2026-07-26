@@ -4,9 +4,8 @@ import { z } from "zod";
 import { formatCostEstimate } from "../utils/cost.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
-  formatCallGraphCallees,
-  formatCallGraphCallers,
-  formatCallGraphPath,
+  formatCallGraphPathResult,
+  formatCallGraphResult,
   formatCodebasePeek,
   formatDefinitionLookup,
   formatHealthCheck,
@@ -46,11 +45,13 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
     "codebase_context",
-    "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, symbol for a definition, or only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
+    "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for a definition; or provide only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
     {
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
       to: allowNullAsUndefined(z.string().optional()).describe("Target symbol. For dependency-path questions, extract the second endpoint and provide it here."),
+      fromFilePath: allowNullAsUndefined(z.string().optional()).describe("Optional source file path used only to disambiguate duplicate source names."),
+      toFilePath: allowNullAsUndefined(z.string().optional()).describe("Optional target file path used only to disambiguate duplicate target names."),
       symbol: allowNullAsUndefined(z.string().optional()).describe("Exact symbol for an authoritative definition lookup. Omit when from and to are supplied."),
       limit: allowNullAsUndefined(
         z.number().int().min(MIN_CONTEXT_RESULT_LIMIT).max(MAX_CONTEXT_RESULT_LIMIT).optional().default(10),
@@ -260,43 +261,46 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "call_graph",
-    "Use after identifying a symbol to find its direct callers or callees and understand code flow. Use implementation_lookup first if the symbol or definition is still ambiguous."
+    "Find direct callers or callees by function or method name. Unique names resolve automatically; when duplicate names are reported, retry with filePath."
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
     {
       name: z.string().describe("Function or method name to query"),
       direction: allowNullAsUndefined(
         z.enum(["callers", "callees"]).default("callers"),
       ).describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
-      symbolId: allowNullAsUndefined(z.string().optional()).describe("Symbol ID (required for 'callees' direction)"),
+      filePath: allowNullAsUndefined(z.string().optional()).describe("Optional file path used to disambiguate duplicate symbol names"),
+      symbolId: allowNullAsUndefined(z.string().optional()).describe("Optional backward-compatible symbol ID escape hatch"),
       relationshipType: allowNullAsUndefined(
         z.enum(["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"]).optional(),
       ).describe("Filter by relationship type. Omit to show all."),
     },
     async (args) => {
-      if (args.direction === "callees") {
-        if (!args.symbolId) {
-          return { content: [{ type: "text", text: "Error: 'symbolId' is required when direction is 'callees'." }] };
-        }
-        const { callees } = await getCallGraphData(runtime.projectRoot, runtime.host, args);
-        return { content: [{ type: "text", text: formatCallGraphCallees(args.symbolId, callees, args.relationshipType) }] };
-      }
-
-      const { callers } = await getCallGraphData(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: formatCallGraphCallers(args.name, callers, args.relationshipType) }] };
+      const graph = await getCallGraphData(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: formatCallGraphResult(graph) }] };
     },
   );
 
   server.tool(
     "call_graph_path",
-    "Use after identifying both endpoint symbols to find the shortest known call path between them. Use codebase_peek or implementation_lookup first when either endpoint is unknown.",
+    "Find the shortest known call path between two named functions or methods. Unique names resolve automatically; when duplicate endpoints are reported, retry with fromFilePath or toFilePath.",
     {
       from: z.string().describe("Source function/method name (starting point)"),
       to: z.string().describe("Target function/method name (destination)"),
+      fromFilePath: allowNullAsUndefined(z.string().optional()).describe("Optional source file path used to disambiguate duplicate source names"),
+      toFilePath: allowNullAsUndefined(z.string().optional()).describe("Optional target file path used to disambiguate duplicate target names"),
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
     async (args) => {
-      const path = await getCallGraphPath(runtime.projectRoot, runtime.host, args.from, args.to, args.maxDepth);
-      return { content: [{ type: "text", text: formatCallGraphPath(args.from, args.to, path) }] };
+      const path = await getCallGraphPath(
+        runtime.projectRoot,
+        runtime.host,
+        args.from,
+        args.to,
+        args.maxDepth,
+        args.fromFilePath,
+        args.toFilePath,
+      );
+      return { content: [{ type: "text", text: formatCallGraphPathResult(path) }] };
     },
   );
   server.tool(

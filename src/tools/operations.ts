@@ -3,6 +3,7 @@ import * as path from "path";
 import { parseConfig, type ParsedCodebaseIndexConfig } from "../config/schema.js";
 import { getHostProjectConfigRelativePath } from "../config/paths.js";
 import type { HostMode } from "../config/host.js";
+import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { isIndexLockContentionError } from "../indexer/index-lock.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
@@ -15,7 +16,6 @@ import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from
 type IndexerCacheKey = `${HostMode}::${string}`;
 
 type SearchResult = Awaited<ReturnType<Indexer["search"]>>[number];
-type CallGraphEdge = Awaited<ReturnType<Indexer["getCallers"]>>[number];
 type IndexStats = Awaited<ReturnType<Indexer["index"]>>;
 type StatusResult = Awaited<ReturnType<Indexer["getStatus"]>>;
 type HealthCheckResult = Awaited<ReturnType<Indexer["healthCheck"]>>;
@@ -27,6 +27,157 @@ type ProgressCb = (title: string, metadata: Record<string, unknown>) => void | P
 const indexerCache = new Map<IndexerCacheKey, Indexer>();
 const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>();
 const defaultProjectRoots = new Map<HostMode, string>();
+const MAX_CALL_GRAPH_CANDIDATES = 5;
+
+export interface CallGraphSymbolCandidate {
+  filePath: string;
+  startLine: number;
+  kind: string;
+}
+
+export type CallGraphSymbolResolution =
+  | {
+    status: "resolved";
+    name: string;
+    symbolId: string;
+    filePath: string;
+    startLine: number;
+    kind: string;
+    matchedBy: "name" | "symbolId";
+  }
+  | {
+    status: "ambiguous" | "not_found";
+    name: string;
+    filePath?: string;
+    candidates: CallGraphSymbolCandidate[];
+    totalCandidates: number;
+    invalidSymbolId?: boolean;
+  };
+
+export interface CallGraphDataResult {
+  direction: "callers" | "callees";
+  resolution: CallGraphSymbolResolution;
+  callers: CallEdgeData[];
+  callees: CallEdgeData[];
+  relationshipType?: string;
+}
+
+export interface CallGraphPathResult {
+  from: CallGraphSymbolResolution;
+  to: CallGraphSymbolResolution;
+  path: PathHopData[];
+}
+
+function trimOrUndefined(value: string | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized || undefined;
+}
+
+function normalizeCallGraphPath(value: string): string {
+  let normalized = path.posix.normalize(value.trim().replaceAll("\\", "/"));
+  if (normalized.startsWith("./")) {
+    normalized = normalized.slice(2);
+  }
+  while (normalized.length > 1 && normalized.endsWith("/")) {
+    normalized = normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+function isAbsoluteCallGraphPath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:\//.test(value);
+}
+
+function filePathMatches(candidatePath: string, requestedPath: string): boolean {
+  const candidate = normalizeCallGraphPath(candidatePath);
+  const requested = normalizeCallGraphPath(requestedPath);
+  if (isAbsoluteCallGraphPath(requested)) {
+    return candidate === requested;
+  }
+  return candidate === requested || candidate.endsWith(`/${requested}`);
+}
+
+function displayCallGraphPath(filePath: string, projectRoot: string): string {
+  const normalizedFilePath = normalizeCallGraphPath(filePath);
+  const normalizedRoot = normalizeCallGraphPath(projectRoot);
+  if (normalizedFilePath === normalizedRoot) return ".";
+  if (normalizedFilePath.startsWith(`${normalizedRoot}/`)) {
+    return normalizedFilePath.slice(normalizedRoot.length + 1);
+  }
+  return normalizedFilePath;
+}
+
+function symbolNameMatches(symbol: SymbolData, requestedName: string): boolean {
+  return symbol.language === "apex" || symbol.language === "php"
+    ? symbol.name.toLowerCase() === requestedName.toLowerCase()
+    : symbol.name === requestedName;
+}
+
+function toCandidate(symbol: SymbolData, projectRoot: string): CallGraphSymbolCandidate {
+  return {
+    filePath: displayCallGraphPath(symbol.filePath, projectRoot),
+    startLine: symbol.startLine,
+    kind: symbol.kind,
+  };
+}
+
+function resolvedSymbol(symbol: SymbolData, projectRoot: string, matchedBy: "name" | "symbolId"): CallGraphSymbolResolution {
+  return {
+    status: "resolved",
+    name: symbol.name,
+    symbolId: symbol.id,
+    filePath: displayCallGraphPath(symbol.filePath, projectRoot),
+    startLine: symbol.startLine,
+    kind: symbol.kind,
+    matchedBy,
+  };
+}
+
+function resolveCallGraphSymbol(
+  symbols: SymbolData[],
+  projectRoot: string,
+  requestedName: string,
+  requestedFilePath?: string,
+  requestedSymbolId?: string,
+): CallGraphSymbolResolution {
+  const name = requestedName.trim();
+  const filePath = trimOrUndefined(requestedFilePath);
+  const symbolId = trimOrUndefined(requestedSymbolId);
+
+  if (symbolId) {
+    const symbol = symbols.find((candidate) => candidate.id === symbolId);
+    if (symbol) {
+      return resolvedSymbol(symbol, projectRoot, "symbolId");
+    }
+    return {
+      status: "not_found",
+      name,
+      filePath,
+      candidates: [],
+      totalCandidates: 0,
+      invalidSymbolId: true,
+    };
+  }
+
+  const nameCandidates = symbols.filter((symbol) => symbolNameMatches(symbol, name));
+  const matchingCandidates = filePath
+    ? nameCandidates.filter((symbol) => filePathMatches(symbol.filePath, filePath))
+    : nameCandidates;
+
+  if (matchingCandidates.length === 1) {
+    return resolvedSymbol(matchingCandidates[0], projectRoot, "name");
+  }
+
+  const candidates = (matchingCandidates.length > 0 ? matchingCandidates : nameCandidates)
+    .sort((left, right) => left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine);
+  return {
+    status: matchingCandidates.length > 1 ? "ambiguous" : "not_found",
+    name,
+    filePath: filePath ? normalizeCallGraphPath(filePath) : undefined,
+    candidates: candidates.slice(0, MAX_CALL_GRAPH_CANDIDATES).map((symbol) => toCandidate(symbol, projectRoot)),
+    totalCandidates: candidates.length,
+  };
+}
 
 function getIndexBusyResult(error: unknown): IndexBusyResult | null {
   if (!isIndexLockContentionError(error)) return null;
@@ -186,20 +337,32 @@ export async function getCallGraphData(
     name: string;
     direction?: "callers" | "callees";
     symbolId?: string;
+    filePath?: string;
     relationshipType?: "Call" | "MethodCall" | "Constructor" | "Import" | "Inherits" | "Implements";
   },
-): Promise<{ direction: "callers" | "callees"; callers: CallGraphEdge[]; callees: CallGraphEdge[]; }> {
-  const indexer = getIndexerForProject(projectRoot, host);
-  if (params.direction === "callees") {
-    if (!params.symbolId) {
-      return { direction: "callees", callees: [], callers: [] };
-    }
-    const callees = await indexer.getCallees(params.symbolId, params.relationshipType);
-    return { direction: "callees", callees, callers: [] };
+): Promise<CallGraphDataResult> {
+  const root = getProjectRoot(projectRoot, host);
+  const indexer = getIndexerForProject(root, host);
+  const symbols = await indexer.getCallGraphSymbols();
+  const resolution = resolveCallGraphSymbol(symbols, root, params.name, params.filePath, params.symbolId);
+  const direction = params.direction === "callees" ? "callees" : "callers";
+  if (resolution.status !== "resolved") {
+    return { direction, resolution, callers: [], callees: [], relationshipType: params.relationshipType };
   }
 
-  const callers = await indexer.getCallers(params.name, params.relationshipType);
-  return { direction: "callers", callers, callees: [] };
+  if (params.direction === "callees") {
+    const callees = await indexer.getCallees(resolution.symbolId, params.relationshipType);
+    return { direction: "callees", resolution, callees, callers: [], relationshipType: params.relationshipType };
+  }
+
+  const includeUnresolved = symbols.filter((symbol) => symbolNameMatches(symbol, resolution.name)).length === 1;
+  const callers = await indexer.getCallersForSymbol(
+    resolution.symbolId,
+    resolution.name,
+    includeUnresolved,
+    params.relationshipType,
+  );
+  return { direction: "callers", resolution, callers, callees: [], relationshipType: params.relationshipType };
 }
 
 export async function getCallGraphPath(
@@ -208,9 +371,24 @@ export async function getCallGraphPath(
   from: string,
   to: string,
   maxDepth?: number,
-): Promise<Awaited<ReturnType<Indexer["findCallPath"]>>> {
-  const indexer = getIndexerForProject(projectRoot, host);
-  return indexer.findCallPath(from, to, maxDepth);
+  fromFilePath?: string,
+  toFilePath?: string,
+): Promise<CallGraphPathResult> {
+  const root = getProjectRoot(projectRoot, host);
+  const indexer = getIndexerForProject(root, host);
+  const symbols = await indexer.getCallGraphSymbols();
+  const fromResolution = resolveCallGraphSymbol(symbols, root, from, fromFilePath);
+  const toResolution = resolveCallGraphSymbol(symbols, root, to, toFilePath);
+  if (fromResolution.status !== "resolved" || toResolution.status !== "resolved") {
+    return { from: fromResolution, to: toResolution, path: [] };
+  }
+
+  const path = await indexer.findCallPathBySymbolIds(
+    fromResolution.symbolId,
+    toResolution.symbolId,
+    maxDepth,
+  );
+  return { from: fromResolution, to: toResolution, path };
 }
 
 export async function runIndexCodebase(
