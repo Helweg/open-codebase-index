@@ -46,6 +46,7 @@ opencode-codebase-index
 
 # Local index data
 .opencode/
+.codebase-index/
 
 # Test files
 test-*.cjs

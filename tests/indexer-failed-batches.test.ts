@@ -1207,7 +1207,6 @@ describe("indexer failed batch recovery", () => {
     const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
     fs.mkdirSync(path.dirname(failedBatchesPath), { recursive: true });
     fs.writeFileSync(failedBatchesPath, "{", "utf-8");
-
     const indexer = createIndexer();
     await indexer.initialize();
     await indexer.getStatus();

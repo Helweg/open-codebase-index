@@ -4,6 +4,7 @@ import * as path from "path";
 import * as os from "os";
 import { FileWatcher, GitHeadWatcher, FileChange, createWatcherWithIndexer } from "../src/watcher/index.js";
 import { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
+import { IndexLockContentionError } from "../src/indexer/index-lock.js";
 
 const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): ParsedCodebaseIndexConfig => ({
   embeddingProvider: "auto",
@@ -59,8 +60,8 @@ describe("FileWatcher", () => {
     fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
   });
 
-  afterEach(() => {
-    watcher?.stop();
+  afterEach(async () => {
+    await watcher?.stop();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -212,7 +213,7 @@ describe("FileWatcher", () => {
       expect(indexer.index).toHaveBeenCalledTimes(1);
       expect(resolveIndex).toBeTypeOf("function");
 
-      combinedWatcher.stop();
+      await combinedWatcher.stop();
       resolveIndex?.();
     });
 
@@ -240,9 +241,65 @@ describe("FileWatcher", () => {
       pendingResolves[0]?.();
       await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
 
-      combinedWatcher.stop();
+      await combinedWatcher.stop();
       pendingResolves[1]?.();
     });
+
+    it("keeps one pending request and retries after INDEX_BUSY", async () => {
+      const owner = {
+        pid: process.pid,
+        hostname: os.hostname(),
+        startedAt: new Date().toISOString(),
+        operation: "index" as const,
+        token: "busy-owner",
+      };
+      let rejectFirst: ((error: unknown) => void) | null = null;
+      const firstAttempt = new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+      const indexer = { index: vi.fn().mockReturnValueOnce(firstAttempt).mockResolvedValue(undefined) };
+      const combinedWatcher = createWatcherWithIndexer(
+        () => indexer,
+        tempDir,
+        createTestConfig(),
+      );
+
+      await combinedWatcher.fileWatcher.waitUntilReady();
+      fs.writeFileSync(path.join(tempDir, "src", "retry.ts"), "export const retry = 1;");
+      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(1), { timeout: 2500 });
+      rejectFirst?.(new IndexLockContentionError("/tmp/indexing.lock", owner, "active"));
+      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2), { timeout: 1000 });
+
+      await combinedWatcher.stop();
+    });
+
+    it("logs a non-transient lock state without retrying forever", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      const owner = {
+        pid: process.pid,
+        hostname: os.hostname(),
+        startedAt: new Date().toISOString(),
+        operation: "index" as const,
+        token: "unknown-owner",
+      };
+      const indexer = {
+        index: vi.fn().mockRejectedValue(
+          new IndexLockContentionError("/tmp/indexing.lock", owner, "unknown-owner"),
+        ),
+      };
+      const combinedWatcher = createWatcherWithIndexer(
+        () => indexer,
+        tempDir,
+        createTestConfig(),
+      );
+
+      await combinedWatcher.fileWatcher.waitUntilReady();
+      fs.writeFileSync(path.join(tempDir, "src", "blocked.ts"), "export const blocked = true;");
+      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce(), { timeout: 4000 });
+      await vi.waitFor(() => expect(consoleError).toHaveBeenCalledOnce(), { timeout: 1000 });
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      expect(indexer.index).toHaveBeenCalledOnce();
+      await combinedWatcher.stop();
+    }, 7000);
 
     it("uses the latest indexer instance for file-triggered reindexing", async () => {
       const staleIndexer = {
@@ -269,10 +326,10 @@ describe("FileWatcher", () => {
       expect(refreshedIndexer.index).toHaveBeenCalledTimes(1);
       expect(staleIndexer.index).not.toHaveBeenCalled();
 
-      combinedWatcher.stop();
+      await combinedWatcher.stop();
     });
 
-    it("stops the watcher cleanly after start", () => {
+    it("stops the watcher cleanly after start", async () => {
       const indexer = {
         index: vi.fn().mockResolvedValue(undefined),
       };
@@ -286,7 +343,7 @@ describe("FileWatcher", () => {
       expect(combinedWatcher.fileWatcher.isRunning()).toBe(true);
       expect(combinedWatcher.gitWatcher?.isRunning() ?? false).toBe(false);
 
-      combinedWatcher.stop();
+      await combinedWatcher.stop();
 
       expect(combinedWatcher.fileWatcher.isRunning()).toBe(false);
       expect(combinedWatcher.gitWatcher?.isRunning() ?? false).toBe(false);
@@ -302,8 +359,8 @@ describe("GitHeadWatcher", () => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "git-watcher-test-"));
   });
 
-  afterEach(() => {
-    watcher?.stop();
+  afterEach(async () => {
+    await watcher?.stop();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 

@@ -60,6 +60,9 @@ describe("host-aware path resolution", () => {
     expect(resolveWritableProjectConfigPath(mainRepoDir, "pi")).toBe(
       path.join(mainRepoDir, ".codebase-index", "config.json"),
     );
+    expect(resolveWritableProjectConfigPath(mainRepoDir, "jcode")).toBe(
+      path.join(mainRepoDir, ".codebase-index", "config.json"),
+    );
   });
 
   it("reads legacy OpenCode config for pi host when pi-native config is absent", () => {
@@ -92,6 +95,21 @@ describe("host-aware path resolution", () => {
     expect(loaded.knowledgeBases).toEqual(["legacy-docs"]);
   });
 
+  it("reads legacy OpenCode config for jcode host when jcode-native config is absent", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
+      JSON.stringify({ knowledgeBases: ["legacy-docs"] }, null, 2),
+      "utf-8",
+    );
+
+    const resolved = resolveProjectConfigPath(mainRepoDir, "jcode");
+    const loaded = loadMergedConfig(mainRepoDir, "jcode") as Record<string, unknown>;
+
+    expect(resolved).toBe(path.join(mainRepoDir, ".opencode", "codebase-index.json"));
+    expect(loaded.knowledgeBases).toEqual(["legacy-docs"]);
+  });
+
   it("prefers codex-native config for codex host when present", () => {
     fs.mkdirSync(path.join(mainRepoDir, ".opencode"), { recursive: true });
     fs.mkdirSync(path.join(mainRepoDir, ".codebase-index"), { recursive: true });
@@ -114,6 +132,28 @@ describe("host-aware path resolution", () => {
     expect(loaded.knowledgeBases).toEqual(["codex-docs"]);
   });
 
+  it("prefers jcode-native config for jcode host when present", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode"), { recursive: true });
+    fs.mkdirSync(path.join(mainRepoDir, ".codebase-index"), { recursive: true });
+
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
+      JSON.stringify({ knowledgeBases: ["legacy-docs"] }, null, 2),
+      "utf-8",
+    );
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".codebase-index", "config.json"),
+      JSON.stringify({ knowledgeBases: ["jcode-docs"] }, null, 2),
+      "utf-8",
+    );
+
+    const resolved = resolveProjectConfigPath(mainRepoDir, "jcode");
+    const loaded = loadMergedConfig(mainRepoDir, "jcode") as Record<string, unknown>;
+
+    expect(resolved).toBe(path.join(mainRepoDir, ".codebase-index", "config.json"));
+    expect(loaded.knowledgeBases).toEqual(["jcode-docs"]);
+  });
+
   it("falls back to legacy global config for codex host when codex-native global config is absent", () => {
     fs.mkdirSync(path.join(homeDir, ".config", "opencode"), { recursive: true });
     fs.writeFileSync(
@@ -130,10 +170,34 @@ describe("host-aware path resolution", () => {
     expect(loaded.knowledgeBases).toEqual(["legacy-global-docs"]);
   });
 
+  it("falls back to legacy global config for jcode host when jcode-native global config is absent", () => {
+    fs.mkdirSync(path.join(homeDir, ".config", "opencode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(homeDir, ".config", "opencode", "codebase-index.json"),
+      JSON.stringify({ scope: "global", knowledgeBases: ["legacy-global-docs"] }, null, 2),
+      "utf-8",
+    );
+
+    const resolved = resolveGlobalConfigPath("jcode");
+    const loaded = loadMergedConfig(mainRepoDir, "jcode") as Record<string, unknown>;
+
+    expect(resolved).toBe(path.join(homeDir, ".config", "opencode", "codebase-index.json"));
+    expect(loaded.scope).toBe("global");
+    expect(loaded.knowledgeBases).toEqual(["legacy-global-docs"]);
+  });
+
   it("falls back to legacy worktree index when codex index is absent", () => {
     fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
 
     expect(resolveProjectIndexPath(worktreeDir, "project", "codex")).toBe(
+      path.join(mainRepoDir, ".opencode", "index"),
+    );
+  });
+
+  it("falls back to legacy worktree index when jcode index is absent", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+
+    expect(resolveProjectIndexPath(worktreeDir, "project", "jcode")).toBe(
       path.join(mainRepoDir, ".opencode", "index"),
     );
   });
@@ -147,6 +211,19 @@ describe("host-aware path resolution", () => {
     );
 
     expect(resolveProjectIndexPath(mainRepoDir, "project", "codex")).toBe(
+      path.join(mainRepoDir, ".opencode", "index"),
+    );
+  });
+
+  it("falls back to local legacy project index when jcode host has only OpenCode project state", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
+      JSON.stringify({ knowledgeBases: ["legacy-docs"] }, null, 2),
+      "utf-8",
+    );
+
+    expect(resolveProjectIndexPath(mainRepoDir, "project", "jcode")).toBe(
       path.join(mainRepoDir, ".opencode", "index"),
     );
   });
@@ -165,11 +242,34 @@ describe("host-aware path resolution", () => {
     );
   });
 
+  it("uses jcode project index when jcode-native config exists next to a legacy index", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+    fs.mkdirSync(path.join(mainRepoDir, ".codebase-index"), { recursive: true });
+    fs.writeFileSync(
+      path.join(mainRepoDir, ".codebase-index", "config.json"),
+      JSON.stringify({ knowledgeBases: ["jcode-docs"] }, null, 2),
+      "utf-8",
+    );
+
+    expect(resolveProjectIndexPath(mainRepoDir, "project", "jcode")).toBe(
+      path.join(mainRepoDir, ".codebase-index", "index"),
+    );
+  });
+
   it("prefers codex-index inheritance before legacy when both exist", () => {
     fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
     fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
 
     expect(resolveProjectIndexPath(worktreeDir, "project", "codex")).toBe(
+      path.join(mainRepoDir, ".codebase-index", "index"),
+    );
+  });
+
+  it("prefers jcode-index inheritance before legacy when both exist", () => {
+    fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
+    fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
+
+    expect(resolveProjectIndexPath(worktreeDir, "project", "jcode")).toBe(
       path.join(mainRepoDir, ".codebase-index", "index"),
     );
   });
@@ -180,6 +280,30 @@ describe("host-aware path resolution", () => {
     expect(resolveGlobalIndexPath("codex")).toBe(path.join(homeDir, ".opencode", "global-index"));
     expect(resolveProjectIndexPath(mainRepoDir, "global", "codex")).toBe(
       path.join(homeDir, ".opencode", "global-index"),
+    );
+  });
+
+  it("falls back to legacy global index for jcode host when jcode-native global index is absent", () => {
+    fs.mkdirSync(path.join(homeDir, ".opencode", "global-index"), { recursive: true });
+
+    expect(resolveGlobalIndexPath("jcode")).toBe(path.join(homeDir, ".opencode", "global-index"));
+    expect(resolveProjectIndexPath(mainRepoDir, "global", "jcode")).toBe(
+      path.join(homeDir, ".opencode", "global-index"),
+    );
+  });
+
+  it("prefers jcode native global index when jcode global config exists even if index is not present", () => {
+    fs.mkdirSync(path.join(homeDir, ".config", "codebase-index"), { recursive: true });
+    fs.writeFileSync(
+      path.join(homeDir, ".config", "codebase-index", "config.json"),
+      JSON.stringify({ scope: "global" }, null, 2),
+      "utf-8",
+    );
+    fs.mkdirSync(path.join(homeDir, ".opencode", "global-index"), { recursive: true });
+
+    expect(resolveGlobalIndexPath("jcode")).toBe(path.join(homeDir, ".codebase-index", "global-index"));
+    expect(resolveProjectIndexPath(mainRepoDir, "global", "jcode")).toBe(
+      path.join(homeDir, ".codebase-index", "global-index"),
     );
   });
 

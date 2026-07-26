@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { execFile } from "child_process";
@@ -41,6 +41,17 @@ import { getHostProjectIndexRelativePath, resolveProjectIndexPath } from "../con
 import { getChangedFiles } from "../tools/changed-files.js";
 import type { PrImpactResult } from "./pr-impact-types.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
+import {
+  acquireIndexLock,
+  completeLeaseRecovery,
+  createLeaseTemporaryPath,
+  recoverLeaseArtifacts,
+  releaseIndexLock,
+  removeLeaseTemporaryPath,
+  type IndexLockLease,
+  type IndexLockOwner,
+  type IndexMutationOperation,
+} from "./index-lock.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp"]);
 // Languages whose identifiers are case-insensitive at the language level.
@@ -48,7 +59,18 @@ export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", 
 // constructors and imports), so same-file resolution in this file must use
 // the same normalization when looking up symbols by name. Keep this set in
 // sync with the matching branch in native/src/call_extractor.rs.
-export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex"]);
+export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex", "php"]);
+// Existing indexes without this metadata are the implicit version 1.
+const CALL_GRAPH_RESOLUTION_VERSION = "3";
+const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
+  "function_declaration",
+  "function",
+  "function_definition",
+]);
+const PHP_CLASS_SYMBOL_CHUNK_TYPES = new Set([
+  "class_declaration",
+  "class_definition",
+]);
 export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -98,8 +120,11 @@ function isCompatibleCFamilyCallTarget(
 ): boolean {
   if (language !== "c" && language !== "cpp") return true;
   if (symbolKind === "namespace_definition") return callType === "Import";
-  if (!C_FAMILY_TYPE_SYMBOL_CHUNK_TYPES.has(symbolKind)) return true;
-  return callType === "Constructor" || callType === "Inherits" || callType === "Implements";
+  const isTypeSymbol = C_FAMILY_TYPE_SYMBOL_CHUNK_TYPES.has(symbolKind);
+  if (callType === "Constructor" || callType === "Inherits" || callType === "Implements") {
+    return isTypeSymbol;
+  }
+  return !isTypeSymbol;
 }
 
 function float32ArrayToBuffer(arr: number[]): Buffer {
@@ -211,7 +236,23 @@ export interface StatusResult {
   warning?: string;
 }
 
+type InitializationMode = "none" | "reader" | "writer";
+
+interface IndexReadIssue {
+  component: "vectors" | "keyword" | "database";
+  message: string;
+  blocking: boolean;
+}
+
+interface ReaderArtifactFingerprint {
+  vectors: string;
+  keyword: string;
+  database: string;
+  databaseIdentity: string;
+}
+
 const STARTUP_WARNING_METADATA_KEY = "index.startupWarning";
+const READER_ARTIFACT_RETRY_INTERVAL_MS = 1_000;
 
 export interface IndexProgress {
   phase: "scanning" | "parsing" | "embedding" | "storing" | "complete";
@@ -1817,6 +1858,38 @@ export function mergeTieredResults(
   return out;
 }
 
+export function selectChunksWithFileCoverage<T>(chunks: T[], limit: number): T[] {
+  if (limit <= 0 || chunks.length === 0) {
+    return [];
+  }
+
+  if (chunks.length <= limit) {
+    return chunks;
+  }
+
+  if (limit === 1) {
+    return [chunks[Math.floor((chunks.length - 1) / 2)]!];
+  }
+
+  const selected: T[] = [];
+  for (let index = 0; index < limit; index++) {
+    const sourceIndex = Math.round(index * (chunks.length - 1) / (limit - 1));
+    selected.push(chunks[sourceIndex]!);
+  }
+  return selected;
+}
+
+export function selectIndexableChunks<T extends { chunkType: string }>(
+  chunks: T[],
+  limit: number,
+  semanticOnly: boolean,
+): T[] {
+  const indexableChunks = semanticOnly
+    ? chunks.filter((chunk) => chunk.chunkType !== "other")
+    : chunks;
+  return selectChunksWithFileCoverage(indexableChunks, limit);
+}
+
 function matchesSearchFilters(
   candidate: RankedCandidate,
   options: SearchFilterOptions | undefined,
@@ -1899,7 +1972,14 @@ export class Indexer {
   private readonly queryCacheTtlMs = 5 * 60 * 1000;
   private readonly querySimilarityThreshold = 0.85;
   private indexCompatibility: IndexCompatibility | null = null;
-  private indexingLockPath: string = "";
+  private activeIndexLease: IndexLockLease | null = null;
+  private initializationPromise: Promise<void> | null = null;
+  private initializationMode: InitializationMode = "none";
+  private readIssues: IndexReadIssue[] = [];
+  private retiredDatabases: Database[] = [];
+  private readerArtifactFingerprint: ReaderArtifactFingerprint | null = null;
+  private writerArtifactFingerprint: ReaderArtifactFingerprint | null = null;
+  private readerArtifactRetryAfter = new Map<IndexReadIssue["component"], number>();
 
   constructor(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode = "opencode") {
     this.projectRoot = projectRoot;
@@ -1908,12 +1988,122 @@ export class Indexer {
     this.indexPath = this.getIndexPath();
     this.fileHashCachePath = path.join(this.indexPath, "file-hashes.json");
     this.failedBatchesPath = path.join(this.indexPath, "failed-batches.json");
-    this.indexingLockPath = path.join(this.indexPath, "indexing.lock");
     this.logger = initializeLogger(config.debug);
   }
 
   private getIndexPath(): string {
     return resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+  }
+
+  private isLocalProjectIndexPath(): boolean {
+    const localProjectIndexPaths = [path.join(this.projectRoot, getHostProjectIndexRelativePath(this.host))];
+    if (this.host !== "opencode") {
+      localProjectIndexPaths.push(path.join(this.projectRoot, getHostProjectIndexRelativePath("opencode")));
+    }
+
+    return localProjectIndexPaths.some((localPath) => {
+      if (!existsSync(localPath) || !existsSync(this.indexPath)) {
+        return path.resolve(this.indexPath) === path.resolve(localPath);
+      }
+      const indexStats = statSync(this.indexPath);
+      const localStats = statSync(localPath);
+      return indexStats.dev === localStats.dev && indexStats.ino === localStats.ino;
+    });
+  }
+
+  private resetLoadedIndexState(retireDatabase = false): void {
+    if (this.database) {
+      if (retireDatabase) {
+        this.retiredDatabases.push(this.database);
+      } else {
+        this.database.close();
+      }
+    }
+    this.store = null;
+    this.invertedIndex = null;
+    this.database = null;
+    this.provider = null;
+    this.configuredProviderInfo = null;
+    this.reranker = null;
+    this.indexCompatibility = null;
+    this.initializationMode = "none";
+    this.readIssues = [];
+    this.readerArtifactFingerprint = null;
+    this.writerArtifactFingerprint = null;
+    this.readerArtifactRetryAfter.clear();
+    this.fileHashCache.clear();
+  }
+
+  private refreshLoadedIndexState(): void {
+    if (!this.store || !this.invertedIndex || !this.configuredProviderInfo) return;
+    this.store.load();
+    this.invertedIndex.load();
+    this.fileHashCache.clear();
+    this.loadFileHashCache();
+    this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo);
+    this.readIssues = [];
+    this.readerArtifactRetryAfter.clear();
+  }
+
+  private async withIndexMutationLease<T>(
+    operation: IndexMutationOperation,
+    callback: (recoveredOwners: readonly IndexLockOwner[]) => Promise<T>,
+  ): Promise<T> {
+    const lease = acquireIndexLock(this.indexPath, operation);
+    this.indexPath = lease.canonicalIndexPath;
+    this.fileHashCachePath = path.join(this.indexPath, "file-hashes.json");
+    this.failedBatchesPath = path.join(this.indexPath, "failed-batches.json");
+    this.activeIndexLease = lease;
+
+    let result: T | undefined;
+    let callbackError: unknown;
+    let callbackFailed = false;
+    try {
+      result = await callback(lease.recoveries.map(({ owner }) => owner));
+    } catch (error) {
+      callbackFailed = true;
+      callbackError = error;
+    }
+    if (!callbackFailed) {
+      try {
+        completeLeaseRecovery(lease);
+        this.writerArtifactFingerprint = this.captureReaderArtifactFingerprint();
+      } catch (error) {
+        callbackFailed = true;
+        callbackError = error;
+      }
+    }
+    let releaseError: unknown;
+    try {
+      if (!releaseIndexLock(lease)) {
+        releaseError = new Error(`Lost ownership of index mutation lease ${lease.owner.token}`);
+        this.writerArtifactFingerprint = null;
+        if (this.activeIndexLease?.owner.token === lease.owner.token) {
+          this.activeIndexLease = null;
+        }
+      } else if (this.activeIndexLease?.owner.token === lease.owner.token) {
+        this.activeIndexLease = null;
+      }
+    } catch (error) {
+      releaseError = error;
+      this.writerArtifactFingerprint = null;
+      if (!existsSync(lease.lockPath) && this.activeIndexLease?.owner.token === lease.owner.token) {
+        this.activeIndexLease = null;
+      }
+    }
+    if (releaseError !== undefined) {
+      if (callbackFailed) throw new AggregateError([callbackError, releaseError], "Index mutation and lease release both failed");
+      throw releaseError;
+    }
+    if (callbackFailed) throw callbackError;
+    return result as T;
+  }
+
+  private requireActiveLease(): IndexLockLease {
+    if (!this.activeIndexLease) {
+      throw new Error("Index mutation attempted without an active interprocess lease");
+    }
+    return this.activeIndexLease;
   }
 
   private loadFileHashCache(): void {
@@ -1944,10 +2134,22 @@ export class Indexer {
   }
 
   private atomicWriteSync(targetPath: string, data: string): void {
-    const tempPath = `${targetPath}.tmp`;
+    const lease = this.requireActiveLease();
+    const tempPath = createLeaseTemporaryPath(targetPath, lease.owner, "tmp");
     mkdirSync(path.dirname(targetPath), { recursive: true });
-    writeFileSync(tempPath, data);
-    renameSync(tempPath, targetPath);
+    try {
+      writeFileSync(tempPath, data);
+      renameSync(tempPath, targetPath);
+    } finally {
+      removeLeaseTemporaryPath(tempPath);
+    }
+  }
+
+  private saveInvertedIndex(invertedIndex: InvertedIndex): void {
+    this.atomicWriteSync(
+      path.join(this.indexPath, "inverted-index.json"),
+      invertedIndex.serialize(),
+    );
   }
 
   private getScopedRoots(): string[] {
@@ -1996,6 +2198,15 @@ export class Indexer {
   private getProjectForceReembedMetadataKey(): string {
     const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
     return `index.forceReembed.${projectHash}`;
+  }
+
+  private getCallGraphResolutionMetadataKey(): string {
+    if (this.config.scope !== "global") {
+      return "index.callGraphResolutionVersion";
+    }
+
+    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
+    return `index.callGraphResolutionVersion.${projectHash}`;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -2372,7 +2583,7 @@ export class Indexer {
     database.gcOrphanChunks();
 
     store.save();
-    invertedIndex.save();
+    this.saveInvertedIndex(invertedIndex);
 
     return {
       removedChunkIds: removedChunkIdList,
@@ -2380,33 +2591,23 @@ export class Indexer {
     };
   }
 
-  private checkForInterruptedIndexing(): boolean {
-    return existsSync(this.indexingLockPath);
-  }
-
-  private acquireIndexingLock(): void {
-    const lockData = {
-      startedAt: new Date().toISOString(),
-      pid: process.pid,
-    };
-    writeFileSync(this.indexingLockPath, JSON.stringify(lockData));
-  }
-
-  private releaseIndexingLock(): void {
-    if (existsSync(this.indexingLockPath)) {
-      unlinkSync(this.indexingLockPath);
-    }
-  }
-
-  private async recoverFromInterruptedIndexing(): Promise<void> {
-    this.logger.warn("Detected interrupted indexing session, recovering...");
-
-    if (existsSync(this.fileHashCachePath)) {
-      unlinkSync(this.fileHashCachePath);
+  private async recoverFromInterruptedIndexingUnlocked(owners: readonly IndexLockOwner[]): Promise<void> {
+    for (const owner of owners) {
+      this.logger.warn("Detected interrupted indexing session, recovering...", {
+        pid: owner.pid,
+        hostname: owner.hostname,
+        operation: owner.operation,
+        startedAt: owner.startedAt,
+      });
     }
 
-    await this.healthCheck();
-    this.releaseIndexingLock();
+    if (this.config.scope === "global") {
+      if (existsSync(this.fileHashCachePath)) {
+        unlinkSync(this.fileHashCachePath);
+      }
+
+      await this.healthCheckUnlocked();
+    }
 
     this.logger.info("Recovery complete, next index will re-process all files");
   }
@@ -2467,7 +2668,7 @@ export class Indexer {
       }
       return;
     }
-    writeFileSync(this.failedBatchesPath, JSON.stringify(batches, null, 2));
+    this.atomicWriteSync(this.failedBatchesPath, JSON.stringify(batches, null, 2));
   }
 
   private collectRetryableFailedChunks(
@@ -2720,6 +2921,299 @@ export class Indexer {
   }
 
   async initialize(): Promise<void> {
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
+    if (this.isInitializedFor("reader")) {
+      return;
+    }
+    await this.initializeOnce("reader", [], { skipAutoGc: true });
+  }
+
+  private async initializeOnce(
+    mode: Exclude<InitializationMode, "none">,
+    recoveredOwners: readonly IndexLockOwner[],
+    options: { skipAutoGc?: boolean },
+  ): Promise<void> {
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+      if (this.isInitializedFor(mode)) {
+        return;
+      }
+      return this.initializeOnce(mode, recoveredOwners, options);
+    }
+
+    if (this.isInitializedFor(mode)) {
+      return;
+    }
+
+    const initialization = this.initializeUnlocked(mode, recoveredOwners, options)
+      .catch((error) => {
+        this.resetLoadedIndexState();
+        throw error;
+      })
+      .finally(() => {
+        if (this.initializationPromise === initialization) {
+          this.initializationPromise = null;
+        }
+      });
+    this.initializationPromise = initialization;
+    await initialization;
+  }
+
+  private isInitializedFor(mode: Exclude<InitializationMode, "none">): boolean {
+    const hasState = Boolean(
+      this.store &&
+      this.provider &&
+      this.invertedIndex &&
+      this.configuredProviderInfo &&
+      this.database,
+    );
+    if (!hasState) {
+      return false;
+    }
+    return mode === "reader"
+      ? this.initializationMode !== "none"
+      : this.initializationMode === "writer";
+  }
+
+  private recordReadIssue(
+    component: IndexReadIssue["component"],
+    message: string,
+    error?: unknown,
+  ): void {
+    this.readIssues.push(this.createReadIssue(component, message));
+    this.readerArtifactRetryAfter.set(component, Date.now() + READER_ARTIFACT_RETRY_INTERVAL_MS);
+    this.logger.warn(message, error === undefined ? undefined : { error: getErrorMessage(error) });
+  }
+
+  private createReadIssue(
+    component: IndexReadIssue["component"],
+    message: string,
+  ): IndexReadIssue {
+    return {
+      component,
+      message,
+      blocking: component !== "keyword",
+    };
+  }
+
+  private getVectorReadIssueMessage(): string {
+    if (this.config.scope === "global") {
+      return "Shared vector index could not be read. Restore or repair the complete fingerprinted shared vector artifacts; automatic reset is disabled for global scope.";
+    }
+    if (!this.isLocalProjectIndexPath()) {
+      return "Vector index could not be read from an inherited project index. Restore or fingerprint it from the checkout that owns the index; do not remove or rebuild it from this worktree.";
+    }
+    return "Vector index could not be read. Run index_codebase after the active writer finishes to fingerprint a structurally valid legacy pair, or remove this checkout's local index directory and run index_codebase to rebuild it.";
+  }
+
+  private getKeywordReadIssueMessage(): string {
+    if (this.config.scope === "global") {
+      return "Shared keyword index could not be read; semantic search remains available. Restore or repair the shared keyword artifact; automatic reset is disabled for global scope.";
+    }
+    if (!this.isLocalProjectIndexPath()) {
+      return "Keyword index could not be read from an inherited project index; semantic search remains available. Restore or repair it from the checkout that owns the index; do not rebuild it from this worktree.";
+    }
+    return "Keyword index could not be read; semantic search remains available. Restore a readable published keyword index, or run index_codebase with force=true after the active writer finishes.";
+  }
+
+  private getDatabaseReadIssueMessage(): string {
+    if (this.config.scope === "global") {
+      return "Shared index database could not be read. Restore or repair the shared SQLite database; automatic reset is disabled for global scope.";
+    }
+    if (!this.isLocalProjectIndexPath()) {
+      return "Index database could not be read from an inherited project index. Restore or repair it from the checkout that owns the index; do not migrate or rebuild it from this worktree.";
+    }
+    return "Index database could not be read. Run index_codebase after the active writer finishes to repair or migrate it under the writer lease.";
+  }
+
+  private getReaderFileFingerprint(filePath: string, identityOnly = false): string {
+    try {
+      const stats = statSync(filePath);
+      if (identityOnly) {
+        return `${stats.dev}:${stats.ino}`;
+      }
+      return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+    } catch (error) {
+      return `unavailable:${getErrorMessage(error)}`;
+    }
+  }
+
+  private captureReaderArtifactFingerprint(): ReaderArtifactFingerprint {
+    const storePath = path.join(this.indexPath, "vectors");
+    return {
+      vectors: `${this.getReaderFileFingerprint(storePath)}|${this.getReaderFileFingerprint(`${storePath}.meta.json`)}`,
+      keyword: this.getReaderFileFingerprint(path.join(this.indexPath, "inverted-index.json")),
+      database: this.getReaderFileFingerprint(path.join(this.indexPath, "codebase.db")),
+      databaseIdentity: this.getReaderFileFingerprint(path.join(this.indexPath, "codebase.db"), true),
+    };
+  }
+
+  private refreshReaderArtifacts(): void {
+    if (this.initializationMode !== "reader" || !this.configuredProviderInfo) {
+      return;
+    }
+
+    const previousFingerprint = this.readerArtifactFingerprint;
+    const currentFingerprint = this.captureReaderArtifactFingerprint();
+    const issues = new Map(this.readIssues.map((issue) => [issue.component, issue]));
+    const retryDue = (component: IndexReadIssue["component"]): boolean =>
+      issues.has(component) && Date.now() >= (this.readerArtifactRetryAfter.get(component) ?? 0);
+    const vectorsChanged = !previousFingerprint || currentFingerprint.vectors !== previousFingerprint.vectors;
+    const keywordChanged = !previousFingerprint || currentFingerprint.keyword !== previousFingerprint.keyword;
+    const databaseChanged = !previousFingerprint || currentFingerprint.database !== previousFingerprint.database;
+    const databaseReplaced = !previousFingerprint || currentFingerprint.databaseIdentity !== previousFingerprint.databaseIdentity;
+    if (
+      previousFingerprint &&
+      !vectorsChanged &&
+      !keywordChanged &&
+      !databaseChanged &&
+      !Array.from(issues.keys()).some(retryDue)
+    ) {
+      return;
+    }
+
+    const setIssue = (
+      component: IndexReadIssue["component"],
+      message: string,
+      error?: unknown,
+    ): void => {
+      if (!issues.has(component)) {
+        this.logger.warn(message, error === undefined ? undefined : { error: getErrorMessage(error) });
+      }
+      issues.set(component, this.createReadIssue(component, message));
+      this.readerArtifactRetryAfter.set(component, Date.now() + READER_ARTIFACT_RETRY_INTERVAL_MS);
+    };
+
+    const storePath = path.join(this.indexPath, "vectors");
+    const vectorMetadataPath = `${storePath}.meta.json`;
+    const invertedIndexPath = path.join(this.indexPath, "inverted-index.json");
+    const dbPath = path.join(this.indexPath, "codebase.db");
+
+    if (
+      vectorsChanged ||
+      retryDue("vectors")
+    ) {
+      const vectorStoreExists = existsSync(storePath);
+      const vectorMetadataExists = existsSync(vectorMetadataPath);
+      if (vectorStoreExists && vectorMetadataExists) {
+        try {
+          const store = new VectorStore(storePath, this.configuredProviderInfo.modelInfo.dimensions);
+          store.loadStrict();
+          this.store = store;
+          issues.delete("vectors");
+          this.readerArtifactRetryAfter.delete("vectors");
+        } catch (error) {
+          setIssue("vectors", this.getVectorReadIssueMessage(), error);
+        }
+      } else if (vectorStoreExists !== vectorMetadataExists || issues.has("vectors")) {
+        setIssue("vectors", this.getVectorReadIssueMessage());
+      }
+    }
+
+    if (
+      keywordChanged ||
+      retryDue("keyword") ||
+      (!existsSync(invertedIndexPath) && (this.store?.count() ?? 0) > 0)
+    ) {
+      if (existsSync(invertedIndexPath)) {
+        try {
+          const invertedIndex = new InvertedIndex(invertedIndexPath);
+          invertedIndex.load();
+          this.invertedIndex = invertedIndex;
+          issues.delete("keyword");
+          this.readerArtifactRetryAfter.delete("keyword");
+        } catch (error) {
+          setIssue("keyword", this.getKeywordReadIssueMessage(), error);
+        }
+      } else if ((this.store?.count() ?? 0) > 0 || issues.has("keyword")) {
+        setIssue("keyword", this.getKeywordReadIssueMessage());
+      }
+    }
+
+    if (
+      databaseReplaced ||
+      (databaseChanged && issues.has("database")) ||
+      retryDue("database")
+    ) {
+      if (existsSync(dbPath)) {
+        try {
+          const database = Database.openReadOnly(dbPath);
+          if (this.database) {
+            this.retiredDatabases.push(this.database);
+          }
+          this.database = database;
+          issues.delete("database");
+          this.readerArtifactRetryAfter.delete("database");
+        } catch (error) {
+          setIssue("database", this.getDatabaseReadIssueMessage(), error);
+        }
+      } else if ((this.store?.count() ?? 0) > 0 || issues.has("database")) {
+        setIssue("database", this.getDatabaseReadIssueMessage());
+      }
+    }
+
+    if (!issues.has("database")) {
+      try {
+        this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo);
+      } catch (error) {
+        setIssue("database", this.getDatabaseReadIssueMessage(), error);
+      }
+    }
+
+    this.readIssues = Array.from(issues.values());
+    this.readerArtifactFingerprint = currentFingerprint;
+  }
+
+  private refreshInactiveWriterArtifacts(): boolean {
+    if (this.initializationMode !== "writer" || this.activeIndexLease) {
+      return true;
+    }
+
+    const previousFingerprint = this.writerArtifactFingerprint;
+    const currentFingerprint = this.captureReaderArtifactFingerprint();
+    const retryDue = this.readIssues.some((issue) =>
+      Date.now() >= (this.readerArtifactRetryAfter.get(issue.component) ?? 0)
+    );
+    const artifactsChanged = !previousFingerprint ||
+      currentFingerprint.vectors !== previousFingerprint.vectors ||
+      currentFingerprint.keyword !== previousFingerprint.keyword ||
+      currentFingerprint.database !== previousFingerprint.database ||
+      currentFingerprint.databaseIdentity !== previousFingerprint.databaseIdentity;
+    if (!artifactsChanged && !retryDue) {
+      return true;
+    }
+    if (
+      !previousFingerprint ||
+      currentFingerprint.databaseIdentity !== previousFingerprint.databaseIdentity
+    ) {
+      return false;
+    }
+
+    this.initializationMode = "reader";
+    this.readerArtifactFingerprint = previousFingerprint;
+    try {
+      this.refreshReaderArtifacts();
+      this.writerArtifactFingerprint = this.readerArtifactFingerprint ?? currentFingerprint;
+    } finally {
+      this.readerArtifactFingerprint = null;
+      this.initializationMode = "writer";
+    }
+    return true;
+  }
+
+  private async initializeUnlocked(
+    mode: Exclude<InitializationMode, "none">,
+    recoveredOwners: readonly IndexLockOwner[] = [],
+    options: { skipAutoGc?: boolean } = {},
+  ): Promise<void> {
+    if (mode === "writer") {
+      this.requireActiveLease();
+    }
+    this.readIssues = [];
+    this.readerArtifactRetryAfter.clear();
+
     if (this.config.embeddingProvider === 'custom') {
       if (!this.config.customProvider) {
         throw new Error("embeddingProvider is 'custom' but customProvider config is missing.");
@@ -2756,46 +3250,115 @@ export class Indexer {
       }
     }
 
-    await fsPromises.mkdir(this.indexPath, { recursive: true });
-
-    // NOTE: Interrupted indexing recovery is deferred until after store,
-    // invertedIndex, and database are initialized (see below). Running it here
-    // would cause infinite recursion: recovery → healthCheck → ensureInitialized
-    // → initialize (store not yet set) → recovery → ...
-
     const dimensions = this.configuredProviderInfo.modelInfo.dimensions;
     const storePath = path.join(this.indexPath, "vectors");
-    this.store = new VectorStore(storePath, dimensions);
-
-    const indexFilePath = path.join(this.indexPath, "vectors.usearch");
-    if (existsSync(indexFilePath)) {
-      this.store.load();
-    }
-
+    const vectorMetadataPath = `${storePath}.meta.json`;
     const invertedIndexPath = path.join(this.indexPath, "inverted-index.json");
-    this.invertedIndex = new InvertedIndex(invertedIndexPath);
-    try {
-      this.invertedIndex.load();
-    } catch {
-      if (existsSync(invertedIndexPath)) {
-        await fsPromises.unlink(invertedIndexPath);
-      }
-      this.invertedIndex = new InvertedIndex(invertedIndexPath);
-    }
-
     const dbPath = path.join(this.indexPath, "codebase.db");
     let dbIsNew = !existsSync(dbPath);
-    try {
-      this.database = new Database(dbPath);
-    } catch (error) {
-      if (!(await this.tryResetCorruptedIndex("initializing index database", error))) {
-        throw error;
+    const readerArtifactFingerprint = mode === "reader"
+      ? this.captureReaderArtifactFingerprint()
+      : null;
+
+    if (mode === "writer") {
+      await fsPromises.mkdir(this.indexPath, { recursive: true });
+
+      // Interrupted recovery remains entirely under the writer lease.
+      if (recoveredOwners.length > 0 && this.config.scope === "project" && !this.isLocalProjectIndexPath()) {
+        throw new Error(
+          "Interrupted indexing recovery is unsafe while using an inherited worktree index. " +
+          "Run index_codebase with force=true to create a local project index boundary."
+        );
+      }
+      for (const recoveredOwner of recoveredOwners) {
+        recoverLeaseArtifacts(this.indexPath, recoveredOwner, [
+          storePath,
+          `${storePath}.meta.json`,
+        ]);
+      }
+      if (recoveredOwners.length > 0 && this.config.scope === "project") {
+        await this.resetLocalIndexArtifacts();
       }
 
       this.store = new VectorStore(storePath, dimensions);
+      if (existsSync(storePath) || existsSync(vectorMetadataPath)) {
+        this.store.load();
+      }
+
       this.invertedIndex = new InvertedIndex(invertedIndexPath);
-      this.database = new Database(dbPath);
-      dbIsNew = true;
+      try {
+        this.invertedIndex.load();
+      } catch {
+        if (existsSync(invertedIndexPath)) {
+          await fsPromises.unlink(invertedIndexPath);
+        }
+        this.invertedIndex = new InvertedIndex(invertedIndexPath);
+      }
+
+      try {
+        this.database = new Database(dbPath);
+      } catch (error) {
+        if (!(await this.tryResetCorruptedIndex("initializing index database", error))) {
+          throw error;
+        }
+
+        this.store = new VectorStore(storePath, dimensions);
+        this.invertedIndex = new InvertedIndex(invertedIndexPath);
+        this.database = new Database(dbPath);
+        dbIsNew = true;
+      }
+    } else {
+      this.store = new VectorStore(storePath, dimensions);
+      const vectorStoreExists = existsSync(storePath);
+      const vectorMetadataExists = existsSync(vectorMetadataPath);
+      const vectorReadFailureMessage = this.getVectorReadIssueMessage();
+      if (vectorStoreExists !== vectorMetadataExists) {
+        this.recordReadIssue("vectors", vectorReadFailureMessage);
+      } else if (vectorStoreExists) {
+        try {
+          this.store.loadStrict();
+        } catch (error) {
+          this.recordReadIssue("vectors", vectorReadFailureMessage, error);
+          this.store = new VectorStore(storePath, dimensions);
+        }
+      }
+
+      this.invertedIndex = new InvertedIndex(invertedIndexPath);
+      if (existsSync(invertedIndexPath)) {
+        try {
+          this.invertedIndex.load();
+        } catch (error) {
+          this.recordReadIssue(
+            "keyword",
+            this.getKeywordReadIssueMessage(),
+            error,
+          );
+          this.invertedIndex = new InvertedIndex(invertedIndexPath);
+        }
+      } else if (this.store.count() > 0) {
+        this.recordReadIssue("keyword", this.getKeywordReadIssueMessage());
+      }
+
+      if (existsSync(dbPath)) {
+        try {
+          this.database = Database.openReadOnly(dbPath);
+        } catch (error) {
+          this.recordReadIssue(
+            "database",
+            this.getDatabaseReadIssueMessage(),
+            error,
+          );
+          this.database = Database.createEmptyReadOnly();
+        }
+      } else {
+        this.database = Database.createEmptyReadOnly();
+        if (this.store.count() > 0) {
+          this.recordReadIssue(
+            "database",
+            `Index database is missing for the published vectors. ${this.getDatabaseReadIssueMessage()}`,
+          );
+        }
+      }
     }
 
     if (isGitRepo(this.projectRoot)) {
@@ -2811,15 +3374,11 @@ export class Indexer {
       this.logger.branch("debug", "Not a git repository, using default branch");
     }
 
-    // Recover from interrupted indexing AFTER store, invertedIndex, and database
-    // are all initialized. healthCheck() calls ensureInitialized() which checks
-    // these fields — if they're not set, it re-enters initialize() causing infinite
-    // recursion and 70GB+ memory usage.
-    if (this.checkForInterruptedIndexing()) {
-      await this.recoverFromInterruptedIndexing();
+    if (mode === "writer" && recoveredOwners.length > 0) {
+      await this.recoverFromInterruptedIndexingUnlocked(recoveredOwners);
     }
 
-    if (dbIsNew && this.store.count() > 0) {
+    if (mode === "writer" && dbIsNew && this.store.count() > 0) {
       this.migrateFromLegacyIndex();
     }
 
@@ -2834,10 +3393,12 @@ export class Indexer {
       });
     }
 
-    // Auto-GC: Run garbage collection if enabled and interval has elapsed
-    if (this.config.indexing.autoGc) {
+    if (mode === "writer" && this.config.indexing.autoGc && !options.skipAutoGc) {
       await this.maybeRunAutoGc();
     }
+
+    this.initializationMode = mode;
+    this.readerArtifactFingerprint = readerArtifactFingerprint;
   }
 
   private async maybeRunAutoGc(): Promise<void> {
@@ -2859,7 +3420,7 @@ export class Indexer {
     }
 
     if (shouldRunGc) {
-      const result = await this.healthCheck();
+      const result = await this.healthCheckUnlocked();
       if (result.warning) {
         this.database.setMetadata(STARTUP_WARNING_METADATA_KEY, result.warning);
       } else {
@@ -2910,10 +3471,11 @@ export class Indexer {
       .filter(({ key }) => !excludedSet.has(key));
 
     const storeBasePath = path.join(this.indexPath, "vectors");
-    const storeIndexPath = `${storeBasePath}.usearch`;
+    const storeIndexPath = storeBasePath;
     const storeMetadataPath = `${storeBasePath}.meta.json`;
-    const backupIndexPath = `${storeIndexPath}.bak`;
-    const backupMetadataPath = `${storeMetadataPath}.bak`;
+    const lease = this.requireActiveLease();
+    const backupIndexPath = createLeaseTemporaryPath(storeIndexPath, lease.owner, "bak");
+    const backupMetadataPath = createLeaseTemporaryPath(storeMetadataPath, lease.owner, "bak");
 
     let backedUpIndex = false;
     let backedUpMetadata = false;
@@ -3008,6 +3570,35 @@ export class Indexer {
     return `Detected a corrupted local SQLite index at ${dbPath} and reset the local index. Run index_codebase to rebuild search data.`;
   }
 
+  private async resetLocalIndexArtifacts(): Promise<void> {
+    this.store = null;
+    this.invertedIndex = null;
+    this.database?.close();
+    this.database = null;
+    this.indexCompatibility = null;
+    this.initializationMode = "none";
+    this.readIssues = [];
+    this.readerArtifactFingerprint = null;
+    this.writerArtifactFingerprint = null;
+    this.readerArtifactRetryAfter.clear();
+    this.fileHashCache.clear();
+
+    const resetPaths = [
+      path.join(this.indexPath, "codebase.db"),
+      path.join(this.indexPath, "codebase.db-shm"),
+      path.join(this.indexPath, "codebase.db-wal"),
+      path.join(this.indexPath, "vectors"),
+      path.join(this.indexPath, "vectors.usearch"),
+      path.join(this.indexPath, "vectors.meta.json"),
+      path.join(this.indexPath, "inverted-index.json"),
+      path.join(this.indexPath, "file-hashes.json"),
+      path.join(this.indexPath, "failed-batches.json"),
+    ];
+
+    await Promise.all(resetPaths.map((targetPath) => fsPromises.rm(targetPath, { recursive: true, force: true })));
+    await fsPromises.mkdir(this.indexPath, { recursive: true });
+  }
+
   private async tryResetCorruptedIndex(stage: string, error: unknown): Promise<boolean> {
     if (!isSqliteCorruptionError(error)) {
       return false;
@@ -3032,34 +3623,7 @@ export class Indexer {
       error: errorMessage,
     });
 
-    this.store = null;
-    this.invertedIndex = null;
-    this.database?.close();
-    this.database = null;
-    this.indexCompatibility = null;
-    this.fileHashCache.clear();
-
-    const resetPaths = [
-      path.join(this.indexPath, "codebase.db"),
-      path.join(this.indexPath, "codebase.db-shm"),
-      path.join(this.indexPath, "codebase.db-wal"),
-      path.join(this.indexPath, "vectors.usearch"),
-      path.join(this.indexPath, "inverted-index.json"),
-      path.join(this.indexPath, "file-hashes.json"),
-      path.join(this.indexPath, "failed-batches.json"),
-      path.join(this.indexPath, "indexing.lock"),
-      path.join(this.indexPath, "vectors"),
-    ];
-
-    await Promise.all(resetPaths.map(async (targetPath) => {
-      try {
-        await fsPromises.rm(targetPath, { recursive: true, force: true });
-      } catch {
-        // Best-effort cleanup. The follow-up reinitialization will recreate what it needs.
-      }
-    }));
-
-    await fsPromises.mkdir(this.indexPath, { recursive: true });
+    await this.resetLocalIndexArtifacts();
     return true;
   }
 
@@ -3119,6 +3683,7 @@ export class Indexer {
     this.database.setMetadata("index.embeddingProvider", provider.provider);
     this.database.setMetadata("index.embeddingModel", provider.modelInfo.model);
     this.database.setMetadata("index.embeddingDimensions", provider.modelInfo.dimensions.toString());
+    this.database.setMetadata(this.getCallGraphResolutionMetadataKey(), CALL_GRAPH_RESOLUTION_VERSION);
     if (this.config.scope === "global") {
       if (completeProjectEmbeddingStrategyReset) {
         this.database.setMetadata(this.getProjectEmbeddingStrategyMetadataKey(), EMBEDDING_STRATEGY_VERSION);
@@ -3205,16 +3770,99 @@ export class Indexer {
     invertedIndex: InvertedIndex;
     configuredProviderInfo: ConfiguredProviderInfo;
     database: Database;
+    readIssues: readonly IndexReadIssue[];
+    compatibility: IndexCompatibility;
   }> {
+    let initializedReader = false;
+    while (true) {
+      if (this.initializationPromise) {
+        await this.initializationPromise;
+      }
+      if (!this.isInitializedFor("reader")) {
+        await this.initialize();
+        initializedReader = true;
+        continue;
+      }
+      if (
+        this.initializationMode === "writer" &&
+        !this.activeIndexLease &&
+        !initializedReader
+      ) {
+        if (!this.refreshInactiveWriterArtifacts()) {
+          this.resetLoadedIndexState(true);
+          await this.initialize();
+          initializedReader = true;
+          continue;
+        }
+      }
+      if (
+        this.initializationMode === "reader" &&
+        !initializedReader
+      ) {
+        this.refreshReaderArtifacts();
+      }
+      const state = this.requireLoadedIndexState();
+      return {
+        ...state,
+        readIssues: [...this.readIssues],
+        compatibility: this.indexCompatibility ?? this.validateIndexCompatibility(state.configuredProviderInfo),
+      };
+    }
+  }
+
+  private async ensureInitializedUnlocked(recoveredOwners: readonly IndexLockOwner[] = []): Promise<{
+    store: VectorStore;
+    provider: EmbeddingProviderInterface;
+    invertedIndex: InvertedIndex;
+    configuredProviderInfo: ConfiguredProviderInfo;
+    database: Database;
+  }> {
+    this.requireActiveLease();
+
+    if (this.initializationPromise) {
+      await this.initializationPromise;
+    }
+
+    if (recoveredOwners.length > 0 || !this.isInitializedFor("writer")) {
+      const retireReaderDatabase = this.initializationMode === "reader";
+      this.resetLoadedIndexState(retireReaderDatabase);
+      await this.initializeOnce("writer", recoveredOwners, { skipAutoGc: true });
+    } else {
+      this.refreshLoadedIndexState();
+    }
+    if (this.config.indexing.autoGc) {
+      await this.maybeRunAutoGc();
+    }
+    return this.requireLoadedIndexState();
+  }
+
+  private requireReadableComponents(
+    readIssues: readonly IndexReadIssue[],
+    ...components: IndexReadIssue["component"][]
+  ): void {
+    const componentSet = new Set(components);
+    const issues = readIssues.filter((issue) => issue.blocking && componentSet.has(issue.component));
+    if (issues.length > 0) {
+      throw new Error(issues.map((issue) => issue.message).join(" "));
+    }
+  }
+
+  private requireLoadedIndexState(): {
+    store: VectorStore;
+    provider: EmbeddingProviderInterface;
+    invertedIndex: InvertedIndex;
+    configuredProviderInfo: ConfiguredProviderInfo;
+    database: Database;
+  } {
     if (!this.store || !this.provider || !this.invertedIndex || !this.configuredProviderInfo || !this.database) {
-      await this.initialize();
+      throw new Error("Index state is not initialized");
     }
     return {
-      store: this.store!,
-      provider: this.provider!,
-      invertedIndex: this.invertedIndex!,
-      configuredProviderInfo: this.configuredProviderInfo!,
-      database: this.database!,
+      store: this.store,
+      provider: this.provider,
+      invertedIndex: this.invertedIndex,
+      configuredProviderInfo: this.configuredProviderInfo,
+      database: this.database,
     };
   }
 
@@ -3235,7 +3883,19 @@ export class Indexer {
   }
 
   async index(onProgress?: ProgressCallback): Promise<IndexStats> {
-    const { store, provider, invertedIndex, database, configuredProviderInfo } = await this.ensureInitialized();
+    return this.withIndexMutationLease("index", async (recoveredOwners) => {
+      return this.indexUnlocked(onProgress, recoveredOwners);
+    });
+  }
+
+  private async indexUnlocked(
+    onProgress?: ProgressCallback,
+    recoveredOwners: readonly IndexLockOwner[] = [],
+    stateReady = false,
+  ): Promise<IndexStats> {
+    const { store, provider, invertedIndex, database, configuredProviderInfo } = stateReady
+      ? this.requireLoadedIndexState()
+      : await this.ensureInitializedUnlocked(recoveredOwners);
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
     const forceScopedReembed = scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
@@ -3248,7 +3908,6 @@ export class Indexer {
       );
     }
 
-    this.acquireIndexingLock();
     this.logger.recordIndexingStart();
     this.logger.info("Starting indexing", { projectRoot: this.projectRoot });
 
@@ -3299,12 +3958,21 @@ export class Indexer {
     const changedFiles: Array<{ path: string; content: string; hash: string }> = [];
     const unchangedFilePaths = new Set<string>();
     const currentFileHashes = new Map<string, string>();
+    const needsCallGraphResolutionMigration =
+      database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
 
     for (const f of files) {
       const currentHash = hashFile(f.path);
       currentFileHashes.set(f.path, currentHash);
 
-      if (this.fileHashCache.get(f.path) === currentHash) {
+      const cachedHashMatches = this.fileHashCache.get(f.path) === currentHash;
+      const needsCallGraphRefresh = cachedHashMatches &&
+        needsCallGraphResolutionMigration &&
+        database.getChunksByFile(f.path).some((chunk) =>
+          chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+        );
+
+      if (cachedHashMatches && !needsCallGraphRefresh) {
         unchangedFilePaths.add(f.path);
         this.logger.recordCacheHit();
       } else {
@@ -3428,7 +4096,6 @@ export class Indexer {
         stats.parseFailures.push(relativePath);
       }
 
-      let fileChunkCount = 0;
       let chunksToProcess = parsed.chunks;
 
       if (this.config.indexing.fallbackToTextOnMaxChunks && chunksToProcess.length > this.config.indexing.maxChunksPerFile) {
@@ -3439,15 +4106,13 @@ export class Indexer {
         }
       }
 
+      chunksToProcess = selectIndexableChunks(
+        chunksToProcess,
+        this.config.indexing.maxChunksPerFile,
+        this.config.indexing.semanticOnly,
+      );
+
       for (const chunk of chunksToProcess) {
-        if (fileChunkCount >= this.config.indexing.maxChunksPerFile) {
-          break;
-        }
-
-        if (this.config.indexing.semanticOnly && chunk.chunkType === "other") {
-          continue;
-        }
-
         const id = generateChunkId(parsed.path, chunk);
         const contentHash = generateChunkHash(chunk);
         const existingContentHash = existingChunks.get(id);
@@ -3475,7 +4140,6 @@ export class Indexer {
         });
 
         if (existingContentHash === contentHash) {
-          fileChunkCount++;
           continue;
         }
 
@@ -3502,7 +4166,6 @@ export class Indexer {
           contentHash,
           metadata,
         });
-        fileChunkCount++;
       }
     }
 
@@ -3619,11 +4282,23 @@ export class Indexer {
         // Resolve same-file calls (with the same case-insensitivity rules
         // used to build symbolsByName above).
         for (const edge of edges) {
-          const candidates = symbolsByName
-            .get(normalizeSymbolKey(edge.targetName))
-            ?.filter((symbol) =>
-              isCompatibleCFamilyCallTarget(fileLanguage, edge.callType, symbol.kind)
-            );
+          let candidates = symbolsByName.get(normalizeSymbolKey(edge.targetName));
+          if (fileLanguage === "php" && candidates) {
+            // PHP permits functions and classes whose names differ only by symbol kind.
+            // Resolve against the kind implied by the edge before checking uniqueness.
+            if (edge.callType === "Constructor") {
+              candidates = candidates.filter((candidate) =>
+                PHP_CLASS_SYMBOL_CHUNK_TYPES.has(candidate.kind)
+              );
+            } else if (edge.callType === "Call") {
+              candidates = candidates.filter((candidate) =>
+                PHP_FUNCTION_SYMBOL_CHUNK_TYPES.has(candidate.kind)
+              );
+            }
+          }
+          candidates = candidates?.filter((symbol) =>
+            isCompatibleCFamilyCallTarget(fileLanguage, edge.callType, symbol.kind)
+          );
           if (candidates && candidates.length === 1) {
             database.resolveCallEdge(edge.id, candidates[0].id);
           }
@@ -3672,7 +4347,11 @@ export class Indexer {
       database.addChunksToBranchBatch(branchCatalogKey, Array.from(currentChunkIds));
       database.clearBranchSymbols(branchCatalogKey);
       database.addSymbolsToBranchBatch(branchCatalogKey, Array.from(allSymbolIds));
-      if (backfilledBlameMetadata) {
+      const vectorPath = path.join(this.indexPath, "vectors");
+      const shouldFingerprintLegacyPair = !store.hasFingerprint() &&
+        existsSync(vectorPath) &&
+        existsSync(`${vectorPath}.meta.json`);
+      if (backfilledBlameMetadata || shouldFingerprintLegacyPair) {
         store.save();
       }
       if (scopedRoots) {
@@ -3693,7 +4372,6 @@ export class Indexer {
         chunksProcessed: 0,
         totalChunks: 0,
       });
-      this.releaseIndexingLock();
       return stats;
     }
 
@@ -3703,7 +4381,7 @@ export class Indexer {
       database.clearBranchSymbols(branchCatalogKey);
       database.addSymbolsToBranchBatch(branchCatalogKey, Array.from(allSymbolIds));
       store.save();
-      invertedIndex.save();
+      this.saveInvertedIndex(invertedIndex);
       if (scopedRoots) {
         this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
         this.clearScopedFailedBatches(scopedRoots);
@@ -3722,7 +4400,6 @@ export class Indexer {
         chunksProcessed: 0,
         totalChunks: 0,
       });
-      this.releaseIndexingLock();
       return stats;
     }
 
@@ -3994,7 +4671,7 @@ export class Indexer {
     database.addSymbolsToBranchBatch(branchCatalogKey, Array.from(allSymbolIds));
 
     store.save();
-    invertedIndex.save();
+    this.saveInvertedIndex(invertedIndex);
     if (scopedRoots) {
       this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
     } else {
@@ -4055,7 +4732,6 @@ export class Indexer {
       totalChunks: pendingChunks.length,
     });
 
-    this.releaseIndexingLock();
     return stats;
   }
 
@@ -4161,9 +4837,9 @@ export class Indexer {
       blameSince?: string;
     }
   ): Promise<SearchResult[]> {
-    const { store, provider, database } = await this.ensureInitialized();
+    const { store, provider, invertedIndex, database, readIssues, compatibility } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "vectors", "database");
 
-    const compatibility = this.checkCompatibility();
     if (!compatibility.compatible) {
       throw new Error(
         `${compatibility.reason ?? "Index is incompatible with current embedding provider."} ` +
@@ -4181,6 +4857,10 @@ export class Indexer {
     const maxResults = limit ?? this.config.search.maxResults;
     const hybridWeight = options?.hybridWeight ?? this.config.search.hybridWeight;
     const fusionStrategy = this.config.search.fusionStrategy;
+    const effectiveHybridWeight = fusionStrategy === "weighted" &&
+      readIssues.some((issue) => issue.component === "keyword")
+      ? 0
+      : hybridWeight;
     const rrfK = this.config.search.rrfK;
     const rerankTopN = this.config.search.rerankTopN;
     const filterByBranch = options?.filterByBranch ?? true;
@@ -4190,7 +4870,7 @@ export class Indexer {
     this.logger.search("debug", "Starting search", {
       query,
       maxResults,
-      hybridWeight,
+      hybridWeight: effectiveHybridWeight,
       fusionStrategy,
       rrfK,
       rerankTopN,
@@ -4199,15 +4879,24 @@ export class Indexer {
 
     const embeddingStartTime = performance.now();
     const embeddingQuery = stripFilePathHint(query);
-    const embedding = await this.getQueryEmbedding(embeddingQuery, provider);
+    let embedding: number[] | undefined;
+    try {
+      embedding = await this.getQueryEmbedding(embeddingQuery, provider);
+    } catch (error) {
+      this.logger.warn("Query embedding failed; falling back to keyword-only search", {
+        query,
+        error: getErrorMessage(error),
+        action: "Check the embedding provider configuration and retry search after restoring provider health.",
+      });
+    }
     const embeddingMs = performance.now() - embeddingStartTime;
 
     const vectorStartTime = performance.now();
-    const semanticResults = store.search(embedding, maxResults * 4);
+    const semanticResults = embedding ? store.search(embedding, maxResults * 4) : [];
     const vectorMs = performance.now() - vectorStartTime;
 
     const keywordStartTime = performance.now();
-    const keywordResults = await this.keywordSearch(query, maxResults * 4);
+    const keywordResults = await this.keywordSearch(query, maxResults * 4, store, invertedIndex);
     const keywordMs = performance.now() - keywordStartTime;
 
     let branchChunkIds: Set<string> | null = null;
@@ -4254,12 +4943,15 @@ export class Indexer {
     }
 
     const fusionStartTime = performance.now();
+    const rankingHybridWeight = embedding === undefined && fusionStrategy === "weighted"
+      ? 1
+      : effectiveHybridWeight;
     const combined = rankHybridResults(query, semanticCandidates, keywordCandidates, {
       fusionStrategy,
       rrfK,
       rerankTopN,
       limit: maxResults,
-      hybridWeight,
+      hybridWeight: rankingHybridWeight,
       prioritizeSourcePaths: sourceIntent,
     });
     const rerankedCombined = await this.rerankCandidatesWithApi(query, combined, {
@@ -4390,9 +5082,10 @@ export class Indexer {
 
   private async keywordSearch(
     query: string,
-    limit: number
+    limit: number,
+    store: VectorStore,
+    invertedIndex: InvertedIndex,
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
-    const { store, invertedIndex } = await this.ensureInitialized();
     const scores = invertedIndex.search(query);
 
     if (scores.size === 0) {
@@ -4417,26 +5110,58 @@ export class Indexer {
   }
 
   async getStatus(): Promise<StatusResult> {
-    const { store, configuredProviderInfo, database } = await this.ensureInitialized();
+    const { store, configuredProviderInfo, database, readIssues, compatibility } = await this.ensureInitialized();
     const failedBatchesCount = this.getFailedBatchesCount();
+    const vectorCount = store.count();
+    const statusReadIssues = [...readIssues];
+    let startupWarning = "";
+    if (!statusReadIssues.some((issue) => issue.component === "database")) {
+      try {
+        startupWarning = database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? "";
+      } catch (error) {
+        const message = this.getDatabaseReadIssueMessage();
+        statusReadIssues.push(this.createReadIssue("database", message));
+        if (!this.readIssues.some((issue) => issue.component === "database")) {
+          this.recordReadIssue("database", message, error);
+        }
+      }
+    }
+    const readWarning = statusReadIssues.map((issue) => issue.message).join(" ");
+    const warning = [readWarning, startupWarning].filter((message) => message.length > 0).join(" ");
+    const hasBlockingReadIssue = statusReadIssues.some((issue) => issue.blocking);
 
     return {
-      indexed: store.count() > 0,
-      vectorCount: store.count(),
+      indexed: vectorCount > 0 && !hasBlockingReadIssue,
+      vectorCount,
       provider: configuredProviderInfo.provider,
       model: configuredProviderInfo.modelInfo.model,
       indexPath: this.indexPath,
       currentBranch: this.currentBranch,
       baseBranch: this.baseBranch,
-      compatibility: this.indexCompatibility,
+      compatibility,
       failedBatchesCount,
       failedBatchesPath: failedBatchesCount > 0 ? this.failedBatchesPath : undefined,
-      warning: database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? undefined,
+      warning: warning || undefined,
     };
   }
 
+  async forceIndex(onProgress?: ProgressCallback): Promise<IndexStats> {
+    return this.withIndexMutationLease("force-index", async (recoveredOwners) => {
+      await this.ensureInitializedUnlocked(recoveredOwners);
+      await this.clearIndexUnlocked();
+      return this.indexUnlocked(onProgress, [], true);
+    });
+  }
+
   async clearIndex(): Promise<void> {
-    const { store, invertedIndex, database } = await this.ensureInitialized();
+    await this.withIndexMutationLease("clear", async (recoveredOwners) => {
+      await this.ensureInitializedUnlocked(recoveredOwners);
+      await this.clearIndexUnlocked();
+    });
+  }
+
+  private async clearIndexUnlocked(): Promise<void> {
+    const { store, invertedIndex, database } = this.requireLoadedIndexState();
 
     if (this.config.scope === "global") {
       store.load();
@@ -4473,7 +5198,7 @@ export class Indexer {
         store.clear();
         store.save();
         invertedIndex.clear();
-        invertedIndex.save();
+        this.saveInvertedIndex(invertedIndex);
 
         this.fileHashCache.clear();
         this.saveFileHashCache();
@@ -4503,15 +5228,7 @@ export class Indexer {
       return;
     }
 
-    const localProjectIndexPaths = [path.join(this.projectRoot, getHostProjectIndexRelativePath(this.host))];
-    if (this.host !== "opencode") {
-      localProjectIndexPaths.push(path.join(this.projectRoot, getHostProjectIndexRelativePath("opencode")));
-    }
-
-    const isLocalProjectIndex = localProjectIndexPaths.some(
-      (localPath) => path.resolve(this.indexPath) === path.resolve(localPath)
-    );
-    if (!isLocalProjectIndex) {
+    if (!this.isLocalProjectIndexPath()) {
       throw new Error(
         "Project-scoped force rebuild is unsafe while using an inherited worktree index. " +
         "Create a local project config boundary before clearing the index."
@@ -4521,7 +5238,7 @@ export class Indexer {
     store.clear();
     store.save();
     invertedIndex.clear();
-    invertedIndex.save();
+    this.saveInvertedIndex(invertedIndex);
 
     // Clear file hash cache so all files are re-parsed
     this.fileHashCache.clear();
@@ -4546,7 +5263,14 @@ export class Indexer {
   }
 
   async healthCheck(): Promise<HealthCheckResult> {
-    const { store, invertedIndex, database } = await this.ensureInitialized();
+    return this.withIndexMutationLease("health-check", async (recoveredOwners) => {
+      await this.ensureInitializedUnlocked(recoveredOwners);
+      return this.healthCheckUnlocked();
+    });
+  }
+
+  private async healthCheckUnlocked(): Promise<HealthCheckResult> {
+    const { store, invertedIndex, database } = this.requireLoadedIndexState();
 
     this.logger.gc("info", "Starting health check");
 
@@ -4593,7 +5317,7 @@ export class Indexer {
 
     if (removedCount > 0) {
       store.save();
-      invertedIndex.save();
+      this.saveInvertedIndex(invertedIndex);
     }
 
     let gcOrphanEmbeddings: number;
@@ -4611,7 +5335,7 @@ export class Indexer {
         throw error;
       }
 
-      await this.ensureInitialized();
+      await this.initializeUnlocked("writer", [], { skipAutoGc: true });
 
       return {
         removed: 0,
@@ -4637,7 +5361,14 @@ export class Indexer {
   }
 
   async retryFailedBatches(): Promise<{ succeeded: number; failed: number; remaining: number }> {
-    const { store, provider, invertedIndex, database, configuredProviderInfo } = await this.ensureInitialized();
+    return this.withIndexMutationLease("retry-failed-batches", async (recoveredOwners) => {
+      await this.ensureInitializedUnlocked(recoveredOwners);
+      return this.retryFailedBatchesUnlocked();
+    });
+  }
+
+  private async retryFailedBatchesUnlocked(): Promise<{ succeeded: number; failed: number; remaining: number }> {
+    const { store, provider, invertedIndex, database, configuredProviderInfo } = this.requireLoadedIndexState();
     const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
     const providerRateLimits = this.getProviderRateLimits(configuredProviderInfo.provider);
 
@@ -4831,7 +5562,7 @@ export class Indexer {
 
     if (succeeded > 0) {
       store.save();
-      invertedIndex.save();
+      this.saveInvertedIndex(invertedIndex);
     }
 
     if (roots && succeeded > 0 && persistedStillFailing.length === 0 && this.hasProjectForceReembedPending()) {
@@ -4866,7 +5597,8 @@ export class Indexer {
   }
 
   async getDatabaseStats(): Promise<{ embeddingCount: number; chunkCount: number; branchChunkCount: number; branchCount: number } | null> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     return database.getStats();
   }
 
@@ -4885,9 +5617,9 @@ export class Indexer {
       filterByBranch?: boolean;
     }
   ): Promise<SearchResult[]> {
-    const { store, provider, database } = await this.ensureInitialized();
+    const { store, provider, database, readIssues, compatibility } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "vectors", "database");
 
-    const compatibility = this.checkCompatibility();
     if (!compatibility.compatible) {
       throw new Error(
         `${compatibility.reason ?? "Index is incompatible with current embedding provider."} ` +
@@ -5032,7 +5764,8 @@ export class Indexer {
   }
 
   async getCallers(targetName: string, callTypeFilter?: string): Promise<CallEdgeData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const seen = new Set<string>();
     const results: CallEdgeData[] = [];
 
@@ -5049,7 +5782,8 @@ export class Indexer {
   }
 
   async getCallees(symbolId: string, callTypeFilter?: string): Promise<CallEdgeData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const seen = new Set<string>();
     const results: CallEdgeData[] = [];
 
@@ -5066,7 +5800,8 @@ export class Indexer {
   }
 
   async findCallPath(fromName: string, toName: string, maxDepth?: number): Promise<PathHopData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     let shortest: PathHopData[] = [];
 
     for (const branchKey of this.getBranchCatalogKeys()) {
@@ -5080,13 +5815,15 @@ export class Indexer {
   }
 
   async getSymbolsForBranch(branch?: string): Promise<SymbolData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
     return database.getSymbolsForBranch(resolvedBranch);
   }
 
   async getSymbolsForFiles(filePaths: string[], branch?: string): Promise<SymbolData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
     return database.getSymbolsForFiles(filePaths, resolvedBranch);
   }
@@ -5096,19 +5833,22 @@ export class Indexer {
     direction: "callers" | "callees",
     maxDepth?: number
   ): Promise<ReachabilityData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const branch = this.getBranchCatalogKey();
     return database.getTransitiveReachability(rootSymbolIds, branch, direction, maxDepth);
   }
 
   async detectCommunities(branch?: string, symbolIds?: string[]): Promise<CommunityData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
     return database.detectCommunities(resolvedBranch, symbolIds);
   }
 
   async computeCentrality(branch?: string): Promise<CentralityData[]> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
     return database.computeCentrality(resolvedBranch);
   }
@@ -5121,7 +5861,8 @@ export class Indexer {
     checkConflicts?: boolean;
     direction?: "callers" | "callees" | "both";
   }): Promise<PrImpactResult> {
-    const { database } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
     const execFileAsync = promisify(execFile);
 
     const changedFilesResult = await getChangedFiles({
@@ -5304,7 +6045,8 @@ export class Indexer {
     symbols: SymbolData[];
     edges: CallEdgeData[];
   }> {
-    const { database, store } = await this.ensureInitialized();
+    const { database, store, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "vectors", "database");
     const seenSymbols = new Map<string, SymbolData>();
     const seenEdges = new Map<string, CallEdgeData>();
 
@@ -5359,11 +6101,22 @@ export class Indexer {
   }
 
   async close(): Promise<void> {
-    await this.database?.close();
+    this.database?.close();
+    for (const database of this.retiredDatabases) {
+      database.close();
+    }
+    this.retiredDatabases = [];
     this.database = null;
     this.store = null;
     this.invertedIndex = null;
     this.provider = null;
     this.reranker = null;
+    this.configuredProviderInfo = null;
+    this.indexCompatibility = null;
+    this.initializationMode = "none";
+    this.readIssues = [];
+    this.readerArtifactFingerprint = null;
+    this.writerArtifactFingerprint = null;
+    this.readerArtifactRetryAfter.clear();
   }
 }

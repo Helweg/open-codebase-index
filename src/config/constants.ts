@@ -1,8 +1,8 @@
 export const DEFAULT_INCLUDE = [
-  "**/*.{ts,tsx,js,jsx,mjs,cjs}",
+  "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}",
   "**/*.{py,pyi}",
-  "**/*.{go,rs,java,kt,scala}",
-  "**/*.{c,cpp,cc,h,hpp}",
+  "**/*.{go,rs,java,cs,kt,scala}",
+  "**/*.{c,cpp,cc,cxx,h,hpp,hxx}",
   "**/*.{rb,php,inc,swift}",
   "**/*.{cls,trigger}",
   "**/*.{vue,svelte,astro}",

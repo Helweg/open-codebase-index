@@ -14,7 +14,6 @@ export default defineConfig({
     "ignore",
     "p-queue",
     "p-retry",
-    "tiktoken",
   ],
   external: [
     "@modelcontextprotocol/sdk",

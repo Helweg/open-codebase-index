@@ -148,6 +148,25 @@ describe("files utilities", () => {
       expect(result.files.some((f) => f.path.endsWith("util.ts"))).toBe(true);
     });
 
+    it("should collect parser-backed source extensions by default", async () => {
+      const fileNames = ["module.mts", "module.cts", "widget.cxx", "widget.hxx", "Service.cs"];
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      for (const fileName of fileNames) {
+        fs.writeFileSync(path.join(tempDir, "src", fileName), "source");
+      }
+
+      const result = await collectFiles(
+        tempDir,
+        DEFAULT_INCLUDE,
+        DEFAULT_EXCLUDE,
+        1048576
+      );
+
+      expect(result.files.map((file) => path.basename(file.path)).sort()).toEqual(
+        [...fileNames].sort()
+      );
+    });
+
     it("should skip files exceeding max size", async () => {
       fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
       fs.writeFileSync(path.join(tempDir, "src/small.ts"), "x");

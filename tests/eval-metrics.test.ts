@@ -209,6 +209,50 @@ describe("eval metrics", () => {
     expect(perQuery[0].rawTop3DistinctRatio).toBeCloseTo(2 / 3, 6);
   });
 
+  it("measures context response tokens, candidate compression, and quality per token", () => {
+    const queries: GoldenQuery[] = [
+      query({ id: "q1", retrievalMode: "context" }),
+      query({ id: "q2", retrievalMode: "context" }),
+    ];
+    const result = (id: string, responseTokens: number, relevant: boolean) => buildPerQueryResult(
+      { ...queries[0], id },
+      [{
+        filePath: relevant ? "/repo/src/indexer/index.ts" : "/repo/src/tools/index.ts",
+        startLine: 1,
+        endLine: 2,
+        score: 1,
+        chunkType: "function",
+        name: relevant ? "rankHybridResults" : "other",
+      }],
+      10,
+      10,
+      { resolvedRoute: "definition", routedQuery: "rankHybridResults" },
+      {
+        tokenBudget: 1200,
+        responseTokens,
+        candidateCount: 4,
+        deduplicatedCount: 3,
+        omittedCount: 3,
+      },
+    );
+    const perQuery = [result("q1", 100, true), result("q2", 300, false)];
+
+    const metrics = computeEvalMetrics(queries, perQuery, 0, 0, 0);
+
+    expect(perQuery[0].duplicateCandidateRatio).toBe(0.25);
+    expect(perQuery[0].selectedFileRatio).toBe(1);
+    expect(metrics.contextEfficiency.queryCount).toBe(2);
+    expect(metrics.contextEfficiency.responseTokens).toEqual({
+      total: 400,
+      average: 200,
+      p95: 290,
+      max: 300,
+    });
+    expect(metrics.contextEfficiency.duplicateCandidateRatio).toBe(0.25);
+    expect(metrics.contextEfficiency.hitAt5Per1kResponseTokens).toBe(2.5);
+    expect(metrics.contextEfficiency.mrrAt10Per1kResponseTokens).toBe(2.5);
+  });
+
   it("uses deterministic percentile behavior for tiny samples", () => {
     const q = query();
     const build = (id: string, latencyMs: number) =>

@@ -54,6 +54,54 @@ export class UserService {
       expect(chunks.some((c) => c.content.includes("class UserService"))).toBe(true);
     });
 
+    it.each(["module.mts", "module.cts"])(
+      "should classify and semantically parse %s as TypeScript",
+      (filePath) => {
+        const content = `
+function normalizeName(value: string): string {
+  return value.trim().toLowerCase();
+}
+`;
+        const chunks = parseFile(filePath, content);
+
+        expect(chunks.some((c) => c.chunkType === "function_declaration")).toBe(true);
+        expect(chunks.every((c) => c.language === "typescript")).toBe(true);
+      }
+    );
+
+    it.each(["widget.cxx", "widget.hxx"])(
+      "should classify and semantically parse %s as C++",
+      (filePath) => {
+        const content = `
+#include <string>
+
+std::string normalize_name(const std::string& value) {
+  return value;
+}
+`;
+        const chunks = parseFile(filePath, content);
+
+        expect(chunks.some((c) => c.chunkType === "function_definition")).toBe(true);
+        expect(chunks.every((c) => c.language === "cpp")).toBe(true);
+      }
+    );
+
+    it("should classify and semantically parse .cs files as C#", () => {
+      const content = `
+public class UserService
+{
+    public string NormalizeName(string value)
+    {
+        return value.Trim().ToLowerInvariant();
+    }
+}
+`;
+      const chunks = parseFile("UserService.cs", content);
+
+      expect(chunks.some((c) => c.chunkType === "class_declaration")).toBe(true);
+      expect(chunks.every((c) => c.language === "csharp")).toBe(true);
+    });
+
     it("should parse JavaScript files", () => {
       const content = `
 function greet(name) {
@@ -499,6 +547,174 @@ end
       newStore.load();
 
       expect(newStore.count()).toBe(1);
+    });
+
+    it("should fingerprint persisted vectors and require the fingerprint for strict loads", () => {
+      store.add("chunk1", [1, 0, 0], {
+        filePath: "test.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "abc123",
+      });
+      store.save();
+
+      const metadataPath = path.join(tempDir, "vectors.meta.json");
+      const persisted = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as {
+        vector_fingerprint?: string;
+      };
+      expect(persisted.vector_fingerprint).toBeTypeOf("string");
+      expect(store.hasFingerprint()).toBe(true);
+
+      const strictStore = new VectorStore(path.join(tempDir, "vectors"), 3);
+      strictStore.loadStrict();
+      expect(strictStore.count()).toBe(1);
+    });
+
+    it("should reject valid vector and metadata artifacts from different publications", () => {
+      const firstPath = path.join(tempDir, "vectors-first");
+      const secondPath = path.join(tempDir, "vectors-second");
+      const first = new VectorStore(firstPath, 3);
+      const second = new VectorStore(secondPath, 3);
+      first.add("first", [1, 0, 0], {
+        filePath: "first.ts",
+        startLine: 1,
+        endLine: 2,
+        chunkType: "function",
+        language: "typescript",
+        hash: "first-hash",
+      });
+      second.add("second", [0, 1, 0], {
+        filePath: "second.ts",
+        startLine: 1,
+        endLine: 2,
+        chunkType: "function",
+        language: "typescript",
+        hash: "second-hash",
+      });
+      first.save();
+      second.save();
+      fs.copyFileSync(`${secondPath}.meta.json`, `${firstPath}.meta.json`);
+
+      const mixed = new VectorStore(firstPath, 3);
+      expect(() => mixed.loadStrict()).toThrow(/fingerprint.*mismatch/i);
+      expect(mixed.count()).toBe(0);
+      expect(() => mixed.load()).toThrow(/fingerprint.*mismatch/i);
+      expect(mixed.count()).toBe(0);
+    });
+
+    it("should reject foreign metadata when vector artifacts are identical", () => {
+      const firstPath = path.join(tempDir, "vectors-identical-first");
+      const secondPath = path.join(tempDir, "vectors-identical-second");
+      const first = new VectorStore(firstPath, 3);
+      const second = new VectorStore(secondPath, 3);
+      first.add("first", [1, 0, 0], {
+        filePath: "first.ts",
+        startLine: 1,
+        endLine: 2,
+        chunkType: "function",
+        language: "typescript",
+        hash: "first-hash",
+      });
+      second.add("second", [1, 0, 0], {
+        filePath: "second.ts",
+        startLine: 1,
+        endLine: 2,
+        chunkType: "function",
+        language: "typescript",
+        hash: "second-hash",
+      });
+      first.save();
+      second.save();
+      fs.copyFileSync(`${secondPath}.meta.json`, `${firstPath}.meta.json`);
+
+      const mixed = new VectorStore(firstPath, 3);
+      expect(() => mixed.loadStrict()).toThrow(/fingerprint.*mismatch/i);
+      expect(mixed.count()).toBe(0);
+    });
+
+    it("should allow structurally valid legacy loads only in writer mode", () => {
+      store.add("chunk1", [1, 0, 0], {
+        filePath: "test.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "abc123",
+      });
+      store.save();
+
+      const metadataPath = path.join(tempDir, "vectors.meta.json");
+      const legacyMetadata = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as Record<string, unknown>;
+      delete legacyMetadata.vector_fingerprint;
+      fs.writeFileSync(metadataPath, JSON.stringify(legacyMetadata));
+
+      const writerStore = new VectorStore(path.join(tempDir, "vectors"), 3);
+      writerStore.load();
+      expect(writerStore.count()).toBe(1);
+      expect(writerStore.hasFingerprint()).toBe(false);
+
+      const readerStore = new VectorStore(path.join(tempDir, "vectors"), 3);
+      expect(() => readerStore.loadStrict()).toThrow(/missing.*fingerprint/i);
+    });
+
+    it("should reject structurally inconsistent vector metadata", () => {
+      store.add("chunk1", [1, 0, 0], {
+        filePath: "test.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "abc123",
+      });
+      store.save();
+
+      const metadataPath = path.join(tempDir, "vectors.meta.json");
+      const inconsistent = JSON.parse(fs.readFileSync(metadataPath, "utf-8")) as {
+        key_to_id: Record<string, number>;
+        vector_fingerprint?: string;
+      };
+      inconsistent.key_to_id.ghost = 99;
+      delete inconsistent.vector_fingerprint;
+      fs.writeFileSync(metadataPath, JSON.stringify(inconsistent));
+
+      const reloaded = new VectorStore(path.join(tempDir, "vectors"), 3);
+      expect(() => reloaded.load()).toThrow(/structure/i);
+    });
+
+    it("should reject incomplete legacy vector publications in writer mode", () => {
+      const missingMetadataPath = path.join(tempDir, "missing-metadata");
+      const missingMetadata = new VectorStore(missingMetadataPath, 3);
+      missingMetadata.save();
+      fs.rmSync(`${missingMetadataPath}.meta.json`);
+      expect(() => new VectorStore(missingMetadataPath, 3).load()).toThrow(/incomplete vector publication/i);
+
+      const missingVectorsPath = path.join(tempDir, "missing-vectors");
+      const missingVectors = new VectorStore(missingVectorsPath, 3);
+      missingVectors.save();
+      fs.rmSync(missingVectorsPath);
+      expect(() => new VectorStore(missingVectorsPath, 3).load()).toThrow(/incomplete vector publication/i);
+    });
+
+    it("should clear the in-memory fingerprint when metadata publication fails", () => {
+      store.add("chunk1", [1, 0, 0], {
+        filePath: "test.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "abc123",
+      });
+      store.save();
+      expect(store.hasFingerprint()).toBe(true);
+
+      const metadataPath = path.join(tempDir, "vectors.meta.json");
+      fs.rmSync(metadataPath);
+      fs.mkdirSync(metadataPath);
+
+      expect(() => store.save()).toThrow();
+      expect(store.hasFingerprint()).toBe(false);
     });
 
     it("should add vectors in batch and keep metadata searchable", () => {

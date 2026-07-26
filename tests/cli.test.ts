@@ -34,6 +34,28 @@ describe("cli config loading", () => {
     expect(rawConfig.include).toEqual(["custom/**/*.ts"]);
   });
 
+  it("loads jcode host parser options while still honoring explicit config", () => {
+    const configPath = path.join(tempDir, "custom-config.json");
+    mkdirSync(path.dirname(configPath), { recursive: true });
+    writeFileSync(
+      configPath,
+      JSON.stringify({ embeddingProvider: "ollama", include: ["custom/**/*.ts"] }, null, 2),
+      "utf-8",
+    );
+
+    const args = parseArgs(["node", "dist/cli.js", "--host", "jcode", "--project", tempDir, "--config", configPath]);
+    const rawConfig = loadCliRawConfig(args) as Record<string, unknown>;
+
+    expect(args.host).toBe("jcode");
+    expect(rawConfig.embeddingProvider).toBe("ollama");
+    expect(rawConfig.include).toEqual(["custom/**/*.ts"]);
+  });
+
+  it("throws for unknown --host values", () => {
+    expect(() => parseArgs(["node", "dist/cli.js", "--host", "bad-host"]))
+      .toThrow("Invalid host mode: bad-host. Allowed values: opencode, codex, claude, pi, jcode.");
+  });
+
   it("recognizes npm bin symlinks as the CLI entrypoint", () => {
     const realCliPath = path.join(tempDir, "package", "dist", "cli.js");
     const binPath = path.join(tempDir, ".bin", "opencode-codebase-index-mcp");

@@ -30,6 +30,8 @@ export class FileWatcher {
   private debounceTimer: NodeJS.Timeout | null = null;
   private debounceMs = 1000;
   private onChanges: ChangeHandler | null = null;
+  private readyPromise: Promise<void> | null = null;
+  private resolveReady: (() => void) | null = null;
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode = "opencode", options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -76,6 +78,13 @@ export class FileWatcher {
         stabilityThreshold: 300,
         pollInterval: 100,
       },
+    });
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
+    this.watcher.once("ready", () => {
+      this.resolveReady?.();
+      this.resolveReady = null;
     });
 
     this.watcher.on("error", (error: unknown) => {
@@ -168,16 +177,21 @@ export class FileWatcher {
     }
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
 
     if (this.watcher) {
-      this.watcher.close();
+      const watcher = this.watcher;
       this.watcher = null;
+      await watcher.close();
     }
+
+    this.resolveReady?.();
+    this.resolveReady = null;
+    this.readyPromise = null;
 
     this.pendingChanges.clear();
     this.onChanges = null;
@@ -185,5 +199,9 @@ export class FileWatcher {
 
   isRunning(): boolean {
     return this.watcher !== null;
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await (this.readyPromise ?? Promise.resolve());
   }
 }

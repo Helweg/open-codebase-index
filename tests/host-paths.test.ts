@@ -41,6 +41,7 @@ describe("host path conformance", () => {
       { host: "claude", configPath: path.join(".claude", "codebase-index.json"), indexPath: path.join(".claude", "index") },
       { host: "codex", configPath: path.join(".codebase-index", "config.json"), indexPath: path.join(".codebase-index", "index") },
       { host: "pi", configPath: path.join(".codebase-index", "config.json"), indexPath: path.join(".codebase-index", "index") },
+      { host: "jcode", configPath: path.join(".codebase-index", "config.json"), indexPath: path.join(".codebase-index", "index") },
     ];
 
     for (const entry of cases) {
@@ -61,11 +62,17 @@ describe("host path conformance", () => {
     expect(resolveProjectConfigPath(tempDir, "codex")).toBe(legacyConfig);
     expect(resolveProjectIndexPath(tempDir, "project", "codex")).toBe(legacyIndex);
 
+    expect(resolveProjectConfigPath(tempDir, "jcode")).toBe(legacyConfig);
+    expect(resolveProjectIndexPath(tempDir, "project", "jcode")).toBe(legacyIndex);
+
     const codexConfig = path.join(tempDir, ".codebase-index", "config.json");
     fs.mkdirSync(path.dirname(codexConfig), { recursive: true });
     fs.writeFileSync(codexConfig, "{}", "utf-8");
 
     expect(resolveProjectConfigPath(tempDir, "codex")).toBe(codexConfig);
     expect(resolveProjectIndexPath(tempDir, "project", "codex")).toBe(path.join(tempDir, ".codebase-index", "index"));
+
+    expect(resolveProjectConfigPath(tempDir, "jcode")).toBe(path.join(tempDir, ".codebase-index", "config.json"));
+    expect(resolveProjectIndexPath(tempDir, "project", "jcode")).toBe(path.join(tempDir, ".codebase-index", "index"));
   });
 });

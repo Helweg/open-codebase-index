@@ -9,7 +9,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Graphe d'appels C et C++** : ajout de l'extraction Tree-sitter des appels directs, membres et qualifiés, des constructeurs explicites, des includes et des imports de namespaces.
+- **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.
+
+## [0.17.1] - 2026-07-25
+
+### Fixed
+
+- **Published MCP CLI startup**: Keep `tiktoken` external to the ESM bundle so the installed `opencode-codebase-index-mcp` executable no longer crashes with `__dirname is not defined`; every TypeScript build now smoke-tests the built ESM CLI.
+
+## [0.17.0] - 2026-07-25
+
+### Added
+
+- **Agent-facing retrieval evaluation**: Added a versioned `codebase_context` golden dataset, `npm run eval:agent`, and per-query route metadata for measuring definition routing and conceptual discovery.
+- **Token-budgeted context packs**: Added deterministic overlapping-result deduplication and cross-file evidence selection with configurable 128-4000 token response budgets across native OpenCode, MCP, and Pi clients.
+- **Context efficiency gates**: Added returned-token, duplicate-candidate, file-diversity, and quality-per-1,000-token evaluation metrics with configurable CI thresholds.
+
+### Changed
+
+- **Automatic definition routing**: `codebase_context` now conservatively infers unambiguous symbol names from definition-style questions before falling back to conceptual search, using shared routing across native OpenCode, MCP, Pi, and evaluation.
+- **Large-file retrieval coverage**: Files exceeding `maxChunksPerFile` now retain representative chunks from across the file instead of silently indexing only the beginning.
+- **Location-first context details**: Definition and conceptual routes now return compact locations rather than full source bodies, deduplicate overlapping evidence, diversify results across files, and report why candidates were omitted.
+- **Hard token caps**: Context budgets are enforced with the `cl100k_base` tokenizer, including Unicode-safe compaction, so agent harnesses can bound retrieval responses before requesting exact source.
+
+### Fixed
+
+- **Concurrent lock recovery**: Hardened crashed-owner index lock reclamation so concurrent recovery attempts publish a single valid lock without losing the winning candidate.
+- **Packed-context edge cases**: Preserve valid Unicode and report zero selected results when even one evidence item cannot fit the requested token budget.
+
+## [0.16.0] - 2026-07-24
+
+### Added
+
+- **Unified agent context gateway**: Added the `codebase_context` MCP and Pi tool as the preferred first step for repository questions, routing conceptual discovery, authoritative symbol definitions, and call-graph paths through one low-friction interface.
+- **Cross-client tool adoption**: Added native Codex session guidance, skill/default-prompt updates, and Pi pre-agent routing guidance so Jcode, OpenCode, Codex, and Pi agents select codebase tools before broad shell search or file reads.
+
+### Changed
+
+- **Self-routing MCP guidance**: Reworked server instructions and tool descriptions around a staged, client-neutral workflow: check readiness, retrieve lightweight context, locate definitions or graph paths, then use full-content search or exact grep only when needed.
+- **Client plugin metadata**: Aligned Codex and Claude Code marketplace manifests with the package release version so clients can discover and refresh the updated integration guidance.
+
+### Fixed
+
+- **Jcode MCP argument compatibility**: Treat explicit JSON `null` values for optional MCP arguments as omitted values across search, definition, graph, PR-impact, and index tools.
+- **Embedding-provider outages**: Keep `codebase_search` and `codebase_peek` operational through BM25 keyword fallback when query embedding generation is temporarily unavailable, with full keyword weighting and actionable diagnostics.
+
+## [0.15.0] - 2026-07-24
+
+### Added
+
+- **First-class Jcode integration**: Added the `jcode` MCP host mode, neutral `.codebase-index/` storage, legacy OpenCode state fallback, automated host-path coverage, and global multi-repository setup guidance for Jcode v0.56.0 and newer.
+
+### Changed
+
+- **Node.js runtime requirement**: Raised the supported Node.js version from 18 to 20 to use patched runtime dependencies.
+
+### Fixed
+
+- **Multiprocess index safety**: Serialized index mutations across processes with canonical-path leases, kept cold readers non-mutating, hardened atomic vector and BM25 publication, and added recovery for incomplete or crashed publications.
+- **Parser-backed source discovery**: Added `.mts`, `.cts`, `.cxx`, `.hxx`, and `.cs` to the default include patterns.
+
+### Security
+
+- **Dependency vulnerabilities**: Updated vulnerable runtime and development dependency chains, including Hono, `@hono/node-server`, `body-parser`, `fast-uri`, `brace-expansion`, `js-yaml`, and Pi's shrinkwrapped dependencies. `npm audit` now reports zero vulnerabilities.
 
 ## [0.14.0] - 2026-07-08
 
@@ -398,7 +460,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.2...v0.14.0
 [0.13.2]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.1...v0.13.2
 [0.13.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.0...v0.13.1

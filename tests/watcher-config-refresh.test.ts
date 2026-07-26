@@ -53,7 +53,31 @@ describe("watcher config refresh", () => {
       expect(indexer.index).toHaveBeenCalledTimes(1);
     }, { timeout: 2500 });
 
-    watcher.stop();
+    await watcher.stop();
+  });
+
+  it("refreshes the jcode indexer cache before reindexing when jcode config changes", async () => {
+    const indexer = {
+      index: vi.fn().mockResolvedValue(undefined),
+    };
+    const watcher = createWatcherWithIndexer(
+      () => indexer,
+      tempDir,
+      parseConfig({ include: ["**/*.ts"] }),
+      "jcode",
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
+    writeFileSync(path.join(tempDir, ".codebase-index", "config.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
+
+    await vi.waitFor(() => {
+      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
+      expect(indexer.index).toHaveBeenCalledTimes(1);
+    }, { timeout: 2500 });
+
+    await watcher.stop();
   });
 
   it("refreshes the codex indexer cache before reindexing when legacy OpenCode config changes", async () => {
@@ -81,7 +105,35 @@ describe("watcher config refresh", () => {
       expect(indexer.index).toHaveBeenCalledTimes(1);
     }, { timeout: 2500 });
 
-    watcher.stop();
+    await watcher.stop();
+  });
+
+  it("refreshes the jcode indexer cache before reindexing when legacy OpenCode config changes", async () => {
+    mkdirSync(path.join(tempDir, ".opencode"), { recursive: true });
+    writeFileSync(path.join(tempDir, ".opencode", "codebase-index.json"), JSON.stringify({ include: ["**/*.ts"] }));
+
+    const indexer = {
+      index: vi.fn().mockResolvedValue(undefined),
+    };
+    const watcher = createWatcherWithIndexer(
+      () => indexer,
+      tempDir,
+      parseConfig({ include: ["**/*.ts"] }),
+      "jcode",
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    mkdirSync(path.join(tempDir, ".opencode", "index"), { recursive: true });
+    writeFileSync(path.join(tempDir, ".opencode", "codebase-index.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
+    writeFileSync(path.join(tempDir, ".opencode", "index", "codebase.db"), "index");
+
+    await vi.waitFor(() => {
+      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
+      expect(indexer.index).toHaveBeenCalledTimes(1);
+    }, { timeout: 2500 });
+
+    await watcher.stop();
   });
 
   it("refreshes from explicit config path when configured", async () => {
@@ -114,7 +166,7 @@ describe("watcher config refresh", () => {
       expect(indexer.index).toHaveBeenCalledTimes(1);
     }, { timeout: 2500 });
 
-    watcher.stop();
+    await watcher.stop();
   });
 
   it("does not refresh from project config when explicit config path is configured", async () => {
@@ -145,6 +197,6 @@ describe("watcher config refresh", () => {
     expect(operationMocks.refreshIndexerForDirectory).not.toHaveBeenCalled();
     expect(indexer.index).not.toHaveBeenCalled();
 
-    watcher.stop();
+    await watcher.stop();
   });
 });

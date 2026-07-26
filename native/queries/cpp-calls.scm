@@ -1,67 +1,93 @@
-; Appels directs : foo(), bar(1, 2)
+; Direct calls: foo(), bar(1, 2)
 (call_expression
   function: (identifier) @callee.name) @call
 
-; Appels de membres : object.method(), pointer->method()
-; Les opérateurs de pointeur vers membre sont volontairement exclus.
+; Member calls: object.method(), pointer->method()
+; Pointer-to-member operators are intentionally excluded.
 (call_expression
   function: (field_expression
     operator: ["." "->"]
     field: (field_identifier) @callee.name)) @method.call
 
-; Appels qualifiés : namespace::function(), Type::method()
-; Sans analyse de types, ils restent classés comme appels directs.
+; Qualified calls: namespace::function(), Type::method()
+; Without type analysis, these remain classified as direct calls.
 (call_expression
   function: (qualified_identifier) @callee.name
   (#match? @callee.name "(^|::)[A-Za-z_][A-Za-z0-9_]*$")
   (#not-match? @callee.name "[<>]")) @call
 
-; Constructeurs explicites : new Widget(...)
+; Explicit heap constructors: new Widget(...)
 (new_expression
   type: (type_identifier) @callee.name) @constructor
 
-; Constructeurs qualifiés : new namespace::Widget(...)
+; Qualified heap constructors: new namespace::Widget(...)
 (new_expression
   type: (qualified_identifier) @callee.name
   (#match? @callee.name "(^|::)[A-Za-z_][A-Za-z0-9_]*$")
   (#not-match? @callee.name "[<>]")) @constructor
 
-; Temporaires construits avec des accolades : Widget{...}
+; Braced temporary constructors: Widget{...}
 (compound_literal_expression
   type: (type_identifier) @callee.name) @constructor
 
-; Temporaires qualifiés : namespace::Widget{...}
+; Qualified braced temporary constructors: namespace::Widget{...}
 (compound_literal_expression
   type: (qualified_identifier) @callee.name
   (#match? @callee.name "(^|::)[A-Za-z_][A-Za-z0-9_]*$")
   (#not-match? @callee.name "[<>]")) @constructor
 
-; Includes locaux et système : #include "header.hpp", #include <memory>
+; Stack constructors: Widget value(...), Widget value{...}
+(declaration
+  type: [
+    (type_identifier)
+    (qualified_identifier)
+  ] @callee.name
+  declarator: (init_declarator
+    value: [
+      (argument_list)
+      (initializer_list)
+    ])) @constructor
+
+; Copy-initialized temporary constructors: Widget value = Widget(...)
+; The extractor verifies that @constructor.type and @callee.name are equal.
+(declaration
+  type: [
+    (type_identifier)
+    (qualified_identifier)
+  ] @constructor.type
+  declarator: (init_declarator
+    value: (call_expression
+      function: [
+        (identifier)
+        (qualified_identifier)
+      ] @callee.name))) @constructor
+
+; Local and system includes: #include "header.hpp", #include <memory>
 (preproc_include
   path: [
     (string_literal)
     (system_lib_string)
   ] @import.name) @import
 
-; Imports de namespaces : using namespace std;
+; Namespace imports: using namespace std;
 (using_declaration
   "namespace"
   (identifier) @import.namespace) @import
 
-; Imports de namespaces qualifiés : using namespace project::detail;
+; Qualified namespace imports: using namespace project::detail;
 (using_declaration
   "namespace"
   (qualified_identifier) @import.namespace
   (#not-match? @import.namespace "[<>]")) @import
 
-; Macros définies dans le fichier, exclues des appels ordinaires.
+; Macros defined in this file are excluded from ordinary calls.
 (preproc_function_def
   name: (identifier) @excluded.name)
 
 (preproc_def
   name: (identifier) @excluded.name)
 
-; Variables, paramètres et alias de pointeurs de fonction.
+; Function-pointer variables, parameters, and aliases.
 (function_declarator
   declarator: (parenthesized_declarator
     (pointer_declarator
@@ -71,7 +97,7 @@
         (type_identifier)
       ] @excluded.name)))
 
-; Alias de pointeurs ou de types fonction, via typedef ou using.
+; Function-pointer or function-type aliases declared with typedef or using.
 (type_definition
   declarator: (function_declarator
     declarator: (parenthesized_declarator
@@ -87,7 +113,7 @@
   type: (type_descriptor
     declarator: (abstract_function_declarator)))
 
-; Paramètres déclarés avec un alias de fonction indirecte.
+; Parameters declared with an indirect function alias.
 (parameter_declaration
   type: (type_identifier) @indirect.variable_type
   declarator: (identifier) @indirect.variable)
@@ -102,7 +128,7 @@
   declarator: (reference_declarator
     (identifier) @indirect.variable))
 
-; Champs appelables déclarés avec un alias de fonction indirecte.
+; Callable fields declared with an indirect function alias.
 (field_declaration
   type: (type_identifier) @indirect.variable_type
   declarator: (field_identifier) @indirect.variable)
@@ -112,7 +138,7 @@
   declarator: (pointer_declarator
     declarator: (field_identifier) @indirect.variable))
 
-; Variables locales ou globales déclarées avec le même type d'alias.
+; Local or global variables declared with the same alias type.
 (declaration
   type: (type_identifier) @indirect.variable_type
   declarator: (identifier) @indirect.variable)

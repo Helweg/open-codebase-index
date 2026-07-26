@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
 use std::path::Path;
 use thiserror::Error;
 
@@ -8,6 +8,8 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Read-only database schema error: {0}")]
+    ReadOnlySchema(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;
@@ -48,6 +50,49 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
         migrate_schema(&conn, current_version)?;
     }
 
+    Ok(conn)
+}
+
+/// Ouvre une base publiée sans créer de fichier ni exécuter de migration.
+pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
+    let conn = Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )?;
+
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
+
+    let stored_version: String = conn
+        .query_row(
+            "SELECT value FROM metadata WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| {
+            DbError::ReadOnlySchema(format!(
+                "cannot read schema version (expected {SCHEMA_VERSION}): {error}"
+            ))
+        })?;
+    let current_version = stored_version.parse::<i32>().map_err(|error| {
+        DbError::ReadOnlySchema(format!(
+            "invalid schema version {stored_version:?} (expected {SCHEMA_VERSION}): {error}"
+        ))
+    })?;
+
+    if current_version != SCHEMA_VERSION {
+        return Err(DbError::ReadOnlySchema(format!(
+            "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
+        )));
+    }
+
+    Ok(conn)
+}
+
+/// Crée un catalogue vide en mémoire, puis le verrouille en lecture seule.
+pub fn create_empty_read_only_db() -> DbResult<Connection> {
+    let conn = Connection::open_in_memory()?;
+    migrate_schema(&conn, 0)?;
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
     Ok(conn)
 }
 

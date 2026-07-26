@@ -50,6 +50,7 @@ vi.mock("../src/tools/index.js", () => {
   };
 
   return {
+    codebase_context: toolStub,
     codebase_search: toolStub,
     codebase_peek: toolStub,
     index_codebase: toolStub,
@@ -109,6 +110,14 @@ describe("plugin routing hint hook selection", () => {
     };
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
+  });
+
+  it("registers codebase_context in the native OpenCode tool map", async () => {
+    const runtime = await plugin({ directory: "/tmp/project" } as Parameters<typeof plugin>[0]);
+
+    expect(runtime.tool).toEqual(expect.objectContaining({
+      codebase_context: expect.any(Object),
+    }));
   });
 
   it("injects hints through system transform when role is system", async () => {

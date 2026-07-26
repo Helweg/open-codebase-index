@@ -1,22 +1,22 @@
-; Appels directs : foo(), bar(1, 2)
+; Direct calls: foo(), bar(1, 2)
 (call_expression
   function: (identifier) @callee.name) @call
 
-; Includes locaux et système : #include "header.h", #include <stdio.h>
+; Local and system includes: #include "header.h", #include <stdio.h>
 (preproc_include
   path: [
     (string_literal)
     (system_lib_string)
   ] @import.name) @import
 
-; Macros définies dans le fichier, exclues des appels ordinaires.
+; Macros defined in this file are excluded from ordinary calls.
 (preproc_function_def
   name: (identifier) @excluded.name)
 
 (preproc_def
   name: (identifier) @excluded.name)
 
-; Variables, paramètres et alias de pointeurs de fonction.
+; Function-pointer variables, parameters, and aliases.
 (function_declarator
   declarator: (parenthesized_declarator
     (pointer_declarator
@@ -26,7 +26,7 @@
         (type_identifier)
       ] @excluded.name)))
 
-; Alias de pointeurs ou de types fonction.
+; Function-pointer or function-type aliases.
 (type_definition
   declarator: (function_declarator
     declarator: (parenthesized_declarator
@@ -37,7 +37,7 @@
   declarator: (function_declarator
     declarator: (type_identifier) @indirect.type))
 
-; Paramètres déclarés avec un alias de fonction indirecte.
+; Parameters declared with an indirect function alias.
 (parameter_declaration
   type: (type_identifier) @indirect.variable_type
   declarator: (identifier) @indirect.variable)
@@ -47,7 +47,7 @@
   declarator: (pointer_declarator
     declarator: (identifier) @indirect.variable))
 
-; Variables locales ou globales déclarées avec le même type d'alias.
+; Local or global variables declared with the same alias type.
 (declaration
   type: (type_identifier) @indirect.variable_type
   declarator: (identifier) @indirect.variable)

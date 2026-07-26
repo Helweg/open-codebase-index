@@ -2,9 +2,10 @@ import { existsSync, realpathSync, statSync } from "fs";
 import * as path from "path";
 import { loadProjectConfigLayer, materializeLocalProjectConfig } from "../config/merger.js";
 import { parseConfig, type ParsedCodebaseIndexConfig } from "../config/schema.js";
-import { getHostProjectIndexRelativePath, getHostProjectConfigRelativePath, resolveWorktreeFallbackProjectIndexPath } from "../config/paths.js";
+import { getHostProjectIndexRelativePath, getHostProjectConfigRelativePath, resolveProjectIndexPath, resolveWorktreeFallbackProjectIndexPath } from "../config/paths.js";
 import type { HostMode } from "../config/host.js";
 import { Indexer } from "../indexer/index.js";
+import { isIndexLockContentionError, withIndexLock } from "../indexer/index-lock.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
@@ -20,12 +21,35 @@ type IndexStats = Awaited<ReturnType<Indexer["index"]>>;
 type StatusResult = Awaited<ReturnType<Indexer["getStatus"]>>;
 type HealthCheckResult = Awaited<ReturnType<Indexer["healthCheck"]>>;
 type PrImpactResult = Awaited<ReturnType<Indexer["getPrImpact"]>>;
+type IndexBusyResult = { kind: "busy"; text: string };
 
 type ProgressCb = (title: string, metadata: Record<string, unknown>) => void | Promise<void>;
 
 const indexerCache = new Map<IndexerCacheKey, Indexer>();
 const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>();
 const defaultProjectRoots = new Map<HostMode, string>();
+
+function getIndexBusyResult(error: unknown): IndexBusyResult | null {
+  if (!isIndexLockContentionError(error)) return null;
+
+  const owner = error.owner;
+  const ownerText = owner
+    ? `PID ${owner.pid}, operation ${owner.operation}, since ${owner.startedAt}`
+    : "unreadable owner";
+  if (error.reason === "legacy-lock") {
+    return {
+      kind: "busy",
+      text: `INDEX_BUSY: legacy lock format detected (${ownerText}). Verify the PID and remove this lock manually only if it is stale.`,
+    };
+  }
+  if (error.reason === "unknown-owner") {
+    return {
+      kind: "busy",
+      text: `INDEX_BUSY: unreadable or remote lock owner (${ownerText}). Automatic recovery was refused; manual verification is required.`,
+    };
+  }
+  return { kind: "busy", text: `INDEX_BUSY: another index operation is already in progress (${ownerText}).` };
+}
 
 function getProjectRoot(projectRoot: string | undefined, host: HostMode): string {
   if (projectRoot) {
@@ -205,42 +229,57 @@ export async function runIndexCodebase(
   host: HostMode,
   args: { force?: boolean; estimateOnly?: boolean; verbose?: boolean },
   onProgress?: ProgressCb,
-): Promise<{ kind: "estimate"; estimate: CostEstimate } | { kind: "stats"; stats: IndexStats }> {
+): Promise<
+  | { kind: "estimate"; estimate: CostEstimate }
+  | { kind: "stats"; stats: IndexStats }
+  | IndexBusyResult
+> {
   const root = getProjectRoot(projectRoot, host);
   const key = getIndexerCacheKey(root, host);
-  const cachedConfig = configCache.get(key);
   let indexer = getIndexerForProject(root, host);
+  const runtimeConfig = configCache.get(key)!;
 
-  if (args.estimateOnly) {
-    return { kind: "estimate", estimate: await indexer.estimateCost() };
-  }
-
-  if (args.force) {
-    if (shouldForceLocalizeProjectIndex(root, host)) {
-      materializeLocalProjectConfig(root, loadProjectConfigLayer(root, host), host);
-      refreshIndexerForDirectory(root, host, cachedConfig);
-      indexer = getIndexerForProject(root, host);
+  try {
+    if (args.estimateOnly) {
+      return { kind: "estimate", estimate: await indexer.estimateCost() };
     }
-    await indexer.clearIndex();
-    refreshIndexerForDirectory(root, host, cachedConfig);
-    indexer = getIndexerForProject(root, host);
-  }
 
-  const stats = await indexer.index((progress) => {
-    if (onProgress) {
-      return onProgress(formatProgressTitle(progress), {
-        phase: progress.phase,
-        filesProcessed: progress.filesProcessed,
-        totalFiles: progress.totalFiles,
-        chunksProcessed: progress.chunksProcessed,
-        totalChunks: progress.totalChunks,
-        percentage: calculatePercentage(progress),
+    const runIndex = async (target: Indexer): Promise<IndexStats> => {
+      const operation = args.force ? target.forceIndex.bind(target) : target.index.bind(target);
+      return operation((progress) => {
+        if (onProgress) {
+          return onProgress(formatProgressTitle(progress), {
+            phase: progress.phase,
+            filesProcessed: progress.filesProcessed,
+            totalFiles: progress.totalFiles,
+            chunksProcessed: progress.chunksProcessed,
+            totalChunks: progress.totalChunks,
+            percentage: calculatePercentage(progress),
+          });
+        }
+        return Promise.resolve();
       });
-    }
-    return Promise.resolve();
-  });
+    };
 
-  return { kind: "stats", stats };
+    let stats: IndexStats;
+    if (args.force && shouldForceLocalizeProjectIndex(root, host)) {
+      const inheritedIndexPath = resolveProjectIndexPath(root, runtimeConfig.scope, host);
+      stats = await withIndexLock(inheritedIndexPath, "force-index", async () => {
+        materializeLocalProjectConfig(root, loadProjectConfigLayer(root, host), host);
+        refreshIndexerForDirectory(root, host, runtimeConfig);
+        indexer = getIndexerForProject(root, host);
+        return runIndex(indexer);
+      }, { completeRecoveries: false });
+    } else {
+      stats = await runIndex(indexer);
+    }
+
+    return { kind: "stats", stats };
+  } catch (error) {
+    const busyResult = getIndexBusyResult(error);
+    if (!busyResult) throw error;
+    return busyResult;
+  }
 }
 
 export async function getIndexStatus(projectRoot: string | undefined, host: HostMode): Promise<StatusResult> {
@@ -251,6 +290,19 @@ export async function getIndexStatus(projectRoot: string | undefined, host: Host
 export async function getIndexHealthCheck(projectRoot: string | undefined, host: HostMode): Promise<HealthCheckResult> {
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.healthCheck();
+}
+
+export async function runIndexHealthCheck(
+  projectRoot: string | undefined,
+  host: HostMode,
+): Promise<{ kind: "health"; health: HealthCheckResult } | IndexBusyResult> {
+  try {
+    return { kind: "health", health: await getIndexHealthCheck(projectRoot, host) };
+  } catch (error) {
+    const busyResult = getIndexBusyResult(error);
+    if (!busyResult) throw error;
+    return busyResult;
+  }
 }
 
 export async function getPrImpact(

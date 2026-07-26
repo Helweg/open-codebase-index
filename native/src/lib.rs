@@ -119,7 +119,7 @@ impl VectorStore {
     }
 
     #[napi]
-    pub fn save(&self) -> Result<()> {
+    pub fn save(&mut self) -> Result<()> {
         self.inner
             .save()
             .map_err(|e| Error::from_reason(e.to_string()))
@@ -130,6 +130,18 @@ impl VectorStore {
         self.inner
             .load()
             .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn load_strict(&mut self) -> Result<()> {
+        self.inner
+            .load_strict()
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
+    pub fn has_fingerprint(&self) -> bool {
+        self.inner.has_fingerprint()
     }
 
     #[napi]
@@ -414,13 +426,31 @@ pub struct DatabaseStats {
 
 #[napi]
 impl Database {
+    fn from_connection(conn: rusqlite::Connection) -> Self {
+        Self {
+            conn: std::sync::Mutex::new(Some(conn)),
+        }
+    }
+
     #[napi(constructor)]
     pub fn new(db_path: String) -> Result<Self> {
         let conn = db::init_db(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self {
-            conn: std::sync::Mutex::new(Some(conn)),
-        })
+        Ok(Self::from_connection(conn))
+    }
+
+    #[napi(factory)]
+    pub fn open_read_only(db_path: String) -> Result<Self> {
+        let conn = db::open_db_read_only(std::path::Path::new(&db_path))
+            .map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(Self::from_connection(conn))
+    }
+
+    #[napi(factory)]
+    pub fn create_empty_read_only() -> Result<Self> {
+        let conn =
+            db::create_empty_read_only_db().map_err(|e| Error::from_reason(e.to_string()))?;
+        Ok(Self::from_connection(conn))
     }
 
     fn closed_error() -> Error {

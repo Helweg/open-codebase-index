@@ -55,6 +55,66 @@ describe("Database", () => {
     });
   });
 
+  describe("read-only connections", () => {
+    it("should read a live WAL database without allowing mutations", () => {
+      const dbPath = path.join(tempDir, "test.db");
+      db.setMetadata("reader-visible", "yes");
+      const reader = Database.openReadOnly(dbPath);
+
+      try {
+        expect(reader.getMetadata("reader-visible")).toBe("yes");
+        expect(() => reader.setMetadata("reader-write", "forbidden")).toThrow(/read.?only/i);
+        expect(db.getMetadata("reader-write")).toBeNull();
+      } finally {
+        reader.close();
+      }
+    });
+
+    it("should reject a missing database without creating its parent directory", () => {
+      const dbPath = path.join(tempDir, "missing", "index.db");
+
+      expect(() => Database.openReadOnly(dbPath)).toThrow();
+      expect(fs.existsSync(path.dirname(dbPath))).toBe(false);
+    });
+
+    it("should reject an old schema without migrating the live database", () => {
+      const dbPath = path.join(tempDir, "test.db");
+      db.setMetadata("schema_version", "5");
+
+      expect(() => Database.openReadOnly(dbPath)).toThrow(/found version 5, expected 6/i);
+      expect(db.getMetadata("schema_version")).toBe("5");
+    });
+
+    it("should reject a corrupt database without changing its bytes", () => {
+      const dbPath = path.join(tempDir, "corrupt.db");
+      const content = Buffer.from("not a sqlite database");
+      fs.writeFileSync(dbPath, content);
+
+      expect(() => Database.openReadOnly(dbPath)).toThrow();
+      expect(fs.readFileSync(dbPath)).toEqual(content);
+    });
+
+    it("should provide an empty read-only fallback without creating files", () => {
+      const filesBefore = fs.readdirSync(tempDir).sort();
+      const reader = Database.createEmptyReadOnly();
+
+      try {
+        expect(reader.getStats()).toEqual({
+          embeddingCount: 0,
+          chunkCount: 0,
+          branchChunkCount: 0,
+          branchCount: 0,
+          symbolCount: 0,
+          callEdgeCount: 0,
+        });
+        expect(() => reader.setMetadata("reader-write", "forbidden")).toThrow(/read.?only/i);
+        expect(fs.readdirSync(tempDir).sort()).toEqual(filesBefore);
+      } finally {
+        reader.close();
+      }
+    });
+  });
+
   describe("embeddings", () => {
     it("should check if embedding exists", () => {
       expect(db.embeddingExists("hash123")).toBe(false);

@@ -10,6 +10,28 @@ This project ships a first-class retrieval evaluation harness with CLI subcomman
 npm run eval -- --dataset benchmarks/golden/small.json
 ```
 
+To measure the same automatic definition-versus-concept routing used by the
+agent-facing `codebase_context` gateway, run:
+
+```bash
+npm run eval:agent
+```
+
+Run the agent-facing dataset with its matching quality and context-efficiency gates:
+
+```bash
+npm run eval:agent:ci
+```
+
+Evaluation comparisons require the same dataset name, version, and query count. Use the
+agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
+
+Context-mode evaluation applies the production evidence packer with its default
+1200-token response budget. The pack contains location evidence only, removes
+overlapping same-file candidates, and round-robins across files before selecting
+additional locations from the same file. Agents should drill into chosen
+locations with `implementation_lookup`, `codebase_search`, or targeted file reads.
+
 Optional flags:
 
 - `--project <path>`: project root (default: current directory)
@@ -166,6 +188,7 @@ Golden sets are versioned JSON files:
 - `benchmarks/golden/small.json`
 - `benchmarks/golden/medium.json`
 - `benchmarks/golden/large.json`
+- `benchmarks/golden/agent-context.json`
 
 Schema:
 
@@ -179,6 +202,7 @@ Schema:
       "id": "def-rank-hybrid-results",
       "query": "where is rankHybridResults implementation",
       "queryType": "definition",
+      "retrievalMode": "context",
       "expected": {
         "filePath": "src/indexer/index.ts",
         "acceptableFiles": ["src/indexer/index.ts"],
@@ -198,6 +222,17 @@ Allowed values:
 - `implementation-intent`
 - `similarity`
 - `keyword-heavy`
+- `conceptual`
+
+### `retrievalMode`
+
+- `search` (default) evaluates the raw hybrid search path.
+- `context` evaluates agent-facing gateway behavior. Confident symbol queries
+  use authoritative definition lookup; other questions use conceptual search.
+
+The per-query artifact records both `resolvedRoute` and `routedQuery`, making
+automatic routing decisions visible rather than hiding them inside aggregate
+quality scores.
 
 ### `expected`
 
@@ -217,11 +252,16 @@ Validation errors are surfaced with clear path-specific messages (e.g. `queries[
 
 The harness computes:
 
+Context response budgets and response-token metrics use the `cl100k_base` tokenizer rather than a character heuristic.
+
 - Hit@1, Hit@3, Hit@5, Hit@10
 - MRR@10
 - nDCG@10
 - Latency p50/p95/p99
 - Token estimate + embedding call counts + estimated embedding cost
+- Context response-token total/average/p95/max
+- Context duplicate-candidate and selected-file ratios
+- Context Hit@5 and MRR@10 per 1,000 returned response tokens
 - Failure buckets:
   - `wrong-file`
   - `wrong-symbol`
@@ -280,7 +320,14 @@ Example:
     "p95LatencyMaxMultiplier": 1.35,
     "p95LatencyMaxAbsoluteMs": 4000,
     "minHitAt5": 0.4,
-    "minMrrAt10": 0.25
+    "minMrrAt10": 0.25,
+    "maxContextResponseTokensAverage": 1000,
+    "maxContextResponseTokensP95": 1200,
+    "maxContextResponseTokensMax": 1200,
+    "maxContextDuplicateCandidateRatio": 0.5,
+    "minContextSelectedFileRatio": 0.5,
+    "minContextHitAt5Per1kResponseTokens": 0.5,
+    "minContextMrrAt10Per1kResponseTokens": 0.25
   }
 }
 ```
@@ -290,3 +337,6 @@ Guidance:
 - Tighten `hitAt5MaxDrop` / `mrrAt10MaxDrop` gradually.
 - Keep `p95LatencyMaxMultiplier` tolerant enough for CI variance.
 - Use absolute floor metrics (`minHitAt5`, `minMrrAt10`) to prevent silent quality drift.
+- Keep context response caps at or below the production default unless a dataset intentionally exercises a larger `tokenBudget`.
+- Track quality-per-token floors together with absolute quality so smaller responses do not pass by becoming less useful.
+- Duplicate-candidate gates measure retrieval waste before packing; the selected-file floor prevents evidence from concentrating in too few files.

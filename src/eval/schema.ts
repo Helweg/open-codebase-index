@@ -5,6 +5,7 @@ import type {
   GoldenDataset,
   GoldenExpected,
   GoldenQuery,
+  GoldenRetrievalMode,
   GoldenQueryType,
 } from "./types.js";
 
@@ -39,13 +40,20 @@ function parseQueryType(value: unknown, path: string): GoldenQueryType {
     value === "definition" ||
     value === "implementation-intent" ||
     value === "similarity" ||
-    value === "keyword-heavy"
+    value === "keyword-heavy" ||
+    value === "conceptual"
   ) {
     return value;
   }
   throw new Error(
-    `${path} must be one of: definition, implementation-intent, similarity, keyword-heavy`
+    `${path} must be one of: definition, implementation-intent, similarity, keyword-heavy, conceptual`
   );
+}
+
+function parseRetrievalMode(value: unknown, path: string): GoldenRetrievalMode {
+  if (value === undefined || value === "search") return "search";
+  if (value === "context") return value;
+  throw new Error(`${path} must be one of: search, context`);
 }
 
 function parseExpected(input: unknown, path: string): GoldenExpected {
@@ -77,9 +85,6 @@ function parseExpected(input: unknown, path: string): GoldenExpected {
     throw new Error(`${path}.branch must be a string when provided`);
   }
 
-
-
-
   return {
     filePath,
     acceptableFiles,
@@ -97,6 +102,7 @@ function parseQuery(input: unknown, index: number): GoldenQuery {
   const id = input.id;
   const query = input.query;
   const queryType = input.queryType;
+  const retrievalMode = input.retrievalMode;
   const expected = input.expected;
 
   if (typeof id !== "string" || id.trim().length === 0) {
@@ -111,6 +117,7 @@ function parseQuery(input: unknown, index: number): GoldenQuery {
     id,
     query,
     queryType: parseQueryType(queryType, `${path}.queryType`),
+    retrievalMode: parseRetrievalMode(retrievalMode, `${path}.retrievalMode`),
     expected: parseExpected(expected, `${path}.expected`),
   };
 }
@@ -244,6 +251,41 @@ export function parseBudget(raw: unknown, sourceLabel: string): EvalBudget {
       minRawDistinctTop3Ratio: parseThresholdValue(
         thresholds.minRawDistinctTop3Ratio,
         "minRawDistinctTop3Ratio",
+        sourceLabel
+      ),
+      maxContextResponseTokensAverage: parseThresholdValue(
+        thresholds.maxContextResponseTokensAverage,
+        "maxContextResponseTokensAverage",
+        sourceLabel
+      ),
+      maxContextResponseTokensP95: parseThresholdValue(
+        thresholds.maxContextResponseTokensP95,
+        "maxContextResponseTokensP95",
+        sourceLabel
+      ),
+      maxContextResponseTokensMax: parseThresholdValue(
+        thresholds.maxContextResponseTokensMax,
+        "maxContextResponseTokensMax",
+        sourceLabel
+      ),
+      maxContextDuplicateCandidateRatio: parseThresholdValue(
+        thresholds.maxContextDuplicateCandidateRatio,
+        "maxContextDuplicateCandidateRatio",
+        sourceLabel
+      ),
+      minContextSelectedFileRatio: parseThresholdValue(
+        thresholds.minContextSelectedFileRatio,
+        "minContextSelectedFileRatio",
+        sourceLabel
+      ),
+      minContextHitAt5Per1kResponseTokens: parseThresholdValue(
+        thresholds.minContextHitAt5Per1kResponseTokens,
+        "minContextHitAt5Per1kResponseTokens",
+        sourceLabel
+      ),
+      minContextMrrAt10Per1kResponseTokens: parseThresholdValue(
+        thresholds.minContextMrrAt10Per1kResponseTokens,
+        "minContextMrrAt10Per1kResponseTokens",
         sourceLabel
       ),
     },

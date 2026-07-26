@@ -4,7 +4,11 @@ export type GoldenQueryType =
   | "definition"
   | "implementation-intent"
   | "similarity"
-  | "keyword-heavy";
+  | "keyword-heavy"
+  | "conceptual";
+
+export type GoldenRetrievalMode = "search" | "context";
+export type EvalResolvedRoute = "search" | "definition";
 
 export interface GoldenExpected {
   filePath?: string;
@@ -17,6 +21,7 @@ export interface GoldenQuery {
   id: string;
   query: string;
   queryType: GoldenQueryType;
+  retrievalMode?: GoldenRetrievalMode;
   expected: GoldenExpected;
 }
 
@@ -40,6 +45,13 @@ export interface EvalBudget {
     minHitAt5?: number;
     minMrrAt10?: number;
     minRawDistinctTop3Ratio?: number;
+    maxContextResponseTokensAverage?: number;
+    maxContextResponseTokensP95?: number;
+    maxContextResponseTokensMax?: number;
+    maxContextDuplicateCandidateRatio?: number;
+    minContextSelectedFileRatio?: number;
+    minContextHitAt5Per1kResponseTokens?: number;
+    minContextMrrAt10Per1kResponseTokens?: number;
   };
 }
 
@@ -62,6 +74,9 @@ export interface PerQueryEvalResult {
   id: string;
   query: string;
   queryType: GoldenQueryType;
+  retrievalMode: GoldenRetrievalMode;
+  resolvedRoute: EvalResolvedRoute;
+  routedQuery: string;
   latencyMs: number;
   hitAt1: boolean;
   hitAt3: boolean;
@@ -71,7 +86,29 @@ export interface PerQueryEvalResult {
   ndcgAt10: number;
   failureBucket?: FailureBucket;
   rawTop3DistinctRatio: number;
+  tokenBudget?: number;
+  responseTokens: number;
+  candidateCount: number;
+  deduplicatedCount: number;
+  selectedCount: number;
+  omittedCount: number;
+  duplicateCandidateRatio: number;
+  selectedFileRatio: number;
   results: EvalSearchResult[];
+}
+
+export interface ContextEfficiencyMetrics {
+  queryCount: number;
+  responseTokens: {
+    total: number;
+    average: number;
+    p95: number;
+    max: number;
+  };
+  duplicateCandidateRatio: number;
+  selectedFileRatio: number;
+  hitAt5Per1kResponseTokens: number;
+  mrrAt10Per1kResponseTokens: number;
 }
 
 export interface EvalMetrics {
@@ -97,6 +134,7 @@ export interface EvalMetrics {
     estimatedCostUsd: number;
     costPer1MTokensUsd: number;
   };
+  contextEfficiency: ContextEfficiencyMetrics;
   failureBuckets: Record<FailureBucket, number>;
 }
 
@@ -135,6 +173,13 @@ export interface EvalComparison {
     latencyP99Ms: MetricDelta;
     embeddingCallCount: MetricDelta;
     estimatedCostUsd: MetricDelta;
+    contextResponseTokensAverage: MetricDelta;
+    contextResponseTokensP95: MetricDelta;
+    contextResponseTokensMax: MetricDelta;
+    contextDuplicateCandidateRatio: MetricDelta;
+    contextSelectedFileRatio: MetricDelta;
+    contextHitAt5Per1kResponseTokens: MetricDelta;
+    contextMrrAt10Per1kResponseTokens: MetricDelta;
   };
 }
 

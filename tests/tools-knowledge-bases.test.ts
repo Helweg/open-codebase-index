@@ -9,6 +9,7 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
     projectRoot: string;
     config: Record<string, unknown>;
     getStatus: ReturnType<typeof vi.fn>;
+    healthCheck: ReturnType<typeof vi.fn>;
   }> = [];
 
   class MockIndexer {
@@ -27,7 +28,7 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
     public constructor(projectRoot: string, config: Record<string, unknown>) {
       this.projectRoot = projectRoot;
       this.config = config;
-      indexerInstances.push({ projectRoot, config, getStatus: this.getStatus });
+      indexerInstances.push({ projectRoot, config, getStatus: this.getStatus, healthCheck: this.healthCheck });
     }
 
     public estimateCost = vi.fn().mockResolvedValue({
@@ -43,6 +44,18 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
 
     public clearIndex = vi.fn().mockResolvedValue(undefined);
     public index = vi.fn().mockResolvedValue({
+      totalFiles: 0,
+      totalChunks: 0,
+      indexedChunks: 0,
+      failedChunks: 0,
+      tokensUsed: 0,
+      durationMs: 0,
+      existingChunks: 0,
+      removedChunks: 0,
+      skippedFiles: [],
+      parseFailures: [],
+    });
+    public forceIndex = vi.fn().mockResolvedValue({
       totalFiles: 0,
       totalChunks: 0,
       indexedChunks: 0,
@@ -83,7 +96,8 @@ vi.mock("../src/indexer/index.js", () => ({
 
 import { parseConfig } from "../src/config/schema.js";
 import { loadMergedConfig } from "../src/config/merger.js";
-import { add_knowledge_base, index_codebase, initializeTools, remove_knowledge_base } from "../src/tools/index.js";
+import { IndexLockContentionError } from "../src/indexer/index-lock.js";
+import { add_knowledge_base, index_codebase, index_health_check, initializeTools, remove_knowledge_base } from "../src/tools/index.js";
 
 describe("knowledge base tool config refresh", () => {
   let tempDir: string;
@@ -99,6 +113,26 @@ describe("knowledge base tool config refresh", () => {
   afterEach(() => {
     fs.rmSync(tempDir, { recursive: true, force: true });
     fs.rmSync(kbDir, { recursive: true, force: true });
+  });
+
+  it("returns an explicit busy result from the OpenCode health-check tool", async () => {
+    const owner = {
+      pid: 4242,
+      hostname: "local-test",
+      startedAt: "2026-07-17T10:00:00.000Z",
+      operation: "health-check" as const,
+      token: "owner-token",
+    };
+    indexerInstances[0]?.healthCheck.mockRejectedValueOnce(
+      new IndexLockContentionError(path.join(tempDir, ".opencode", "index", "indexing.lock"), owner, "active"),
+    );
+
+    const result = await index_health_check.execute({});
+
+    expect(result).toContain("INDEX_BUSY");
+    expect(result).toContain("PID 4242");
+    expect(result).toContain("operation health-check");
+    expect(result).toContain(owner.startedAt);
   });
 
   it("rebuilds the shared indexer after adding a knowledge base", async () => {

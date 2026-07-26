@@ -4,15 +4,16 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/npm/dm/opencode-codebase-index.svg)](https://www.npmjs.com/package/opencode-codebase-index)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/opencode-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/opencode-codebase-index/actions)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 
 > **Stop grepping for concepts. Start searching for meaning.**
 
-**opencode-codebase-index** brings semantic understanding to your [OpenCode](https://opencode.ai), [Pi](https://pi.dev), Codex, and MCP-compatible workflows. Instead of guessing function names or grepping for keywords, ask your codebase questions in plain English.
+**opencode-codebase-index** brings semantic understanding to your [OpenCode](https://opencode.ai), [Jcode](https://github.com/1jehuang/jcode), [Pi](https://pi.dev), Codex, and MCP-compatible workflows. Instead of guessing function names or grepping for keywords, ask your codebase questions in plain English.
 
 ## 📌 Quick Navigation
 
 - [⚡ Quick Start](#-quick-start)
+- [🧠 Jcode](#-jcode)
 - [🥧 Pi Package](#-pi-package)
 - [🧩 Codex Plugin](#-codex-plugin)
 - [🧩 Claude Code Plugin](#-claude-code-plugin)
@@ -29,6 +30,7 @@
 ## 👋 Choose Your Path
 
 - **I want to try it now** → go to [Quick Start](#-quick-start)
+- **I use Jcode** → go to [Jcode](#-jcode)
 - **I use Pi** → go to [Pi Package](#-pi-package)
 - **I use Cursor/Claude Code/Windsurf** → go to [MCP Server setup](#-mcp-server-cursor-claude-code-windsurf-etc)
 - **I’m comparing tools and workflows** → go to [When to Use What](#-when-to-use-what)
@@ -42,10 +44,13 @@
 - 🌿 **Branch-Aware**: Seamlessly handles git branch switches — reuses embeddings, filters stale results.
 - 🔒 **Privacy Focused**: Your vector index is stored locally in your project.
 - 🔌 **Model Agnostic**: Works out-of-the-box with GitHub Copilot, OpenAI, Gemini, or local Ollama models.
+- 🧠 **Jcode Host**: One global MCP configuration follows each Jcode session into its active repository.
 - 🥧 **Pi Package**: First-class Pi extension and skill package with native tools.
 - 🌐 **MCP Server**: Use with Cursor, Claude Code, Windsurf, or any MCP-compatible client — index once, search from anywhere.
 
 ## ⚡ Quick Start
+
+Requires Node.js 20 or newer.
 
 1. **Install the plugin**
    ```bash
@@ -67,6 +72,37 @@
 4. **Start Searching**
    Ask:
    > "Find the function that handles credit card validation errors"
+
+## 🧠 Jcode
+
+Jcode v0.56.0 and newer starts non-shared MCP servers in each session's working directory. Configure the server once in `~/.jcode/mcp.json` and it will index the repository where each Jcode session is running.
+
+```json
+{
+  "servers": {
+    "codebase-index": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "--package",
+        "opencode-codebase-index@latest",
+        "opencode-codebase-index-mcp",
+        "--host",
+        "jcode"
+      ],
+      "env": {},
+      "shared": false
+    }
+  }
+}
+```
+
+Do not add a fixed `--project` argument. Jcode supplies the active session directory as the MCP process working directory. `shared: false` gives every repository session its own indexer process and prevents cross-repository state from being shared accidentally.
+
+Jcode uses the neutral `.codebase-index/` project storage and falls back to existing OpenCode state when present. Restart Jcode after changing `~/.jcode/mcp.json`, then use `index_codebase`, `index_status`, `codebase_peek`, or `codebase_search`.
+
+The explicit `@latest` keeps `npx` on the published package even when Jcode is opened inside an `opencode-codebase-index` source checkout. For local development of this package instead, run `npm run build:ts && npm run dev:link-mcp` first.
+
 ## 🥧 Pi Package
 
 Install as a Pi package to get first-class `codebase_search`, `index_codebase`, call graph, PR impact, and knowledge-base tools plus the `codebase-search` skill.
@@ -78,6 +114,8 @@ pi install ./path/to/opencode-codebase-index
 ```
 
 Pi uses the neutral `.codebase-index/` project storage and falls back to existing OpenCode state when present.
+
+The Pi extension injects lightweight routing guidance and exposes `codebase_context` as its preferred first repository tool. It routes conceptual discovery, known-symbol definitions, and dependency paths before broad shell search or file reads.
 
 ## 🧩 Codex Plugin
 Install once for Codex threads and get skill guidance plus MCP tools in one manifest.
@@ -107,6 +145,8 @@ npm run dev:link-mcp
 ```
 
 After that, the normal `.mcp.json` command also works when Codex starts the plugin from this repository.
+
+The native Codex plugin is important: its session hook and `codebase-search` skill tell Codex to use `index_status` and `codebase_context` before shell exploration. A bare MCP configuration does not provide the same selection reliability. Current Codex `exec` releases may cancel MCP calls in non-interactive mode while waiting for an app-tool approval; use an interactive Codex thread to approve the tool call. This is a Codex client limitation, not an MCP server failure.
 
 ## 🧩 Claude Code Plugin
 Install once for Claude Code sessions and get skill guidance plus MCP tools in one manifest.
@@ -189,7 +229,21 @@ Use the same semantic search from any MCP-compatible client. Index once, search 
    npx -y --package opencode-codebase-index opencode-codebase-index-mcp
    ```
 
-The MCP server exposes all 12 tools (`codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`).
+The MCP server exposes all 13 tools (`codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`, `call_graph`, `call_graph_path`, `pr_impact`, `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`) and 5 prompts (`search`, `find`, `definition`, `index`, `status`). Native OpenCode and Pi integrations expose the same `codebase_context` entry point.
+
+The tools carry self-routing descriptions so clients can choose the lightweight path without relying on separate documentation:
+
+1. `codebase_context` as the preferred single entry point for repository questions
+2. `index_status` when index readiness is unknown
+3. `codebase_peek` for direct low-token conceptual discovery
+4. `implementation_lookup` for direct known-symbol definition lookup
+5. `codebase_search` only when full semantic content is needed
+6. `grep` for exact identifiers or exhaustive matches
+7. `call_graph` / `call_graph_path` for direct graph queries
+
+`codebase_context` accepts a `tokenBudget` from 128 to 4000 tokens, defaulting to 1200. The hard cap is counted with the `cl100k_base` tokenizer, including multilingual and emoji text. It returns deterministic location evidence rather than source bodies, removes overlapping same-file results, diversifies evidence across files, and distinguishes duplicates, result-limit exclusions, and token-budget omissions. Increase the budget only when broader location coverage is useful. Use `implementation_lookup`, `codebase_search`, or a targeted file read for the exact source after selecting a location.
+
+The server also publishes this workflow through the standard MCP initialization `instructions` field. Client behavior remains client-controlled: an MCP server can describe and recommend its tools, but cannot force an agent host to read server instructions or invoke a tool before filesystem search. Clients that ignore MCP instructions still receive the routing guidance in each tool description.
 
 The MCP dependencies (`@modelcontextprotocol/sdk`, `zod`) ship with the package so published `npx --package opencode-codebase-index` launches work in clean MCP clients.
 
@@ -218,9 +272,9 @@ src/api/checkout.ts:89      (Route handler for /pay)
 
 | Scenario | Tool | Why |
 |----------|------|-----|
-| Don't know the function name | `codebase_search` | Semantic search finds by meaning |
-| Exploring unfamiliar codebase | `codebase_search` | Discovers related code across files |
-| Just need to find locations | `codebase_peek` | Returns metadata only, saves ~90% tokens |
+| Don't know the function name | `codebase_context` | Routes conceptual questions to a bounded, low-token evidence pack |
+| Exploring unfamiliar codebase | `codebase_context` | Available natively in OpenCode and Pi, and through MCP for other clients |
+| Just need to find locations | `codebase_peek` (or `codebase_context`) | Returns metadata only, saves ~90% tokens |
 | Need the authoritative definition site | `implementation_lookup` | Prioritizes real implementation definitions over docs/tests |
 | Understand code flow | `call_graph` | Find callers/callees of any function |
 | Trace dependency paths | `call_graph_path` | Find the shortest known call path between two symbols |
@@ -228,7 +282,7 @@ src/api/checkout.ts:89      (Route handler for /pay)
 | Need ALL matches | `grep` | Semantic returns top N only |
 | Mixed discovery + precision | `/find` (hybrid) | Best of both worlds |
 
-**Rule of thumb**: `codebase_peek` to find locations → `Read` to examine → `grep` for precision. For symbol-definition questions, use `implementation_lookup` first.
+**Rule of thumb**: `codebase_context` to route discovery first. Then `Read` to examine exact content and `grep` for precision. For symbol-definition questions, use `implementation_lookup` first.
 
 ## 🧭 OMO CodeGraph Compatibility
 
@@ -245,7 +299,7 @@ Recent OMO releases include a built-in CodeGraph MCP and make it part of the def
 
 Recommended OMO workflow:
 
-1. Start broad with `codebase_peek` when the prompt is conceptual, such as "where is auth enforced?" or "payment validation flow".
+1. Start broad with `codebase_context` when the prompt is conceptual, such as "where is auth enforced?" or "payment validation flow".
 2. Use `implementation_lookup` once you have a symbol or concept that should resolve to a definition.
 3. Use OMO CodeGraph, `call_graph`, or `call_graph_path` after locating the relevant symbol to check blast radius and dependency flow.
 4. Keep `grep` for exact identifiers and exhaustive text matches.
@@ -309,8 +363,8 @@ graph TD
 
 **Default File Patterns**:
 ```
-**/*.{ts,tsx,js,jsx,mjs,cjs}    **/*.{py,pyi}
-**/*.{go,rs,java,kt,scala}      **/*.{c,cpp,cc,h,hpp}
+**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}    **/*.{py,pyi}
+**/*.{go,rs,java,cs,kt,scala}            **/*.{c,cpp,cc,cxx,h,hpp,hxx}
 **/*.{rb,php,inc,swift}         **/*.{vue,svelte,astro}
 **/*.{sql,graphql,proto}        **/*.{yaml,yml,toml}
 **/*.{md,mdx}                   **/*.{sh,bash,zsh}
@@ -388,9 +442,18 @@ The following files/folders are excluded from indexing by default:
 
 The plugin exposes these tools to the OpenCode agent:
 
+`codebase_context` is MCP-server-only.
+
+### `codebase_context`
+*MCP-only entrypoint for combined routing*
+**Preferred first tool for repository questions.** Routes to the lowest-token indexed operation that matches the query: conceptual discovery, definition lookup, callers/callees, or symbol-to-symbol paths.
+- **Use for**: New questions about behavior, locating symbols, or tracing direct call relationships.
+- **Example**: `"Where is the payment validation logic?"`
+- **Workflow**: If the query is conceptual, it may return locations first. For exact behavior text, follow with `codebase_search`.
+
 ### `codebase_search`
-**The primary tool.** Searches code by describing behavior.
-- **Use for**: Discovery, understanding flows, finding logic when you don't know the names.
+**Behavioral semantic retrieval with full content.** Searches code by describing behavior.
+- **Use for**: Discovery when you already want full matching snippets and are ready to inspect implementation text.
 - **Example**: `"find the middleware that sanitizes input"`
 - **Ranking path**: hybrid retrieval → fusion (`search.fusionStrategy`) → deterministic rerank (`search.rerankTopN`) → filters
 - **Blame filters**: when `indexing.gitBlame.enabled` is `true`, filter with `blameAuthor`, `blameSha`, or `blameSince`.

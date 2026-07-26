@@ -3,13 +3,13 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { parseConfig } from "../src/config/schema.js";
-import { Indexer } from "../src/indexer/index.js";
 import { extractCalls, Database, hashContent, parseFiles } from "../src/native/index.js";
 import type { SymbolData, CallEdgeData } from "../src/native/index.js";
 import {
   CALL_GRAPH_LANGUAGES,
   CALL_GRAPH_SYMBOL_CHUNK_TYPES,
   CASE_INSENSITIVE_LANGUAGES,
+  Indexer,
 } from "../src/indexer/index.js";
 
 const fixturesDir = path.join(__dirname, "fixtures", "call-graph");
@@ -244,6 +244,176 @@ describe("call-graph", () => {
         const importNames = importCalls.map((c) => c.calleeName);
         expect(importNames).toContain("StringHelper");
         expect(importNames).toContain("ArrayHelper");
+      });
+    });
+
+    describe("php same-file case-insensitive resolution", () => {
+      it("resolves a mixed-case same-file PHP function call through the Indexer", async () => {
+        const phpContent = `<?php
+use Vendor\\Package\\ImportedService;
+
+function callBuildReport(): string {
+    // Keep this function large enough to form an independent semantic chunk.
+    return BUILDREPORT();
+}
+
+function buildReport(): string {
+    // Keep the mixed-case declaration as an independent graph symbol.
+    return "report";
+}
+
+function reportbuilder(): string {
+    // A legal PHP function whose folded name collides with the class below.
+    return "function";
+}
+
+function createReportBuilder(): ReportBuilder {
+    // Constructor resolution must select the class despite the function collision.
+    return new REPORTBUILDER();
+}
+
+class ReportBuilder {
+    public function build(): string {
+        return "report";
+    }
+}
+`;
+        const callSites = extractCalls(phpContent, "php");
+        const importSite = callSites.find((site) => site.callType === "Import");
+        expect(importSite?.calleeName).toBe("ImportedService");
+
+        const projectDir = path.join(tempDir, "php-project");
+        fs.mkdirSync(projectDir, { recursive: true });
+        fs.writeFileSync(path.join(projectDir, "report.php"), phpContent, "utf-8");
+
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+          const data = (body.input ?? []).map(() => ({ embedding: Array(8).fill(0.125) }));
+          return new Response(
+            JSON.stringify({ data, usage: { total_tokens: Math.max(1, data.length) } }),
+            { status: 200 },
+          );
+        });
+        const config = parseConfig({
+          embeddingProvider: "custom",
+          customProvider: {
+            baseUrl: "http://localhost:11434/v1",
+            model: "mock-model",
+            dimensions: 8,
+          },
+          indexing: { watchFiles: false },
+        });
+        const indexer = new Indexer(projectDir, config);
+
+        try {
+          await indexer.index();
+
+          const symbols = await indexer.getSymbolsForBranch();
+          const caller = symbols.find((symbol) => symbol.name === "callBuildReport");
+          const target = symbols.find((symbol) => symbol.name === "buildReport");
+          const factory = symbols.find((symbol) => symbol.name === "createReportBuilder");
+          const classSymbol = symbols.find((symbol) => symbol.name === "ReportBuilder");
+          expect(caller).toBeDefined();
+          expect(target).toBeDefined();
+          expect(factory).toBeDefined();
+          expect(classSymbol).toBeDefined();
+
+          const functionEdge = (await indexer.getCallees(caller!.id)).find(
+            (edge) => edge.targetName === "buildreport",
+          );
+          expect(functionEdge).toMatchObject({
+            callType: "Call",
+            isResolved: true,
+            toSymbolId: target!.id,
+          });
+
+          const constructorEdge = (await indexer.getCallees(factory!.id)).find(
+            (edge) => edge.callType === "Constructor",
+          );
+          expect(constructorEdge).toMatchObject({
+            targetName: "REPORTBUILDER",
+            isResolved: true,
+            toSymbolId: classSymbol!.id,
+          });
+        } finally {
+          await indexer.close();
+          fetchSpy.mockRestore();
+        }
+      });
+
+      it("reprocesses unchanged PHP call edges after a resolution upgrade", async () => {
+        const phpContent = `<?php
+function callBuildReport(): string {
+    // Keep this function large enough to form an independent semantic chunk.
+    return BUILDREPORT();
+}
+
+function buildReport(): string {
+    // Keep the mixed-case declaration as an independent graph symbol.
+    return "report";
+}
+`;
+        const projectDir = path.join(tempDir, "php-upgrade-project");
+        fs.mkdirSync(projectDir, { recursive: true });
+        fs.writeFileSync(path.join(projectDir, "report.php"), phpContent, "utf-8");
+
+        const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+          const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+          const data = (body.input ?? []).map(() => ({ embedding: Array(8).fill(0.125) }));
+          return new Response(
+            JSON.stringify({ data, usage: { total_tokens: Math.max(1, data.length) } }),
+            { status: 200 },
+          );
+        });
+        const config = parseConfig({
+          embeddingProvider: "custom",
+          customProvider: {
+            baseUrl: "http://localhost:11434/v1",
+            model: "mock-model",
+            dimensions: 8,
+          },
+          indexing: { watchFiles: false },
+        });
+
+        CASE_INSENSITIVE_LANGUAGES.delete("php");
+        let indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const caller = (await indexer.getSymbolsForBranch()).find(
+            (symbol) => symbol.name === "callBuildReport",
+          );
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "buildreport",
+          );
+          expect(edge?.isResolved).toBe(false);
+        } finally {
+          await indexer.close();
+          CASE_INSENSITIVE_LANGUAGES.add("php");
+        }
+
+        const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        database.deleteMetadata("index.callGraphResolutionVersion");
+        database.close();
+        const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+
+        indexer = new Indexer(projectDir, config);
+        try {
+          await indexer.index();
+          const symbols = await indexer.getSymbolsForBranch();
+          const caller = symbols.find((symbol) => symbol.name === "callBuildReport");
+          const target = symbols.find((symbol) => symbol.name === "buildReport");
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "buildreport",
+          );
+          expect(edge).toMatchObject({
+            isResolved: true,
+            toSymbolId: target!.id,
+          });
+          expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
+        } finally {
+          await indexer.close();
+          fetchSpy.mockRestore();
+        }
       });
     });
 
@@ -808,10 +978,10 @@ const math = @import("math.zig");
         calls.find((call) => call.calleeName === "project::detail::normalize")?.callType,
       ).toBe("Call");
       expect(runCalls).toHaveLength(4);
-      expect(constructors.filter((call) => call.calleeName === "Widget")).toHaveLength(2);
+      expect(constructors.filter((call) => call.calleeName === "Widget")).toHaveLength(5);
       expect(
-        constructors.some((call) => call.calleeName === "project::detail::RemoteWidget"),
-      ).toBe(true);
+        constructors.filter((call) => call.calleeName === "project::detail::RemoteWidget"),
+      ).toHaveLength(2);
       expect(constructors.some((call) => call.calleeName === "Point")).toBe(true);
       expect(imports.some((call) => call.calleeName.includes("memory"))).toBe(true);
       expect(imports.some((call) => call.calleeName.includes("widget.hpp"))).toBe(true);
@@ -824,6 +994,20 @@ const math = @import("math.zig");
       expect(callNames).not.toContain("local_callback");
       expect(callNames).not.toContain("signature");
       expect(callNames).not.toContain("identity");
+      expect(callNames).not.toContain("vexing");
+      expect(calls.find((call) => call.calleeName === "make_widget")?.callType).toBe("Call");
+    });
+
+    it("should preserve short C++ class and struct symbols", () => {
+      const shortTypes = parseFiles([{
+        path: "short.cpp",
+        content: "class Tag {};\nstruct Tiny {};\n",
+      }])[0].chunks;
+
+      expect(shortTypes).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "Tag", chunkType: "class_specifier" }),
+        expect.objectContaining({ name: "Tiny", chunkType: "struct_specifier" }),
+      ]));
     });
 
     it("should preserve C++ symbols and resolve same-file calls and constructors", () => {
@@ -1006,6 +1190,71 @@ const math = @import("math.zig");
         expect(cppCallees.some((edge) => edge.targetName === "callback")).toBe(false);
         expect(cppCallees.some((edge) => edge.targetName === "local_callback")).toBe(false);
         expect(cppCallees.some((edge) => edge.targetName === "signature")).toBe(false);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("should reprocess unchanged C files after a call-graph version upgrade", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+        return new Response(
+          JSON.stringify({
+            data: inputs.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+            usage: { total_tokens: Math.max(1, inputs.length) },
+          }),
+          { status: 200 },
+        );
+      });
+      fs.writeFileSync(
+        path.join(tempDir, "main.c"),
+        "int helper(int value) { return value + 1; }\nint caller(void) { return helper(1); }\n",
+      );
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-model",
+          dimensions: 8,
+        },
+        indexing: { watchFiles: false },
+      });
+
+      CALL_GRAPH_LANGUAGES.delete("c");
+      let indexer = new Indexer(tempDir, config);
+      try {
+        await indexer.index();
+        const caller = (await indexer.getSymbolsForBranch()).find(
+          (symbol) => symbol.name === "caller",
+        );
+        expect(caller).toBeDefined();
+        expect(await indexer.getCallees(caller!.id)).toHaveLength(0);
+      } finally {
+        await indexer.close();
+        CALL_GRAPH_LANGUAGES.add("c");
+      }
+
+      const database = new Database(path.join(tempDir, ".opencode", "index", "codebase.db"));
+      database.setMetadata("index.callGraphResolutionVersion", "2");
+      database.close();
+      const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
+
+      indexer = new Indexer(tempDir, config);
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const caller = symbols.find((symbol) => symbol.name === "caller");
+        const helper = symbols.find((symbol) => symbol.name === "helper");
+        const edge = (await indexer.getCallees(caller!.id)).find(
+          (candidate) => candidate.targetName === "helper",
+        );
+        expect(edge).toMatchObject({
+          isResolved: true,
+          toSymbolId: helper!.id,
+        });
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeUpgrade);
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();

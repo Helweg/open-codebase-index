@@ -1,153 +1,72 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as fs from "fs";
-import * as path from "path";
 import * as os from "os";
+import * as path from "path";
 
-describe("Crash Recovery", () => {
-  describe("atomic file writes", () => {
-    let tempDir: string;
+import { acquireIndexLock, IndexLockContentionError } from "../src/indexer/index-lock.js";
 
-    beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "crash-test-"));
-    });
+describe("legacy crash recovery", () => {
+  let tempDir: string;
+  let indexPath: string;
+  let lockPath: string;
 
-    afterEach(() => {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    });
-
-    it("should leave no .tmp files after successful write via atomicWriteSync pattern", () => {
-      const targetPath = path.join(tempDir, "test-file.json");
-      const tempPath = `${targetPath}.tmp`;
-      const data = JSON.stringify({ test: "data" });
-      
-      fs.writeFileSync(tempPath, data);
-      fs.renameSync(tempPath, targetPath);
-
-      expect(fs.existsSync(targetPath)).toBe(true);
-      expect(fs.existsSync(tempPath)).toBe(false);
-      expect(JSON.parse(fs.readFileSync(targetPath, "utf-8"))).toEqual({ test: "data" });
-    });
-
-    it("should handle rename of non-existent temp file gracefully", () => {
-      const targetPath = path.join(tempDir, "test-file.json");
-      const tempPath = `${targetPath}.tmp`;
-
-      expect(() => fs.renameSync(tempPath, targetPath)).toThrow();
-    });
-
-    it("should create missing parent directories before atomic write", () => {
-      const nestedDir = path.join(tempDir, "deeply", "nested", "dir");
-      const targetPath = path.join(nestedDir, "test-file.json");
-      const tempPath = `${targetPath}.tmp`;
-      const data = JSON.stringify({ test: "data" });
-
-      expect(fs.existsSync(nestedDir)).toBe(false);
-
-      fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-      fs.writeFileSync(tempPath, data);
-      fs.renameSync(tempPath, targetPath);
-
-      expect(fs.existsSync(targetPath)).toBe(true);
-      expect(fs.existsSync(tempPath)).toBe(false);
-      expect(JSON.parse(fs.readFileSync(targetPath, "utf-8"))).toEqual({ test: "data" });
-    });
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "crash-recovery-"));
+    indexPath = path.join(tempDir, "index");
+    lockPath = path.join(indexPath, "indexing.lock");
+    fs.mkdirSync(indexPath, { recursive: true });
   });
 
-  describe("indexing lock file", () => {
-    let tempDir: string;
-    let indexPath: string;
-    let lockPath: string;
-
-    beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "lock-test-"));
-      indexPath = path.join(tempDir, ".opencode", "index");
-      lockPath = path.join(indexPath, "indexing.lock");
-      fs.mkdirSync(indexPath, { recursive: true });
-    });
-
-    afterEach(() => {
-      fs.rmSync(tempDir, { recursive: true, force: true });
-    });
-
-    it("should detect when lock file exists", () => {
-      expect(fs.existsSync(lockPath)).toBe(false);
-
-      fs.writeFileSync(lockPath, JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid }));
-
-      expect(fs.existsSync(lockPath)).toBe(true);
-    });
-
-    it("should parse lock file contents correctly", () => {
-      const lockData = { startedAt: "2025-01-19T12:00:00.000Z", pid: 12345 };
-      fs.writeFileSync(lockPath, JSON.stringify(lockData));
-
-      const parsed = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
-      expect(parsed.startedAt).toBe("2025-01-19T12:00:00.000Z");
-      expect(parsed.pid).toBe(12345);
-    });
-
-    it("should remove lock file on successful completion", () => {
-      fs.writeFileSync(lockPath, JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid }));
-      expect(fs.existsSync(lockPath)).toBe(true);
-
-      fs.unlinkSync(lockPath);
-
-      expect(fs.existsSync(lockPath)).toBe(false);
-    });
-
-    it("should handle missing lock file in cleanup gracefully", () => {
-      expect(fs.existsSync(lockPath)).toBe(false);
-
-      if (fs.existsSync(lockPath)) {
-        fs.unlinkSync(lockPath);
-      }
-
-      expect(fs.existsSync(lockPath)).toBe(false);
-    });
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
-  describe("recovery behavior", () => {
-    let tempDir: string;
-    let indexPath: string;
-    let lockPath: string;
-    let fileHashCachePath: string;
-
-    beforeEach(() => {
-      tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "recovery-test-"));
-      indexPath = path.join(tempDir, ".opencode", "index");
-      lockPath = path.join(indexPath, "indexing.lock");
-      fileHashCachePath = path.join(indexPath, "file-hashes.json");
-      fs.mkdirSync(indexPath, { recursive: true });
+  it("does not overwrite a live 0.14.0 lock file", () => {
+    const contents = JSON.stringify({
+      pid: process.pid,
+      startedAt: "2025-01-19T12:00:00.000Z",
     });
+    fs.writeFileSync(lockPath, contents, { mode: 0o600 });
 
-    afterEach(() => {
-      fs.rmSync(tempDir, { recursive: true, force: true });
+    expect(() => acquireIndexLock(indexPath, "recovery")).toThrow(
+      expect.objectContaining<Partial<IndexLockContentionError>>({
+        code: "INDEX_BUSY",
+        reason: "legacy-lock",
+        owner: expect.objectContaining({ pid: process.pid }),
+      }),
+    );
+    expect(fs.readFileSync(lockPath, "utf-8")).toBe(contents);
+    expect(fs.lstatSync(lockPath).isFile()).toBe(true);
+  });
+
+  it("requires explicit migration control before removing a dead legacy lock", () => {
+    const deadPid = 2_147_483_647;
+    const contents = JSON.stringify({
+      pid: deadPid,
+      startedAt: "2025-01-19T12:00:00.000Z",
     });
+    fs.writeFileSync(lockPath, contents, { mode: 0o600 });
 
-    it("should clear file hash cache when lock file is present (simulating crash recovery)", () => {
-      fs.writeFileSync(fileHashCachePath, JSON.stringify({ "file1.ts": "hash1", "file2.ts": "hash2" }));
-      fs.writeFileSync(lockPath, JSON.stringify({ startedAt: new Date().toISOString(), pid: process.pid }));
+    expect(() => acquireIndexLock(indexPath, "recovery")).toThrow(
+      expect.objectContaining<Partial<IndexLockContentionError>>({
+        code: "INDEX_BUSY",
+        reason: "legacy-lock",
+        owner: expect.objectContaining({ pid: deadPid }),
+      }),
+    );
+    expect(fs.readFileSync(lockPath, "utf-8")).toBe(contents);
+  });
 
-      expect(fs.existsSync(fileHashCachePath)).toBe(true);
-      expect(fs.existsSync(lockPath)).toBe(true);
+  it("does not overwrite an unreadable legacy lock", () => {
+    fs.writeFileSync(lockPath, "not-json", { mode: 0o600 });
 
-      if (fs.existsSync(lockPath)) {
-        fs.unlinkSync(fileHashCachePath);
-        fs.unlinkSync(lockPath);
-      }
-
-      expect(fs.existsSync(fileHashCachePath)).toBe(false);
-      expect(fs.existsSync(lockPath)).toBe(false);
-    });
-
-    it("should not clear hash cache when no lock file exists", () => {
-      fs.writeFileSync(fileHashCachePath, JSON.stringify({ "file1.ts": "hash1" }));
-
-      expect(fs.existsSync(lockPath)).toBe(false);
-      expect(fs.existsSync(fileHashCachePath)).toBe(true);
-
-      const content = JSON.parse(fs.readFileSync(fileHashCachePath, "utf-8"));
-      expect(content).toEqual({ "file1.ts": "hash1" });
-    });
+    expect(() => acquireIndexLock(indexPath, "recovery")).toThrow(
+      expect.objectContaining<Partial<IndexLockContentionError>>({
+        code: "INDEX_BUSY",
+        reason: "legacy-lock",
+        owner: null,
+      }),
+    );
+    expect(fs.readFileSync(lockPath, "utf-8")).toBe("not-json");
   });
 });

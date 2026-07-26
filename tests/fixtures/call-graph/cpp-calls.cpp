@@ -60,10 +60,16 @@ int normalize(int value) {
 }
 
 int declared_only(int value);
+Widget make_widget();
 
 int process(Widget* pointer, Callback callback, CallbackSignature* signature) {
     Callback local_callback = callback;
     Widget stack(1);
+    Widget braced{1};
+    Widget copied = Widget(1);
+    Widget from_factory = make_widget();
+    Widget vexing();
+    project::detail::RemoteWidget remote_stack(1);
     auto* heap = new Widget(2);
     auto* remote = new project::detail::RemoteWidget(3);
     auto* point = new Point{8, 9};

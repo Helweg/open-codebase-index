@@ -87,6 +87,15 @@ export function createSummaryMarkdown(
   lines.push(`| Embedding calls | ${summary.metrics.embedding.callCount} |`);
   lines.push(`| Embedding tokens | ${summary.metrics.tokenEstimate.embeddingTokensUsed} |`);
   lines.push(`| Estimated embedding cost | ${formatUsd(summary.metrics.embedding.estimatedCostUsd)} |`);
+  lines.push(`| Context queries | ${summary.metrics.contextEfficiency.queryCount} |`);
+  lines.push(`| Context response tokens total | ${summary.metrics.contextEfficiency.responseTokens.total} |`);
+  lines.push(`| Context response tokens avg | ${summary.metrics.contextEfficiency.responseTokens.average.toFixed(1)} |`);
+  lines.push(`| Context response tokens p95 | ${summary.metrics.contextEfficiency.responseTokens.p95.toFixed(1)} |`);
+  lines.push(`| Context response tokens max | ${summary.metrics.contextEfficiency.responseTokens.max.toFixed(1)} |`);
+  lines.push(`| Context duplicate candidate ratio | ${formatPct(summary.metrics.contextEfficiency.duplicateCandidateRatio)} |`);
+  lines.push(`| Context selected-file ratio | ${formatPct(summary.metrics.contextEfficiency.selectedFileRatio)} |`);
+  lines.push(`| Context Hit@5 / 1k response tokens | ${summary.metrics.contextEfficiency.hitAt5Per1kResponseTokens.toFixed(4)} |`);
+  lines.push(`| Context MRR@10 / 1k response tokens | ${summary.metrics.contextEfficiency.mrrAt10Per1kResponseTokens.toFixed(4)} |`);
   lines.push("");
 
   lines.push("## Failure Buckets");
@@ -131,6 +140,27 @@ export function createSummaryMarkdown(
     );
     lines.push(
       `| p95 latency (ms) | ${comparison.deltas.latencyP95Ms.baseline.toFixed(3)} | ${comparison.deltas.latencyP95Ms.current.toFixed(3)} | ${signed(comparison.deltas.latencyP95Ms.absolute, 3)} |`
+    );
+    lines.push(
+      `| Context response tokens avg | ${comparison.deltas.contextResponseTokensAverage.baseline.toFixed(1)} | ${comparison.deltas.contextResponseTokensAverage.current.toFixed(1)} | ${signed(comparison.deltas.contextResponseTokensAverage.absolute, 1)} |`
+    );
+    lines.push(
+      `| Context response tokens p95 | ${comparison.deltas.contextResponseTokensP95.baseline.toFixed(1)} | ${comparison.deltas.contextResponseTokensP95.current.toFixed(1)} | ${signed(comparison.deltas.contextResponseTokensP95.absolute, 1)} |`
+    );
+    lines.push(
+      `| Context response tokens max | ${comparison.deltas.contextResponseTokensMax.baseline.toFixed(1)} | ${comparison.deltas.contextResponseTokensMax.current.toFixed(1)} | ${signed(comparison.deltas.contextResponseTokensMax.absolute, 1)} |`
+    );
+    lines.push(
+      `| Context duplicate candidate ratio | ${formatPct(comparison.deltas.contextDuplicateCandidateRatio.baseline)} | ${formatPct(comparison.deltas.contextDuplicateCandidateRatio.current)} | ${signed(comparison.deltas.contextDuplicateCandidateRatio.absolute)} |`
+    );
+    lines.push(
+      `| Context selected-file ratio | ${formatPct(comparison.deltas.contextSelectedFileRatio.baseline)} | ${formatPct(comparison.deltas.contextSelectedFileRatio.current)} | ${signed(comparison.deltas.contextSelectedFileRatio.absolute)} |`
+    );
+    lines.push(
+      `| Context Hit@5 / 1k response tokens | ${comparison.deltas.contextHitAt5Per1kResponseTokens.baseline.toFixed(4)} | ${comparison.deltas.contextHitAt5Per1kResponseTokens.current.toFixed(4)} | ${signed(comparison.deltas.contextHitAt5Per1kResponseTokens.absolute)} |`
+    );
+    lines.push(
+      `| Context MRR@10 / 1k response tokens | ${comparison.deltas.contextMrrAt10Per1kResponseTokens.baseline.toFixed(4)} | ${comparison.deltas.contextMrrAt10Per1kResponseTokens.current.toFixed(4)} | ${signed(comparison.deltas.contextMrrAt10Per1kResponseTokens.absolute)} |`
     );
     lines.push("");
   }

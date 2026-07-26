@@ -146,10 +146,17 @@ fn extract_semantic_nodes(
 
             let content = &source[start_byte..end_byte];
 
-            if content.len() >= MIN_CHUNK_SIZE
-                || (matches!(*language, Language::Bash | Language::C | Language::Cpp)
-                    && node_type == "function_definition")
-            {
+            let preserve_small_call_graph_symbol = match language {
+                Language::Bash => node_type == "function_definition",
+                Language::C => node_type == "function_definition",
+                Language::Cpp => matches!(
+                    node_type,
+                    "function_definition" | "class_specifier" | "struct_specifier"
+                ),
+                _ => false,
+            };
+
+            if content.len() >= MIN_CHUNK_SIZE || preserve_small_call_graph_symbol {
                 let name = extract_name(cursor, source);
 
                 let start_line = if leading_comment.is_some() {
@@ -793,11 +800,17 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
             continue;
         };
 
+        let is_preserved_call_graph_symbol =
+            |candidate: &CodeChunk| match candidate.language.as_str() {
+                "bash" | "c" => candidate.chunk_type == "function_definition",
+                "cpp" => matches!(
+                    candidate.chunk_type.as_str(),
+                    "function_definition" | "class_specifier" | "struct_specifier"
+                ),
+                _ => false,
+            };
         let can_merge_without_losing_symbol =
-            !((matches!(cur.language.as_str(), "bash" | "c" | "cpp")
-                && cur.chunk_type == "function_definition")
-                || (matches!(chunk.language.as_str(), "bash" | "c" | "cpp")
-                    && chunk.chunk_type == "function_definition"));
+            !is_preserved_call_graph_symbol(&cur) && !is_preserved_call_graph_symbol(&chunk);
 
         if can_merge_without_losing_symbol
             && cur.content.len() < MIN_CHUNK_SIZE * 2
@@ -1200,6 +1213,18 @@ int main() {
                 .any(|chunk| chunk.name.as_deref() == Some("main")),
             "Should extract and preserve the C++ function name"
         );
+    }
+
+    #[test]
+    fn test_parse_cpp_preserves_small_type_symbols() {
+        let chunks = parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n").unwrap();
+
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "class_specifier" && chunk.name.as_deref() == Some("Tag")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "struct_specifier" && chunk.name.as_deref() == Some("Point")
+        }));
     }
 
     #[test]

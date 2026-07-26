@@ -5,6 +5,13 @@
     "minHitAt5": 0.5,
     "minMrrAt10": 0.45,
     "minRawDistinctTop3Ratio": 0.5,
-    "p95LatencyMaxAbsoluteMs": 500
+    "p95LatencyMaxAbsoluteMs": 500,
+    "maxContextResponseTokensAverage": 1000,
+    "maxContextResponseTokensP95": 1200,
+    "maxContextResponseTokensMax": 1200,
+    "maxContextDuplicateCandidateRatio": 0.5,
+    "minContextSelectedFileRatio": 0.5,
+    "minContextHitAt5Per1kResponseTokens": 0.5,
+    "minContextMrrAt10Per1kResponseTokens": 0.25
   }
 }

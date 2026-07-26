@@ -77,6 +77,8 @@ function createMockNativeBinding() {
     },
     Database: class {
       constructor() { throw error; }
+      static openReadOnly() { throw error; }
+      static createEmptyReadOnly() { throw error; }
       close() { throw error; }
       getTransitiveReachability() { throw error; }
       detectCommunities() { throw error; }
@@ -322,6 +324,14 @@ export class VectorStore {
 
   load(): void {
     this.inner.load();
+  }
+
+  loadStrict(): void {
+    this.inner.loadStrict();
+  }
+
+  hasFingerprint(): boolean {
+    return this.inner.hasFingerprint();
   }
 
   count(): number {
@@ -736,6 +746,21 @@ export class Database {
 
   constructor(dbPath: string) {
     this.inner = new native.Database(dbPath);
+  }
+
+  private static fromNative(inner: any): Database {
+    const database = Object.create(Database.prototype) as Database;
+    database.inner = inner;
+    database.closed = false;
+    return database;
+  }
+
+  static openReadOnly(dbPath: string): Database {
+    return Database.fromNative(native.Database.openReadOnly(dbPath));
+  }
+
+  static createEmptyReadOnly(): Database {
+    return Database.fromNative(native.Database.createEmptyReadOnly());
   }
 
   private throwIfClosed(): void {

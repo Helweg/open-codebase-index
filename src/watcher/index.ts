@@ -4,6 +4,7 @@ import type { HostMode } from "../config/host.js";
 import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
 import { loadConfigFile } from "../config/merger.js";
 import type { Indexer } from "../indexer/index.js";
+import { isTransientIndexLockContention } from "../indexer/index-lock.js";
 import { isGitRepo } from "../git/index.js";
 import { refreshIndexerForDirectory } from "../tools/operations.js";
 import { FileWatcher } from "./file-watcher.js";
@@ -17,7 +18,8 @@ export type { BranchChangeHandler } from "./git-head-watcher.js";
 export interface CombinedWatcher {
   fileWatcher: FileWatcher;
   gitWatcher: GitHeadWatcher | null;
-  stop(): void;
+  whenReady(): Promise<void>;
+  stop(): Promise<void>;
 }
 
 export interface WatcherOptions {
@@ -28,6 +30,8 @@ class BackgroundReindexer {
   private running = false;
   private pending = false;
   private stopped = false;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  private retryDelayMs = 50;
 
   constructor(private readonly runIndex: () => Promise<void>) {}
 
@@ -43,10 +47,14 @@ class BackgroundReindexer {
   stop(): void {
     this.stopped = true;
     this.pending = false;
+    if (this.retryTimer) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
   }
 
   private drain(): void {
-    if (this.stopped || this.running || !this.pending) {
+    if (this.stopped || this.running || this.retryTimer || !this.pending) {
       return;
     }
 
@@ -56,13 +64,29 @@ class BackgroundReindexer {
   }
 
   private async run(): Promise<void> {
+    let retryAfterContention = false;
     try {
       await this.runIndex();
+      this.retryDelayMs = 50;
     } catch (error) {
-      console.error("[codebase-index] Background reindex failed:", error);
+      if (isTransientIndexLockContention(error)) {
+        this.pending = true;
+        retryAfterContention = true;
+      } else {
+        console.error("[codebase-index] Background reindex failed:", error);
+      }
     } finally {
       this.running = false;
-      this.drain();
+      if (retryAfterContention && !this.stopped) {
+        const delay = this.retryDelayMs;
+        this.retryDelayMs = Math.min(this.retryDelayMs * 2, 500);
+        this.retryTimer = setTimeout(() => {
+          this.retryTimer = null;
+          this.drain();
+        }, delay);
+      } else {
+        this.drain();
+      }
     }
   }
 }
@@ -108,10 +132,12 @@ export function createWatcherWithIndexer(
   return {
     fileWatcher,
     gitWatcher,
-    stop() {
+    whenReady() {
+      return fileWatcher.waitUntilReady();
+    },
+    async stop() {
       backgroundReindexer.stop();
-      fileWatcher.stop();
-      gitWatcher?.stop();
+      await Promise.all([fileWatcher.stop(), gitWatcher?.stop()]);
     },
   };
 }

@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.14.0",
+  "version": "0.17.1",
   "description": "Semantic codebase indexing and search for OpenCode - find code by meaning, not just keywords",
   "type": "module",
   "main": "dist/index.js",
@@ -33,16 +33,18 @@
     "pi"
   ],
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "build": "npm run build:ts && npm run build:native",
-    "build:ts": "tsup",
+    "build:ts": "tsup && node scripts/smoke-test-built-cli.mjs",
     "build:native": "cd native && cargo build --release && napi build --release --platform",
     "build:native:all": "cd native && napi build --release --platform --target x86_64-apple-darwin --target aarch64-apple-darwin --target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu --target x86_64-pc-windows-msvc",
     "visualize": "node dist/cli.js visualize",
     "dev": "tsup --watch",
     "eval": "npx tsx src/cli.ts eval run",
+    "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
+    "eval:agent:ci": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json --reindex --ci --budget benchmarks/budgets/agent-context.json",
     "eval:smoke": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/small.json",
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
     "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
@@ -91,28 +93,31 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.80.2",
+    "@earendil-works/pi-coding-agent": "^0.82.0",
     "@eslint/js": "^9.39.4",
     "@napi-rs/cli": "^3.6.0",
     "@types/node": "^25.5.2",
     "@vitest/coverage-v8": "^4.1.2",
     "eslint": "^9.39.4",
     "tsup": "^8.1.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.58.0",
     "vitest": "^4.1.2"
   },
   "overrides": {
-    "@hono/node-server": "1.19.14",
-    "brace-expansion": "5.0.6",
+    "@hono/node-server": "2.0.10",
+    "brace-expansion": "5.0.7",
     "express-rate-limit": "8.5.2",
-    "fast-uri": "3.1.2",
-    "hono": "4.12.25",
+    "fast-uri": "3.1.4",
+    "hono": "4.12.27",
     "ip-address": "10.2.0",
     "postcss": "8.5.15",
     "qs": "6.15.2",
     "vite": "8.0.16",
-    "esbuild": "0.28.1"
+    "esbuild": "0.28.1",
+    "body-parser": "2.3.0",
+    "js-yaml": "4.3.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

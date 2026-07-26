@@ -165,14 +165,22 @@ async function main(): Promise<void> {
     );
   }
 
-  const shutdown = (): void => {
-    watcher?.stop();
-    server.close().catch(() => {});
-    process.exit(0);
+  let shuttingDown = false;
+  const shutdown = async (): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    try {
+      await watcher?.stop();
+      await server.close();
+      process.exit(0);
+    } catch (error) {
+      console.error("Failed to stop MCP server cleanly:", error);
+      process.exit(1);
+    }
   };
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => { void shutdown(); });
+  process.on("SIGTERM", () => { void shutdown(); });
 }
 
 function handleMainError(error: unknown): never {

@@ -92,6 +92,7 @@ describe("eval runner", () => {
               id: "q1",
               query: "where is rankHybridResults implementation",
               queryType: "definition",
+              retrievalMode: "context",
               expected: {
                 filePath: "src/indexer/index.ts",
                 symbol: "rankHybridResults",
@@ -121,11 +122,18 @@ describe("eval runner", () => {
     });
 
     expect(result.summary.queryCount).toBe(1);
+    expect(result.perQuery[0]?.resolvedRoute).toBe("definition");
+    expect(result.perQuery[0]?.routedQuery).toBe("rankHybridResults");
     expect(typeof result.summary.metrics.distinctTop3Ratio).toBe("number");
     expect(typeof result.summary.metrics.rawDistinctTop3Ratio).toBe("number");
+    expect(result.perQuery[0]?.tokenBudget).toBe(1200);
+    expect(result.perQuery[0]?.responseTokens).toBeGreaterThan(0);
+    expect(result.summary.metrics.contextEfficiency.queryCount).toBe(1);
+    expect(result.summary.metrics.contextEfficiency.responseTokens.p95).toBeLessThanOrEqual(1200);
     expect(readFileSync(path.join(result.outputDir, "summary.json"), "utf-8")).toContain("\"metrics\"");
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("Distinct Top@3");
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("Raw Distinct Top@3");
+    expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("Context response tokens max");
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("# Evaluation Summary");
     expect(readFileSync(path.join(result.outputDir, "per-query.json"), "utf-8")).toContain("\"queries\"");
   });

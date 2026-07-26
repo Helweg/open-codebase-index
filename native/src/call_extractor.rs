@@ -1,6 +1,6 @@
 use crate::types::Language;
 use anyhow::{anyhow, Result};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -31,7 +31,6 @@ pub struct CallSite {
 }
 
 struct CallExclusion {
-    name: String,
     start_byte: usize,
     end_byte: usize,
     include_method_calls: bool,
@@ -155,6 +154,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let import_namespace_idx = query.capture_index_for_name("import.namespace");
     let inherits_name_idx = query.capture_index_for_name("inherits.name");
     let implements_name_idx = query.capture_index_for_name("implements.name");
+    let constructor_type_idx = query.capture_index_for_name("constructor.type");
     let excluded_name_idx = query.capture_index_for_name("excluded.name");
     let indirect_type_idx = query.capture_index_for_name("indirect.type");
     let indirect_variable_type_idx = query.capture_index_for_name("indirect.variable_type");
@@ -162,7 +162,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let text_bytes = content.as_bytes();
 
     let root = tree.root_node();
-    let mut exclusions = Vec::new();
+    let mut exclusions: HashMap<String, Vec<CallExclusion>> = HashMap::new();
     let mut indirect_types = HashSet::new();
     if excluded_name_idx.is_some() || indirect_type_idx.is_some() {
         let mut exclusion_cursor = QueryCursor::new();
@@ -173,12 +173,14 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
                     let text = capture.node.utf8_text(text_bytes).unwrap_or("");
                     let (start_byte, end_byte, include_method_calls) =
                         exclusion_scope(capture.node, root);
-                    exclusions.push(CallExclusion {
-                        name: text.to_string(),
-                        start_byte,
-                        end_byte,
-                        include_method_calls,
-                    });
+                    exclusions
+                        .entry(text.to_string())
+                        .or_default()
+                        .push(CallExclusion {
+                            start_byte,
+                            end_byte,
+                            include_method_calls,
+                        });
                 }
                 if indirect_type_idx == Some(capture.index) {
                     let text = capture.node.utf8_text(text_bytes).unwrap_or("");
@@ -212,12 +214,14 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
                 if indirect_types.contains(type_name) {
                     let (start_byte, end_byte, include_method_calls) =
                         exclusion_scope(name_node, root);
-                    exclusions.push(CallExclusion {
-                        name: name.to_string(),
-                        start_byte,
-                        end_byte,
-                        include_method_calls,
-                    });
+                    exclusions
+                        .entry(name.to_string())
+                        .or_default()
+                        .push(CallExclusion {
+                            start_byte,
+                            end_byte,
+                            include_method_calls,
+                        });
                 }
             }
         }
@@ -233,10 +237,15 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         let mut call_type: Option<CallType> = None;
         let mut position: Option<(u32, u32)> = None;
         let mut callee_byte = None;
+        let mut constructor_type = None;
 
         for capture in match_.captures {
             let node = capture.node;
             let text = node.utf8_text(text_bytes).unwrap_or("");
+
+            if constructor_type_idx == Some(capture.index) {
+                constructor_type = Some(text);
+            }
 
             if let Some(idx) = callee_name_idx {
                 if capture.index == idx {
@@ -334,22 +343,29 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         // @call is only for direct function calls
         // So we need to check if the call was already classified as a method call
         if let (Some(name), Some(ct), Some(pos)) = (callee_name, call_type, position) {
+            if ct == CallType::Constructor
+                && constructor_type.is_some_and(|type_name| type_name != name)
+            {
+                continue;
+            }
+
             if matches!(language, Language::C | Language::Cpp)
                 && matches!(ct, CallType::Call | CallType::MethodCall)
                 && callee_byte.is_some_and(|byte| {
-                    exclusions.iter().any(|exclusion| {
-                        exclusion.name == name
-                            && byte >= exclusion.start_byte
-                            && byte <= exclusion.end_byte
-                            && (ct == CallType::Call || exclusion.include_method_calls)
+                    exclusions.get(&name).is_some_and(|matching_exclusions| {
+                        matching_exclusions.iter().any(|exclusion| {
+                            byte >= exclusion.start_byte
+                                && byte <= exclusion.end_byte
+                                && (ct == CallType::Call || exclusion.include_method_calls)
+                        })
                     })
                 })
             {
                 continue;
             }
 
-            // PHP et Apex sont insensibles à la casse : les appels ordinaires
-            // sont normalisés en minuscules pour correspondre aux symboles.
+            // PHP and Apex are case-insensitive, so normalize ordinary calls
+            // to lowercase to match their indexed symbols.
             let normalized_name = if (language == Language::Php || language == Language::Apex)
                 && ct != CallType::Import
                 && ct != CallType::Constructor
@@ -1095,8 +1111,15 @@ int lambda_scope(void) {
 }
 int indirect_run(int (*run)(int)) { return run(1); }
 int method_run(Widget* widget) { return widget->run(); }
+Widget make_widget();
 int run(Widget* widget, Callback callback, CallbackSignature* signature) {
     Callback local_callback = callback;
+    Widget stack(0);
+    Widget braced{0};
+    Widget copied = Widget(0);
+    Widget from_factory = make_widget();
+    Widget vexing();
+    project::detail::RemoteWidget remote_stack(1);
     auto* heap = new Widget(1);
     auto* remote = new project::detail::RemoteWidget(2);
     int direct = project::detail::normalize(helper(3));
@@ -1150,13 +1173,31 @@ int run(Widget* widget, Callback callback, CallbackSignature* signature) {
             "Expected the direct call outside the lambda parameter's scope only: {:?}",
             calls
         );
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    call.callee_name == "Widget" && call.call_type == CallType::Constructor
+                })
+                .count(),
+            5,
+            "Expected stack, braced, copy-initialized, heap, and temporary constructors: {:?}",
+            calls
+        );
         assert!(calls
             .iter()
-            .any(|call| call.callee_name == "Widget" && call.call_type == CallType::Constructor));
-        assert!(calls
-            .iter()
-            .any(|call| call.callee_name == "project::detail::RemoteWidget"
-                && call.call_type == CallType::Constructor));
+            .any(|call| { call.callee_name == "make_widget" && call.call_type == CallType::Call }));
+        assert!(!calls.iter().any(|call| call.callee_name == "vexing"));
+        assert_eq!(
+            calls
+                .iter()
+                .filter(|call| {
+                    call.callee_name == "project::detail::RemoteWidget"
+                        && call.call_type == CallType::Constructor
+                })
+                .count(),
+            2
+        );
         assert!(calls.iter().any(|call| {
             call.callee_name == "project::detail" && call.call_type == CallType::Import
         }));

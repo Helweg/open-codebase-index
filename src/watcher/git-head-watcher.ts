@@ -82,15 +82,16 @@ export class GitHeadWatcher {
     return this.currentBranch;
   }
 
-  stop(): void {
+  async stop(): Promise<void> {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
 
     if (this.watcher) {
-      this.watcher.close();
+      const watcher = this.watcher;
       this.watcher = null;
+      await watcher.close();
     }
 
     this.onBranchChange = null;
