@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ollama model discovery**: Added support for arbitrary local embedding models by reading their capabilities, dimensions, and context length from the Ollama API at runtime.
 - **Swift language support**: Added Tree-sitter semantic parsing, nested symbols, source ranges, and case-sensitive call graph extraction for Swift.
 - **PHP 8.x coverage**: Added grammar, semantic chunking, and call graph regression coverage for PHP 8.0 through supported PHP 8.5 syntax, and updated `tree-sitter-php` to 0.24.2.
 - **C and C++ call graphs**: Added Tree-sitter extraction for direct, member, and qualified calls, constructors, includes, and namespace imports.

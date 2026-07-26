@@ -1,5 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { getProviderDisplayName, createCustomProviderInfo } from "../src/embeddings/detector.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createCustomProviderInfo,
+  detectEmbeddingProvider,
+  getProviderDisplayName,
+  tryDetectProvider,
+} from "../src/embeddings/detector.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe("embeddings detector", () => {
   describe("getProviderDisplayName", () => {
@@ -76,6 +86,123 @@ describe("embeddings detector", () => {
         maxBatchSize: 64,
       });
       expect(info.modelInfo.maxBatchSize).toBe(64);
+    });
+  });
+
+  describe("Ollama model discovery", () => {
+    it("keeps catalog metadata for built-in models", async () => {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+        new Response(JSON.stringify({ models: [] })),
+      );
+
+      const provider = await detectEmbeddingProvider("ollama", "nomic-embed-text");
+
+      expect(provider.modelInfo.model).toBe("nomic-embed-text");
+      expect(provider.modelInfo.dimensions).toBe(768);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it("discovers metadata for an explicitly configured local model", async () => {
+      vi.stubEnv("OLLAMA_HOST", "http://localhost:11434/");
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/tags")) {
+          return new Response(JSON.stringify({ models: [{ name: "private/embedding-model:v2" }] }));
+        }
+        if (url.endsWith("/api/show") && init?.method === "POST") {
+          expect(JSON.parse(String(init.body))).toEqual({ model: "private/embedding-model:v2" });
+          return new Response(JSON.stringify({
+            capabilities: ["embedding"],
+            model_info: {
+              "custom.context_length": 16384,
+              "custom.embedding_length": 1536,
+            },
+          }));
+        }
+        throw new Error(`Unexpected request: ${url}`);
+      });
+
+      const provider = await detectEmbeddingProvider("ollama", "private/embedding-model:v2");
+
+      expect(provider.provider).toBe("ollama");
+      expect(provider.credentials.baseUrl).toBe("http://localhost:11434");
+      expect(provider.modelInfo).toEqual({
+        provider: "ollama",
+        model: "private/embedding-model:v2",
+        dimensions: 1536,
+        maxTokens: 16384,
+        costPer1MTokens: 0,
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it("rejects installed chat models that are not embedding-capable", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/tags")) {
+          return new Response(JSON.stringify({ models: [{ name: "llama3.2:latest" }] }));
+        }
+        return new Response(JSON.stringify({
+          capabilities: ["completion"],
+          model_info: {
+            "llama.context_length": 8192,
+            "llama.embedding_length": 3072,
+          },
+        }));
+      });
+
+      await expect(detectEmbeddingProvider("ollama", "llama3.2:latest"))
+        .rejects.toThrow("not installed or is not embedding-capable");
+    });
+
+    it("auto-detects embedding capability instead of relying on model names", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/tags")) {
+          return new Response(JSON.stringify({
+            models: [
+              { model: "looks-like-embed-but-is-chat" },
+              { model: "acme/retriever:v4" },
+            ],
+          }));
+        }
+        const { model } = JSON.parse(String(init?.body)) as { model: string };
+        if (model === "looks-like-embed-but-is-chat") {
+          return new Response(JSON.stringify({ capabilities: ["completion"], model_info: {} }));
+        }
+        return new Response(JSON.stringify({
+          capabilities: ["embedding"],
+          model_info: {
+            "acme.context_length": 4096,
+            "acme.embedding_length": 640,
+          },
+        }));
+      });
+
+      const provider = await tryDetectProvider();
+
+      expect(provider.provider).toBe("ollama");
+      expect(provider.modelInfo.model).toBe("acme/retriever:v4");
+      expect(provider.modelInfo.dimensions).toBe(640);
+    });
+
+    it("rejects embedding models with ambiguous dimension metadata", async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        if (String(input).endsWith("/api/tags")) {
+          return new Response(JSON.stringify({ models: [{ name: "ambiguous" }] }));
+        }
+        return new Response(JSON.stringify({
+          capabilities: ["embedding"],
+          model_info: {
+            "first.context_length": 2048,
+            "first.embedding_length": 384,
+            "second.embedding_length": 768,
+          },
+        }));
+      });
+
+      await expect(detectEmbeddingProvider("ollama", "ambiguous"))
+        .rejects.toThrow("not installed or is not embedding-capable");
     });
   });
 });
