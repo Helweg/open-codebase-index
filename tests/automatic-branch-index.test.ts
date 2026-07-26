@@ -4,15 +4,17 @@ import * as os from "os";
 import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
+import type { IndexLockLease } from "../src/indexer/index-lock.js";
 import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import {
   acquireIndexLock,
   isIndexLockContentionError,
   releaseIndexLock,
-  type IndexLockLease,
 } from "../src/indexer/index-lock.js";
-import type { Database } from "../src/native/index.js";
+import { Database, hashContent } from "../src/native/index.js";
+import { createPullRequestCatalogIdentity } from "../src/tools/changed-files.js";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -21,9 +23,13 @@ function git(cwd: string, args: string[]): string {
 function commitFile(repo: string, content: string, message: string): string {
   fs.mkdirSync(path.join(repo, "src"), { recursive: true });
   fs.writeFileSync(path.join(repo, "src", "feature.ts"), content);
-  git(repo, ["add", "src/feature.ts"]);
+  git(repo, ["add", "--", "src/feature.ts"]);
   git(repo, ["commit", "-m", message]);
   return git(repo, ["rev-parse", "HEAD"]);
+}
+
+function branchCommitMetadataKey(catalogIdentity: string): string {
+  return `index.branchCommit.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
 describe("automatic branch index preparation", () => {
@@ -33,6 +39,7 @@ describe("automatic branch index preparation", () => {
   let mainCommit: string;
   let featureCommit: string;
   let indexer: Indexer;
+  let config: ParsedCodebaseIndexConfig;
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
@@ -45,6 +52,7 @@ describe("automatic branch index preparation", () => {
       path.join(knowledgeBase, "external.ts"),
       "export function externalKnowledge(): number { return 42; }\n",
     );
+    fs.symlinkSync(knowledgeBase, path.join(repo, "linked-knowledge-base"), "dir");
     git(repo, ["init", "-b", "main"]);
     git(repo, ["config", "user.email", "test@example.com"]);
     git(repo, ["config", "user.name", "Test User"]);
@@ -92,7 +100,7 @@ function changed(): number {
       }), { status: 200 });
     });
 
-    const config = parseConfig({
+    config = parseConfig({
       embeddingProvider: "custom",
       customProvider: {
         baseUrl: "http://localhost:11434/v1",
@@ -100,7 +108,7 @@ function changed(): number {
         dimensions: 8,
       },
       indexing: { watchFiles: false, autoGc: false },
-      knowledgeBases: [knowledgeBase],
+      knowledgeBases: ["linked-knowledge-base"],
     });
     indexer = new Indexer(repo, config);
     await indexer.index();
@@ -117,17 +125,22 @@ function changed(): number {
     return (indexer as unknown as { database: Database }).database;
   }
 
-  it("prepares a missing local branch once, reuses embeddings, and leaves the current worktree unchanged", async () => {
+  it("prepares a missing local branch once, reports progress, and keeps canonical external knowledge bases external", async () => {
     const initialDb = await database();
     const mainChunkIds = initialDb.getBranchChunkIds("main").sort();
     const mainSymbolIds = initialDb.getBranchSymbolIds("main").sort();
     const mainSymbolNames = initialDb.getSymbolsForBranch("main").map((symbol) => symbol.name).sort();
+    expect(initialDb.getMetadata(branchCommitMetadataKey("main"))).toBe(mainCommit);
     const beforeHead = git(repo, ["rev-parse", "HEAD"]);
     const beforeStatus = git(repo, ["status", "--porcelain"]);
     const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
     const fetchesBefore = fetchSpy.mock.calls.length;
+    const progressPhases: string[] = [];
 
-    const first = await indexer.getPrImpact({ branch: "feature" });
+    const first = await indexer.getPrImpact(
+      { branch: "feature" },
+      (progress) => progressPhases.push(progress.phase),
+    );
 
     expect(first.indexPreparation).toMatchObject({
       prepared: true,
@@ -135,6 +148,8 @@ function changed(): number {
       commit: featureCommit,
       source: "local",
     });
+    expect(progressPhases).toContain("scanning");
+    expect(progressPhases).toContain("complete");
     expect(first.changedFiles).toContain("src/feature.ts");
     expect(first.directSymbols.map((symbol) => symbol.name)).toContain("changed");
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(beforeHead);
@@ -147,6 +162,7 @@ function changed(): number {
     expect(featureSymbols.some((symbol) => symbol.filePath.startsWith(repo + path.sep))).toBe(true);
     expect(featureSymbols.some((symbol) => symbol.filePath.includes("codebase-index-branch-"))).toBe(false);
     expect(featureSymbols.some((symbol) => symbol.filePath === path.join(knowledgeBase, "external.ts"))).toBe(true);
+    expect(db.getMetadata(branchCommitMetadataKey("feature"))).toBe(featureCommit);
 
     expect(db.getBranchChunkIds("main").sort()).toEqual(mainChunkIds);
     expect(db.getBranchSymbolIds("main").sort()).toEqual(mainSymbolIds);
@@ -161,7 +177,7 @@ function changed(): number {
     expect(fetchSpy.mock.calls.length).toBe(fetchesAfterPreparation);
   });
 
-  it("reindexes an advanced branch OID and reclaims only stale secondary data", async () => {
+  it("reindexes a moved branch OID, replaces stale catalog data, and preserves primary data", async () => {
     await indexer.getPrImpact({ branch: "feature" });
     const db = await database();
     const mainChunkIds = db.getBranchChunkIds("main").sort();
@@ -199,12 +215,35 @@ function advancedChange(): number {
     expect(refreshedDb.getBranchChunkIds("main").sort()).toEqual(mainChunkIds);
     expect(refreshedDb.getBranchSymbolIds("main").sort()).toEqual(mainSymbolIds);
     expect(mainChunkIds.every((chunkId) => refreshedDb.getChunk(chunkId) !== null)).toBe(true);
+    expect(refreshedDb.getMetadata(branchCommitMetadataKey("feature"))).toBe(advancedCommit);
 
     const reused = await indexer.getPrImpact({ branch: "feature" });
     expect(reused.indexPreparation).toEqual({ prepared: false, branch: "feature" });
   });
 
-  it("uses an authoritative local PR merge ref when gh metadata is unavailable", async () => {
+  it("treats catalogs without commit metadata as legacy-stale and restores metadata", async () => {
+    await indexer.getPrImpact({ branch: "feature" });
+    const status = await indexer.getStatus();
+    await indexer.close();
+
+    const directDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    directDatabase.deleteMetadata(branchCommitMetadataKey("feature"));
+    directDatabase.close();
+
+    indexer = new Indexer(repo, config);
+    const rebuilt = await indexer.getPrImpact({ branch: "feature" });
+    expect(rebuilt.indexPreparation).toMatchObject({
+      prepared: true,
+      branch: "feature",
+      commit: featureCommit,
+    });
+    expect((await database()).getMetadata(branchCommitMetadataKey("feature"))).toBe(featureCommit);
+
+    const reused = await indexer.getPrImpact({ branch: "feature" });
+    expect(reused.indexPreparation).toEqual({ prepared: false, branch: "feature" });
+  });
+
+  it("uses an authoritative local PR merge ref and a repository-specific catalog identity", async () => {
     git(repo, ["update-ref", "refs/pull/7/head", featureCommit]);
     const mergeCommit = git(repo, [
       "commit-tree",
@@ -217,7 +256,6 @@ function advancedChange(): number {
       "synthetic PR merge",
     ]);
     git(repo, ["update-ref", "refs/pull/7/merge", mergeCommit]);
-    const fetchesBefore = fetchSpy.mock.calls.length;
 
     const result = await indexer.getPrImpact({ pr: 7 });
 
@@ -227,9 +265,111 @@ function advancedChange(): number {
       commit: featureCommit,
       source: "pull-ref",
     });
-    expect(fetchSpy.mock.calls.length).toBeGreaterThan(fetchesBefore);
-    expect((await database()).getSymbolsForBranch("pr/7").length).toBeGreaterThan(0);
+    const localRepositoryIdentity = `local:${repo}`;
+    const catalogIdentity = createPullRequestCatalogIdentity(
+      localRepositoryIdentity,
+      7,
+      `${localRepositoryIdentity}/refs/pull/7/head`,
+    );
+    const db = await database();
+    expect(db.getSymbolsForBranch(catalogIdentity).length).toBeGreaterThan(0);
+    expect(db.getSymbolsForBranch("pr/7")).toEqual([]);
+    expect(db.getMetadata(branchCommitMetadataKey(catalogIdentity))).toBe(featureCommit);
     expect(git(repo, ["branch", "--show-current"])).toBe("main");
+  });
+
+  it("keeps same-number, same-display PRs from different forks in distinct verified catalogs", async () => {
+    git(repo, ["checkout", "-b", "fork-bob", "main"]);
+    const bobCommit = commitFile(
+      repo,
+      `function bobHelper(): number {
+  return 11;
+}
+
+function bobOnly(): number {
+  return bobHelper() + 1;
+}
+`,
+      "bob fork",
+    );
+    git(repo, ["checkout", "main"]);
+    git(repo, ["update-ref", "refs/pull/41/head", featureCommit]);
+
+    const binDir = path.join(tempDir, "bin");
+    const statePath = path.join(tempDir, "gh-state");
+    fs.mkdirSync(binDir);
+    const aliceMetadata = JSON.stringify({
+      number: 41,
+      headRefName: "shared-branch",
+      headRefOid: featureCommit,
+      headRepository: { name: "project", nameWithOwner: "alice/project" },
+      headRepositoryOwner: { login: "alice" },
+      baseRefName: "main",
+      url: "https://github.com/base/project/pull/41",
+      files: [{ path: "src/feature.ts" }],
+    });
+    const bobMetadata = JSON.stringify({
+      number: 41,
+      headRefName: "shared-branch",
+      headRefOid: bobCommit,
+      headRepository: { name: "project", nameWithOwner: "bob/project" },
+      headRepositoryOwner: { login: "bob" },
+      baseRefName: "main",
+      url: "https://github.com/base/project/pull/41",
+      files: [{ path: "src/feature.ts" }],
+    });
+    const ghPath = path.join(binDir, "gh");
+    fs.writeFileSync(ghPath, `#!/bin/sh
+if [ "$(cat ${JSON.stringify(statePath)})" = "bob" ]; then
+  printf '%s\\n' ${JSON.stringify(bobMetadata)}
+else
+  printf '%s\\n' ${JSON.stringify(aliceMetadata)}
+fi
+`);
+    fs.chmodSync(ghPath, 0o755);
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${binDir}${path.delimiter}${originalPath ?? ""}`;
+    try {
+      fs.writeFileSync(statePath, "alice");
+      const alice = await indexer.getPrImpact({ pr: 41 });
+      expect(alice.indexPreparation).toMatchObject({
+        prepared: true,
+        branch: "shared-branch",
+        commit: featureCommit,
+        source: "pull-ref",
+      });
+      expect(alice.directSymbols.map((symbol) => symbol.name)).toContain("changed");
+
+      fs.writeFileSync(statePath, "bob");
+      const bob = await indexer.getPrImpact({ pr: 41 });
+      expect(bob.indexPreparation).toMatchObject({
+        prepared: true,
+        branch: "shared-branch",
+        commit: bobCommit,
+        source: "local",
+      });
+      expect(bob.directSymbols.map((symbol) => symbol.name)).toContain("bobOnly");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    const aliceIdentity = createPullRequestCatalogIdentity(
+      "github.com/base/project",
+      41,
+      "github.com/alice/project",
+    );
+    const bobIdentity = createPullRequestCatalogIdentity(
+      "github.com/base/project",
+      41,
+      "github.com/bob/project",
+    );
+    const db = await database();
+    expect(db.getSymbolsForBranch(aliceIdentity).map((symbol) => symbol.name)).toContain("changed");
+    expect(db.getSymbolsForBranch(bobIdentity).map((symbol) => symbol.name)).toContain("bobOnly");
+    expect(db.getSymbolsForBranch("shared-branch")).toEqual([]);
+    expect(db.getMetadata(branchCommitMetadataKey(aliceIdentity))).toBe(featureCommit);
+    expect(db.getMetadata(branchCommitMetadataKey(bobIdentity))).toBe(bobCommit);
   });
 
   it("honors index lock contention and cleans up the temporary worktree on failure", async () => {

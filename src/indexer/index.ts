@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
+import { existsSync, readFileSync, realpathSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { execFile } from "child_process";
@@ -36,7 +36,7 @@ import {
 } from "../native/index.js";
 import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CentralityData } from "../native/index.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
-import { resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
+import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
 import { getHostProjectIndexRelativePath, resolveProjectIndexPath } from "../config/paths.js";
 import { getChangedFiles } from "../tools/changed-files.js";
@@ -274,6 +274,8 @@ export interface IndexStats {
 export interface IndexerRuntimeOptions {
   materializedProjectRoot?: string;
   branchName?: string;
+  catalogIdentity?: string;
+  expectedCommit?: string;
   indexPath?: string;
 }
 
@@ -2065,6 +2067,8 @@ export class Indexer {
   private projectRoot: string;
   private readonly materializedProjectRoot: string;
   private readonly branchNameOverride: string | undefined;
+  private readonly catalogIdentityOverride: string | undefined;
+  private readonly expectedCommitOverride: string | undefined;
   private readonly indexPathOverride: string | undefined;
   private indexPath: string;
   private store: VectorStore | null = null;
@@ -2102,6 +2106,11 @@ export class Indexer {
     this.projectRoot = projectRoot;
     this.materializedProjectRoot = runtimeOptions.materializedProjectRoot ?? projectRoot;
     this.branchNameOverride = runtimeOptions.branchName;
+    this.catalogIdentityOverride = runtimeOptions.catalogIdentity;
+    if (runtimeOptions.expectedCommit !== undefined && !isFullGitCommit(runtimeOptions.expectedCommit)) {
+      throw new Error(`Expected Git commit is invalid: ${JSON.stringify(runtimeOptions.expectedCommit)}`);
+    }
+    this.expectedCommitOverride = runtimeOptions.expectedCommit?.toLowerCase();
     this.indexPathOverride = runtimeOptions.indexPath;
     this.config = config;
     this.host = host;
@@ -2135,9 +2144,9 @@ export class Indexer {
     return path.resolve(this.materializedProjectRoot, path.relative(this.projectRoot, filePath));
   }
 
-  private getPreparedBranchNamespace(branchName = this.branchNameOverride): string | null {
-    if (!branchName) return null;
-    return hashContent(this.getBranchCatalogKeyFor(branchName)).slice(0, 16);
+  private getPreparedBranchNamespace(): string | null {
+    if (!this.branchNameOverride && !this.catalogIdentityOverride) return null;
+    return hashContent(this.getBranchCatalogKey()).slice(0, 16);
   }
 
   private getRuntimeArtifactPath(fileName: string): string {
@@ -2154,15 +2163,29 @@ export class Indexer {
   }
 
   private getMaterializedKnowledgeBases(): string[] {
-    if (path.resolve(this.materializedProjectRoot) === path.resolve(this.projectRoot)) {
-      return this.config.knowledgeBases;
-    }
-
+    const canonicalProjectRoot = this.getCanonicalPath(this.projectRoot);
     return this.config.knowledgeBases.map((knowledgeBase) => {
-      if (path.isAbsolute(knowledgeBase)) return knowledgeBase;
-      const canonicalPath = path.resolve(this.projectRoot, knowledgeBase);
-      return isPathWithinRoot(canonicalPath, this.projectRoot) ? knowledgeBase : canonicalPath;
+      const configuredPath = path.isAbsolute(knowledgeBase)
+        ? knowledgeBase
+        : path.resolve(this.projectRoot, knowledgeBase);
+      const canonicalPath = this.getCanonicalPath(configuredPath);
+      if (!isPathWithinRoot(canonicalPath, canonicalProjectRoot)) {
+        return canonicalPath;
+      }
+      return path.resolve(
+        this.materializedProjectRoot,
+        path.relative(canonicalProjectRoot, canonicalPath),
+      );
     });
+  }
+
+  private getCanonicalPath(targetPath: string): string {
+    const resolved = path.resolve(targetPath);
+    try {
+      return realpathSync.native(resolved);
+    } catch {
+      return resolved;
+    }
   }
 
   private isLocalProjectIndexPath(): boolean {
@@ -2323,23 +2346,24 @@ export class Indexer {
   }
 
   private getScopedRoots(): string[] {
-    const roots = new Set<string>([path.resolve(this.projectRoot)]);
+    const roots = new Set<string>([this.getCanonicalPath(this.projectRoot)]);
 
     for (const kbRoot of this.config.knowledgeBases) {
-      roots.add(path.resolve(this.projectRoot, kbRoot));
+      roots.add(this.getCanonicalPath(path.resolve(this.projectRoot, kbRoot)));
     }
 
     return Array.from(roots);
   }
 
   private getBranchCatalogKey(): string {
-    const branchName = this.currentBranch || "default";
-    if (this.config.scope !== "global") {
-      return branchName;
-    }
+    return this.getBranchCatalogKeyFor(this.getBranchCatalogIdentity());
+  }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `${projectHash}:${branchName}`;
+  private getBranchCatalogIdentity(): string {
+    return (this.catalogIdentityOverride
+      ?? this.branchNameOverride
+      ?? this.currentBranch)
+      || "default";
   }
 
   private getBranchCatalogKeyFor(branchName: string): string {
@@ -2351,13 +2375,32 @@ export class Indexer {
     return `${projectHash}:${branchName}`;
   }
 
-  private getBranchCommitMetadataKey(branchName: string): string {
-    const branchKey = this.getBranchCatalogKeyFor(branchName);
+  private getBranchCommitMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
+    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
     return `index.branchCommit.${hashContent(branchKey).slice(0, 24)}`;
   }
 
-  private getStoredBranchCommit(database: Database, branchName: string): string | null {
-    return database.getMetadata(this.getBranchCommitMetadataKey(branchName));
+  private getBranchCommitMetadataKeyForCatalogKey(branchKey: string): string {
+    return `index.branchCommit.${hashContent(branchKey).slice(0, 24)}`;
+  }
+
+  private getStoredBranchCommit(database: Database, catalogIdentity = this.getBranchCatalogIdentity()): string | null {
+    return database.getMetadata(this.getBranchCommitMetadataKey(catalogIdentity));
+  }
+
+  private saveBranchCommit(database: Database, commit: string | null): void {
+    const metadataKey = this.getBranchCommitMetadataKey();
+    if (commit) {
+      database.setMetadata(metadataKey, commit);
+    } else {
+      database.deleteMetadata(metadataKey);
+    }
+  }
+
+  private deleteBranchCommitMetadata(database: Database, branchKeys: readonly string[]): void {
+    for (const branchKey of new Set(branchKeys)) {
+      database.deleteMetadata(this.getBranchCommitMetadataKeyForCatalogKey(branchKey));
+    }
   }
 
   private replaceBranchCatalog(
@@ -2780,7 +2823,11 @@ export class Indexer {
       }
     }
 
-    for (const branchKey of this.getProjectScopedBranchCatalogCleanupKeys(Array.from(projectLocalChunkIds), Array.from(projectLocalSymbolIds))) {
+    const branchCleanupKeys = this.getProjectScopedBranchCatalogCleanupKeys(
+      Array.from(projectLocalChunkIds),
+      Array.from(projectLocalSymbolIds),
+    );
+    for (const branchKey of branchCleanupKeys) {
       database.deleteBranchChunksForBranch(branchKey, removedChunkIdList);
     }
     const sharedChunkIds = new Set(database.getReferencedChunkIds(removedChunkIdList));
@@ -2793,9 +2840,10 @@ export class Indexer {
       }
     }
 
-    for (const branchKey of this.getProjectScopedBranchCatalogCleanupKeys(Array.from(projectLocalChunkIds), Array.from(projectLocalSymbolIds))) {
+    for (const branchKey of branchCleanupKeys) {
       database.deleteBranchSymbolsForBranch(branchKey, symbolIds);
     }
+    this.deleteBranchCommitMetadata(database, branchCleanupKeys);
     const sharedSymbolIds = new Set(database.getReferencedSymbolIds(symbolIds));
     const removableSymbolIds = symbolIds.filter((symbolId) => !sharedSymbolIds.has(symbolId));
 
@@ -4131,6 +4179,15 @@ export class Indexer {
     commit: string,
     onProgress?: ProgressCallback,
   ): Promise<BranchIndexResult> {
+    if (!isFullGitCommit(commit)) {
+      throw new Error(`Branch commit is invalid: ${JSON.stringify(commit)}`);
+    }
+    const normalizedCommit = commit.toLowerCase();
+    if (this.expectedCommitOverride && normalizedCommit !== this.expectedCommitOverride) {
+      throw new Error(
+        `Prepared branch commit ${normalizedCommit} does not match authoritative commit ${this.expectedCommitOverride}.`,
+      );
+    }
     if (branch !== this.currentBranch && this.initializationMode !== "none") {
       throw new Error(
         `Prepared Indexer branch mismatch: expected ${JSON.stringify(branch)}, got ${JSON.stringify(this.currentBranch)}.`,
@@ -4144,15 +4201,14 @@ export class Indexer {
           `Prepared Indexer branch mismatch: expected ${JSON.stringify(branch)}, got ${JSON.stringify(this.currentBranch)}.`,
         );
       }
-      const branchKey = this.getBranchCatalogKeyFor(branch);
+      const branchKey = this.getBranchCatalogKey();
       const alreadyIndexed = database.getBranchChunkIds(branchKey).length > 0
         && database.getBranchSymbolIds(branchKey).length > 0;
-      if (alreadyIndexed && this.getStoredBranchCommit(database, branch) === commit) {
+      if (alreadyIndexed && this.getStoredBranchCommit(database) === normalizedCommit) {
         return { prepared: false };
       }
 
       const stats = await this.indexUnlocked(onProgress, [], true);
-      database.setMetadata(this.getBranchCommitMetadataKey(branch), commit);
       return { prepared: true, stats };
     });
   }
@@ -4165,6 +4221,15 @@ export class Indexer {
     const { store, provider, invertedIndex, database, configuredProviderInfo } = stateReady
       ? this.requireLoadedIndexState()
       : await this.ensureInitializedUnlocked(recoveredOwners);
+    const materializedCommit = isGitRepo(this.materializedProjectRoot)
+      ? await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD")
+      : null;
+    if (this.expectedCommitOverride && materializedCommit !== this.expectedCommitOverride) {
+      throw new Error(
+        `Materialized repository HEAD ${materializedCommit ?? "did not resolve"}; expected ${this.expectedCommitOverride}.`,
+      );
+    }
+    const indexedCommit = this.expectedCommitOverride ?? materializedCommit;
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
@@ -4722,6 +4787,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -4758,6 +4824,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
       stats.durationMs = Date.now() - startTime;
@@ -5082,6 +5149,7 @@ export class Indexer {
     }
     database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
     database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+    this.saveBranchCommit(database, indexedCommit);
     this.saveIndexMetadata(configuredProviderInfo);
     this.indexCompatibility = { compatible: true };
 
@@ -5571,6 +5639,7 @@ export class Indexer {
       }
 
       if (!hasForeignData) {
+        const clearedBranchKeys = database.getAllBranches();
         store.clear();
         store.save();
         invertedIndex.clear();
@@ -5580,6 +5649,7 @@ export class Indexer {
         this.saveFileHashCache();
 
         database.clearAllIndexedData();
+        this.deleteBranchCommitMetadata(database, clearedBranchKeys);
         this.saveFailedBatches([]);
 
         database.deleteMetadata("index.version");
@@ -5611,6 +5681,7 @@ export class Indexer {
       );
     }
 
+    const clearedBranchKeys = database.getAllBranches();
     store.clear();
     store.save();
     invertedIndex.clear();
@@ -5622,6 +5693,7 @@ export class Indexer {
 
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
+    this.deleteBranchCommitMetadata(database, clearedBranchKeys);
     this.saveFailedBatches([]);
 
     database.deleteMetadata("index.version");
@@ -6363,7 +6435,7 @@ export class Indexer {
     hubThreshold?: number;
     checkConflicts?: boolean;
     direction?: "callers" | "callees" | "both";
-  }): Promise<PrImpactResult> {
+  }, onPreparationProgress?: ProgressCallback): Promise<PrImpactResult> {
     const initialState = await this.ensureInitialized();
     let database = initialState.database;
     const { readIssues } = initialState;
@@ -6378,59 +6450,70 @@ export class Indexer {
     });
     const changedFiles = changedFilesResult.files;
     const headRefName = changedFilesResult.headRefName;
+    const expectedCommit = changedFilesResult.headRef;
 
     if (opts.pr !== undefined && headRefName === undefined) {
       throw new Error(
         `Could not resolve head branch for PR #${opts.pr}. Run index_codebase on the PR branch first.`,
       );
     }
+    if (!expectedCommit || !isFullGitCommit(expectedCommit)) {
+      throw new Error("Could not resolve an authoritative full commit OID for impact analysis.");
+    }
 
     const resolvedBranch = opts.pr !== undefined
       ? headRefName
       : opts.branch || this.currentBranch;
-    const hasResolvedSourceRef = changedFilesResult.headRef !== undefined;
-    const catalogBranch = opts.pr !== undefined && hasResolvedSourceRef
-      ? `pr/${opts.pr}`
-      : resolvedBranch;
-    const branchKey = this.getBranchCatalogKeyFor(catalogBranch || "default");
+    const catalogIdentity = changedFilesResult.catalogIdentity;
+    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
 
     let branchSymbols = database.getSymbolsForBranch(branchKey);
     let indexPreparation: NonNullable<PrImpactResult["indexPreparation"]> = {
       prepared: false,
-      branch: catalogBranch || "default",
+      branch: resolvedBranch || "default",
     };
-    const requestedRef = changedFilesResult.headRef ?? resolvedBranch;
-    const isSecondaryCatalog = opts.pr !== undefined || catalogBranch !== this.currentBranch;
-    const resolvedCommit = isSecondaryCatalog && requestedRef && hasResolvedSourceRef
-      ? await resolveLocalGitCommit(this.projectRoot, requestedRef)
-      : null;
-    const storedCommit = catalogBranch
-      ? this.getStoredBranchCommit(database, catalogBranch)
-      : null;
-    const catalogIdentityMatches = resolvedCommit !== null && storedCommit === resolvedCommit;
+    const requestedRef = opts.pr !== undefined
+      ? expectedCommit
+      : headRefName ?? resolvedBranch;
+    const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
+    const catalogIdentityMatches = storedCommit === expectedCommit;
 
-    if (branchSymbols.length === 0 || (isSecondaryCatalog && hasResolvedSourceRef && !catalogIdentityMatches)) {
-      if (!resolvedBranch || !catalogBranch || catalogBranch === "default") {
+    if (branchSymbols.length === 0 || !catalogIdentityMatches) {
+      if (!resolvedBranch || resolvedBranch === "default") {
         throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
       }
 
+      onPreparationProgress?.({
+        phase: "scanning",
+        filesProcessed: 0,
+        totalFiles: 0,
+        chunksProcessed: 0,
+        totalChunks: 0,
+      });
       this.resetLoadedIndexState();
       const materialized = await withMaterializedBranch(
         {
           projectRoot: this.projectRoot,
-          branch: catalogBranch,
+          branch: resolvedBranch,
           ref: requestedRef,
+          expectedCommit,
           pr: opts.pr,
           repository: changedFilesResult.baseRepository,
         },
         async (worktreePath, info) => {
           const branchIndexer = new Indexer(this.projectRoot, this.config, this.host, {
             materializedProjectRoot: worktreePath,
-            branchName: catalogBranch,
+            branchName: resolvedBranch,
+            catalogIdentity,
+            expectedCommit,
             indexPath: this.indexPath,
           });
           try {
-            return await branchIndexer.indexBranchIfMissing(catalogBranch, info.commit);
+            return await branchIndexer.indexBranchIfMissing(
+              resolvedBranch,
+              info.commit,
+              onPreparationProgress,
+            );
           } finally {
             await branchIndexer.close();
           }
@@ -6439,7 +6522,7 @@ export class Indexer {
 
       indexPreparation = {
         prepared: materialized.value.prepared,
-        branch: catalogBranch,
+        branch: resolvedBranch,
         commit: materialized.info.commit,
         source: materialized.info.source,
       };
@@ -6450,7 +6533,7 @@ export class Indexer {
       branchSymbols = database.getSymbolsForBranch(branchKey);
       if (branchSymbols.length === 0) {
         throw new Error(
-          `Branch ${JSON.stringify(resolvedBranch)} (catalog ${JSON.stringify(catalogBranch)}) was indexed but produced no call-graph symbols. `
+          `Branch ${JSON.stringify(resolvedBranch)} (catalog ${JSON.stringify(catalogIdentity)}) was indexed but produced no call-graph symbols. `
           + `Available branch catalogs: ${database.getAllBranches().join(", ") || "none"}; `
           + `${database.getBranchChunkIds(branchKey).length} chunks, ${database.getBranchSymbolIds(branchKey).length} symbol IDs. `
           + "Ensure the branch contains a supported source language and is included by the index configuration.",
@@ -6555,12 +6638,8 @@ export class Indexer {
               baseBranch: this.baseBranch,
             });
             const otherAbsolute = otherChanged.files.map((f) => path.resolve(this.projectRoot, f));
-            const prBranchKey = this.getBranchCatalogKeyFor(`pr/${openPr.number}`);
-            const legacyBranchKey = this.getBranchCatalogKeyFor(openPr.headRefName);
-            let otherSymbols = database.getSymbolsForFiles(otherAbsolute, prBranchKey);
-            if (otherSymbols.length === 0) {
-              otherSymbols = database.getSymbolsForFiles(otherAbsolute, legacyBranchKey);
-            }
+            const prBranchKey = this.getBranchCatalogKeyFor(otherChanged.catalogIdentity);
+            const otherSymbols = database.getSymbolsForFiles(otherAbsolute, prBranchKey);
             const otherLabels = new Set<string>();
             for (const sym of otherSymbols) {
               const label = symbolToCommunity.get(structuralKey(sym.filePath, sym.name));

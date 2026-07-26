@@ -6,11 +6,21 @@ import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { pr_impact, call_graph, initializeTools } from "../src/tools/index.js";
 import { getChangedFiles } from "../src/tools/changed-files.js";
-import type { Database } from "../src/native/index.js";
+import { hashContent, type Database } from "../src/native/index.js";
 vi.mock("child_process", () => ({
   execFile: vi.fn(),
 }));
 import { execFile } from "child_process";
+
+function readSyntheticHead(root: string): string {
+  const head = fs.readFileSync(path.join(root, ".git", "HEAD"), "utf8").trim();
+  if (!head.startsWith("ref: ")) return head;
+  return fs.readFileSync(path.join(root, ".git", head.slice("ref: ".length)), "utf8").trim();
+}
+
+function branchCommitMetadataKey(catalogIdentity: string): string {
+  return `index.branchCommit.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
 
 vi.mock("../src/tools/changed-files.js", () => ({
   getChangedFiles: vi.fn(),
@@ -52,6 +62,20 @@ describe("pr_impact tool", () => {
       "export function placeholder() { return 1; }\n",
       "utf-8",
     );
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (
+        cmd: string,
+        args: string[],
+        _opts: unknown,
+        callback: (error: Error | null, result?: { stdout: string; stderr: string }) => void,
+      ) => {
+        if (cmd === "git" && args.at(-1) === "HEAD^{commit}") {
+          callback(null, { stdout: `${readSyntheticHead(tempDir)}\n`, stderr: "" });
+          return;
+        }
+        callback(new Error(`Unexpected command: ${cmd} ${args.join(" ")}`));
+      },
+    );
   });
 
   afterEach(async () => {
@@ -89,7 +113,9 @@ describe("pr_impact tool", () => {
       files: ["src/a.ts"],
       baseBranch: "main",
       source: "git",
+      catalogIdentity: "main",
       headRefName: "main",
+      headRef: "1111111111111111111111111111111111111111",
     });
 
     const indexer = await createIndexer();
@@ -130,8 +156,15 @@ describe("pr_impact tool", () => {
       isResolved: true,
     });
 
-    const result = await pr_impact.execute({ branch: "main" }, { worktree: tempDir });
+    const metadata = vi.fn();
+    const result = await pr_impact.execute({ branch: "main" }, { worktree: tempDir, metadata });
     expect(typeof result).toBe("string");
+    expect(metadata).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Preparing impact analysis: resolving authoritative branch head",
+      metadata: expect.objectContaining({
+        preparationPolicy: expect.stringContaining("No separate aggregate token or cost ceiling"),
+      }),
+    }));
     expect(result).toContain("Files changed:");
     expect(result).toContain("src/a.ts");
     expect(result).toContain("Symbols affected:");
@@ -144,7 +177,9 @@ describe("pr_impact tool", () => {
       files: ["src/a.ts"],
       baseBranch: "main",
       source: "git",
+      catalogIdentity: "feature",
       headRefName: "feature",
+      headRef: "3333333333333333333333333333333333333333",
     });
 
     const indexer = await createIndexer();
@@ -170,7 +205,9 @@ describe("pr_impact tool", () => {
       files: ["src/a.ts"],
       baseBranch: "main",
       source: "git",
+      catalogIdentity: "pr/42",
       headRefName: undefined,
+      headRef: "3333333333333333333333333333333333333333",
     });
 
     const indexer = await createIndexer();
@@ -185,7 +222,9 @@ describe("pr_impact tool", () => {
       files: ["src/a.ts"],
       baseBranch: "main",
       source: "git",
+      catalogIdentity: "2222222",
       headRefName: "HEAD",
+      headRef: "2222222222222222222222222222222222222222",
     });
 
     fs.writeFileSync(
@@ -217,7 +256,9 @@ describe("pr_impact tool", () => {
       files: ["src/db.ts"],
       baseBranch: "main",
       source: "git",
+      catalogIdentity: "main",
       headRefName: "main",
+      headRef: "1111111111111111111111111111111111111111",
     });
 
     const indexer = await createIndexer();
@@ -424,10 +465,10 @@ describe("pr_impact tool", () => {
   it("regression: checkConflicts detects overlapping PRs using correct branch for getSymbolsForFiles", async () => {
     (getChangedFiles as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       async (args: { pr?: number }) => {
-        if (args.pr === 1) return { files: ["src/a.ts"], baseBranch: "main", source: "git", headRefName: "feature-branch" };
-        if (args.pr === 2) return { files: ["src/b.ts"], baseBranch: "main", source: "git", headRefName: "other-branch" };
-        if (args.pr === 3) return { files: ["src/c.ts"], baseBranch: "main", source: "git", headRefName: "third-branch" };
-        return { files: ["src/a.ts"], baseBranch: "main", source: "git", headRefName: "feature-branch" };
+        if (args.pr === 1) return { files: ["src/a.ts"], baseBranch: "main", source: "git", catalogIdentity: "feature-branch", headRefName: "feature-branch", headRef: "1111111111111111111111111111111111111111" };
+        if (args.pr === 2) return { files: ["src/b.ts"], baseBranch: "main", source: "git", catalogIdentity: "other-branch", headRefName: "other-branch", headRef: "2222222222222222222222222222222222222222" };
+        if (args.pr === 3) return { files: ["src/c.ts"], baseBranch: "main", source: "git", catalogIdentity: "third-branch", headRefName: "third-branch", headRef: "3333333333333333333333333333333333333333" };
+        return { files: ["src/a.ts"], baseBranch: "main", source: "git", catalogIdentity: "feature-branch", headRefName: "feature-branch", headRef: "1111111111111111111111111111111111111111" };
       },
     );
 
@@ -478,6 +519,7 @@ describe("pr_impact tool", () => {
 
     db.addSymbolsToBranch("feature-branch", ["sym_a", "sym_b", "sym_c"]);
     db.addSymbolsToBranch("other-branch", ["sym_b"]);
+    db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
 
     db.upsertCallEdge({
       id: "edge_ab",
@@ -519,9 +561,9 @@ describe("pr_impact tool", () => {
   it("regression: checkConflicts detects overlapping PRs despite cross-branch line drift", async () => {
     (getChangedFiles as unknown as ReturnType<typeof vi.fn>).mockImplementation(
       async (args: { pr?: number }) => {
-        if (args.pr === 1) return { files: ["src/a.ts"], baseBranch: "main", source: "git", headRefName: "feature-branch" };
-        if (args.pr === 2) return { files: ["src/a.ts"], baseBranch: "main", source: "git", headRefName: "other-branch" };
-        return { files: ["src/a.ts"], baseBranch: "main", source: "git", headRefName: "feature-branch" };
+        if (args.pr === 1) return { files: ["src/a.ts"], baseBranch: "main", source: "git", catalogIdentity: "feature-branch", headRefName: "feature-branch", headRef: "1111111111111111111111111111111111111111" };
+        if (args.pr === 2) return { files: ["src/a.ts"], baseBranch: "main", source: "git", catalogIdentity: "other-branch", headRefName: "other-branch", headRef: "2222222222222222222222222222222222222222" };
+        return { files: ["src/a.ts"], baseBranch: "main", source: "git", catalogIdentity: "feature-branch", headRefName: "feature-branch", headRef: "1111111111111111111111111111111111111111" };
       },
     );
 
@@ -575,6 +617,7 @@ describe("pr_impact tool", () => {
 
     db.addSymbolsToBranch("feature-branch", ["sym_a_feature"]);
     db.addSymbolsToBranch("other-branch", ["sym_a_other"]);
+    db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
 
     const result = await indexer.getPrImpact({ pr: 1, checkConflicts: true });
 

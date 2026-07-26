@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   isValidGitRefName,
+  isValidGitRemoteName,
   withMaterializedBranch,
 } from "../src/git/branch-materialization.js";
 
@@ -16,7 +17,7 @@ function git(cwd: string, args: string[]): string {
 function commitFile(repo: string, file: string, content: string, message: string): string {
   fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
   fs.writeFileSync(path.join(repo, file), content);
-  git(repo, ["add", file]);
+  git(repo, ["add", "--", file]);
   git(repo, ["commit", "-m", message]);
   return git(repo, ["rev-parse", "HEAD"]);
 }
@@ -70,7 +71,7 @@ describe("branch materialization", () => {
 
   it("supports detached commit refs", async () => {
     const result = await withMaterializedBranch(
-      { projectRoot: repo, branch: featureCommit, ref: featureCommit },
+      { projectRoot: repo, branch: featureCommit, ref: featureCommit, expectedCommit: featureCommit },
       async (worktreePath) => git(worktreePath, ["rev-parse", "HEAD"]),
     );
 
@@ -78,11 +79,17 @@ describe("branch materialization", () => {
     expect(result.info).toMatchObject({ commit: featureCommit, source: "local", fetched: false });
   });
 
-  it("uses an existing local PR head without invoking a network fetch", async () => {
+  it("uses an existing local PR head only when it matches the authoritative OID", async () => {
     git(repo, ["update-ref", "refs/pull/7/head", featureCommit]);
 
     const result = await withMaterializedBranch(
-      { projectRoot: repo, branch: "pr/7", ref: "refs/pull/7/head", pr: 7 },
+      {
+        projectRoot: repo,
+        branch: "pr/7",
+        ref: featureCommit,
+        expectedCommit: featureCommit,
+        pr: 7,
+      },
       async (worktreePath) => git(worktreePath, ["rev-parse", "HEAD"]),
     );
 
@@ -90,26 +97,47 @@ describe("branch materialization", () => {
     expect(result.info).toMatchObject({ branch: "pr/7", source: "pull-ref", fetched: false });
   });
 
-  it("fetches a missing remote-qualified branch only when local resolution fails", async () => {
+  it("fetches a missing remote-qualified branch without reading or overwriting FETCH_HEAD", async () => {
     const remote = path.join(tempDir, "remote.git");
     git(tempDir, ["init", "--bare", remote]);
     git(repo, ["remote", "add", "origin", remote]);
     git(repo, ["push", "origin", "feature"]);
-    git(repo, ["fetch", "origin", "refs/heads/feature"]);
-    const fetchHeadBefore = fs.readFileSync(path.join(repo, ".git", "FETCH_HEAD"), "utf8");
+    const fetchHeadPath = path.join(repo, ".git", "FETCH_HEAD");
+    fs.writeFileSync(fetchHeadPath, "sentinel-fetch-head\n");
     git(repo, ["branch", "-D", "feature"]);
     git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
-    expect(() => git(repo, ["rev-parse", "--verify", "refs/remotes/origin/feature"])).toThrow();
 
     const result = await withMaterializedBranch(
-      { projectRoot: repo, branch: "origin/feature" },
+      { projectRoot: repo, branch: "origin/feature", expectedCommit: featureCommit },
       async (worktreePath) => git(worktreePath, ["rev-parse", "HEAD"]),
     );
 
     expect(result.value).toBe(featureCommit);
     expect(result.info).toMatchObject({ source: "remote-fetch", fetched: true, commit: featureCommit });
-    expect(fs.readFileSync(path.join(repo, ".git", "FETCH_HEAD"), "utf8")).toBe(fetchHeadBefore);
+    expect(fs.readFileSync(fetchHeadPath, "utf8")).toBe("sentinel-fetch-head\n");
     expect(git(repo, ["for-each-ref", "--format=%(refname)", "refs/codebase-index"])).toBe("");
+  });
+
+  it("prefers an independently configured remote over a shadowing local branch name", async () => {
+    const remote = path.join(tempDir, "shadow-remote.git");
+    git(tempDir, ["init", "--bare", remote]);
+    git(repo, ["remote", "add", "origin", remote]);
+    git(repo, ["push", "origin", "feature"]);
+    git(repo, ["branch", "origin/feature", mainCommit]);
+    git(repo, ["branch", "-D", "feature"]);
+    git(repo, ["update-ref", "-d", "refs/remotes/origin/feature"]);
+
+    const result = await withMaterializedBranch(
+      { projectRoot: repo, branch: "origin/feature", expectedCommit: featureCommit },
+      async (worktreePath) => ({
+        head: git(worktreePath, ["rev-parse", "HEAD"]),
+        value: fs.readFileSync(path.join(worktreePath, "src/value.ts"), "utf8"),
+      }),
+    );
+
+    expect(result.value.head).toBe(featureCommit);
+    expect(result.value.value).toContain("feature");
+    expect(result.info.source).toBe("remote-fetch");
   });
 
   it("fetches an exact missing PR OID without gh checkout and removes the temporary ref", async () => {
@@ -125,7 +153,13 @@ describe("branch materialization", () => {
     expect(() => git(repo, ["cat-file", "-e", `${featureCommit}^{commit}`])).toThrow();
 
     const result = await withMaterializedBranch(
-      { projectRoot: repo, branch: "pr/9", ref: featureCommit, pr: 9 },
+      {
+        projectRoot: repo,
+        branch: "pr/9",
+        ref: featureCommit,
+        expectedCommit: featureCommit,
+        pr: 9,
+      },
       async (worktreePath) => git(worktreePath, ["rev-parse", "HEAD"]),
     );
 
@@ -134,15 +168,56 @@ describe("branch materialization", () => {
     expect(git(repo, ["for-each-ref", "--format=%(refname)", "refs/codebase-index"])).toBe("");
   });
 
-  it("suppresses repository post-checkout hooks while adding the temporary worktree", async () => {
+  it("rejects a dangerous remote name before Git can interpret it as an option", async () => {
+    const remote = path.join(tempDir, "injection-remote.git");
+    const bin = path.join(tempDir, "bin");
+    const marker = path.join(tempDir, "upload-pack-option-ran");
+    const victim = path.join(tempDir, "victim");
+    fs.mkdirSync(bin);
+    fs.writeFileSync(victim, "must survive");
+    fs.writeFileSync(
+      path.join(bin, "rm"),
+      `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n/bin/rm -f ${JSON.stringify(victim)}\nexit 1\n`,
+    );
+    fs.chmodSync(path.join(bin, "rm"), 0o755);
+    git(tempDir, ["init", "--bare", remote]);
+    git(repo, ["config", "remote.--upload-pack=rm.url", remote]);
+    expect(isValidGitRemoteName("--upload-pack=rm")).toBe(false);
+
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${bin}${path.delimiter}${originalPath ?? ""}`;
+    try {
+      await expect(withMaterializedBranch(
+        { projectRoot: repo, branch: "refs/remotes/--upload-pack=rm/feature" },
+        async () => undefined,
+      )).rejects.toThrow("Git remote name is unsafe");
+    } finally {
+      process.env.PATH = originalPath;
+    }
+
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.readFileSync(victim, "utf8")).toBe("must survive");
+    expect(git(repo, ["for-each-ref", "--format=%(refname)", "refs/codebase-index"])).toBe("");
+  });
+
+  it("rejects a materialization whose resolved OID differs from authoritative metadata", async () => {
+    await expect(withMaterializedBranch(
+      { projectRoot: repo, branch: "feature", expectedCommit: mainCommit },
+      async () => undefined,
+    )).rejects.toThrow("authoritative metadata requires");
+  });
+
+  it("suppresses configured repository post-checkout hooks while adding the worktree", async () => {
     const marker = path.join(tempDir, "post-checkout-ran");
-    const hook = path.join(repo, ".git", "hooks", "post-checkout");
-    fs.mkdirSync(path.dirname(hook), { recursive: true });
+    const configuredHooks = path.join(tempDir, "malicious-hooks");
+    const hook = path.join(configuredHooks, "post-checkout");
+    fs.mkdirSync(configuredHooks);
     fs.writeFileSync(hook, `#!/bin/sh\ntouch ${JSON.stringify(marker)}\n`);
     fs.chmodSync(hook, 0o755);
+    git(repo, ["config", "core.hooksPath", configuredHooks]);
 
     await withMaterializedBranch(
-      { projectRoot: repo, branch: "feature" },
+      { projectRoot: repo, branch: "feature", expectedCommit: featureCommit },
       async () => undefined,
     );
 
@@ -166,7 +241,7 @@ describe("branch materialization", () => {
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);
   });
 
-  it("prunes a stale registration when the materialized directory disappears", async () => {
+  it("removes only the exact stale registration when the materialized directory disappears", async () => {
     const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
 
     await expect(withMaterializedBranch(
@@ -180,23 +255,44 @@ describe("branch materialization", () => {
     expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
   });
 
-  it("reports the original operation error when cleanup also fails", async () => {
+  it("preserves the temporary path and primary error when deregistration cannot be verified", async () => {
     const gitDir = path.join(repo, ".git");
     const hiddenGitDir = path.join(repo, ".git-hidden");
+    let materializedPath = "";
+    let caught: unknown;
 
     try {
-      await expect(withMaterializedBranch(
-        { projectRoot: repo, branch: "feature" },
-        async () => {
-          fs.renameSync(gitDir, hiddenGitDir);
-          throw new Error("primary indexing failure");
-        },
-      )).rejects.toThrow(/primary indexing failure.*Cleanup also failed/);
+      try {
+        await withMaterializedBranch(
+          { projectRoot: repo, branch: "feature" },
+          async (worktreePath) => {
+            materializedPath = worktreePath;
+            fs.renameSync(gitDir, hiddenGitDir);
+            throw new Error("primary indexing failure");
+          },
+        );
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(AggregateError);
+      const aggregate = caught as AggregateError;
+      expect(aggregate.errors[0]).toBeInstanceOf(Error);
+      expect((aggregate.errors[0] as Error).message).toBe("primary indexing failure");
+      expect(aggregate.errors[1]).toBeInstanceOf(AggregateError);
+      expect(fs.existsSync(path.dirname(materializedPath))).toBe(true);
     } finally {
       if (fs.existsSync(hiddenGitDir)) {
         fs.renameSync(hiddenGitDir, gitDir);
       }
-      git(repo, ["worktree", "prune", "--expire", "now"]);
+      if (materializedPath && fs.existsSync(path.dirname(materializedPath))) {
+        try {
+          git(repo, ["worktree", "remove", "--force", "--force", "--", materializedPath]);
+        } catch {
+          // The assertion above verifies cleanup failure preservation. Test teardown is best effort.
+        }
+        fs.rmSync(path.dirname(materializedPath), { recursive: true, force: true });
+      }
     }
 
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);

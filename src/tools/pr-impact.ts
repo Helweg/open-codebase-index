@@ -1,9 +1,13 @@
-import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import type { PrImpactResult } from "../indexer/pr-impact-types.js";
+import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import { getIndexerForProject } from "./index.js";
 import { formatPrImpact } from "./format-pr-impact.js";
+import { calculatePercentage, formatProgressTitle } from "./utils.js";
 
 const z = tool.schema;
+const AUTOMATIC_PREPARATION_POLICY =
+  "Uses configured maxFileSize, maxChunksPerFile, maxDepth, and maxFilesPerDirectory guards. "
+  + "No separate aggregate token or cost ceiling is configured; maxDepth=-1 remains unlimited.";
 
 export const pr_impact: ToolDefinition = tool({
   description:
@@ -21,6 +25,13 @@ export const pr_impact: ToolDefinition = tool({
   async execute(args, context) {
     const indexer = getIndexerForProject(context?.worktree);
     try {
+      context.metadata?.({
+        title: "Preparing impact analysis: resolving authoritative branch head",
+        metadata: {
+          phase: "resolving-head",
+          preparationPolicy: AUTOMATIC_PREPARATION_POLICY,
+        },
+      });
       const result: PrImpactResult = await indexer.getPrImpact({
         pr: args.pr,
         branch: args.branch,
@@ -28,6 +39,19 @@ export const pr_impact: ToolDefinition = tool({
         hubThreshold: args.hubThreshold,
         checkConflicts: args.checkConflicts,
         direction: args.direction,
+      }, (progress) => {
+        context.metadata?.({
+          title: `Preparing branch index: ${formatProgressTitle(progress)}`,
+          metadata: {
+            phase: progress.phase,
+            filesProcessed: progress.filesProcessed,
+            totalFiles: progress.totalFiles,
+            chunksProcessed: progress.chunksProcessed,
+            totalChunks: progress.totalChunks,
+            percentage: calculatePercentage(progress),
+            preparationPolicy: AUTOMATIC_PREPARATION_POLICY,
+          },
+        });
       });
       return formatPrImpact(result);
     } catch (error) {
