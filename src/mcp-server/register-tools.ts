@@ -97,6 +97,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
+        effectivenessRoute: "search",
       });
 
       if (results.length === 0) {
@@ -127,6 +128,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         directory: args.directory,
         chunkType: args.chunkType,
         metadataOnly: true,
+        effectivenessRoute: "peek",
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
@@ -185,10 +187,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   server.tool(
     "index_metrics",
-    "Get metrics and performance statistics for the codebase index. Requires debug.enabled=true and debug.metrics=true in config.",
-    {},
-    async () => {
-      const result = await getIndexMetrics(runtime.projectRoot, runtime.host);
+    "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Metrics are memory-only. Set reset=true to clear them before reading. Requires debug.enabled=true and debug.metrics=true; effectiveness metrics additionally require debug.effectivenessMetrics=true.",
+    {
+      reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
+    },
+    async (args) => {
+      const result = await getIndexMetrics(runtime.projectRoot, runtime.host, { reset: args.reset });
       return { content: [{ type: "text", text: result.text }] };
     },
   );

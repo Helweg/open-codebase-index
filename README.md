@@ -532,6 +532,8 @@ Maintenance tool to remove stale entries from deleted files and orphaned embeddi
 ### `index_metrics`
 Returns collected metrics about indexing and search performance. Requires `debug.enabled` and `debug.metrics` to be `true`.
 - **Metrics include**: Files indexed, chunks created, cache hit rate, search timing breakdown, GC stats, embedding API call stats.
+- **Privacy-safe effectiveness metrics**: Set `debug.effectivenessMetrics` to `true` to opt in to fixed route/host/outcome counters and bounded result-count, latency, token-budget, and returned-token histograms. They are disabled by default, memory-only, process-scoped, and never retain queries, source, symbols, paths, repository names, or stable identifiers.
+- **Reset**: Pass `reset: true` to clear both operational and effectiveness metrics before returning the new zeroed snapshot.
 
 ### `index_logs`
 Returns recent debug logs with optional filtering.
@@ -833,7 +835,8 @@ Zero-config by default (uses `auto` mode). Customize in `.opencode/codebase-inde
     "logCache": true,                         // Log cache hits/misses
     "logGc": true,                            // Log garbage collection
     "logBranch": true,                        // Log branch detection
-    "metrics": false                          // Enable metrics collection
+    "metrics": false,                         // Enable operational metrics collection
+    "effectivenessMetrics": false             // Opt in to privacy-safe repository-tool aggregates
   }
 }
 ```
@@ -906,6 +909,7 @@ String values in `codebase-index.json` can reference environment variables with 
 | `logGc` | `true` | Log garbage collection operations |
 | `logBranch` | `true` | Log branch detection and switches |
 | `metrics` | `false` | Enable metrics collection (indexing stats, search timing, cache performance) |
+| `effectivenessMetrics` | `false` | Opt in to memory-only, fixed-cardinality repository-tool effectiveness counters. Requires `enabled` and `metrics`; stores no queries, code, symbols, paths, repo names, or stable identifiers. |
 
 ### Recovery warnings in debug logs
 
@@ -938,12 +942,16 @@ npm run eval
 npm run eval:ci
 npm run eval:ci:ollama
 npm run eval:compare -- --against benchmarks/baselines/eval-baseline-summary.json
+npm run eval:effectiveness
 ```
 
 CI usage split:
 
 - `npm run eval:smoke`: harness smoke check with local mock embeddings (used in main CI)
 - `npm run eval:ci`: real quality gate against baseline/budget (for scheduled/manual quality workflow)
+- `npm run eval:effectiveness`: deterministic offline synthetic-fixture report comparing `codebase_context` and `codebase_peek` token output with a defined exact-read/grep-style baseline. It performs no network calls and writes `benchmarks/baselines/privacy-safe-effectiveness.json`.
+
+The effectiveness report includes median/p95 `cl100k_base` token counts and evidence recall. It intentionally reports only aggregate fixture measurements and makes no causal claim about agent improvement or production repositories.
 
 For `eval-quality.yml`, the default CI path uses **GitHub Models** with the workflow `GITHUB_TOKEN` plus `models: read`, so you do not need a separate OpenAI API key just to run the scheduled gate.
 

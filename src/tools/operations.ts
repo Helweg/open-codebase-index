@@ -11,6 +11,7 @@ import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
+import type { EffectivenessMetricEvent } from "../utils/effectiveness-metrics.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
 
 type IndexerCacheKey = `${HostMode}::${string}`;
@@ -28,6 +29,32 @@ const indexerCache = new Map<IndexerCacheKey, Indexer>();
 const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>();
 const defaultProjectRoots = new Map<HostMode, string>();
 const MAX_CALL_GRAPH_CANDIDATES = 5;
+const EMPTY_RESULT_TOKEN_ESTIMATE = 16;
+const MAX_HANDOFF_NAME_CHARS = 64;
+
+function estimateReturnedSearchTokens(results: SearchResult[], metadataOnly: boolean): number {
+  if (results.length === 0) return EMPTY_RESULT_TOKEN_ESTIMATE;
+  const characterEstimate = results.reduce((total, result) => {
+    const metadataCharacters = result.filePath.length
+      + (result.name?.length ?? 0)
+      + result.chunkType.length
+      + 48;
+    return total + metadataCharacters + (metadataOnly ? 0 : result.content.length);
+  }, 0);
+  return Math.max(1, Math.ceil(characterEstimate / 4));
+}
+
+function emitsExactSearchHandoff(results: SearchResult[], metadataOnly: boolean): boolean {
+  if (!metadataOnly) return false;
+  return results.some((result) => {
+    const name = result.name?.trim();
+    return Boolean(
+      name
+      && name.length <= MAX_HANDOFF_NAME_CHARS * 2
+      && Array.from(name).length <= MAX_HANDOFF_NAME_CHARS,
+    );
+  });
+}
 
 export interface CallGraphSymbolCandidate {
   filePath: string;
@@ -249,6 +276,18 @@ export function getIndexerForProject(projectRoot: string | undefined, host: Host
   return getOrCreateIndexer(root, host);
 }
 
+export function recordToolEffectiveness(
+  projectRoot: string | undefined,
+  host: HostMode,
+  event: EffectivenessMetricEvent,
+): void {
+  try {
+    getIndexerForProject(projectRoot, host).getLogger().recordEffectiveness(event);
+  } catch {
+    // Observability must never alter or mask repository tool behavior.
+  }
+}
+
 export function refreshIndexerForDirectory(
   projectRoot: string,
   host: HostMode = "opencode",
@@ -275,20 +314,50 @@ export async function searchCodebase(
     blameAuthor?: string;
     blameSha?: string;
     blameSince?: string;
+    effectivenessRoute?: "peek" | "search";
   } = {},
 ): Promise<SearchResult[]> {
   const indexer = getIndexerForProject(projectRoot, host);
-  return indexer.search(query, options.limit, {
-    fileType: options.fileType,
-    directory: options.directory,
-    chunkType: options.chunkType,
-    contextLines: options.contextLines,
-    metadataOnly: options.metadataOnly,
-    definitionIntent: options.definitionIntent,
-    blameAuthor: options.blameAuthor,
-    blameSha: options.blameSha,
-    blameSince: options.blameSince,
-  });
+  const startedAt = performance.now();
+  try {
+    const results = await indexer.search(query, options.limit, {
+      fileType: options.fileType,
+      directory: options.directory,
+      chunkType: options.chunkType,
+      contextLines: options.contextLines,
+      metadataOnly: options.metadataOnly,
+      definitionIntent: options.definitionIntent,
+      blameAuthor: options.blameAuthor,
+      blameSha: options.blameSha,
+      blameSince: options.blameSince,
+    });
+    if (options.effectivenessRoute) {
+      indexer.getLogger().recordEffectiveness({
+        route: options.effectivenessRoute,
+        host,
+        outcome: results.length > 0 ? "success" : "no-result",
+        resultCount: results.length,
+        latencyMs: performance.now() - startedAt,
+        returnedTokenEstimate: estimateReturnedSearchTokens(results, options.metadataOnly === true),
+        exactHandoffEmitted: emitsExactSearchHandoff(results, options.metadataOnly === true),
+        scopeRelaxation: "none",
+      });
+    }
+    return results;
+  } catch (error) {
+    if (options.effectivenessRoute) {
+      indexer.getLogger().recordEffectiveness({
+        route: options.effectivenessRoute,
+        host,
+        outcome: "error",
+        resultCount: 0,
+        latencyMs: performance.now() - startedAt,
+        returnedTokenEstimate: 0,
+        scopeRelaxation: "none",
+      });
+    }
+    throw error;
+  }
 }
 
 export async function findSimilarCode(
@@ -480,15 +549,23 @@ export async function getPrImpact(
   });
 }
 
-export async function getIndexMetrics(projectRoot: string | undefined, host: HostMode): Promise<{ enabled: boolean; metricsEnabled: boolean; text: string }> {
+export async function getIndexMetrics(
+  projectRoot: string | undefined,
+  host: HostMode,
+  args: { reset?: boolean } = {},
+): Promise<{ enabled: boolean; metricsEnabled: boolean; text: string }> {
   const indexer = getIndexerForProject(projectRoot, host);
   const logger = indexer.getLogger();
+  if (args.reset === true) {
+    logger.resetMetrics();
+  }
+  const resetNotice = args.reset === true ? "Metrics reset.\n\n" : "";
 
   if (!logger.isEnabled()) {
     return {
       enabled: false,
       metricsEnabled: false,
-      text: "Debug mode is disabled. Enable it in your config:\n\n```json\n{\n  \"debug\": {\n    \"enabled\": true,\n    \"metrics\": true\n  }\n}\n```",
+      text: `${resetNotice}Debug mode is disabled. Enable it in your config:\n\n\`\`\`json\n{\n  "debug": {\n    "enabled": true,\n    "metrics": true\n  }\n}\n\`\`\``,
     };
   }
 
@@ -496,14 +573,14 @@ export async function getIndexMetrics(projectRoot: string | undefined, host: Hos
     return {
       enabled: true,
       metricsEnabled: false,
-      text: "Metrics collection is disabled. Enable it in your config:\n\n```json\n{\n  \"debug\": {\n    \"enabled\": true,\n    \"metrics\": true\n  }\n}\n```",
+      text: `${resetNotice}Metrics collection is disabled. Enable it in your config:\n\n\`\`\`json\n{\n  "debug": {\n    "enabled": true,\n    "metrics": true\n  }\n}\n\`\`\``,
     };
   }
 
   return {
     enabled: true,
     metricsEnabled: true,
-    text: logger.formatMetrics(),
+    text: `${resetNotice}${logger.formatMetrics()}`,
   };
 }
 

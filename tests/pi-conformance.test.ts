@@ -10,6 +10,7 @@ const operationMocks = vi.hoisted(() => ({
   runIndexHealthCheck: vi.fn(),
   searchCodebase: vi.fn(),
   implementationLookup: vi.fn(),
+  recordToolEffectiveness: vi.fn(),
 }));
 
 vi.mock("../src/tools/operations.js", () => ({
@@ -27,6 +28,7 @@ vi.mock("../src/tools/operations.js", () => ({
   runIndexCodebase: vi.fn(),
   runIndexHealthCheck: operationMocks.runIndexHealthCheck,
   searchCodebase: operationMocks.searchCodebase,
+  recordToolEffectiveness: operationMocks.recordToolEffectiveness,
   getIndexLogs: vi.fn(() => ({ text: "" })),
 }));
 
@@ -82,6 +84,7 @@ describe("Pi adapter conformance", () => {
     operationMocks.runIndexHealthCheck.mockReset();
     operationMocks.searchCodebase.mockReset();
     operationMocks.implementationLookup.mockReset();
+    operationMocks.recordToolEffectiveness.mockReset();
   });
 
   it("registers codebase_context first as the preferred gateway route", async () => {
@@ -131,6 +134,27 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
     expect(result?.content[0]?.text).not.toContain("```");
     expect(result?.details).toEqual(expect.arrayContaining([expect.objectContaining({ name: "validateToken" })]));
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "authentication validation", expect.objectContaining({
+      metadataOnly: true,
+      effectivenessRoute: "peek",
+    }));
+  });
+
+  it("marks full-content search for effectiveness aggregation", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([]);
+    const { tools } = await registerPiTools();
+
+    await tools.get("codebase_search")?.execute(
+      "tool-call",
+      { query: "request routing" },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "pi", "request routing", expect.objectContaining({
+      effectivenessRoute: "search",
+    }));
   });
 
   it("formats caller results like other host adapters", async () => {

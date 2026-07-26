@@ -23,6 +23,14 @@ Run the agent-facing dataset with its matching quality and context-efficiency ga
 npm run eval:agent:ci
 ```
 
+Generate the deterministic privacy-safe effectiveness report without embeddings, network access, or repository indexing:
+
+```bash
+npm run eval:effectiveness
+```
+
+This command evaluates versioned synthetic fixtures only. It compares the production context packer and metadata-only peek formatter with a defined exact-read/grep-style baseline: deterministic exact-match lines plus complete reads of the exact synthetic fixture files selected by those matches. The checked-in report at `benchmarks/baselines/privacy-safe-effectiveness.json` contains only aggregate median/p95 `cl100k_base` token counts, evidence recall, and token ratios. It contains no fixture source, symbols, paths, repository names, queries, or identifiers, and it does not claim causal agent improvement or production performance.
+
 Evaluation comparisons require the same dataset name, version, and query count. Use the
 agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
 
@@ -267,6 +275,13 @@ Context response budgets and response-token metrics use the `cl100k_base` tokeni
   - `wrong-symbol`
   - `docs-tests-outranking-source`
   - `no-relevant-hit-top-k`
+
+The separate `npm run eval:effectiveness` report uses:
+
+- median and nearest-rank p95 returned-token counts across synthetic fixtures
+- evidence recall = expected evidence items covered / expected evidence items
+- a versioned exact-read/grep baseline defined in the report methodology
+- byte-stable JSON output with no network calls and no raw fixture content in the report
 
 ## Artifact layout
 

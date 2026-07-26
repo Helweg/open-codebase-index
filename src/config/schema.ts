@@ -103,6 +103,8 @@ export interface DebugConfig {
   logGc: boolean;
   logBranch: boolean;
   metrics: boolean;
+  /** Opt-in privacy-safe repository tool effectiveness counters and histograms. */
+  effectivenessMetrics?: boolean;
 }
 
 export interface CustomProviderConfig {
@@ -217,6 +219,9 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     logGc: typeof rawDebug.logGc === "boolean" ? rawDebug.logGc : defaultDebug.logGc,
     logBranch: typeof rawDebug.logBranch === "boolean" ? rawDebug.logBranch : defaultDebug.logBranch,
     metrics: typeof rawDebug.metrics === "boolean" ? rawDebug.metrics : defaultDebug.metrics,
+    effectivenessMetrics: typeof rawDebug.effectivenessMetrics === "boolean"
+      ? rawDebug.effectivenessMetrics
+      : defaultDebug.effectivenessMetrics,
   };
 
   const rawKnowledgeBases = input.knowledgeBases;

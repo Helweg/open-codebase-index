@@ -1,4 +1,9 @@
 import type { DebugConfig, LogLevel } from "../config/schema.js";
+import {
+  EffectivenessMetrics,
+  type EffectivenessMetricEvent,
+  type EffectivenessMetricsSnapshot,
+} from "./effectiveness-metrics.js";
 
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 0,
@@ -86,6 +91,7 @@ function createEmptyMetrics(): Metrics {
 export class Logger {
   private config: DebugConfig;
   private metrics: Metrics;
+  private effectivenessMetrics = new EffectivenessMetrics();
   private logs: LogEntry[] = [];
   private maxLogs = 1000;
 
@@ -289,8 +295,17 @@ export class Logger {
     });
   }
 
+  recordEffectiveness(event: EffectivenessMetricEvent): void {
+    if (!this.isEffectivenessMetricsEnabled()) return;
+    this.effectivenessMetrics.record(event);
+  }
+
   getMetrics(): Metrics {
     return { ...this.metrics };
+  }
+
+  getEffectivenessMetrics(): EffectivenessMetricsSnapshot {
+    return this.effectivenessMetrics.getSnapshot();
   }
 
   getLogs(limit?: number): LogEntry[] {
@@ -319,6 +334,7 @@ export class Logger {
 
   resetMetrics(): void {
     this.metrics = createEmptyMetrics();
+    this.effectivenessMetrics.reset();
   }
 
   clearLogs(): void {
@@ -380,6 +396,31 @@ export class Logger {
       lines.push(`  Chunks removed: ${m.gcChunksRemoved}`);
       lines.push(`  Embeddings removed: ${m.gcEmbeddingsRemoved}`);
     }
+
+    lines.push("");
+    if (!this.isEffectivenessMetricsEnabled()) {
+      lines.push("Privacy-safe effectiveness: disabled (set debug.effectivenessMetrics=true to opt in).");
+    } else {
+      const effectiveness = this.effectivenessMetrics.getSnapshot();
+      const formatCounters = (counters: Record<string, number>): string => Object.entries(counters)
+        .map(([bucket, count]) => `${bucket}=${count}`)
+        .join(", ");
+      lines.push(`Privacy-safe effectiveness (schema v${effectiveness.schemaVersion}):`);
+      lines.push(`  Retention: ${effectiveness.retention.storage}, ${effectiveness.retention.lifetime}-lifetime; reset with index_metrics(reset=true) or process exit`);
+      lines.push(`  Counter cap: ${effectiveness.retention.maxCounterValue.toLocaleString()}`);
+      lines.push(`  Total tool calls: ${effectiveness.totalCalls}`);
+      lines.push(`  Tool route: ${formatCounters(effectiveness.toolRoute)}`);
+      lines.push(`  Host mode: ${formatCounters(effectiveness.hostMode)}`);
+      lines.push(`  Outcome: ${formatCounters(effectiveness.outcome)}`);
+      lines.push(`  Recovery used: ${formatCounters(effectiveness.recoveryUsed)}`);
+      lines.push(`  Result-count bucket: ${formatCounters(effectiveness.resultCount)}`);
+      lines.push(`  Latency bucket: ${formatCounters(effectiveness.latency)}`);
+      lines.push(`  Token-budget bucket: ${formatCounters(effectiveness.tokenBudget)}`);
+      lines.push(`  Returned-token estimate: ${formatCounters(effectiveness.returnedTokenEstimate)}`);
+      lines.push(`  Exact handoff emitted: ${formatCounters(effectiveness.exactHandoffEmitted)}`);
+      lines.push(`  Scope relaxation: ${formatCounters(effectiveness.scopeRelaxation)}`);
+      lines.push("  Privacy: no queries, source, symbols, paths, repository names, or stable identifiers are retained.");
+    }
     
     return lines.join("\n");
   }
@@ -402,6 +443,10 @@ export class Logger {
 
   isMetricsEnabled(): boolean {
     return this.config.enabled && this.config.metrics;
+  }
+
+  isEffectivenessMetricsEnabled(): boolean {
+    return this.isMetricsEnabled() && this.config.effectivenessMetrics === true;
   }
 }
 

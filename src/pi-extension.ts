@@ -109,7 +109,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String({ description: "Filter to chunks last changed on or after this date" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, params);
+      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, {
+        ...params,
+        effectivenessRoute: "search",
+      });
       return text(formatSearchResults(results), results);
     },
   });
@@ -129,7 +132,11 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameSince: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, { ...params, metadataOnly: true });
+      const results = await searchCodebase(projectRoot(ctx), HOST, params.query, {
+        ...params,
+        metadataOnly: true,
+        effectivenessRoute: "peek",
+      });
       return text(formatCodebasePeek(results), results);
     },
   });
@@ -211,10 +218,12 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
     name: "index_metrics",
     label: "Index Metrics",
-    description: "Return collected performance metrics when debug metrics are enabled.",
-    parameters: Type.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const result = await getIndexMetrics(projectRoot(ctx), HOST);
+    description: "Return operational metrics and opt-in memory-only privacy-safe effectiveness counters.",
+    parameters: Type.Object({
+      reset: Type.Optional(Type.Boolean({ description: "Reset in-memory metrics before returning the snapshot" })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await getIndexMetrics(projectRoot(ctx), HOST, { reset: params.reset });
       return text(result.text, result);
     },
   });

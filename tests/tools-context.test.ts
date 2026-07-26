@@ -8,6 +8,7 @@ const operationMocks = vi.hoisted(() => ({
   implementationLookup: vi.fn(),
   getCallGraphPath: vi.fn(),
   getCallGraphData: vi.fn(),
+  recordToolEffectiveness: vi.fn(),
 }));
 
 vi.mock("../src/tools/operations.js", async () => {
@@ -18,10 +19,11 @@ vi.mock("../src/tools/operations.js", async () => {
     implementationLookup: operationMocks.implementationLookup,
     getCallGraphPath: operationMocks.getCallGraphPath,
     getCallGraphData: operationMocks.getCallGraphData,
+    recordToolEffectiveness: operationMocks.recordToolEffectiveness,
   };
 });
 
-import { codebase_context } from "../src/tools/index.js";
+import { codebase_context, codebase_peek, codebase_search } from "../src/tools/index.js";
 
 const context = { worktree: "/repo" };
 const commonArgs = {
@@ -53,6 +55,74 @@ describe("native OpenCode codebase_context", () => {
       callers: [],
       callees: [],
     });
+  });
+
+  it("marks OpenCode peek and search routes for effectiveness aggregation", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([]);
+
+    await codebase_peek.execute({
+      query: "request routing",
+      limit: 10,
+      fileType: undefined,
+      directory: undefined,
+      chunkType: undefined,
+      blameAuthor: undefined,
+      blameSha: undefined,
+      blameSince: undefined,
+    }, context);
+    expect(operationMocks.searchCodebase).toHaveBeenLastCalledWith("/repo", "opencode", "request routing", expect.objectContaining({
+      metadataOnly: true,
+      effectivenessRoute: "peek",
+    }));
+
+    await codebase_search.execute({
+      query: "request routing",
+      limit: 5,
+      fileType: undefined,
+      directory: undefined,
+      chunkType: undefined,
+      contextLines: undefined,
+      blameAuthor: undefined,
+      blameSha: undefined,
+      blameSince: undefined,
+    }, context);
+    expect(operationMocks.searchCodebase).toHaveBeenLastCalledWith("/repo", "opencode", "request routing", expect.objectContaining({
+      effectivenessRoute: "search",
+    }));
+  });
+
+  it("records bounded context recovery and scope-relaxation categories", async () => {
+    operationMocks.searchCodebase
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        filePath: "src/auth.ts",
+        startLine: 1,
+        endLine: 5,
+        name: "authHandler",
+        chunkType: "function",
+        content: "sensitive source",
+        score: 0.9,
+      }]);
+
+    await codebase_context.execute({
+      ...commonArgs,
+      query: "find request helpers",
+      fileType: "ts",
+      directory: "src",
+    }, context);
+
+    expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledWith("/repo", "opencode", expect.objectContaining({
+      route: "context-conceptual",
+      host: "opencode",
+      outcome: "success",
+      recoveryUsed: true,
+      resultCount: 1,
+      scopeRelaxation: "both",
+      exactHandoffEmitted: true,
+    }));
+    expect(JSON.stringify(operationMocks.recordToolEffectiveness.mock.calls)).not.toContain("sensitive source");
+    expect(JSON.stringify(operationMocks.recordToolEffectiveness.mock.calls)).not.toContain("src/auth.ts");
+    expect(JSON.stringify(operationMocks.recordToolEffectiveness.mock.calls)).not.toContain("authHandler");
   });
 
   it("returns a bounded conceptual evidence pack without source content", async () => {

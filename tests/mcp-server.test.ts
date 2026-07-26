@@ -47,6 +47,11 @@ const indexerMockState = vi.hoisted(() => ({
   }>,
 }));
 
+const loggerMocks = vi.hoisted(() => ({
+  recordEffectiveness: vi.fn(),
+  resetMetrics: vi.fn(),
+}));
+
 function graphSymbol(id: string, name: string, filePath: string, startLine = 1) {
   return {
     id,
@@ -268,6 +273,8 @@ vi.mock("../src/indexer/index.js", () => {
     getLogger = vi.fn().mockReturnValue({
       isEnabled: vi.fn().mockReturnValue(false),
       isMetricsEnabled: vi.fn().mockReturnValue(false),
+      recordEffectiveness: loggerMocks.recordEffectiveness,
+      resetMetrics: loggerMocks.resetMetrics,
       getLogs: vi.fn().mockReturnValue([]),
       getLogsByCategory: vi.fn().mockReturnValue([]),
       getLogsByLevel: vi.fn().mockReturnValue([]),
@@ -311,6 +318,8 @@ describe("MCP server tools and prompts", () => {
   let server: ReturnType<typeof createMcpServer>;
 
   beforeEach(async () => {
+    loggerMocks.recordEffectiveness.mockClear();
+    loggerMocks.resetMetrics.mockClear();
     fs.mkdirSync(`${testMainRepo}/.opencode/index`, { recursive: true });
     indexerMockState.constructorArgs.length = 0;
     indexerMockState.instances.length = 0;
@@ -436,6 +445,12 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 results");
     expect(content[0].text).toContain("validateToken");
+    expect(loggerMocks.recordEffectiveness).toHaveBeenCalledWith(expect.objectContaining({
+      route: "search",
+      host: "opencode",
+      outcome: "success",
+      resultCount: 1,
+    }));
   });
 
   it("should execute codebase_search with null optional fields", async () => {
@@ -474,6 +489,40 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 locations");
     expect(content[0].text).toContain('Exact-search handoff: use exact grep/search for "validateToken"');
+    expect(loggerMocks.recordEffectiveness).toHaveBeenCalledWith(expect.objectContaining({
+      route: "peek",
+      host: "opencode",
+      outcome: "success",
+      resultCount: 1,
+      exactHandoffEmitted: true,
+    }));
+  });
+
+  it("should record no-result and error outcomes without retaining error content", async () => {
+    const search = indexerMockState.instances[0].search;
+    search.mockResolvedValueOnce([]);
+    await client.callTool({
+      name: "codebase_peek",
+      arguments: { query: "no result query" },
+    });
+    expect(loggerMocks.recordEffectiveness).toHaveBeenLastCalledWith(expect.objectContaining({
+      route: "peek",
+      outcome: "no-result",
+      resultCount: 0,
+    }));
+
+    const secretError = "sk-private-error-content-must-not-persist";
+    search.mockRejectedValueOnce(new Error(secretError));
+    await client.callTool({
+      name: "codebase_search",
+      arguments: { query: "failing query" },
+    });
+    expect(loggerMocks.recordEffectiveness).toHaveBeenLastCalledWith(expect.objectContaining({
+      route: "search",
+      outcome: "error",
+      resultCount: 0,
+    }));
+    expect(JSON.stringify(loggerMocks.recordEffectiveness.mock.calls)).not.toContain(secretError);
   });
 
   it("should execute codebase_peek with null optional fields", async () => {
@@ -1146,6 +1195,16 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
+  });
+
+  it("should reset in-memory metrics through index_metrics", async () => {
+    const result = await client.callTool({
+      name: "index_metrics",
+      arguments: { reset: true },
+    });
+
+    expect(loggerMocks.resetMetrics).toHaveBeenCalledOnce();
+    expect((result.content as Array<{ text?: string }>)[0]?.text).toContain("Metrics reset.");
   });
 
   it("should execute index_logs tool", async () => {

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Privacy-safe effectiveness metrics**: Added explicit opt-in, memory-only, schema-versioned fixed counters and histograms for repository tool routes, hosts, outcomes, recovery, result counts, latency, token budgets, returned-token estimates, exact-search handoffs, and scope relaxation across OpenCode, MCP, and Pi, with reset support and adversarial privacy coverage.
+- **Offline effectiveness evaluation**: Added deterministic synthetic fixtures and a no-network report comparing context-pack and metadata-only peek token output against a defined exact-read/grep-style baseline with median/p95 tokens and evidence recall, without causal or production-performance claims.
+
 ### Changed
 
 - **Exact-search handoffs**: Metadata-only semantic discovery and conceptual context packs now return bounded, result-derived symbol suggestions for exact usage or exhaustive-match searches, with handoffs included in context token-budget accounting across OpenCode, MCP, and Pi.

@@ -49,6 +49,7 @@
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
     "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
     "eval:compare": "npx tsx src/cli.ts eval compare",
+    "eval:effectiveness": "npx tsx scripts/effectiveness-report.ts",
     "dev:link-mcp": "node scripts/link-local-mcp-bin.mjs",
     "test": "vitest",
     "pretest:run": "node scripts/run-build-native-with-rustflags.mjs",

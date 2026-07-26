@@ -123,6 +123,7 @@ export const codebase_peek: ToolDefinition = tool({
       directory: args.directory,
       chunkType: args.chunkType,
       metadataOnly: true,
+      effectivenessRoute: "peek",
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
@@ -173,10 +174,12 @@ export const index_health_check: ToolDefinition = tool({
 
 export const index_metrics: ToolDefinition = tool({
   description:
-    "Get metrics and performance statistics for the codebase index. Shows indexing stats, search timings, cache hit rates, and API usage. Requires debug.enabled=true and debug.metrics=true in config.",
-  args: {},
-  async execute(_args, context) {
-    return (await getIndexMetrics(context?.worktree, DEFAULT_HOST)).text;
+    "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Use reset=true to clear in-memory metrics before reading. Requires debug.enabled=true and debug.metrics=true; effectiveness metrics additionally require debug.effectivenessMetrics=true.",
+  args: {
+    reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
+  },
+  async execute(args, context) {
+    return (await getIndexMetrics(context?.worktree, DEFAULT_HOST, { reset: args.reset })).text;
   },
 });
 
@@ -245,6 +248,7 @@ export const codebase_search: ToolDefinition = tool({
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
+      effectivenessRoute: "search",
     });
 
     if (results.length === 0) {

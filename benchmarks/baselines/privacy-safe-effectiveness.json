@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "privacy-safe-repository-tool-effectiveness",
+  "methodology": {
+    "fixtures": "versioned-synthetic-offline",
+    "networkCalls": 0,
+    "tokenizer": "cl100k_base",
+    "tokenStatistic": "median-and-nearest-rank-p95-across-fixtures",
+    "evidenceRecall": "expected-evidence-items-covered-divided-by-expected-evidence-items",
+    "exactReadGrepBaseline": "For each synthetic fixture, concatenate deterministic exact-match lines with complete reads of the exact fixture files selected by those matches, then count the full response tokens.",
+    "limitation": "This report describes only the checked-in synthetic fixtures. It does not establish causal agent improvement or production-repository performance."
+  },
+  "fixtureCount": 5,
+  "routes": {
+    "context": {
+      "tokens": {
+        "median": 103,
+        "p95": 103
+      },
+      "evidenceRecall": {
+        "mean": 0.9,
+        "median": 1,
+        "minimum": 0.5
+      }
+    },
+    "peek": {
+      "tokens": {
+        "median": 119,
+        "p95": 121
+      },
+      "evidenceRecall": {
+        "mean": 1,
+        "median": 1,
+        "minimum": 1
+      }
+    },
+    "exactReadGrepBaseline": {
+      "tokens": {
+        "median": 842,
+        "p95": 906
+      },
+      "evidenceRecall": {
+        "mean": 1,
+        "median": 1,
+        "minimum": 1
+      }
+    }
+  },
+  "comparisons": {
+    "contextMedianTokenRatioToBaseline": 0.1223,
+    "peekMedianTokenRatioToBaseline": 0.1413
+  }
+}
