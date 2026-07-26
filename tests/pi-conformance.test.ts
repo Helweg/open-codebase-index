@@ -326,7 +326,9 @@ describe("Pi adapter conformance", () => {
         metadataOnly: true,
       },
     );
-    expect(result?.content[0]?.text).toContain("Codebase evidence for \"show definition for `missingDefinition`\"");
+    expect(result?.content[0]?.text).toContain("Codebase evidence");
+    expect(result?.content[0]?.text).toContain("Recovery: inferred definition missed.");
+    expect(result?.content[0]?.text).not.toContain("show definition for `missingDefinition`");
   });
 
   it("routes codebase_context query-only lookups with metadata-only search", async () => {
@@ -358,7 +360,8 @@ describe("Pi adapter conformance", () => {
       directory: "src",
       metadataOnly: true,
     });
-    expect(result?.content[0]?.text).toContain("Codebase evidence for \"validation helper\"");
+    expect(result?.content[0]?.text).toContain("Codebase evidence");
+    expect(result?.content[0]?.text).not.toContain("validation helper");
     expect(countContextTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
     expect(JSON.stringify(result?.details)).not.toContain("function validateToken() {}");
   });

@@ -84,7 +84,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
           limit: 10,
           tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
         }, {
-          lookup: (symbol, limit) => indexer.search(symbol, limit, {
+          lookup: (symbol, limit, _scope) => indexer.search(symbol, limit, {
             metadataOnly: true,
             filterByBranch: !!query.expected.branch,
             definitionIntent: true,

@@ -218,7 +218,8 @@ describe("native OpenCode codebase_context", () => {
       },
     ]);
     expect(result.text).toContain("src/auth.ts:1-5");
-    expect(result.text).toContain("Recovery: requested filters had no matches. Showing unscoped results.");
+    expect(result.text).toContain("Recovery: directory filter removed; file-type filter removed.");
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
   });
 
@@ -256,7 +257,9 @@ describe("native OpenCode codebase_context", () => {
     expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined });
     expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined });
     expect(result.text).toContain("src/auth.ts:1-8");
-    expect(result.text).toContain("Recovery: the original query had no matches. Showing inferred-symbol results.");
+    expect(result.text).toContain("Recovery: inferred definition missed; inferred-symbol query tried.");
+    expect(result.text.indexOf("Recovery:")).toBeLessThan(result.text.indexOf("[1]"));
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(result.details?.recovery?.successfulAttemptIndex).toBe(2);
   });
 
@@ -276,7 +279,8 @@ describe("native OpenCode codebase_context", () => {
       },
     );
 
-    expect(result.text).toContain("No definition found for \"missingDefinition\"");
+    expect(result.text).toContain("No definition found.");
+    expect(result.text).not.toContain("where is missingDefinition defined");
     expect(result.text).toContain("Explicit symbol lookup only; conceptual search was not attempted.");
     expect(result.details).toMatchObject({
       route: "definition",
@@ -339,9 +343,122 @@ describe("native OpenCode codebase_context", () => {
       },
     );
 
-    expect(countContextTokens(result.text)).toBeLessThanOrEqual(64);
+    expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(result.details?.route).toBe("definition");
-    expect(result.details?.recovery?.attempts).toHaveLength(1);
+    expect(result.details?.recovery?.attempts).toHaveLength(2);
+  });
+
+  it("keeps explicit symbols definition-only with normalized scoped then unscoped lookup", async () => {
+    const lookup = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        filePath: "src/tools/context.ts",
+        startLine: 1,
+        endLine: 4,
+        name: "resolveSearchContext",
+        chunkType: "function",
+        content: "hidden",
+        score: 0.9,
+      }]);
+    const search = vi.fn();
+
+    const result = await resolveSearchContext({
+      query: "   ",
+      symbol: "  resolveSearchContext  ",
+      limit: 10,
+      tokenBudget: 128,
+      fileType: " .TS ",
+      directory: " ./src\\tools/ ",
+    }, { lookup, search });
+
+    expect(lookup).toHaveBeenNthCalledWith(1, "resolveSearchContext", 100, {
+      fileType: "ts",
+      directory: "src/tools",
+    });
+    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {});
+    expect(search).not.toHaveBeenCalled();
+    expect(result.details).toMatchObject({
+      route: "definition",
+      routedQuery: "resolveSearchContext",
+      truncated: false,
+      selectedCount: 1,
+    });
+    expect(result.text).toContain("Recovery: directory filter removed; file-type filter removed.");
+    expect(result.text).not.toContain("resolveSearchContext  ");
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
+  });
+
+  it("orders and deduplicates conceptual recovery attempts across query and scope", async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        filePath: "lib/status.ts",
+        startLine: 2,
+        endLine: 6,
+        name: "getStatus",
+        chunkType: "function",
+        content: "hidden",
+        score: 0.8,
+      }]);
+
+    const result = await resolveSearchContext({
+      query: "  where is `getStatus` defined  ",
+      symbol: undefined,
+      limit: 10,
+      tokenBudget: 128,
+      fileType: " .TS ",
+      directory: " ./private\\scope/ ",
+    }, {
+      lookup: vi.fn().mockResolvedValue([]),
+      search,
+    });
+
+    expect(search.mock.calls).toEqual([
+      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }],
+      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }],
+      ["where is `getStatus` defined", 100, {}],
+      ["getStatus", 100, {}],
+    ]);
+    const recoveryLine = result.text.split("\n").find((line) => line.startsWith("Recovery:"));
+    expect(recoveryLine).toBe("Recovery: inferred definition missed; inferred-symbol query tried; directory filter removed; file-type filter removed.");
+    expect(recoveryLine).not.toContain("getStatus");
+    expect(recoveryLine).not.toContain("private/scope");
+    expect(recoveryLine?.length).toBeLessThan(160);
+    expect(result.details).toMatchObject({ route: "conceptual", routedQuery: "getStatus", truncated: false });
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
+  });
+
+  it("keeps packed evidence and omission metadata consistent without post-truncation", async () => {
+    const results = Array.from({ length: 8 }, (_, index) => ({
+      filePath: `src/${"nested/".repeat(6)}file-${index}.ts`,
+      startLine: index + 1,
+      endLine: index + 2,
+      name: `handler${index}`,
+      chunkType: "function",
+      content: "hidden",
+      score: 1 - index / 100,
+    }));
+    const result = await resolveSearchContext({
+      query: "find handlers",
+      symbol: undefined,
+      limit: 8,
+      tokenBudget: 128,
+      fileType: "ts",
+      directory: "missing",
+    }, {
+      lookup: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(results),
+    });
+
+    const renderedEvidenceCount = result.text.match(/^\[\d+\]/gm)?.length ?? 0;
+    expect(renderedEvidenceCount).toBe(result.details?.selectedCount);
+    expect(result.details?.results).toHaveLength(renderedEvidenceCount);
+    expect(result.details?.omittedCount).toBe(results.length - renderedEvidenceCount);
+    expect(result.details?.truncated).toBe(false);
+    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
+    expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
   });
 });

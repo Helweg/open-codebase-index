@@ -512,7 +512,9 @@ describe("MCP server tools and prompts", () => {
     });
 
     const content = result.content as Array<{ type: string; text?: string }>;
-    expect(content[0].text).toContain("Codebase evidence for \"Find definition for `missingDefinition`\"");
+    expect(content[0].text).toContain("Codebase evidence");
+    expect(content[0].text).toContain("Recovery: inferred definition missed.");
+    expect(content[0].text).not.toContain("Find definition for `missingDefinition`");
     expect(indexer?.search).toHaveBeenCalledWith(
       "Find definition for `missingDefinition`",
       100,

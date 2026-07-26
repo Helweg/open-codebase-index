@@ -11,7 +11,6 @@ import {
   buildContextPack,
   fitTextToContextBudget,
   formatCallGraphPath,
-  formatDefinitionLookup,
 } from "./utils.js";
 
 export interface CodebaseContextInput {
@@ -104,7 +103,7 @@ function packedResult(
 }
 
 interface SearchContextOperations {
-  lookup(symbol: string, limit: number): Promise<SearchResult[]>;
+  lookup(symbol: string, limit: number, scope: SearchScope): Promise<SearchResult[]>;
   search(query: string, limit: number, scope: SearchScope): Promise<SearchResult[]>;
 }
 
@@ -120,6 +119,62 @@ interface RecoveryAttempt {
 interface SearchScope {
   fileType?: string;
   directory?: string;
+}
+
+interface RecoveryDecisions {
+  inferredDefinitionMiss: boolean;
+  fallbackFromOriginalConceptualToInferred: boolean;
+  relaxedFields: Array<"directory" | "fileType">;
+}
+
+function describeRecoveryDecision(decisions: RecoveryDecisions): string[] {
+  const lines: string[] = [];
+
+  if (decisions.inferredDefinitionMiss) {
+    lines.push("inferred definition missed");
+  }
+
+  if (decisions.fallbackFromOriginalConceptualToInferred) {
+    lines.push("inferred-symbol query tried");
+  }
+
+  if (decisions.relaxedFields.includes("directory")) {
+    lines.push("directory filter removed");
+  }
+
+  if (decisions.relaxedFields.includes("fileType")) {
+    lines.push("file-type filter removed");
+  }
+
+  return lines;
+}
+
+function buildPackHeading(route: "definition" | "conceptual", decisions: RecoveryDecisions): string {
+  const base = route === "definition" ? "Definition evidence" : "Codebase evidence";
+  const decisionsText = describeRecoveryDecision(decisions);
+  if (decisionsText.length === 0) {
+    return base;
+  }
+
+  return `${base}\nRecovery: ${decisionsText.join("; ")}.`;
+}
+
+function buildRecoveryFallbackText(
+  attempts: RecoveryAttempt[],
+  tokenBudget: number | undefined,
+  heading: string,
+): ReturnType<typeof fitTextToContextBudget> {
+  const lines = [
+    heading,
+    attempts.length > 0
+      ? `Attempted ${attempts.length} recovery attempt${attempts.length === 1 ? "" : "s"}:`
+      : "No recovery attempts were executed.",
+  ];
+
+  return fitTextToContextBudget(
+    `${lines.join("\n")}\n${attempts.map((attempt, index) => formatRecoveryAttemptLine(attempt, index)).join("\n")}`,
+    tokenBudget,
+  );
 }
 
 function describeScope(fileType?: string, directory?: string): RecoveryScope {
@@ -143,38 +198,6 @@ function formatRecoveryAttemptLine(attempt: RecoveryAttempt, index: number): str
       : "unscoped";
 
   return `${index + 1}. ${attempt.kind} ${scope} search: ${attempt.resultCount} result${attempt.resultCount === 1 ? "" : "s"}`;
-}
-
-function formatRecoveryText(
-  attempts: RecoveryAttempt[],
-  tokenBudget: number | undefined,
-  fallbackLabel: string,
-): ReturnType<typeof fitTextToContextBudget> {
-  const lines = [
-    `${fallbackLabel}`,
-    attempts.length > 0
-      ? `Attempted ${attempts.length} recovery attempt${attempts.length === 1 ? "" : "s"}:`
-      : "No recovery attempts were executed.",
-    ...attempts.map(formatRecoveryAttemptLine),
-  ];
-
-  return fitTextToContextBudget(lines.join("\n"), tokenBudget);
-}
-
-function recoveryPrefix(attempts: RecoveryAttempt[], successIndex: number | null): string | undefined {
-  if (successIndex === null) return undefined;
-
-  const successfulAttempt = attempts[successIndex];
-
-  if (successfulAttempt.scope === "unscoped" && successfulAttempt.relaxedFields.length > 0) {
-    return "Recovery: requested filters had no matches. Showing unscoped results.";
-  }
-
-  if (attempts.slice(0, successIndex).some((attempt) => attempt.kind === "conceptual" && attempt.resultCount === 0)) {
-    return "Recovery: the original query had no matches. Showing inferred-symbol results.";
-  }
-
-  return undefined;
 }
 
 function findSuccessfulAttemptIndex(route: "definition" | "conceptual", attempts: RecoveryAttempt[]): number | null {
@@ -206,6 +229,20 @@ function trimOrUndefined(value: string | null | undefined): string | undefined {
   return normalized;
 }
 
+function normalizeFileType(value: string | null | undefined): string | undefined {
+  const normalized = trimOrUndefined(value)?.toLowerCase().replace(/^\.+/, "");
+  return normalized || undefined;
+}
+
+function normalizeDirectory(value: string | null | undefined): string | undefined {
+  const normalized = trimOrUndefined(value)
+    ?.replace(/\\/g, "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\.\/+/, "")
+    .replace(/^\/+|\/+$/g, "");
+  return normalized || undefined;
+}
+
 function relaxedHintFields(fileType?: string, directory?: string): Array<"directory" | "fileType"> {
   const fields: Array<"directory" | "fileType"> = [];
   if (directory) {
@@ -223,7 +260,24 @@ export async function resolveSearchContext(
 ): Promise<CodebaseContextResult> {
   const query = trimOrUndefined(input.query);
   const tokenBudget = input.tokenBudget ?? undefined;
-  if (!query) {
+  const explicitSymbol = trimOrUndefined(input.symbol);
+  const inferredSymbol = explicitSymbol || !query ? undefined : inferExactSymbolFromQuery(query);
+  const definitionSymbol = explicitSymbol ?? inferredSymbol;
+  const limit = input.limit ?? 10;
+  const fileType = normalizeFileType(input.fileType);
+  const directory = normalizeDirectory(input.directory);
+  const scopedScope: SearchScope = { fileType, directory };
+  const unscopedScope: SearchScope = {};
+  const hasFilters = Boolean(fileType || directory);
+  const relaxedFields = relaxedHintFields(fileType, directory);
+  const attempts: RecoveryAttempt[] = [];
+  const decisions: RecoveryDecisions = {
+    inferredDefinitionMiss: false,
+    fallbackFromOriginalConceptualToInferred: false,
+    relaxedFields: [],
+  };
+
+  if (!query && !definitionSymbol) {
     const fallback = fitTextToContextBudget("Cannot resolve context for an empty query.", tokenBudget);
     return {
       text: fallback.text,
@@ -241,31 +295,15 @@ export async function resolveSearchContext(
     };
   }
 
-  const explicitSymbol = trimOrUndefined(input.symbol);
-  const limit = input.limit ?? 10;
-  const fileType = trimOrUndefined(input.fileType);
-  const directory = trimOrUndefined(input.directory);
-  const inferredSymbol = explicitSymbol ? undefined : inferExactSymbolFromQuery(query);
-  const lookupSymbol = explicitSymbol ?? inferredSymbol;
-  const scopedScope: SearchScope = {
-    fileType,
-    directory,
-  };
-  const hasFilters = Boolean(fileType || directory);
-  const relaxedFields = relaxedHintFields(fileType, directory);
-  const attempts: RecoveryAttempt[] = [];
   const seenAttempts = new Set<string>();
-
   const recordAttempt = async (
     kind: "definition" | "conceptual",
-    query: string,
+    attemptQuery: string,
     scope: SearchScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
     runAttempt: () => Promise<SearchResult[]>,
   ): Promise<SearchResult[]> => {
-    const lookupFileType = scope.fileType;
-    const lookupDirectory = scope.directory;
-    const key = attemptKey(kind, query, scope);
+    const key = attemptKey(kind, attemptQuery, scope);
     if (seenAttempts.has(key)) {
       return [];
     }
@@ -274,49 +312,46 @@ export async function resolveSearchContext(
     seenAttempts.add(key);
     attempts.push({
       kind,
-      scope: describeScope(lookupFileType, lookupDirectory),
-      relaxedFields: relaxedFieldsForAttempt,
+      scope: describeScope(scope.fileType, scope.directory),
       resultCount: results.length,
+      relaxedFields: relaxedFieldsForAttempt,
     });
+
+    for (const field of relaxedFieldsForAttempt) {
+      if (!decisions.relaxedFields.includes(field)) {
+        decisions.relaxedFields.push(field);
+      }
+    }
 
     return results;
   };
 
-  const tryDefinitionLookup = async (symbol: string): Promise<SearchResult[]> => {
+  const tryDefinitionLookup = async (
+    symbol: string,
+    scope: SearchScope = scopedScope,
+    relaxedFieldsForAttempt: Array<"directory" | "fileType"> = [],
+  ): Promise<SearchResult[]> => {
     return recordAttempt(
       "definition",
       symbol,
-      scopedScope,
-      [],
-      () => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT),
+      scope,
+      relaxedFieldsForAttempt,
+      () => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT, scope),
     );
   };
 
   const tryConceptualSearch = async (
-    queryText: string,
+    searchQuery: string,
     scope: SearchScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
   ): Promise<SearchResult[]> => {
     return recordAttempt(
       "conceptual",
-      queryText,
+      searchQuery,
       scope,
       relaxedFieldsForAttempt,
-      () => operations.search(queryText, MAX_CONTEXT_RESULT_LIMIT, scope),
+      () => operations.search(searchQuery, MAX_CONTEXT_RESULT_LIMIT, scope),
     );
-  };
-
-  const tryConceptualWithFallbackScope = async (queryText: string): Promise<SearchResult[]> => {
-    const scopedResults = await tryConceptualSearch(queryText, scopedScope, []);
-    if (scopedResults.length > 0) {
-      return scopedResults;
-    }
-
-    if (!hasFilters) {
-      return scopedResults;
-    }
-
-    return tryConceptualSearch(queryText, {}, relaxedFields);
   };
 
   const toResult = (
@@ -327,83 +362,116 @@ export async function resolveSearchContext(
     const base = packedResult(route, routedQuery, pack);
     const baseDetails = base.details as NonNullable<CodebaseContextResult["details"]>;
     const successIndex = findSuccessfulAttemptIndex(route, attempts);
-    const note = recoveryPrefix(attempts, successIndex);
-    const fitted = fitTextToContextBudget(note ? `${note}\n\n${base.text}` : base.text, tokenBudget);
     return {
-      text: fitted.text,
+      text: base.text,
       details: {
         ...baseDetails,
-        tokenBudget: fitted.tokenBudget,
-        tokenEstimate: fitted.tokenEstimate,
-        truncated: fitted.truncated,
+        tokenBudget: baseDetails.tokenBudget,
+        tokenEstimate: baseDetails.tokenEstimate,
+        truncated: false,
         recovery: buildRecoveryDetails(attempts, successIndex),
       },
     };
   };
 
-  if (lookupSymbol) {
-    const definitions = await tryDefinitionLookup(lookupSymbol);
-    if (definitions.length > 0) {
-      const pack = buildContextPack(definitions, {
-        tokenBudget,
-        maxResults: limit,
-        heading: `Definition evidence for ${JSON.stringify(lookupSymbol)}`,
-      });
-      return toResult("definition", lookupSymbol, pack);
+  if (definitionSymbol) {
+    const scopedDefinitionResults = await tryDefinitionLookup(definitionSymbol);
+    if (scopedDefinitionResults.length > 0) {
+      const heading = buildPackHeading("definition", decisions);
+      return toResult(
+        "definition",
+        definitionSymbol,
+        buildContextPack(scopedDefinitionResults, {
+          tokenBudget,
+          maxResults: limit,
+          heading,
+        }),
+      );
     }
 
     if (explicitSymbol) {
-      const fittedFallback = formatRecoveryText(
+      if (hasFilters) {
+        const unscopedDefinitionResults = await tryDefinitionLookup(
+          definitionSymbol,
+          unscopedScope,
+          relaxedFields,
+        );
+        if (unscopedDefinitionResults.length > 0) {
+          const heading = buildPackHeading("definition", decisions);
+          return toResult(
+            "definition",
+            definitionSymbol,
+            buildContextPack(unscopedDefinitionResults, {
+              tokenBudget,
+              maxResults: limit,
+              heading,
+            }),
+          );
+        }
+      }
+
+      const heading = buildRecoveryFallbackText(
         attempts,
         tokenBudget,
-        `${formatDefinitionLookup(definitions, lookupSymbol)}\nExplicit symbol lookup only; conceptual search was not attempted.`,
+        `${buildPackHeading("definition", decisions)}\nNo definition found.\n` +
+          "Explicit symbol lookup only; conceptual search was not attempted.",
       );
       return {
-        text: fittedFallback.text,
+        text: heading.text,
         details: {
           route: "definition",
-          routedQuery: lookupSymbol,
-          tokenBudget: fittedFallback.tokenBudget,
-          tokenEstimate: fittedFallback.tokenEstimate,
-          truncated: fittedFallback.truncated,
+          routedQuery: definitionSymbol,
+          tokenBudget: heading.tokenBudget,
+          tokenEstimate: heading.tokenEstimate,
+          truncated: heading.truncated,
           recovery: buildRecoveryDetails(attempts, null),
         },
       };
     }
+
+    if (inferredSymbol) {
+      decisions.inferredDefinitionMiss = true;
+    }
   }
 
-  const conceptualQueries = [query];
+  const conceptualQueries: string[] = [];
+  if (query) {
+    conceptualQueries.push(query);
+  }
   if (inferredSymbol && inferredSymbol !== query) {
     conceptualQueries.push(inferredSymbol);
   }
 
-  const [primaryConceptualQuery, inferredConceptualQuery] = conceptualQueries;
+  const conceptualAttemptPlan: Array<{ queryText: string; scope: SearchScope; relaxed: Array<"directory" | "fileType"> }> = [];
+  for (const conceptQuery of conceptualQueries) {
+    conceptualAttemptPlan.push({ queryText: conceptQuery, scope: scopedScope, relaxed: [] });
+  }
+  if (hasFilters) {
+    for (const conceptQuery of conceptualQueries) {
+      conceptualAttemptPlan.push({ queryText: conceptQuery, scope: unscopedScope, relaxed: relaxedFields });
+    }
+  }
 
-  if (primaryConceptualQuery) {
-    const results = await tryConceptualWithFallbackScope(primaryConceptualQuery);
+  for (const attempt of conceptualAttemptPlan) {
+    if (inferredSymbol && attempt.queryText === inferredSymbol && attempt.queryText !== query) {
+      decisions.fallbackFromOriginalConceptualToInferred = true;
+    }
+    const results = await tryConceptualSearch(attempt.queryText, attempt.scope, attempt.relaxed);
     if (results.length > 0) {
-      const pack = buildContextPack(results, {
-        tokenBudget,
-        maxResults: limit,
-        heading: `Codebase evidence for ${JSON.stringify(primaryConceptualQuery)}`,
-      });
-      return toResult("conceptual", primaryConceptualQuery, pack);
+      const heading = buildPackHeading("conceptual", decisions);
+      return toResult(
+        "conceptual",
+        attempt.queryText,
+        buildContextPack(results, {
+          tokenBudget,
+          maxResults: limit,
+          heading,
+        }),
+      );
     }
   }
 
-  if (inferredConceptualQuery && inferredConceptualQuery !== query) {
-    const inferredResults = await tryConceptualSearch(inferredConceptualQuery, {}, relaxedFields);
-    if (inferredResults.length > 0) {
-      const pack = buildContextPack(inferredResults, {
-        tokenBudget,
-        maxResults: limit,
-        heading: `Codebase evidence for ${JSON.stringify(inferredConceptualQuery)}`,
-      });
-      return toResult("conceptual", inferredConceptualQuery, pack);
-    }
-  }
-
-  const fallbackText = formatRecoveryText(
+  const fallbackText = buildRecoveryFallbackText(
     attempts,
     tokenBudget,
     "No matching code found. Try a different query or run index_codebase first.",
@@ -489,10 +557,10 @@ export async function resolveCodebaseContext(
   }
 
   return resolveSearchContext({ query: input.query, symbol, limit, tokenBudget, fileType, directory }, {
-    lookup: (lookupSymbol, retrievalLimit) => implementationLookup(projectRoot, host, lookupSymbol, {
+    lookup: (lookupSymbol, retrievalLimit, scope) => implementationLookup(projectRoot, host, lookupSymbol, {
       limit: retrievalLimit,
-      fileType,
-      directory,
+      fileType: scope.fileType,
+      directory: scope.directory,
     }),
     search: (queryText, retrievalLimit, scope) => searchCodebase(projectRoot, host, queryText, {
       limit: retrievalLimit,
