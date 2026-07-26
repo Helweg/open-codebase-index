@@ -146,9 +146,17 @@ fn extract_semantic_nodes(
 
             let content = &source[start_byte..end_byte];
 
-            if content.len() >= MIN_CHUNK_SIZE
-                || (*language == Language::Bash && node_type == "function_definition")
-            {
+            let preserve_small_call_graph_symbol = match language {
+                Language::Bash => node_type == "function_definition",
+                Language::C => node_type == "function_definition",
+                Language::Cpp => matches!(
+                    node_type,
+                    "function_definition" | "class_specifier" | "struct_specifier"
+                ),
+                _ => false,
+            };
+
+            if content.len() >= MIN_CHUNK_SIZE || preserve_small_call_graph_symbol {
                 let name = extract_name(cursor, source);
 
                 let start_line = if leading_comment.is_some() {
@@ -607,6 +615,7 @@ fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String
             || kind == "property_identifier"
             || kind == "property_name"
             || kind == "type_identifier"
+            || kind == "namespace_identifier"
             || kind == "name"
             || kind == "word"
         {
@@ -623,6 +632,19 @@ fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String
                 PERF_STATS.lock().unwrap().extract_name_time += elapsed;
             }
             return Some(name);
+        }
+    }
+
+    if node.kind() == "function_definition" {
+        if let Some(declarator) = node.child_by_field_name("declarator") {
+            if let Some(name) = extract_declarator_name(declarator, source) {
+                #[cfg(debug_assertions)]
+                {
+                    let elapsed = start.elapsed().as_micros();
+                    PERF_STATS.lock().unwrap().extract_name_time += elapsed;
+                }
+                return Some(name);
+            }
         }
     }
 
@@ -707,6 +729,24 @@ fn extract_name(cursor: &tree_sitter::TreeCursor, source: &str) -> Option<String
     None
 }
 
+fn extract_declarator_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    if matches!(
+        node.kind(),
+        "identifier" | "field_identifier" | "type_identifier"
+    ) {
+        return Some(source[node.start_byte()..node.end_byte()].to_string());
+    }
+
+    if node.kind() == "qualified_identifier" {
+        return node
+            .child_by_field_name("name")
+            .and_then(|name| extract_declarator_name(name, source));
+    }
+
+    node.child_by_field_name("declarator")
+        .and_then(|declarator| extract_declarator_name(declarator, source))
+}
+
 fn split_large_chunk(chunk: CodeChunk, chunks: &mut Vec<CodeChunk>) {
     let lines: Vec<&str> = chunk.content.lines().collect();
     let total_lines = lines.len();
@@ -760,9 +800,17 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
             continue;
         };
 
-        let can_merge_without_losing_symbol = !(cur.language == "bash"
-            && cur.chunk_type == "function_definition"
-            || chunk.language == "bash" && chunk.chunk_type == "function_definition");
+        let is_preserved_call_graph_symbol =
+            |candidate: &CodeChunk| match candidate.language.as_str() {
+                "bash" | "c" => candidate.chunk_type == "function_definition",
+                "cpp" => matches!(
+                    candidate.chunk_type.as_str(),
+                    "function_definition" | "class_specifier" | "struct_specifier"
+                ),
+                _ => false,
+            };
+        let can_merge_without_losing_symbol =
+            !is_preserved_call_graph_symbol(&cur) && !is_preserved_call_graph_symbol(&chunk);
 
         if can_merge_without_losing_symbol
             && cur.content.len() < MIN_CHUNK_SIZE * 2
@@ -1066,6 +1114,15 @@ greet "World"
 
         let has_function = chunks.iter().any(|c| c.chunk_type == "function_definition");
         assert!(has_function, "Should find function_definition");
+        let names: Vec<&str> = chunks
+            .iter()
+            .filter_map(|chunk| chunk.name.as_deref())
+            .collect();
+        assert!(names.contains(&"add"), "Should extract the C function name");
+        assert!(
+            names.contains(&"greet"),
+            "Should preserve adjacent C functions"
+        );
     }
 
     #[test]
@@ -1133,6 +1190,10 @@ template<typename T>
 T max(T a, T b) {
     return (a > b) ? a : b;
 }
+
+int main() {
+    return Math::add(1, 2);
+}
 "#;
 
         let chunks = parse_file_internal("main.cpp", content).unwrap();
@@ -1146,6 +1207,24 @@ T max(T a, T b) {
             has_class || has_namespace,
             "Should find class_specifier or namespace_definition"
         );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| chunk.name.as_deref() == Some("main")),
+            "Should extract and preserve the C++ function name"
+        );
+    }
+
+    #[test]
+    fn test_parse_cpp_preserves_small_type_symbols() {
+        let chunks = parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n").unwrap();
+
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "class_specifier" && chunk.name.as_deref() == Some("Tag")
+        }));
+        assert!(chunks.iter().any(|chunk| {
+            chunk.chunk_type == "struct_specifier" && chunk.name.as_deref() == Some("Point")
+        }));
     }
 
     #[test]

@@ -172,6 +172,11 @@ Use the same capture names already expected by `native/src/call_extractor.rs`:
 - `@import.default`
 - `@import.namespace`
 
+For C-family languages, the extractor also supports conservative exclusion captures:
+
+- `@excluded.name` for macros and inline function-pointer declarators that must not become direct-call edges
+- `@indirect.type`, `@indirect.variable_type`, and `@indirect.variable` for connecting an indirect function-type alias to variables declared with that alias
+
 Start small:
 
 - direct calls
@@ -195,6 +200,8 @@ Those chunk-type strings must match the tree-sitter node kinds that actually bec
 ### `tests/call-graph.test.ts`
 
 Add focused tests for the constructs your query file supports.
+
+When the grammar is ambiguous, add negative fixtures as well. In particular, verify that declarations, local macros, explicit template calls, and function-pointer invocations do not become ordinary direct calls in the graph.
 
 ## Common failure modes
 
