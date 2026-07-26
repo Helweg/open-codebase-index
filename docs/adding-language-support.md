@@ -251,9 +251,13 @@ npm run test:run
 
 ## Practical note for PHP
 
-`php` files are already included in `src/config/constants.ts`, but PHP is not yet wired in `native/src/types.rs`, `native/src/parser.rs`, or `native/queries/`.
+PHP is already integrated at all three levels: file discovery, semantic parsing, and call graph extraction. Changes must therefore preserve `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts`, and their tests together.
 
-So a PHP PR is mainly a **semantic parsing** change, with **optional call-graph support**.
+A `parseFile()` content assertion alone does not prove syntax compatibility because Tree-sitter can return chunks while the tree still contains `ERROR` nodes. PHP grammar tests must also assert `!tree.root_node().has_error()` in Rust, then verify the chunk names and types exposed through NAPI.
+
+Call graph tests must distinguish an invocation from a first-class callable reference. For example, `foo(...)` is not a call unless it is used as an operand of the PHP 8.5 pipe operator `|>`.
+
+The tested matrix and remaining `tree-sitter-php` 0.24.2 limitations are documented in the README's "Verified PHP 8.x compatibility" section.
 
 ## One-line summary
 

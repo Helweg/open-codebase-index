@@ -361,6 +361,27 @@ graph TD
 
 **Additional Supported Formats (line-based chunking)**: TXT, HTML, HTM, Markdown, Shell scripts
 
+#### Verified PHP 8.x compatibility
+
+PHP support uses [`tree-sitter-php` 0.24.2](https://github.com/tree-sitter/tree-sitter-php/releases/tag/v0.24.2), distributed under the MIT license. The regression fixture [`php-8-features.php`](tests/fixtures/call-graph/php-8-features.php) and the Rust and Vitest suites cover the following matrix:
+
+| Version | Verified syntax |
+|---|---|
+| PHP 8.0 | attributes, named arguments, promoted properties, union types, the nullsafe operator, and `match` expressions |
+| PHP 8.1 | enums with constants, `readonly` properties, intersection types, and first-class callables |
+| PHP 8.2 | `readonly` classes and DNF types |
+| PHP 8.3 | typed constants and dynamic class-constant access |
+| PHP 8.4 | property hooks, asymmetric visibility, and unparenthesized chaining on `new` |
+| PHP 8.5 | attributes on constants and the pipe operator `|>` |
+
+Semantic parsing verifies chunk names and types for functions, classes, interfaces, traits, and `enum_declaration`. Methods remain inside their containing chunk rather than becoming standalone chunks.
+
+The call graph distinguishes invocations from callable references. Standalone `foo(...)`, `$object->method(...)`, and `Type::method(...)` references do not create edges, while the same callables used as direct or parenthesized `|>` operands are recorded because the pipe invokes them. Coverage also includes qualified and relative `namespace\foo()` calls, nullsafe and static calls, constructors, named arguments, `match` bodies, property hooks, and enum methods.
+
+The graph remains limited to statically resolvable named targets. Dynamic calls such as `$callable()`, `$object->$method()`, and `new $class()`, `include` and `require` expressions, and `extends` and `implements` relationships are outside this contribution.
+
+PHP 8.5 support remains partial in upstream grammar 0.24.2. Final promoted properties and `clone($object, [...])` still produce `ERROR` nodes, so this project does not claim support for those two forms.
+
 **Default File Patterns**:
 ```
 **/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}    **/*.{py,pyi}
