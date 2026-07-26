@@ -3200,143 +3200,109 @@ main() {
     });
 
     describe("findCallPathBySymbolIds", () => {
+      const functionSymbol = (id: string, filePath: string, name: string): SymbolData => ({
+        id,
+        filePath,
+        name,
+        kind: "function",
+        startLine: 1,
+        startCol: 0,
+        endLine: 10,
+        endCol: 0,
+        language: "typescript",
+      });
+
+      const callEdge = ({
+        id,
+        fromSymbolId,
+        targetName,
+        toSymbolId,
+        callType = "Call",
+        confidence = "Direct",
+        line = 1,
+        col = 0,
+        isResolved = true,
+      }: Pick<CallEdgeData, "id" | "fromSymbolId" | "targetName"> &
+        Partial<Pick<CallEdgeData, "toSymbolId" | "callType" | "confidence" | "line" | "col" | "isResolved">>):
+        CallEdgeData => ({
+        id,
+        fromSymbolId,
+        targetName,
+        toSymbolId,
+        callType,
+        confidence,
+        line,
+        col,
+        isResolved,
+      });
+
+      const callPath = async (fromSymbolId: string, toSymbolId: string, maxDepth = 10) => {
+        const indexer = new Indexer(tempDir, createIndexerConfig());
+        try {
+          return await indexer.findCallPathBySymbolIds(fromSymbolId, toSymbolId, maxDepth);
+        } finally {
+          await indexer.close();
+        }
+      };
+
       it("does not retarget resolved edges to a different symbol on another branch", async () => {
         writeGitBranchHead("main");
         const db = openIndexerDb();
 
-        db.upsertSymbol({
-          id: "sym_caller",
-          filePath: "src/caller.ts",
-          name: "caller",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
-        db.upsertSymbol({
-          id: "sym_target_main",
-          filePath: "src/target-main.ts",
-          name: "target",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
-        db.upsertSymbol({
-          id: "sym_target_feature",
-          filePath: "src/target-feature.ts",
-          name: "target",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
+        db.upsertSymbolsBatch([
+          functionSymbol("sym_caller", "src/caller.ts", "caller"),
+          functionSymbol("sym_target_main", "src/target-main.ts", "target"),
+          functionSymbol("sym_target_feature", "src/target-feature.ts", "target"),
+        ]);
 
         db.addSymbolsToBranch("main", ["sym_caller", "sym_target_main"]);
         db.addSymbolsToBranch("feature", ["sym_target_feature"]);
 
-        db.upsertCallEdge({
-          id: "edge_cross_branch",
-          fromSymbolId: "sym_caller",
-          targetName: "target",
-          toSymbolId: "sym_target_feature",
-          callType: "Call",
-          confidence: "Direct",
-          line: 5,
-          col: 0,
-          isResolved: true,
-        });
+        db.upsertCallEdge(
+          callEdge({
+            id: "edge_cross_branch",
+            fromSymbolId: "sym_caller",
+            targetName: "target",
+            toSymbolId: "sym_target_feature",
+            line: 5,
+          }),
+        );
 
-        const indexer = new Indexer(tempDir, createIndexerConfig());
-        try {
-          const path = await indexer.findCallPathBySymbolIds("sym_caller", "sym_target_main", 10);
-          expect(path).toEqual([]);
-        } finally {
-          await indexer.close();
-        }
+        const path = await callPath("sym_caller", "sym_target_main", 10);
+        expect(path).toEqual([]);
       });
 
       it("uses name fallback only for unresolved edges", async () => {
         writeGitBranchHead("main");
         const db = openIndexerDb();
 
-        db.upsertSymbol({
-          id: "sym_entry",
-          filePath: "src/entry.ts",
-          name: "entry",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
-        db.upsertSymbol({
-          id: "sym_mid",
-          filePath: "src/mid.ts",
-          name: "mid",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
-        db.upsertSymbol({
-          id: "sym_exit",
-          filePath: "src/exit.ts",
-          name: "exit",
-          kind: "function",
-          startLine: 1,
-          startCol: 0,
-          endLine: 10,
-          endCol: 0,
-          language: "typescript",
-        });
+        db.upsertSymbolsBatch([
+          functionSymbol("sym_entry", "src/entry.ts", "entry"),
+          functionSymbol("sym_mid", "src/mid.ts", "mid"),
+          functionSymbol("sym_exit", "src/exit.ts", "exit"),
+        ]);
 
         db.addSymbolsToBranch("main", ["sym_entry", "sym_mid", "sym_exit"]);
 
         db.upsertCallEdgesBatch([
-          {
+          callEdge({
             id: "edge_entry_mid",
             fromSymbolId: "sym_entry",
             targetName: "mid",
-            callType: "Call",
-            confidence: "Direct",
             line: 2,
-            col: 0,
             isResolved: false,
-          },
-          {
+          }),
+          callEdge({
             id: "edge_mid_exit",
             fromSymbolId: "sym_mid",
             targetName: "exit",
             toSymbolId: "sym_exit",
-            callType: "Call",
-            confidence: "Direct",
             line: 4,
-            col: 0,
-            isResolved: true,
-          },
+          }),
         ]);
 
-        const indexer = new Indexer(tempDir, createIndexerConfig());
-        try {
-          const path = await indexer.findCallPathBySymbolIds("sym_entry", "sym_exit", 10);
-          expect(path.map((item) => item.symbolId)).toEqual([
-            "sym_entry",
-            "sym_mid",
-            "sym_exit",
-          ]);
-        } finally {
-          await indexer.close();
-        }
+        const path = await callPath("sym_entry", "sym_exit", 10);
+        expect(path.map((item) => item.symbolId)).toEqual(["sym_entry", "sym_mid", "sym_exit"]);
       });
 
       it("respects branch catalog filtering", async () => {
@@ -3344,124 +3310,47 @@ main() {
         const db = openIndexerDb();
 
         db.upsertSymbolsBatch([
-          {
-            id: "sym_main_call",
-            filePath: "src/main-call.ts",
-            name: "call",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
-          {
-            id: "sym_main_target",
-            filePath: "src/main-target.ts",
-            name: "target",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
-          {
-            id: "sym_feature_call",
-            filePath: "src/feature-call.ts",
-            name: "call",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
-          {
-            id: "sym_feature_target",
-            filePath: "src/feature-target.ts",
-            name: "target",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
+          functionSymbol("sym_main_call", "src/main-call.ts", "call"),
+          functionSymbol("sym_main_target", "src/main-target.ts", "target"),
+          functionSymbol("sym_feature_call", "src/feature-call.ts", "call"),
+          functionSymbol("sym_feature_target", "src/feature-target.ts", "target"),
         ]);
 
         db.addSymbolsToBranch("main", ["sym_main_call", "sym_main_target"]);
         db.addSymbolsToBranch("feature", ["sym_feature_call", "sym_feature_target"]);
 
         db.upsertCallEdgesBatch([
-          {
+          callEdge({
             id: "edge_main",
             fromSymbolId: "sym_main_call",
             targetName: "target",
             toSymbolId: "sym_main_target",
-            callType: "Call",
-            confidence: "Direct",
             line: 3,
-            col: 0,
-            isResolved: true,
-          },
-          {
+          }),
+          callEdge({
             id: "edge_feature",
             fromSymbolId: "sym_feature_call",
             targetName: "target",
             toSymbolId: "sym_feature_target",
-            callType: "Call",
-            confidence: "Direct",
             line: 3,
-            col: 0,
-            isResolved: true,
-          },
+          }),
         ]);
 
-        const indexerOnMain = new Indexer(tempDir, createIndexerConfig());
-        try {
-          const mainPath = await indexerOnMain.findCallPathBySymbolIds(
-            "sym_main_call",
-            "sym_main_target",
-            10,
-          );
-          expect(mainPath.map((item) => item.symbolId)).toEqual([
-            "sym_main_call",
-            "sym_main_target",
-          ]);
+        const mainPath = await callPath("sym_main_call", "sym_main_target", 10);
+        expect(mainPath.map((item) => item.symbolId)).toEqual(["sym_main_call", "sym_main_target"]);
 
-          const mainToFeature = await indexerOnMain.findCallPathBySymbolIds(
-            "sym_main_call",
-            "sym_feature_target",
-            10,
-          );
-          expect(mainToFeature).toEqual([]);
-        } finally {
-          await indexerOnMain.close();
-        }
+        const mainToFeature = await callPath("sym_main_call", "sym_feature_target", 10);
+        expect(mainToFeature).toEqual([]);
 
         writeGitBranchHead("feature");
-        const indexerOnFeature = new Indexer(tempDir, createIndexerConfig());
-        try {
-          const featurePath = await indexerOnFeature.findCallPathBySymbolIds(
-            "sym_feature_call",
-            "sym_feature_target",
-            10,
-          );
-          expect(featurePath.map((item) => item.symbolId)).toEqual([
-            "sym_feature_call",
-            "sym_feature_target",
-          ]);
+        const featurePath = await callPath("sym_feature_call", "sym_feature_target", 10);
+        expect(featurePath.map((item) => item.symbolId)).toEqual([
+          "sym_feature_call",
+          "sym_feature_target",
+        ]);
 
-          const featureToMain = await indexerOnFeature.findCallPathBySymbolIds(
-            "sym_feature_call",
-            "sym_main_target",
-            10,
-          );
-          expect(featureToMain).toEqual([]);
-        } finally {
-          await indexerOnFeature.close();
-        }
+        const featureToMain = await callPath("sym_feature_call", "sym_main_target", 10);
+        expect(featureToMain).toEqual([]);
       });
 
       it("respects maxDepth boundary", async () => {
@@ -3469,82 +3358,35 @@ main() {
         const db = openIndexerDb();
 
         db.upsertSymbolsBatch([
-          {
-            id: "sym_depth_a",
-            filePath: "src/depth-a.ts",
-            name: "depthA",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
-          {
-            id: "sym_depth_b",
-            filePath: "src/depth-b.ts",
-            name: "depthB",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
-          {
-            id: "sym_depth_c",
-            filePath: "src/depth-c.ts",
-            name: "depthC",
-            kind: "function",
-            startLine: 1,
-            startCol: 0,
-            endLine: 10,
-            endCol: 0,
-            language: "typescript",
-          },
+          functionSymbol("sym_depth_a", "src/depth-a.ts", "depthA"),
+          functionSymbol("sym_depth_b", "src/depth-b.ts", "depthB"),
+          functionSymbol("sym_depth_c", "src/depth-c.ts", "depthC"),
         ]);
 
         db.addSymbolsToBranch("main", ["sym_depth_a", "sym_depth_b", "sym_depth_c"]);
 
         db.upsertCallEdgesBatch([
-          {
+          callEdge({
             id: "edge_depth_ab",
             fromSymbolId: "sym_depth_a",
             targetName: "depthB",
             toSymbolId: "sym_depth_b",
-            callType: "Call",
-            confidence: "Direct",
             line: 1,
-            col: 0,
-            isResolved: true,
-          },
-          {
+          }),
+          callEdge({
             id: "edge_depth_bc",
             fromSymbolId: "sym_depth_b",
             targetName: "depthC",
             toSymbolId: "sym_depth_c",
-            callType: "Call",
-            confidence: "Direct",
             line: 2,
-            col: 0,
-            isResolved: true,
-          },
+          }),
         ]);
 
-        const indexer = new Indexer(tempDir, createIndexerConfig());
-        try {
-          const tooShallow = await indexer.findCallPathBySymbolIds("sym_depth_a", "sym_depth_c", 1);
-          expect(tooShallow).toEqual([]);
+        const tooShallow = await callPath("sym_depth_a", "sym_depth_c", 1);
+        expect(tooShallow).toEqual([]);
 
-          const sufficient = await indexer.findCallPathBySymbolIds("sym_depth_a", "sym_depth_c", 2);
-          expect(sufficient.map((item) => item.symbolId)).toEqual([
-            "sym_depth_a",
-            "sym_depth_b",
-            "sym_depth_c",
-          ]);
-        } finally {
-          await indexer.close();
-        }
+        const sufficient = await callPath("sym_depth_a", "sym_depth_c", 2);
+        expect(sufficient.map((item) => item.symbolId)).toEqual(["sym_depth_a", "sym_depth_b", "sym_depth_c"]);
       });
     });
   });
