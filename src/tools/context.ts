@@ -9,7 +9,6 @@ import {
 import { inferExactSymbolFromQuery } from "./symbol-inference.js";
 import {
   buildContextPack,
-  countContextTokens,
   fitTextToContextBudget,
   formatCallGraphPath,
   formatDefinitionLookup,
@@ -232,7 +231,7 @@ export async function resolveSearchContext(
         route: "conceptual",
         routedQuery: query,
         tokenBudget: fallback.tokenBudget,
-        tokenEstimate: countContextTokens(fallback.text),
+        tokenEstimate: fallback.tokenEstimate,
         truncated: fallback.truncated,
         recovery: {
           attempts: [],
@@ -332,14 +331,14 @@ export async function resolveSearchContext(
     const fitted = fitTextToContextBudget(note ? `${base.text}\n\n${note}` : base.text, tokenBudget);
     return {
       text: fitted.text,
-      details: {
-        ...baseDetails,
-        tokenBudget: fitted.tokenBudget,
-        tokenEstimate: countContextTokens(fitted.text),
-        truncated: fitted.truncated,
-        recovery: buildRecoveryDetails(attempts, successIndex),
-      },
-    };
+        details: {
+          ...baseDetails,
+          tokenBudget: fitted.tokenBudget,
+          tokenEstimate: fitted.tokenEstimate,
+          truncated: fitted.truncated,
+          recovery: buildRecoveryDetails(attempts, successIndex),
+        },
+      };
   };
 
   if (lookupSymbol) {
@@ -365,7 +364,7 @@ export async function resolveSearchContext(
           route: "definition",
           routedQuery: lookupSymbol,
           tokenBudget: fittedFallback.tokenBudget,
-          tokenEstimate: countContextTokens(fittedFallback.text),
+          tokenEstimate: fittedFallback.tokenEstimate,
           truncated: fittedFallback.truncated,
           recovery: buildRecoveryDetails(attempts, null),
         },
@@ -414,7 +413,7 @@ export async function resolveSearchContext(
     details: {
       route: "conceptual",
       tokenBudget: fallbackText.tokenBudget,
-      tokenEstimate: countContextTokens(fallbackText.text),
+      tokenEstimate: fallbackText.tokenEstimate,
       truncated: fallbackText.truncated,
       recovery: buildRecoveryDetails(attempts, null),
     },
