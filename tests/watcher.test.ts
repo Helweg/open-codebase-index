@@ -14,7 +14,11 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
   exclude: [],
   indexing: {
     autoIndex: false,
+    autoIndexWaitMs: 10_000,
+    autoIndexMaxRetries: 5,
+    autoIndexRetryDelayMs: 100,
     watchFiles: true,
+    pauseBackgroundIndexingOnBattery: false,
     maxFileSize: 1048576,
     maxChunksPerFile: 100,
     semanticOnly: false,

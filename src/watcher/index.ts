@@ -1,9 +1,10 @@
 import type { CodebaseIndexConfig } from "../config/schema.js";
-import { parseConfig } from "../config/schema.js";
 import type { HostMode } from "../config/host.js";
+import type { Indexer } from "../indexer/index.js";
+
+import { parseConfig } from "../config/schema.js";
 import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
 import { loadConfigFile } from "../config/merger.js";
-import type { Indexer } from "../indexer/index.js";
 import { isGitRepo } from "../git/index.js";
 import { refreshIndexerForDirectory } from "../tools/operations.js";
 import { configureAutoIndex, requestBackgroundIndex } from "../utils/auto-index.js";

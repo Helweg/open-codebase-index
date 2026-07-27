@@ -32,6 +32,11 @@ export interface IndexingConfig {
   /** Initial exponential retry delay after transient lock contention. */
   autoIndexRetryDelayMs: number;
   watchFiles: boolean;
+  /**
+   * On macOS, defer automatic indexing while the computer is using battery power.
+   * Manual index requests are never blocked. Default: false
+   */
+  pauseBackgroundIndexingOnBattery: boolean;
   maxFileSize: number;
   maxChunksPerFile: number;
   semanticOnly: boolean;
@@ -196,6 +201,9 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
       ? Math.min(10_000, Math.max(10, Math.floor(rawIndexing.autoIndexRetryDelayMs)))
       : defaultIndexing.autoIndexRetryDelayMs,
     watchFiles: typeof rawIndexing.watchFiles === "boolean" ? rawIndexing.watchFiles : defaultIndexing.watchFiles,
+    pauseBackgroundIndexingOnBattery: typeof rawIndexing.pauseBackgroundIndexingOnBattery === "boolean"
+      ? rawIndexing.pauseBackgroundIndexingOnBattery
+      : defaultIndexing.pauseBackgroundIndexingOnBattery,
     maxFileSize: typeof rawIndexing.maxFileSize === "number" ? rawIndexing.maxFileSize : defaultIndexing.maxFileSize,
     maxChunksPerFile: typeof rawIndexing.maxChunksPerFile === "number" ? Math.max(1, rawIndexing.maxChunksPerFile) : defaultIndexing.maxChunksPerFile,
     semanticOnly: typeof rawIndexing.semanticOnly === "boolean" ? rawIndexing.semanticOnly : defaultIndexing.semanticOnly,

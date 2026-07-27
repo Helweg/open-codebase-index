@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Battery-aware background indexing**: Added the opt-in `indexing.pauseBackgroundIndexingOnBattery` setting. On macOS, automatic startup and watcher-triggered indexing now waits for AC power, coalesces pending work into one update, and keeps manual `index_codebase` requests available. Power detection uses a five-second `pmset` timeout and fails open if the source cannot be determined.
+
 ## [0.19.1] - 2026-07-27
 
 ### Added

@@ -801,6 +801,7 @@ Zero-config by default (uses `auto` mode). Customize in `.opencode/codebase-inde
     "autoIndexMaxRetries": 5,                 // Transient interprocess lock retries (0-10)
     "autoIndexRetryDelayMs": 100,             // Initial exponential lock retry delay
     "watchFiles": true,                       // Re-index on file changes
+    "pauseBackgroundIndexingOnBattery": false, // Defer background indexing on macOS battery power
     "maxFileSize": 1048576,                   // Max file size in bytes (default: 1MB)
     "maxChunksPerFile": 100,                  // Max chunks per file
     "semanticOnly": false,                    // Only index functions/classes (skip blocks)
@@ -884,6 +885,7 @@ String values in `codebase-index.json` can reference environment variables with 
 | `autoIndexMaxRetries` | `5` | Maximum transient interprocess lock retries (0-10) for background automatic indexing. |
 | `autoIndexRetryDelayMs` | `100` | Initial exponential lock retry delay in milliseconds (10-10000). |
 | `watchFiles` | `true` | Re-index when files change |
+| `pauseBackgroundIndexingOnBattery` | `false` | On macOS, defer automatic startup and watcher-triggered indexing while using battery power, then run one pending incremental update after AC power returns. Manual `index_codebase` requests remain available. This option has no effect on other platforms. |
 | `maxFileSize` | `1048576` | Skip files larger than this (bytes). Default: 1MB |
 | `maxChunksPerFile` | `100` | Maximum chunks to index per file (controls token costs for large files) |
 | `semanticOnly` | `false` | When `true`, only index semantic nodes (functions, classes) and skip generic blocks |
