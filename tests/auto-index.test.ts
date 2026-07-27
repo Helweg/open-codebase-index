@@ -385,4 +385,29 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
     expect(getAutoIndexStatus(projectRoot, "jcode").blockedReason).toBeUndefined();
   });
+
+  it("still runs manual indexing when the project marker is missing", async () => {
+    const indexer = new MockIndexer();
+    rmSync(path.join(projectRoot, "package.json"));
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    await expect(runCoordinatedIndex(projectRoot, "jcode", false)).resolves.toMatchObject({
+      outcome: "ready",
+    });
+
+    expect(indexer.index).toHaveBeenCalledOnce();
+    expect(getAutoIndexStatus(projectRoot, "jcode").blockedReason).toBe("project-marker-missing");
+  });
+
+  it("still runs background watcher indexing from a home-directory project root", async () => {
+    const indexer = new MockIndexer();
+    configureAutoIndex(os.homedir(), "jcode", config({ requireProjectMarker: false }), () => indexer);
+
+    await expect(requestBackgroundIndex(os.homedir(), "jcode")).resolves.toMatchObject({
+      outcome: "ready",
+    });
+
+    expect(indexer.index).toHaveBeenCalledOnce();
+    expect(getAutoIndexStatus(os.homedir(), "jcode").blockedReason).toBe("home-directory");
+  });
 });

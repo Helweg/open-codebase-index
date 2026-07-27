@@ -521,10 +521,11 @@ class AutoIndexCoordinator {
 
   private canRun(request: IndexRequest): boolean {
     this.refreshSafety();
-    if (!this.registration.safeToRun) return false;
-    return request.source === "manual"
-      || request.source === "watcher"
-      || this.registration.config.indexing.autoIndex;
+    if (request.source === "manual" || request.source === "watcher") {
+      return true;
+    }
+
+    return this.registration.safeToRun && this.registration.config.indexing.autoIndex;
   }
 }
 
