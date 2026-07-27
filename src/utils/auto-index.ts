@@ -302,16 +302,8 @@ class AutoIndexCoordinator {
     const batteryCheck = this.waitForACPower();
     this.batteryCheck = batteryCheck;
     void batteryCheck.then(
-      () => {
-        if (this.batteryCheck === batteryCheck) {
-          this.batteryCheck = null;
-        }
-      },
-      () => {
-        if (this.batteryCheck === batteryCheck) {
-          this.batteryCheck = null;
-        }
-      },
+      () => this.finishBatteryCheck(batteryCheck),
+      () => this.finishBatteryCheck(batteryCheck),
     );
     return batteryCheck;
   }
@@ -621,6 +613,16 @@ class AutoIndexCoordinator {
     const resolve = this.resolveBatteryRetry;
     this.resolveBatteryRetry = null;
     resolve?.();
+  }
+
+  private finishBatteryCheck(batteryCheck: Promise<CoordinatedIndexResult>): void {
+    if (this.batteryCheck !== batteryCheck) return;
+    this.batteryCheck = null;
+    const deferredRequest = this.batteryDeferredRequest;
+    this.batteryDeferredRequest = null;
+    if (deferredRequest && !this.stopped) {
+      void this.request(deferredRequest);
+    }
   }
 }
 

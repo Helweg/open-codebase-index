@@ -365,6 +365,27 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
   });
 
+  it("drains watcher changes queued while a battery-aware index is running", async () => {
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn().mockResolvedValue(false),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    const firstRun = deferred<IndexStats>();
+    indexer.index.mockImplementationOnce(() => firstRun.promise);
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    const firstRequest = requestBackgroundIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const queuedChange = requestBackgroundIndex(projectRoot, "jcode");
+    firstRun.resolve(stats());
+
+    await expect(firstRequest).resolves.toMatchObject({ outcome: "ready" });
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+    await expect(queuedChange).resolves.toMatchObject({ outcome: "ready" });
+  });
+
   it("stops a battery-deferred background request without indexing", async () => {
     vi.useFakeTimers();
     const policy: BackgroundIndexingPolicy = {
