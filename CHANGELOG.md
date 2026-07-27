@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-07-27
+
 ### Added
 
 - **Reliable opt-in MCP auto-indexing**: Added a process-scoped coordinator shared by Jcode, Codex, Claude, OpenCode, Pi, manual indexing, and file watchers. It tracks sanitized lifecycle/progress timestamps, skips healthy current indexes, coalesces concurrent work, bounds exponential lock retries and first-retrieval waits, refreshes stale indexes with the latest Indexer, and cancels retry work during shutdown while preserving multiprocess locks and home/project-marker safety. `autoIndex` remains `false` by default so retrieval never triggers paid embedding work without explicit opt-in.
@@ -18,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Exact-search handoffs**: Metadata-only semantic discovery and conceptual context packs now return bounded, result-derived symbol suggestions for exact usage or exhaustive-match searches, with handoffs included in context token-budget accounting across OpenCode, MCP, and Pi.
 - **Automatic branch and PR index preparation**: `pr_impact` now safely materializes and indexes missing branch or pull-request commits in isolated hook-disabled worktrees, verifies commit-aware fork-specific catalogs, and reuses or replaces indexes without changing the caller's worktree.
+- **Global knowledge-base reuse**: Global indexes now reuse identical knowledge-base chunks across projects instead of re-embedding them for each project catalog, while keeping project-owned source chunks isolated.
 - **Name-based call graph routing**: Callers, callees, and dependency paths now resolve unique symbol names automatically across native OpenCode, MCP, Pi, and `codebase_context`. Duplicate names return bounded candidate locations with optional file-path disambiguators, while `symbolId` remains an optional compatibility escape hatch.
 - **Self-recovering context lookup**: `codebase_context` now retries empty scoped searches without file filters, retries inferred symbol text after definition-style misses, reports bounded recovery metadata, and keeps all fallback responses within the requested token budget across MCP, native OpenCode, Pi, and evaluation.
 - **Intent-aware local ranking**: Semantic and hybrid search now strongly promote exact NFKC/case-normalized authoritative definitions, interpret definition/implementation/test/docs/config/call-flow wording, demote imports, wrappers, fixtures, generated/vendor copies unless requested, remove nested duplicate chunks, diversify useful files, preserve conceptual retrieval strength, and keep stable ties.
@@ -495,7 +498,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
