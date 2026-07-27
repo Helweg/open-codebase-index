@@ -13,7 +13,7 @@ import { createMcpServer } from "./mcp-server.js";
 import { loadConfigFile, loadMergedConfig } from "./config/merger.js";
 import { getIndexerForProject } from "./tools/operations.js";
 import { hasProjectMarker } from "./utils/files.js";
-import { stopAutoIndex } from "./utils/auto-index.js";
+import { isHomeDirectory, stopAutoIndex } from "./utils/auto-index.js";
 import { createWatcherWithIndexer, type CombinedWatcher } from "./watcher/index.js";
 import { attachRecentActivity } from "./tools/visualize/activity.js";
 import { generateVisualizationHtml, transformForVisualization } from "./tools/visualize/index.js";
@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   await server.connect(transport);
 
   let watcher: CombinedWatcher | null = null;
-  const isHomeDir = path.resolve(args.project) === path.resolve(os.homedir());
+  const isHomeDir = isHomeDirectory(args.project);
   const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(args.project));
 
   if (config.indexing.watchFiles && isValidProject) {

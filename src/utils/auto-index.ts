@@ -65,6 +65,7 @@ type CoordinatedIndexer = Pick<
 interface AutoIndexRegistration {
   config: ParsedCodebaseIndexConfig;
   getIndexer: () => CoordinatedIndexer;
+  projectRoot: string;
   safeToRun: boolean;
   blockedReason?: AutoIndexStatusSnapshot["blockedReason"];
 }
@@ -80,6 +81,7 @@ const MAX_RETRY_DELAY_MS = 10_000;
 const SHUTDOWN_WAIT_MS = 2_000;
 const coordinators = new Map<string, AutoIndexCoordinator>();
 const coordinatorKeysByProject = new Map<string, string>();
+const coordinatorReplacementBarriers = new Map<string, Promise<void>>();
 
 class AutoIndexCancelledError extends Error {
   constructor() {
@@ -107,6 +109,10 @@ function canonicalizePath(targetPath: string): string {
   return path.join(canonicalizePath(parent), path.basename(resolved));
 }
 
+export function isHomeDirectory(projectRoot: string): boolean {
+  return canonicalizePath(projectRoot) === canonicalizePath(os.homedir());
+}
+
 function projectLookupKey(projectRoot: string, host: HostMode): string {
   return `${host}::${canonicalizePath(projectRoot)}`;
 }
@@ -125,7 +131,7 @@ function getProjectSafety(
   projectRoot: string,
   config: ParsedCodebaseIndexConfig,
 ): Pick<AutoIndexRegistration, "blockedReason" | "safeToRun"> {
-  if (path.resolve(projectRoot) === path.resolve(os.homedir())) {
+  if (isHomeDirectory(projectRoot)) {
     return { safeToRun: false, blockedReason: "home-directory" };
   }
   if (config.indexing.requireProjectMarker && !hasProjectMarker(projectRoot)) {
@@ -210,6 +216,7 @@ function mergeRequests(current: IndexRequest | null, next: IndexRequest): IndexR
 class AutoIndexCoordinator {
   private registration: AutoIndexRegistration;
   private status: AutoIndexStatusSnapshot;
+  private activation: Promise<void> = Promise.resolve();
   private inFlight: Promise<CoordinatedIndexResult> | null = null;
   private activeRequest: IndexRequest | null = null;
   private pendingRequest: IndexRequest | null = null;
@@ -244,7 +251,12 @@ class AutoIndexCoordinator {
     }
   }
 
+  activateAfter(activation: Promise<void>): void {
+    this.activation = activation;
+  }
+
   snapshot(): AutoIndexStatusSnapshot {
+    this.refreshSafety();
     return {
       ...this.status,
       progress: this.status.progress ? { ...this.status.progress } : undefined,
@@ -252,8 +264,9 @@ class AutoIndexCoordinator {
   }
 
   start(source: "startup" | "retrieval"): Promise<CoordinatedIndexResult> | null {
+    this.refreshSafety();
     if (!this.registration.config.indexing.autoIndex || !this.registration.safeToRun) return null;
-    if (this.status.state === "failed" || this.status.state === "ready") return this.inFlight;
+    if (this.status.state === "failed") return this.inFlight;
     return this.request({ checkFreshness: true, force: false, source });
   }
 
@@ -261,12 +274,22 @@ class AutoIndexCoordinator {
     if (this.stopped) {
       return Promise.resolve({ outcome: "stopped" });
     }
+    return this.activation.then(() => this.enqueueRequest(request));
+  }
+
+  private enqueueRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
+    if (this.stopped || !this.canRun(request)) {
+      return Promise.resolve({ outcome: "stopped" });
+    }
     if (this.inFlight) {
       if (request.force && !this.activeRequest?.force) {
         this.pendingRequest = mergeRequests(this.pendingRequest, request);
         this.abortController?.abort();
         const active = this.inFlight;
-        return active.then(() => this.inFlight ?? this.startRequest(request));
+        return active.then(() => {
+          if (this.stopped) return { outcome: "stopped" };
+          return this.inFlight ?? this.startRequest(request);
+        });
       }
       if (request.source === "watcher") {
         this.pendingRequest = mergeRequests(this.pendingRequest, request);
@@ -288,7 +311,7 @@ class AutoIndexCoordinator {
     return this.registration.config.indexing.autoIndexWaitMs;
   }
 
-  async stop(): Promise<void> {
+  async stop(waitForCompletion = false): Promise<void> {
     this.stopped = true;
     this.pendingRequest = null;
     this.abortController?.abort();
@@ -298,12 +321,20 @@ class AutoIndexCoordinator {
       progress: undefined,
       retryAttempt: undefined,
     });
-    if (this.inFlight) {
-      await withTimeout(this.inFlight, SHUTDOWN_WAIT_MS);
+    const inFlight = this.inFlight;
+    if (inFlight) {
+      if (waitForCompletion) {
+        await inFlight;
+      } else {
+        await withTimeout(inFlight, SHUTDOWN_WAIT_MS);
+      }
     }
   }
 
   private startRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
+    if (this.stopped || !this.canRun(request)) {
+      return Promise.resolve({ outcome: "stopped" });
+    }
     this.activeRequest = request;
     const job = this.run(request);
     this.inFlight = job;
@@ -462,6 +493,7 @@ class AutoIndexCoordinator {
     state: AutoIndexCoordinatorState,
     updates: Partial<AutoIndexStatusSnapshot> = {},
   ): void {
+    if (this.stopped && state !== "stopped") return;
     this.status = {
       ...this.status,
       ...updates,
@@ -474,6 +506,25 @@ class AutoIndexCoordinator {
 
   private throwIfCancelled(signal: AbortSignal): void {
     if (signal.aborted) throw new AutoIndexCancelledError();
+  }
+
+  private refreshSafety(): void {
+    const previousBlockedReason = this.registration.blockedReason;
+    const safety = getProjectSafety(this.registration.projectRoot, this.registration.config);
+    this.registration.safeToRun = safety.safeToRun;
+    this.registration.blockedReason = safety.blockedReason;
+    this.status.blockedReason = safety.blockedReason;
+    if (previousBlockedReason !== safety.blockedReason) {
+      this.status.updatedAt = now();
+    }
+  }
+
+  private canRun(request: IndexRequest): boolean {
+    this.refreshSafety();
+    if (!this.registration.safeToRun) return false;
+    return request.source === "manual"
+      || request.source === "watcher"
+      || this.registration.config.indexing.autoIndex;
   }
 }
 
@@ -488,13 +539,31 @@ export function configureAutoIndex(
   config: ParsedCodebaseIndexConfig,
   getIndexer: () => CoordinatedIndexer,
 ): void {
+  const projectKey = projectLookupKey(projectRoot, host);
   const safety = getProjectSafety(projectRoot, config);
   const registration: AutoIndexRegistration = {
     config,
     getIndexer,
+    projectRoot,
     ...safety,
   };
   const key = coordinatorKey(projectRoot, config, host);
+  const previousKey = coordinatorKeysByProject.get(projectKey);
+  if (previousKey && previousKey !== key) {
+    const previousCoordinator = coordinators.get(previousKey);
+    const previousBarrier = coordinatorReplacementBarriers.get(projectKey) ?? Promise.resolve();
+    const stopPrevious = previousCoordinator?.stop(true) ?? Promise.resolve();
+    const activation = Promise.all([previousBarrier, stopPrevious]).then(() => undefined);
+    coordinatorReplacementBarriers.set(projectKey, activation);
+    coordinators.delete(previousKey);
+
+    const coordinator = new AutoIndexCoordinator(registration);
+    coordinator.activateAfter(activation);
+    coordinators.set(key, coordinator);
+    coordinatorKeysByProject.set(projectKey, key);
+    return;
+  }
+
   let coordinator = coordinators.get(key);
   if (!coordinator) {
     coordinator = new AutoIndexCoordinator(registration);
@@ -502,7 +571,7 @@ export function configureAutoIndex(
   } else {
     coordinator.update(registration);
   }
-  coordinatorKeysByProject.set(projectLookupKey(projectRoot, host), key);
+  coordinatorKeysByProject.set(projectKey, key);
 }
 
 export function startAutoIndex(
@@ -571,8 +640,7 @@ export async function waitForAutoIndexForRetrieval(
   }
 
   try {
-    const currentStatus = await coordinator.getIndexer().getStatus();
-    if (currentStatus.indexed) return { ready: true };
+    if (await hasReadableCurrentIndex(coordinator)) return { ready: true };
   } catch {
     // The coordinator reports a sanitized actionable failure below.
   }
@@ -583,8 +651,7 @@ export async function waitForAutoIndexForRetrieval(
   }
 
   try {
-    const currentStatus = await coordinator.getIndexer().getStatus();
-    if (currentStatus.indexed) return { ready: true };
+    if (await hasReadableCurrentIndex(coordinator)) return { ready: true };
   } catch {
     // The coordinator reports a sanitized actionable failure below.
   }
@@ -621,6 +688,17 @@ export async function stopAllAutoIndexes(): Promise<void> {
 
 export async function resetAutoIndexCoordinatorsForTests(): Promise<void> {
   await stopAllAutoIndexes();
+  await Promise.all(coordinatorReplacementBarriers.values());
   coordinators.clear();
   coordinatorKeysByProject.clear();
+  coordinatorReplacementBarriers.clear();
+}
+
+async function hasReadableCurrentIndex(coordinator: AutoIndexCoordinator): Promise<boolean> {
+  const indexer = coordinator.getIndexer();
+  if (indexer.getIndexFreshness) {
+    const freshness = await indexer.getIndexFreshness();
+    return freshness.readable && freshness.current;
+  }
+  return (await indexer.getStatus()).indexed;
 }

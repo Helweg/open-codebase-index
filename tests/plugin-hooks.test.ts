@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, symlinkSync } from "fs";
+import * as os from "os";
+import * as path from "path";
 
 const mockState = vi.hoisted(() => ({
   config: {
@@ -13,6 +16,7 @@ const mockState = vi.hoisted(() => ({
       requireProjectMarker: true,
     },
   },
+  createWatcherWithIndexer: vi.fn(() => ({ stop: vi.fn() })),
   hints: ["runtime-routing-hint"],
   routingControllers: [] as Array<{
     getSystemHints: ReturnType<typeof vi.fn>;
@@ -34,7 +38,7 @@ vi.mock("../src/utils/files.js", () => ({
 }));
 
 vi.mock("../src/watcher/index.js", () => ({
-  createWatcherWithIndexer: vi.fn(() => ({ stop: vi.fn() })),
+  createWatcherWithIndexer: mockState.createWatcherWithIndexer,
 }));
 
 vi.mock("../src/commands/loader.js", () => ({
@@ -110,6 +114,24 @@ describe("plugin routing hint hook selection", () => {
     };
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
+    mockState.createWatcherWithIndexer.mockClear();
+  });
+
+  it("does not watch a project symlink that resolves to the home directory", async () => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "plugin-home-symlink-"));
+    const homeLink = path.join(tempDir, "home-link");
+    symlinkSync(os.homedir(), homeLink, "dir");
+    mockState.config.indexing.watchFiles = true;
+    mockState.config.indexing.requireProjectMarker = false;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await plugin({ directory: homeLink } as Parameters<typeof plugin>[0]);
+      expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("registers codebase_context in the native OpenCode tool map", async () => {

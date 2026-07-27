@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -60,8 +60,12 @@ function status(indexed: boolean): StatusResult {
   };
 }
 
-function config(overrides: Record<string, unknown> = {}) {
+function config(
+  indexingOverrides: Record<string, unknown> = {},
+  rootOverrides: Record<string, unknown> = {},
+) {
   return parseConfig({
+    ...rootOverrides,
     embeddingProvider: "custom",
     customProvider: {
       baseUrl: "http://127.0.0.1:9999/v1",
@@ -75,7 +79,7 @@ function config(overrides: Record<string, unknown> = {}) {
       autoIndexRetryDelayMs: 10,
       watchFiles: false,
       requireProjectMarker: true,
-      ...overrides,
+      ...indexingOverrides,
     },
   });
 }
@@ -94,6 +98,7 @@ class MockIndexer {
       totalChunks: 1,
     });
     this.readable = true;
+    this.freshness = { readable: true, current: true, reason: "current" };
     return stats();
   });
   forceIndex = vi.fn(async (onProgress?: (progress: IndexProgress) => void) => this.index(onProgress));
@@ -142,6 +147,19 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
   });
 
+  it("refreshes a readable stale Pi index before retrieval", async () => {
+    const indexer = new MockIndexer();
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: false, reason: "files-changed" };
+    configureAutoIndex(projectRoot, "pi", config(), () => indexer);
+
+    const result = await waitForAutoIndexForRetrieval(projectRoot, "pi");
+
+    expect(result).toEqual({ ready: true });
+    expect(indexer.index).toHaveBeenCalledOnce();
+    expect(indexer.getIndexFreshness).toHaveBeenCalledTimes(3);
+  });
+
   it("lets concurrent first retrievals await one in-flight job", async () => {
     const indexer = new MockIndexer();
     const indexing = deferred<IndexStats>();
@@ -155,6 +173,7 @@ describe("auto-index coordinator", () => {
       });
       const result = await indexing.promise;
       indexer.readable = true;
+      indexer.freshness = { readable: true, current: true, reason: "current" };
       return result;
     });
     configureAutoIndex(projectRoot, "claude", config(), () => indexer);
@@ -237,6 +256,25 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
   });
 
+  it("keeps stop terminal when forced work is queued behind an active run", async () => {
+    const indexer = new MockIndexer();
+    const background = deferred<IndexStats>();
+    indexer.index.mockImplementation(() => background.promise);
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    requestBackgroundIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const force = runCoordinatedIndex(projectRoot, "jcode", true);
+    const stopping = stopAutoIndex(projectRoot, "jcode");
+
+    expect(getAutoIndexStatus(projectRoot, "jcode").state).toBe("stopped");
+    background.resolve(stats());
+    await stopping;
+    await expect(force).resolves.toMatchObject({ outcome: "stopped" });
+    expect(indexer.forceIndex).not.toHaveBeenCalled();
+    expect(getAutoIndexStatus(projectRoot, "jcode").state).toBe("stopped");
+  });
+
   it("uses the latest Indexer and coalesces watcher requests", async () => {
     const firstIndexer = new MockIndexer();
     const secondIndexer = new MockIndexer();
@@ -255,6 +293,26 @@ describe("auto-index coordinator", () => {
     await firstRequest;
     await vi.waitFor(() => expect(secondIndexer.index).toHaveBeenCalledOnce());
     expect(firstIndexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("drains the old coordinator before starting an index-key replacement", async () => {
+    const firstIndexer = new MockIndexer();
+    const secondIndexer = new MockIndexer();
+    const firstRun = deferred<IndexStats>();
+    firstIndexer.index.mockImplementation(() => firstRun.promise);
+    configureAutoIndex(projectRoot, "jcode", config(), () => firstIndexer);
+
+    const firstRequest = requestBackgroundIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(firstIndexer.index).toHaveBeenCalledOnce());
+    configureAutoIndex(projectRoot, "jcode", config({}, { scope: "global" }), () => secondIndexer);
+    const secondRequest = requestBackgroundIndex(projectRoot, "jcode");
+    await Promise.resolve();
+    expect(secondIndexer.index).not.toHaveBeenCalled();
+
+    firstRun.resolve(stats());
+    await expect(firstRequest).resolves.toMatchObject({ outcome: "stopped" });
+    await expect(secondRequest).resolves.toMatchObject({ outcome: "ready" });
+    expect(secondIndexer.index).toHaveBeenCalledOnce();
   });
 
   it("queues force indexing behind and supersedes background work safely", async () => {
@@ -296,5 +354,35 @@ describe("auto-index coordinator", () => {
     });
     expect(indexer.index).not.toHaveBeenCalled();
     expect(JSON.stringify(getAutoIndexStatus(os.homedir(), "jcode"))).not.toContain(os.homedir());
+  });
+
+  it("blocks automatic indexing when a project symlink resolves to the home directory", async () => {
+    const indexer = new MockIndexer();
+    const homeLink = path.join(projectRoot, "home-link");
+    symlinkSync(os.homedir(), homeLink, "dir");
+    configureAutoIndex(homeLink, "jcode", config({ requireProjectMarker: false }), () => indexer);
+
+    expect(startAutoIndex(homeLink, "jcode")).toBeNull();
+    await expect(waitForAutoIndexForRetrieval(homeLink, "jcode")).resolves.toMatchObject({
+      ready: false,
+      text: expect.stringContaining("home directory"),
+    });
+    expect(indexer.index).not.toHaveBeenCalled();
+  });
+
+  it("rechecks project-marker safety after a marker appears", async () => {
+    const indexer = new MockIndexer();
+    rmSync(path.join(projectRoot, "package.json"));
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    expect(startAutoIndex(projectRoot, "jcode")).toBeNull();
+    expect(getAutoIndexStatus(projectRoot, "jcode")).toMatchObject({
+      blockedReason: "project-marker-missing",
+    });
+
+    writeFileSync(path.join(projectRoot, "package.json"), "{}");
+    await expect(waitForAutoIndexForRetrieval(projectRoot, "jcode")).resolves.toEqual({ ready: true });
+    expect(indexer.index).toHaveBeenCalledOnce();
+    expect(getAutoIndexStatus(projectRoot, "jcode").blockedReason).toBeUndefined();
   });
 });

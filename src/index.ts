@@ -1,5 +1,4 @@
 import type { Plugin } from "@opencode-ai/plugin";
-import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
@@ -29,7 +28,7 @@ import {
 } from "./tools/index.js";
 import { loadCommandsFromDirectory } from "./commands/loader.js";
 import { RoutingHintController } from "./routing-hints.js";
-import { startAutoIndex } from "./utils/auto-index.js";
+import { isHomeDirectory, startAutoIndex } from "./utils/auto-index.js";
 import { hasProjectMarker } from "./utils/files.js";
 import type { CombinedWatcher } from "./watcher/index.js";
 
@@ -95,7 +94,7 @@ const plugin: Plugin = async ({ directory, worktree }) => {
       ? new RoutingHintController(() => getProjectIndexer().getStatus(), 200, config.search.routingGraphHandoffHints)
       : null;
 
-    const isHomeDir = path.resolve(projectRoot) === path.resolve(os.homedir());
+    const isHomeDir = isHomeDirectory(projectRoot);
     const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(projectRoot));
 
     if (isHomeDir) {
