@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, symlinkSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -17,6 +17,7 @@ const mockState = vi.hoisted(() => ({
     },
   },
   createWatcherWithIndexer: vi.fn(() => ({ stop: vi.fn() })),
+  initializeTools: vi.fn(),
   hints: ["runtime-routing-hint"],
   routingControllers: [] as Array<{
     getSystemHints: ReturnType<typeof vi.fn>;
@@ -71,7 +72,7 @@ vi.mock("../src/tools/index.js", () => {
     remove_knowledge_base: toolStub,
     pr_impact: toolStub,
     index_visualize: toolStub,
-    initializeTools: vi.fn(),
+    initializeTools: mockState.initializeTools,
     getSharedIndexer: vi.fn(() => indexerStub),
   };
 });
@@ -115,6 +116,7 @@ describe("plugin routing hint hook selection", () => {
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
     mockState.createWatcherWithIndexer.mockClear();
+    mockState.initializeTools.mockClear();
   });
 
   it("does not watch a project symlink that resolves to the home directory", async () => {
@@ -130,6 +132,40 @@ describe("plugin routing hint hook selection", () => {
       expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
     } finally {
       warn.mockRestore();
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back to directory when worktree is not a git repository", async () => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "plugin-non-git-worktree-"));
+    const nonGitWorktree = path.parse(tempDir).root;
+    mockState.initializeTools.mockClear();
+
+    try {
+      await plugin({ directory: tempDir, worktree: nonGitWorktree } as Parameters<typeof plugin>[0]);
+
+      expect(mockState.initializeTools).toHaveBeenCalledWith(tempDir, expect.any(Object));
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps a git worktree when it is a real git repository", async () => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "plugin-git-worktree-"));
+    const directory = path.join(tempDir, "selected-dir");
+    const worktree = path.join(tempDir, "worktree");
+
+    mkdirSync(directory, { recursive: true });
+    mkdirSync(path.join(worktree, ".git"), { recursive: true });
+    writeFileSync(path.join(worktree, ".git", "HEAD"), "ref: refs/heads/main\n", "utf-8");
+
+    mockState.initializeTools.mockClear();
+
+    try {
+      await plugin({ directory, worktree } as Parameters<typeof plugin>[0]);
+
+      expect(mockState.initializeTools).toHaveBeenCalledWith(worktree, expect.any(Object));
+    } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
   });

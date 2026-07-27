@@ -18,8 +18,6 @@ const PROJECT_MARKERS = [
   "build.gradle",
   "CMakeLists.txt",
   "Makefile",
-  ".opencode",
-  ".codebase-index",
 ];
 
 export function hasProjectMarker(projectRoot: string): boolean {

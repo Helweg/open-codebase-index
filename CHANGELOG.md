@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Plugin startup smoke coverage**: Added a bounded subprocess harness for empty, runtime-state-only, and package-marked non-git projects. It runs within the existing CI test job without additional native builds.
+
+### Changed
+
+- **Safer project marker detection**: Runtime-generated `.opencode` and `.codebase-index` directories no longer qualify as project markers, so they cannot enable background watching or indexing in otherwise empty directories.
+
+### Fixed
+
+- **OpenCode startup root handling** (#184): When selecting the OpenCode plugin root, prefer `worktree` only if it is a real Git repository. Non-git worktree values now correctly fall back to `directory` to avoid accidental indexing and watching from filesystem roots.
+
 ## [0.19.0] - 2026-07-27
 
 ### Added

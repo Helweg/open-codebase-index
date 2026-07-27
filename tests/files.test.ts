@@ -285,9 +285,19 @@ describe("files utilities", () => {
       expect(hasProjectMarker(tempDir)).toBe(true);
     });
 
-    it("should return true when .opencode exists", () => {
-      fs.mkdirSync(path.join(tempDir, ".opencode"), { recursive: true });
+    it("should return true when Makefile exists", () => {
+      fs.writeFileSync(path.join(tempDir, "Makefile"), "all:\n");
       expect(hasProjectMarker(tempDir)).toBe(true);
+    });
+
+    it("should return false when only .opencode exists", () => {
+      fs.mkdirSync(path.join(tempDir, ".opencode"), { recursive: true });
+      expect(hasProjectMarker(tempDir)).toBe(false);
+    });
+
+    it("should return false when only .codebase-index exists", () => {
+      fs.mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
+      expect(hasProjectMarker(tempDir)).toBe(false);
     });
 
     it("should return false for empty directory", () => {

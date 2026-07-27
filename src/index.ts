@@ -30,6 +30,7 @@ import { loadCommandsFromDirectory } from "./commands/loader.js";
 import { RoutingHintController } from "./routing-hints.js";
 import { isHomeDirectory, startAutoIndex } from "./utils/auto-index.js";
 import { hasProjectMarker } from "./utils/files.js";
+import { isGitRepo } from "./git/index.js";
 import type { CombinedWatcher } from "./watcher/index.js";
 
 const activeWatchers = new Map<string, CombinedWatcher>();
@@ -72,6 +73,14 @@ function appendRoutingHints(
   }
 }
 
+function resolveProjectRoot(directory: string, worktree?: string): string {
+  if (worktree && isGitRepo(worktree)) {
+    return worktree;
+  }
+
+  return directory;
+}
+
 interface ChatTransformInput {
   sessionID?: string;
 }
@@ -83,7 +92,7 @@ interface ChatTransformOutput {
 
 const plugin: Plugin = async ({ directory, worktree }) => {
   try {
-    const projectRoot = worktree || directory;
+    const projectRoot = resolveProjectRoot(directory, worktree);
     const rawConfig = loadMergedConfig(projectRoot);
     const config = parseConfig(rawConfig);
 
