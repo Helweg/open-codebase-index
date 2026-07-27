@@ -65,6 +65,22 @@ const CONCEPTUAL_DISCOVERY_HINTS = [
   "code that",
 ];
 
+const BROAD_LOCAL_TASK_HINTS = [
+  "fix the bug",
+  "fix this",
+  "fix issue",
+  "implement ",
+  "add support",
+  "investigate ",
+  "debug ",
+  "refactor ",
+  "review this",
+  "review codebase",
+  "review the codebase",
+  "audit this",
+  "audit the codebase",
+];
+
 const DEFINITION_HINTS = [
   "defined",
   "definition",
@@ -118,6 +134,10 @@ export function isExternalLookup(text: string): boolean {
 
 export function hasConceptualDiscoveryHint(text: string): boolean {
   return includesHint(text, CONCEPTUAL_DISCOVERY_HINTS);
+}
+
+export function hasBroadLocalTaskHint(text: string): boolean {
+  return includesHint(text, BROAD_LOCAL_TASK_HINTS);
 }
 
 export function hasDefinitionHint(text: string): boolean {
