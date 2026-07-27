@@ -70,7 +70,8 @@ The plugin looks for any of these files/directories:
 - `build.gradle`
 - `CMakeLists.txt`
 - `Makefile`
-- `.opencode`
+
+Runtime state directories such as `.opencode` and `.codebase-index` are intentionally not project markers because the host or plugin can create them in otherwise empty directories.
 
 ---
 
