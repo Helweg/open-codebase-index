@@ -223,10 +223,12 @@ class AutoIndexCoordinator {
   private inFlight: Promise<CoordinatedIndexResult> | null = null;
   private activeRequest: IndexRequest | null = null;
   private batteryCheck: Promise<CoordinatedIndexResult> | null = null;
+  private batteryIndexJob: Promise<CoordinatedIndexResult> | null = null;
   private batteryDeferredRequest: IndexRequest | null = null;
   private batteryRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private resolveBatteryRetry: (() => void) | null = null;
   private pendingRequest: IndexRequest | null = null;
+  private pendingFollowUp: Promise<CoordinatedIndexResult> | null = null;
   private abortController: AbortController | null = null;
   private stopped = false;
 
@@ -294,6 +296,10 @@ class AutoIndexCoordinator {
       return this.enqueueRequest(request);
     }
 
+    if (this.batteryCheck && this.batteryIndexJob !== null && this.batteryIndexJob === this.inFlight) {
+      return this.enqueueRequest(request);
+    }
+
     this.batteryDeferredRequest = mergeRequests(this.batteryDeferredRequest, request);
     if (this.batteryCheck) {
       return this.batteryCheck;
@@ -324,6 +330,11 @@ class AutoIndexCoordinator {
       }
       if (request.source === "watcher") {
         this.pendingRequest = mergeRequests(this.pendingRequest, request);
+        const active = this.inFlight;
+        return active.then(() => {
+          if (this.stopped) return { outcome: "stopped" };
+          return this.pendingFollowUp ?? { outcome: "stopped" };
+        });
       }
       return this.inFlight;
     }
@@ -376,10 +387,20 @@ class AutoIndexCoordinator {
       this.inFlight = null;
       this.activeRequest = null;
       this.abortController = null;
+      if (this.batteryIndexJob === job) {
+        this.batteryIndexJob = null;
+        this.batteryCheck = null;
+      }
       const pending = this.pendingRequest;
       this.pendingRequest = null;
       if (pending && !this.stopped) {
-        void this.request(pending);
+        const followUp = this.request(pending);
+        this.pendingFollowUp = followUp;
+        void followUp.then(() => {
+          if (this.pendingFollowUp === followUp) {
+            this.pendingFollowUp = null;
+          }
+        });
       }
     });
     return job;
@@ -572,7 +593,12 @@ class AutoIndexCoordinator {
       if (!policy || !await this.isBatteryPauseActive(policy)) {
         const request = this.batteryDeferredRequest;
         this.batteryDeferredRequest = null;
-        return request ? this.enqueueRequest(request) : { outcome: "stopped" };
+        if (!request) return { outcome: "stopped" };
+        const job = this.enqueueRequest(request);
+        if (this.inFlight === job) {
+          this.batteryIndexJob = job;
+        }
+        return job;
       }
       await this.waitForBatteryRetry(policy.recheckDelayMs);
     }

@@ -373,16 +373,25 @@ describe("auto-index coordinator", () => {
     powerSource.policy = policy;
     const indexer = new MockIndexer();
     const firstRun = deferred<IndexStats>();
-    indexer.index.mockImplementationOnce(() => firstRun.promise);
+    const secondRun = deferred<IndexStats>();
+    indexer.index
+      .mockImplementationOnce(() => firstRun.promise)
+      .mockImplementationOnce(() => secondRun.promise);
     configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
 
     const firstRequest = requestBackgroundIndex(projectRoot, "jcode");
     await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
     const queuedChange = requestBackgroundIndex(projectRoot, "jcode");
+    let queuedChangeSettled = false;
+    void queuedChange?.then(() => {
+      queuedChangeSettled = true;
+    });
     firstRun.resolve(stats());
 
     await expect(firstRequest).resolves.toMatchObject({ outcome: "ready" });
     await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+    expect(queuedChangeSettled).toBe(false);
+    secondRun.resolve(stats());
     await expect(queuedChange).resolves.toMatchObject({ outcome: "ready" });
   });
 
