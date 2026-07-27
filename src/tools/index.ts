@@ -147,7 +147,7 @@ export const index_codebase: ToolDefinition = tool({
     });
 
     if (result.kind === "estimate") return formatCostEstimate(result.estimate);
-    if (result.kind === "busy") return result.text;
+    if (result.kind === "busy" || result.kind === "message") return result.text;
     return formatIndexStats(result.stats, args.verbose ?? false);
   },
 });

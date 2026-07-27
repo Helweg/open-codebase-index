@@ -4,9 +4,9 @@ import type { HostMode } from "../config/host.js";
 import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
 import { loadConfigFile } from "../config/merger.js";
 import type { Indexer } from "../indexer/index.js";
-import { isTransientIndexLockContention } from "../indexer/index-lock.js";
 import { isGitRepo } from "../git/index.js";
 import { refreshIndexerForDirectory } from "../tools/operations.js";
+import { configureAutoIndex, requestBackgroundIndex } from "../utils/auto-index.js";
 import { FileWatcher } from "./file-watcher.js";
 import { GitHeadWatcher } from "./git-head-watcher.js";
 
@@ -26,71 +26,6 @@ export interface WatcherOptions {
   configPath?: string;
 }
 
-class BackgroundReindexer {
-  private running = false;
-  private pending = false;
-  private stopped = false;
-  private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private retryDelayMs = 50;
-
-  constructor(private readonly runIndex: () => Promise<void>) {}
-
-  request(): void {
-    if (this.stopped) {
-      return;
-    }
-
-    this.pending = true;
-    this.drain();
-  }
-
-  stop(): void {
-    this.stopped = true;
-    this.pending = false;
-    if (this.retryTimer) {
-      clearTimeout(this.retryTimer);
-      this.retryTimer = null;
-    }
-  }
-
-  private drain(): void {
-    if (this.stopped || this.running || this.retryTimer || !this.pending) {
-      return;
-    }
-
-    this.pending = false;
-    this.running = true;
-    void this.run();
-  }
-
-  private async run(): Promise<void> {
-    let retryAfterContention = false;
-    try {
-      await this.runIndex();
-      this.retryDelayMs = 50;
-    } catch (error) {
-      if (isTransientIndexLockContention(error)) {
-        this.pending = true;
-        retryAfterContention = true;
-      } else {
-        console.error("[codebase-index] Background reindex failed:", error);
-      }
-    } finally {
-      this.running = false;
-      if (retryAfterContention && !this.stopped) {
-        const delay = this.retryDelayMs;
-        this.retryDelayMs = Math.min(this.retryDelayMs * 2, 500);
-        this.retryTimer = setTimeout(() => {
-          this.retryTimer = null;
-          this.drain();
-        }, delay);
-      } else {
-        this.drain();
-      }
-    }
-  }
-}
-
 export function createWatcherWithIndexer(
   getIndexer: () => Indexer,
   projectRoot: string,
@@ -99,9 +34,16 @@ export function createWatcherWithIndexer(
   options: WatcherOptions = {},
 ): CombinedWatcher {
   const fileWatcher = new FileWatcher(projectRoot, config, host, options);
-  const backgroundReindexer = new BackgroundReindexer(async () => {
-    await getIndexer().index();
-  });
+  configureAutoIndex(projectRoot, host, parseConfig(config), getIndexer);
+  let stopped = false;
+  const requestReindex = () => {
+    if (stopped) return;
+    void requestBackgroundIndex(projectRoot, host)?.then((result) => {
+      if (result.outcome === "failed") {
+        console.error("[codebase-index] Background reindex failed. Check index_status for details.");
+      }
+    });
+  };
 
   fileWatcher.start(async (changes) => {
     const hasAddOrChange = changes.some(
@@ -115,7 +57,7 @@ export function createWatcherWithIndexer(
         const parsedConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
         refreshIndexerForDirectory(projectRoot, host, parsedConfig);
       }
-      backgroundReindexer.request();
+      requestReindex();
     }
   });
 
@@ -125,7 +67,7 @@ export function createWatcherWithIndexer(
     gitWatcher = new GitHeadWatcher(projectRoot);
     gitWatcher.start(async (oldBranch, newBranch) => {
       console.log(`Branch changed: ${oldBranch ?? "(none)"} -> ${newBranch}`);
-      backgroundReindexer.request();
+      requestReindex();
     });
   }
 
@@ -136,7 +78,7 @@ export function createWatcherWithIndexer(
       return fileWatcher.waitUntilReady();
     },
     async stop() {
-      backgroundReindexer.stop();
+      stopped = true;
       await Promise.all([fileWatcher.stop(), gitWatcher?.stop()]);
     },
   };

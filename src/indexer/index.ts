@@ -336,6 +336,22 @@ export interface StatusResult {
   warning?: string;
 }
 
+export type IndexFreshnessReason =
+  | "current"
+  | "missing"
+  | "unreadable"
+  | "incompatible"
+  | "failed-batches"
+  | "files-changed"
+  | "branch-changed"
+  | "migration-required";
+
+export interface IndexFreshnessResult {
+  readable: boolean;
+  current: boolean;
+  reason: IndexFreshnessReason;
+}
+
 type InitializationMode = "none" | "reader" | "writer";
 
 interface IndexReadIssue {
@@ -5329,6 +5345,83 @@ export class Indexer {
       failedBatchesPath: failedBatchesCount > 0 ? this.failedBatchesPath : undefined,
       warning: warning || undefined,
     };
+  }
+
+  async getIndexFreshness(): Promise<IndexFreshnessResult> {
+    const { store, database, readIssues, compatibility } = await this.ensureInitialized();
+    const blockingReadIssue = readIssues.some((issue) => issue.blocking);
+    if (blockingReadIssue) {
+      return { readable: false, current: false, reason: "unreadable" };
+    }
+    if (store.count() === 0) {
+      return { readable: false, current: false, reason: "missing" };
+    }
+    if (compatibility && !compatibility.compatible) {
+      return { readable: true, current: false, reason: "incompatible" };
+    }
+    if (this.getFailedBatchesCount() > 0) {
+      return { readable: true, current: false, reason: "failed-batches" };
+    }
+
+    this.fileHashCache.clear();
+    this.loadFileHashCache();
+    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
+    const { files } = await collectFiles(
+      this.materializedProjectRoot,
+      includePatterns,
+      this.config.exclude,
+      this.config.indexing.maxFileSize,
+      this.getMaterializedKnowledgeBases(),
+      {
+        maxDepth: this.config.indexing.maxDepth,
+        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+      },
+    );
+    const currentFileHashes = new Map<string, string>();
+    for (const file of files) {
+      currentFileHashes.set(this.toCanonicalFilePath(file.path), hashFile(file.path));
+    }
+
+    const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
+    const cachedFileHashes = scopedRoots
+      ? new Map(Array.from(this.fileHashCache).filter(([filePath]) => this.isFileInCurrentScope(filePath, scopedRoots)))
+      : this.fileHashCache;
+    if (cachedFileHashes.size !== currentFileHashes.size) {
+      return { readable: true, current: false, reason: "files-changed" };
+    }
+    for (const [filePath, currentHash] of currentFileHashes) {
+      if (cachedFileHashes.get(filePath) !== currentHash) {
+        return { readable: true, current: false, reason: "files-changed" };
+      }
+    }
+
+    const hasSwiftFiles = Array.from(currentFileHashes.keys()).some(
+      (filePath) => path.extname(filePath).toLowerCase() === ".swift",
+    );
+    const hasMetalFiles = Array.from(currentFileHashes.keys()).some(
+      (filePath) => path.extname(filePath).toLowerCase() === ".metal",
+    );
+    const hasCallGraphMigrationFiles = Array.from(currentFileHashes.keys()).some((filePath) => {
+      const extension = path.extname(filePath).toLowerCase();
+      return extension === ".php" || extension === ".c" || extension === ".cc" || extension === ".cpp" || extension === ".cxx";
+    });
+    if (
+      (hasSwiftFiles && database.getMetadata(this.getSwiftParserVersionMetadataKey()) !== SWIFT_PARSER_VERSION)
+      || (hasMetalFiles && database.getMetadata(this.getMetalParserVersionMetadataKey()) !== METAL_PARSER_VERSION)
+      || (hasCallGraphMigrationFiles
+        && database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION)
+    ) {
+      return { readable: true, current: false, reason: "migration-required" };
+    }
+
+    if (isGitRepo(this.materializedProjectRoot)) {
+      const currentCommit = await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD");
+      if (this.getStoredBranchCommit(database) !== currentCommit) {
+        return { readable: true, current: false, reason: "branch-changed" };
+      }
+    }
+
+    return { readable: true, current: true, reason: "current" };
   }
 
   async forceIndex(onProgress?: ProgressCallback): Promise<IndexStats> {

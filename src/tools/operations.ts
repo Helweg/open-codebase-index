@@ -11,6 +11,7 @@ import { calculatePercentage, countContextTokens, formatProgressTitle, formatSta
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
+import type { AutoIndexStatusSnapshot } from "../utils/auto-index.js";
 import {
   formatEffectivenessMetrics,
   getProcessEffectivenessMetrics,
@@ -18,6 +19,13 @@ import {
   resetProcessEffectivenessMetrics,
   type EffectivenessMetricEvent,
 } from "../utils/effectiveness-metrics.js";
+import {
+  configureAutoIndex,
+  getAutoIndexStatus,
+  runCoordinatedIndex,
+  startAutoIndex,
+  waitForAutoIndexForRetrieval,
+} from "../utils/auto-index.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
 
 type IndexerCacheKey = `${HostMode}::${string}`;
@@ -25,9 +33,11 @@ type IndexerCacheKey = `${HostMode}::${string}`;
 type SearchResult = Awaited<ReturnType<Indexer["search"]>>[number];
 type IndexStats = Awaited<ReturnType<Indexer["index"]>>;
 type StatusResult = Awaited<ReturnType<Indexer["getStatus"]>>;
+export type IndexStatusResult = StatusResult & { autoIndex: AutoIndexStatusSnapshot };
 type HealthCheckResult = Awaited<ReturnType<Indexer["healthCheck"]>>;
 type PrImpactResult = Awaited<ReturnType<Indexer["getPrImpact"]>>;
 type IndexBusyResult = { kind: "busy"; text: string };
+type IndexMessageResult = { kind: "message"; text: string };
 
 type ProgressCb = (title: string, metadata: Record<string, unknown>) => void | Promise<void>;
 
@@ -276,6 +286,7 @@ function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer {
   }
   const indexer = new Indexer(projectRoot, config, host);
   indexerCache.set(key, indexer);
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
   return indexer;
 }
 
@@ -284,6 +295,7 @@ export function initializeTools(projectRoot: string, config: ParsedCodebaseIndex
   const key = getIndexerCacheKey(projectRoot, host);
   configCache.set(key, config);
   indexerCache.set(key, new Indexer(projectRoot, config, host));
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
 }
 
 export function getSharedIndexer(host: HostMode = "opencode"): Indexer {
@@ -312,6 +324,31 @@ export function refreshIndexerForDirectory(
   const key = getIndexerCacheKey(projectRoot, host);
   configCache.set(key, config);
   indexerCache.set(key, new Indexer(projectRoot, config, host));
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
+  if (config.indexing.autoIndex) {
+    startAutoIndex(projectRoot, host, "startup");
+  }
+}
+
+export class AutoIndexRetrievalUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AutoIndexRetrievalUnavailableError";
+  }
+}
+
+async function ensureAutoIndexReadyForRetrieval(
+  projectRoot: string | undefined,
+  host: HostMode,
+): Promise<void> {
+  const root = getProjectRoot(projectRoot, host);
+  getIndexerForProject(root, host);
+  const result = await waitForAutoIndexForRetrieval(root, host);
+  if (!result.ready) {
+    throw new AutoIndexRetrievalUnavailableError(
+      result.text ?? "Automatic indexing has not produced a readable index yet. Call index_status and retry.",
+    );
+  }
 }
 
 export async function searchCodebase(
@@ -331,6 +368,7 @@ export async function searchCodebase(
     blameSince?: string;
   } = {},
 ): Promise<SearchResult[]> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.search(query, options.limit, {
     fileType: options.fileType,
@@ -400,6 +438,7 @@ export async function findSimilarCode(
     excludeFile?: string;
   } = {},
 ): Promise<Awaited<ReturnType<Indexer["findSimilar"]>>> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.findSimilar(code, options.limit, {
     fileType: options.fileType,
@@ -419,6 +458,7 @@ export async function implementationLookup(
     directory?: string;
   } = {},
 ): Promise<SearchResult[]> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.search(query, options.limit, {
     fileType: options.fileType,
@@ -438,6 +478,7 @@ export async function getCallGraphData(
     relationshipType?: "Call" | "MethodCall" | "Constructor" | "Import" | "Inherits" | "Implements";
   },
 ): Promise<CallGraphDataResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
   const symbols = await indexer.getCallGraphSymbols();
@@ -471,6 +512,7 @@ export async function getCallGraphPath(
   fromFilePath?: string,
   toFilePath?: string,
 ): Promise<CallGraphPathResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
   const symbols = await indexer.getCallGraphSymbols();
@@ -496,6 +538,7 @@ export async function runIndexCodebase(
 ): Promise<
   | { kind: "estimate"; estimate: CostEstimate }
   | { kind: "stats"; stats: IndexStats }
+  | IndexMessageResult
   | IndexBusyResult
 > {
   const root = getProjectRoot(projectRoot, host);
@@ -506,24 +549,34 @@ export async function runIndexCodebase(
       return { kind: "estimate", estimate: await indexer.estimateCost() };
     }
 
-    const runIndex = async (target: Indexer): Promise<IndexStats> => {
-      const operation = args.force ? target.forceIndex.bind(target) : target.index.bind(target);
-      return operation((progress) => {
-        if (onProgress) {
-          return onProgress(formatProgressTitle(progress), {
-            phase: progress.phase,
-            filesProcessed: progress.filesProcessed,
-            totalFiles: progress.totalFiles,
-            chunksProcessed: progress.chunksProcessed,
-            totalChunks: progress.totalChunks,
-            percentage: calculatePercentage(progress),
-          });
-        }
-        return Promise.resolve();
-      });
-    };
-
-    return { kind: "stats", stats: await runIndex(indexer) };
+    const coordinated = runCoordinatedIndex(root, host, args.force ?? false, (progress) => {
+      if (onProgress) {
+        void onProgress(formatProgressTitle(progress), {
+          phase: progress.phase,
+          filesProcessed: progress.filesProcessed,
+          totalFiles: progress.totalFiles,
+          chunksProcessed: progress.chunksProcessed,
+          totalChunks: progress.totalChunks,
+          percentage: calculatePercentage(progress),
+        });
+      }
+    });
+    if (!coordinated) {
+      const operation = args.force ? indexer.forceIndex.bind(indexer) : indexer.index.bind(indexer);
+      return { kind: "stats", stats: await operation() };
+    }
+    const result = await coordinated;
+    if (result.outcome === "ready" && result.stats) {
+      return { kind: "stats", stats: result.stats };
+    }
+    if (result.outcome === "ready" && result.skipped) {
+      return { kind: "message", text: "The existing index is healthy and current; no indexing was needed." };
+    }
+    if (result.outcome === "stopped") {
+      return { kind: "message", text: "Indexing was stopped or superseded by another coordinated index request. Check index_status and retry if needed." };
+    }
+    if (result.error) throw result.error;
+    throw new Error("Indexing failed without an error result");
   } catch (error) {
     const busyResult = getIndexBusyResult(error);
     if (!busyResult) throw error;
@@ -531,9 +584,13 @@ export async function runIndexCodebase(
   }
 }
 
-export async function getIndexStatus(projectRoot: string | undefined, host: HostMode): Promise<StatusResult> {
-  const indexer = getIndexerForProject(projectRoot, host);
-  return indexer.getStatus();
+export async function getIndexStatus(projectRoot: string | undefined, host: HostMode): Promise<IndexStatusResult> {
+  const root = getProjectRoot(projectRoot, host);
+  const indexer = getIndexerForProject(root, host);
+  return {
+    ...await indexer.getStatus(),
+    autoIndex: getAutoIndexStatus(root, host),
+  };
 }
 
 export async function getIndexHealthCheck(projectRoot: string | undefined, host: HostMode): Promise<HealthCheckResult> {
@@ -566,6 +623,7 @@ export async function getPrImpact(
     direction?: "callers" | "callees" | "both";
   },
 ): Promise<PrImpactResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.getPrImpact({
     pr: params.pr,

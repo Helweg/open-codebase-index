@@ -25,6 +25,12 @@ export type IndexScope = "project" | "global";
 
 export interface IndexingConfig {
   autoIndex: boolean;
+  /** Maximum time retrieval tools wait for first-use auto-indexing. */
+  autoIndexWaitMs: number;
+  /** Maximum transient interprocess lock retries for auto-indexing. */
+  autoIndexMaxRetries: number;
+  /** Initial exponential retry delay after transient lock contention. */
+  autoIndexRetryDelayMs: number;
   watchFiles: boolean;
   maxFileSize: number;
   maxChunksPerFile: number;
@@ -180,6 +186,15 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const rawIndexing = (input.indexing && typeof input.indexing === "object" ? input.indexing : {}) as Record<string, unknown>;
   const indexing: IndexingConfig = {
     autoIndex: typeof rawIndexing.autoIndex === "boolean" ? rawIndexing.autoIndex : defaultIndexing.autoIndex,
+    autoIndexWaitMs: typeof rawIndexing.autoIndexWaitMs === "number"
+      ? Math.min(60_000, Math.max(0, Math.floor(rawIndexing.autoIndexWaitMs)))
+      : defaultIndexing.autoIndexWaitMs,
+    autoIndexMaxRetries: typeof rawIndexing.autoIndexMaxRetries === "number"
+      ? Math.min(10, Math.max(0, Math.floor(rawIndexing.autoIndexMaxRetries)))
+      : defaultIndexing.autoIndexMaxRetries,
+    autoIndexRetryDelayMs: typeof rawIndexing.autoIndexRetryDelayMs === "number"
+      ? Math.min(10_000, Math.max(10, Math.floor(rawIndexing.autoIndexRetryDelayMs)))
+      : defaultIndexing.autoIndexRetryDelayMs,
     watchFiles: typeof rawIndexing.watchFiles === "boolean" ? rawIndexing.watchFiles : defaultIndexing.watchFiles,
     maxFileSize: typeof rawIndexing.maxFileSize === "number" ? rawIndexing.maxFileSize : defaultIndexing.maxFileSize,
     maxChunksPerFile: typeof rawIndexing.maxChunksPerFile === "number" ? Math.max(1, rawIndexing.maxChunksPerFile) : defaultIndexing.maxChunksPerFile,

@@ -111,8 +111,7 @@ const plugin: Plugin = async ({ directory, worktree }) => {
     }
 
     if (config.indexing.autoIndex && isValidProject) {
-      const indexer = getProjectIndexer();
-      startAutoIndex(indexer, projectRoot);
+      startAutoIndex(projectRoot, "opencode", "startup");
     }
 
     if (config.indexing.watchFiles && isValidProject) {

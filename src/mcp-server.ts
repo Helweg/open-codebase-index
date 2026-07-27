@@ -6,6 +6,7 @@ import type { HostMode } from "./config/host.js";
 import { registerMcpPrompts } from "./mcp-server/register-prompts.js";
 import { registerMcpTools } from "./mcp-server/register-tools.js";
 import { initializeTools } from "./tools/operations.js";
+import { startAutoIndex } from "./utils/auto-index.js";
 
 function getServerInstructions(host: string): string {
   const hostText = `host ${host}`;
@@ -34,6 +35,7 @@ export function createMcpServer(
   });
 
   initializeTools(projectRoot, config, host);
+  startAutoIndex(projectRoot, host, "startup");
 
   registerMcpTools(server, {
     projectRoot,

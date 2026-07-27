@@ -193,6 +193,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
       if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
       if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
+      if (result.kind === "message") return text(result.text);
       return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
     },
   });

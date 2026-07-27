@@ -8,6 +8,9 @@ import type {
 export function getDefaultIndexingConfig(): IndexingConfig {
   return {
     autoIndex: false,
+    autoIndexWaitMs: 10_000,
+    autoIndexMaxRetries: 5,
+    autoIndexRetryDelayMs: 100,
     watchFiles: true,
     maxFileSize: 1048576,
     maxChunksPerFile: 100,

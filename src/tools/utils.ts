@@ -1,5 +1,5 @@
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
-import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolution } from "./operations.js";
+import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolution, IndexStatusResult } from "./operations.js";
 import type { LogEntry } from "../utils/logger.js";
 import { get_encoding } from "tiktoken";
 
@@ -341,10 +341,12 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
   return lines.join("\n");
 }
 
-export function formatStatus(status: StatusResult): string {
+export function formatStatus(status: StatusResult | IndexStatusResult): string {
+  const autoIndex = "autoIndex" in status ? status.autoIndex : undefined;
+  const autoIndexLines = autoIndex ? formatAutoIndexStatus(autoIndex) : [];
   if (!status.indexed) {
     if (status.warning) {
-      return status.warning;
+      return [...autoIndexLines, status.warning].join("\n");
     }
 
     if (status.failedBatchesCount > 0) {
@@ -357,13 +359,14 @@ export function formatStatus(status: StatusResult): string {
         lines.push(`Failed batches: ${status.failedBatchesPath}`);
       }
 
-      return lines.join("\n");
+      return [...autoIndexLines, ...lines].join("\n");
     }
 
-    return "Codebase is not indexed. Run index_codebase to create an index.";
+    return [...autoIndexLines, "Codebase is not indexed. Run index_codebase to create an index."].join("\n");
   }
 
   const lines = [
+    ...autoIndexLines,
     `Indexed chunks: ${status.vectorCount.toLocaleString()}`,
     `Provider: ${status.provider}`,
     `Model: ${status.model}`,
@@ -403,6 +406,35 @@ export function formatStatus(status: StatusResult): string {
   }
 
   return lines.join("\n");
+}
+
+function formatAutoIndexStatus(status: IndexStatusResult["autoIndex"]): string[] {
+  const enabled = status.enabled ? "enabled" : "disabled";
+  const lines = [`Auto-index: ${enabled} (state: ${status.state})`];
+  if (status.source) lines.push(`Auto-index source: ${status.source}`);
+  if (status.progress) {
+    const progress = status.progress;
+    lines.push(
+      `Auto-index progress: ${progress.phase} ${progress.percentage}% `
+      + `(${progress.filesProcessed}/${progress.totalFiles} files, `
+      + `${progress.chunksProcessed}/${progress.totalChunks} chunks)`,
+    );
+  }
+  if (status.retryAttempt !== undefined) {
+    lines.push(`Auto-index lock retry: ${status.retryAttempt}/${status.maxRetries ?? status.retryAttempt}`);
+  }
+  if (status.nextRetryAt) lines.push(`Auto-index next retry: ${status.nextRetryAt}`);
+  if (status.startedAt) lines.push(`Auto-index started: ${status.startedAt}`);
+  if (status.completedAt) lines.push(`Auto-index completed: ${status.completedAt}`);
+  if (status.errorAt) lines.push(`Auto-index error time: ${status.errorAt}`);
+  if (status.lastError) lines.push(`Auto-index error: ${status.lastError}`);
+  if (status.blockedReason === "home-directory") {
+    lines.push("Auto-index safety: blocked for the home directory.");
+  } else if (status.blockedReason === "project-marker-missing") {
+    lines.push("Auto-index safety: blocked because no project marker was found.");
+  }
+  lines.push("");
+  return lines;
 }
 
 export function formatProgressTitle(progress: IndexProgress): string {
