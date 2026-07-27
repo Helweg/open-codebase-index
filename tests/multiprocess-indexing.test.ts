@@ -6,7 +6,7 @@ import { createServer, type Server, type ServerResponse } from "http";
 import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
@@ -302,7 +302,10 @@ describe("multiprocess indexing", () => {
     }
   }
 
-  async function createMcpClient(configPath: string): Promise<{
+  async function createMcpClient(
+    configPath: string,
+    host: "claude" | "codex" | "jcode" | "opencode" | "pi" = "opencode",
+  ): Promise<{
     client: Client;
     transport: StdioClientTransport;
     stderr: string[];
@@ -311,7 +314,7 @@ describe("multiprocess indexing", () => {
     const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ["--import", "tsx", cliPath, "--project", projectRoot, "--config", configPath, "--host", "opencode"],
+      args: ["--import", "tsx", cliPath, "--project", projectRoot, "--config", configPath, "--host", host],
       cwd: path.dirname(cliPath),
       stderr: "pipe",
     });
@@ -1158,6 +1161,83 @@ describe("multiprocess indexing", () => {
     await Promise.all([first.client.close(), second.client.close()]);
     mcpClients = [];
     assertIndexIntegrity();
+  });
+
+  it("supports first-use, healthy-skip, stale-refresh, and disabled auto-indexing over Jcode stdio", async () => {
+    const configPath = path.join(tempDir, "jcode-auto-index.json");
+    const writeConfig = (autoIndex: boolean) => {
+      fs.writeFileSync(configPath, JSON.stringify({
+        embeddingProvider: "custom",
+        scope: "project",
+        customProvider: {
+          baseUrl: embeddingServer.baseUrl,
+          model: "multiprocess-test",
+          dimensions: 8,
+          timeoutMs: 5000,
+          maxBatchSize: 64,
+          concurrency: 1,
+          requestIntervalMs: 0,
+        },
+        include: ["**/*.ts"],
+        exclude: ["**/.codebase-index/**", "**/.opencode/**", "**/.git/**", "**/node_modules/**"],
+        indexing: {
+          autoIndex,
+          autoIndexWaitMs: 5000,
+          autoIndexMaxRetries: 3,
+          autoIndexRetryDelayMs: 10,
+          watchFiles: false,
+          autoGc: false,
+          retries: 0,
+          retryDelayMs: 1,
+        },
+        debug: { enabled: false },
+      }));
+    };
+    const statusText = async (client: Client): Promise<string> => {
+      const result = await client.callTool({ name: "index_status", arguments: {} });
+      return (result.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+    };
+
+    writeConfig(true);
+    embeddingServer.block();
+    const first = await createMcpClient(configPath, "jcode");
+    await embeddingServer.waitForRequestCount(1);
+    const firstCall = first.client.callTool({
+      name: "call_graph",
+      arguments: { name: "alpha", direction: "callers" },
+    });
+    const secondCall = first.client.callTool({
+      name: "call_graph",
+      arguments: { name: "alpha", direction: "callees" },
+    });
+    embeddingServer.release();
+    const [firstResult, secondResult] = await Promise.all([firstCall, secondCall]);
+    expect(firstResult.isError).not.toBe(true);
+    expect(secondResult.isError).not.toBe(true);
+    expect(embeddingServer.requestCount).toBe(1);
+    await first.client.close();
+
+    embeddingServer.reset();
+    const healthy = await createMcpClient(configPath, "jcode");
+    await vi.waitFor(async () => expect(await statusText(healthy.client)).toContain("state: ready"), { timeout: 5000 });
+    expect(embeddingServer.requestCount).toBe(0);
+    await healthy.client.close();
+
+    fs.writeFileSync(sourcePath, "export function alpha() { return 'stale'; }\nexport function beta() { return alpha(); }\n");
+    embeddingServer.reset();
+    const stale = await createMcpClient(configPath, "jcode");
+    await embeddingServer.waitForRequestCount(1);
+    await vi.waitFor(async () => expect(await statusText(stale.client)).toContain("state: ready"), { timeout: 5000 });
+    await stale.client.close();
+
+    fs.rmSync(path.join(projectRoot, ".codebase-index", "index"), { recursive: true, force: true });
+    embeddingServer.reset();
+    writeConfig(false);
+    const disabled = await createMcpClient(configPath, "jcode");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(await statusText(disabled.client)).toContain("Auto-index: disabled (state: idle)");
+    expect(embeddingServer.requestCount).toBe(0);
+    await disabled.client.close();
   });
 
   it.each([
