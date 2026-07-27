@@ -69,7 +69,10 @@ export function createWatcherWithIndexer(
   if (isGitRepo(projectRoot)) {
     gitWatcher = new GitHeadWatcher(projectRoot);
     gitWatcher.start(async (oldBranch, newBranch) => {
-      console.log(`Branch changed: ${oldBranch ?? "(none)"} -> ${newBranch}`);
+      getIndexer().getLogger().branch("info", "Branch changed", {
+        oldBranch,
+        newBranch,
+      });
       requestReindex();
     });
   }

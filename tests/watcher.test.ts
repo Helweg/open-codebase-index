@@ -192,6 +192,43 @@ describe("FileWatcher", () => {
   });
 
   describe("createWatcherWithIndexer", () => {
+    it("records branch changes without writing to stdout and still reindexes", async () => {
+      fs.mkdirSync(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/main\n");
+
+      const branch = vi.fn();
+      const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+      const indexer = {
+        index: vi.fn().mockResolvedValue(undefined),
+        getLogger: vi.fn().mockReturnValue({ branch }),
+      };
+      const combinedWatcher = createWatcherWithIndexer(
+        () => indexer,
+        tempDir,
+        createTestConfig({
+          debug: {
+            ...createTestConfig().debug,
+            enabled: false,
+            logBranch: false,
+          },
+        }),
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/feature\n");
+
+      await vi.waitFor(() => {
+        expect(branch).toHaveBeenCalledWith("info", "Branch changed", {
+          oldBranch: "main",
+          newBranch: "feature",
+        });
+      }, { timeout: 2500 });
+      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce(), { timeout: 2500 });
+      expect(consoleLog).not.toHaveBeenCalled();
+
+      await combinedWatcher.stop();
+    });
+
     it("handles file-triggered reindexing in the background", async () => {
       vi.setConfig({ testTimeout: 4000 });
       let resolveIndex: (() => void) | null = null;

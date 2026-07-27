@@ -843,7 +843,7 @@ Zero-config by default (uses `auto` mode). Customize in `.opencode/codebase-inde
     "logEmbedding": true,                     // Log embedding API calls
     "logCache": true,                         // Log cache hits/misses
     "logGc": true,                            // Log garbage collection
-    "logBranch": true,                        // Log branch detection
+    "logBranch": true,                        // Log branch detection and switches to index_logs (no stdout output)
     "metrics": false                          // Enable operational metrics collection
   },
   "effectivenessMetrics": {
@@ -923,7 +923,7 @@ String values in `codebase-index.json` can reference environment variables with 
 | `logEmbedding` | `true` | Log embedding API calls (success, error, rate-limit) |
 | `logCache` | `true` | Log cache hits and misses |
 | `logGc` | `true` | Log garbage collection operations |
-| `logBranch` | `true` | Log branch detection and switches |
+| `debug.logBranch` | `true` | Record branch detection and switches in `index_logs` when `debug.enabled` is also `true`; never prints routine branch changes to stdout |
 | `metrics` | `false` | Enable metrics collection (indexing stats, search timing, cache performance) |
 | **effectivenessMetrics** | | |
 | `enabled` | `false` | Independently opt in to memory-only, fixed-cardinality repository-tool effectiveness counters. Does not enable debug logs; stores no queries, response text, code, symbols, paths, repo names, user identity, or stable identifiers. |
