@@ -23,7 +23,6 @@ import {
   configureAutoIndex,
   getAutoIndexStatus,
   runCoordinatedIndex,
-  startAutoIndex,
   waitForAutoIndexForRetrieval,
 } from "../utils/auto-index.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
@@ -320,14 +319,12 @@ export function refreshIndexerForDirectory(
   projectRoot: string,
   host: HostMode = "opencode",
   config: ParsedCodebaseIndexConfig = parseConfig(loadRuntimeConfig(projectRoot, host)),
-): void {
+): ParsedCodebaseIndexConfig {
   const key = getIndexerCacheKey(projectRoot, host);
   configCache.set(key, config);
   indexerCache.set(key, new Indexer(projectRoot, config, host));
   configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
-  if (config.indexing.autoIndex) {
-    startAutoIndex(projectRoot, host, "startup");
-  }
+  return config;
 }
 
 export class AutoIndexRetrievalUnavailableError extends Error {

@@ -518,7 +518,7 @@ export function requestBackgroundIndex(
   host: HostMode = "opencode",
 ): Promise<CoordinatedIndexResult> | null {
   return getCoordinator(projectRoot, host)?.request({
-    checkFreshness: true,
+    checkFreshness: false,
     force: false,
     source: "watcher",
   }) ?? null;

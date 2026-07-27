@@ -55,7 +55,8 @@ export function createWatcherWithIndexer(
       const configPaths = getConfigPaths(projectRoot, host, options);
       if (changes.some((change) => configPaths.includes(pathNormalize(change.path)))) {
         const parsedConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
-        refreshIndexerForDirectory(projectRoot, host, parsedConfig);
+        const refreshedConfig = refreshIndexerForDirectory(projectRoot, host, parsedConfig);
+        configureAutoIndex(projectRoot, host, refreshedConfig, getIndexer);
       }
       requestReindex();
     }
