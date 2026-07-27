@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Broader agent routing hints** (#158): Common repository tasks such as fixing bugs, adding support, investigating failures, refactoring, and reviewing code now receive lightweight `codebase_context`-first guidance. Each matching user message emits the hint at most once, preventing repeated token overhead during tool-call loops. Exact identifier, direct-path, external, and unrelated operational requests remain unnudged.
+
 ## [0.19.1] - 2026-07-27
 
 ### Added

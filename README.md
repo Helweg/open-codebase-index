@@ -905,7 +905,7 @@ String values in `codebase-index.json` can reference environment variables with 
 | `rrfK` | `60` | RRF smoothing constant. Higher values flatten rank impact, lower values prioritize top-ranked candidates more strongly |
 | `rerankTopN` | `20` | Deterministic rerank depth cap. Applies lightweight name/path/chunk-type rerank to top-N only |
 | `contextLines` | `0` | Extra lines to include before/after each match |
-| `routingHints` | `true` | Inject lightweight runtime hints for local conceptual discovery and definition lookups. Set to `false` to disable plugin-side routing nudges. |
+| `routingHints` | `true` | Inject lightweight runtime hints for local conceptual discovery, broad repository coding tasks, and definition lookups. Set to `false` to disable plugin-side routing nudges. |
 | `routingGraphHandoffHints` | `false` | When `true`, conceptual discovery hints also say to use graph tools (including OMO CodeGraph) after semantic discovery identifies relevant symbols. |
 | `routingHintRole` | `"system"` | Message role used when injecting routing hints: `"system"` (default) or `"developer"`. |
 | **reranker** | | Optional second-stage model reranker for the top candidate pool |
@@ -940,7 +940,7 @@ These warnings improve observability but do **not** change the recovery behavior
 ### Retrieval ranking behavior
 
 - `codebase_search` and `codebase_peek` use the hybrid path: semantic + keyword retrieval → fusion (`fusionStrategy`) → deterministic rerank (`rerankTopN`) → optional external reranker (`reranker`) → filtering.
-- When `search.routingHints` is enabled (default), the plugin adds tiny per-turn runtime hints for local conceptual discovery and definition queries. Conceptual discovery is nudged toward `codebase_peek` / `codebase_search`, while definition questions are nudged toward `implementation_lookup`. Exact identifier and unrelated operational tasks are left alone. Set `search.routingGraphHandoffHints` to `true` to add opt-in graph/OMO CodeGraph handoff wording, and set `search.routingHintRole` to `"developer"` if your client/runtime expects developer-role guidance instead of system-role guidance.
+- When `search.routingHints` is enabled (default), the plugin adds a tiny, one-shot runtime hint for matching local conceptual discovery, broad repository coding tasks such as fixing or investigating code, and definition queries. A hint is emitted at most once per user message, so tool-call loops do not repeatedly add it. Conceptual and broad-task prompts are nudged toward `codebase_context` first, with `codebase_peek` / `codebase_search` for targeted follow-up, while definition questions are nudged toward `implementation_lookup`. Exact identifier and unrelated operational tasks are left alone. Set `search.routingGraphHandoffHints` to `true` to add opt-in graph/OMO CodeGraph handoff wording, and set `search.routingHintRole` to `"developer"` if your client/runtime expects developer-role guidance instead of system-role guidance.
 - `find_similar` stays semantic-only: semantic retrieval + deterministic rerank only (no keyword retrieval, no RRF).
 - For compatibility rollbacks, set `search.fusionStrategy` to `"weighted"` to use the legacy weighted fusion path.
 - When enabled, the external reranker sees path metadata plus a bounded on-disk code snippet for each candidate so it can distinguish real implementations from docs/tests more reliably.

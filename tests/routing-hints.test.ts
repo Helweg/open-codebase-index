@@ -21,17 +21,39 @@ describe("routing hints", () => {
   });
 
   describe("assessRoutingIntent", () => {
-    it("detects conceptual local discovery", () => {
-      const assessment = assessRoutingIntent("Where is the auth flow implemented?");
+    it.each([
+      "Where is authentication implemented?",
+      "How does the retry queue work?",
+      "Fix the bug where expired sessions remain active",
+      "Add support for cancelling in-flight indexing",
+      "Refactor the cache invalidation to avoid duplicate work",
+      "Investigate why startup hangs on Windows",
+      "Review this codebase for security issues",
+      "Implement issue 158.",
+    ])("emits a local-code routing hint for %s", (query) => {
+      const assessment = assessRoutingIntent(query);
 
-      expect(assessment.intent).toBe("local_conceptual");
-      expect(assessment.reason).toBe("conceptual_local_discovery");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } }, true)).toContain("codebase_context");
     });
 
-    it("detects exact identifier lookups", () => {
-      const assessment = assessRoutingIntent("Find all references to `validateToken`");
+    it.each([
+      ["Fix the bug where expired sessions remain active", "local_broad_task"],
+      ["Add support for cancelling in-flight indexing", "local_broad_task"],
+      ["Implement issue 158.", "local_broad_task"],
+      ["Fix the bug and add tests", "local_broad_task"],
+    ])("classifies %s as %s", (query, intent) => {
+      const assessment = assessRoutingIntent(query);
 
-      expect(assessment.intent).toBe("exact_identifier");
+      expect(assessment.intent).toBe(intent);
+    });
+
+    it.each([
+      ["Find all references to `validateToken`", "exact_identifier"],
+      ["Run the tests and fix the failing build", "other"],
+      ["Update CHANGELOG.md for the release", "other"],
+      ["Read src/index.ts", "direct_path"],
+    ])("classifies %s as %s", (query, intent) => {
+      expect(assessRoutingIntent(query).intent).toBe(intent);
     });
 
     it("does not alternate exact-identifier detection for repeated backticked queries", () => {
@@ -51,22 +73,10 @@ describe("routing hints", () => {
       expect(assessment.reason).toBe("definition_lookup_request");
     });
 
-    it("detects direct path requests", () => {
-      const assessment = assessRoutingIntent("Inspect src/indexer/index.ts for ranking logic");
-
-      expect(assessment.intent).toBe("direct_path");
-    });
-
     it("detects external lookups", () => {
       const assessment = assessRoutingIntent("Check the official docs for Next.js app router");
 
       expect(assessment.intent).toBe("external");
-    });
-
-    it("leaves unrelated coding tasks alone", () => {
-      const assessment = assessRoutingIntent("Run the tests and fix the failing build");
-
-      expect(assessment.intent).toBe("other");
     });
   });
 
@@ -78,9 +88,22 @@ describe("routing hints", () => {
         true,
       );
 
-      expect(hint).toContain("prefer `codebase_peek`");
+      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
+      expect(hint).toContain("`grep`");
       expect(hint).toContain("before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph");
+    });
+
+    it("returns a semantic routing hint for broad local task prompts", () => {
+      const hint = buildRoutingHint(
+        assessRoutingIntent("Fix the bug where expired sessions remain active"),
+        { indexed: true, compatibility: { compatible: true } },
+        true,
+      );
+
+      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
     });
 
@@ -105,13 +128,27 @@ describe("routing hints", () => {
       expect(hint).toBeNull();
     });
 
+    it.each([
+      "Run the tests and fix the failing build",
+      "Update CHANGELOG.md for the release",
+      "Find all references to `validateToken`",
+      "Read src/index.ts",
+    ])("returns no hint for %s", (query) => {
+      const hint = buildRoutingHint(
+        assessRoutingIntent(query),
+        { indexed: true, compatibility: { compatible: true } },
+      );
+
+      expect(hint).toBeNull();
+    });
+
     it("omits graph handoff wording by default", () => {
       const hint = buildRoutingHint(
         assessRoutingIntent("Where is the webhook validation logic?"),
         { indexed: true, compatibility: { compatible: true } },
       );
 
-      expect(hint).toContain("prefer `codebase_peek`");
+      expect(hint).toContain("prefer `codebase_context`");
       expect(hint).not.toContain("OMO CodeGraph");
       expect(hint).not.toContain("Use graph tools after semantic discovery");
     });
@@ -152,8 +189,37 @@ describe("routing hints", () => {
 
       const hints = await controller.getSystemHints("session-1");
       expect(hints).toHaveLength(1);
-      expect(hints[0]).toContain("prefer `codebase_peek`");
+      expect(hints[0]).toContain("prefer `codebase_context`");
       expect(hints[0]).toContain("OMO CodeGraph");
+    });
+
+    it("stores broad local task state and emits codebase_context-first hint", async () => {
+      const controller = new RoutingHintController(async () => ({
+        indexed: true,
+        compatibility: { compatible: true },
+      }), 200, true);
+
+      controller.observeUserMessage("session-1b", [{ type: "text", text: "Fix the bug where expired sessions remain active" }]);
+
+      const hints = await controller.getSystemHints("session-1b");
+      expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain("prefer `codebase_context`");
+      expect(hints[0]).toContain("`codebase_search`");
+    });
+
+    it("emits at most one hint for each user message", async () => {
+      const controller = new RoutingHintController(async () => ({
+        indexed: true,
+        compatibility: { compatible: true },
+      }));
+
+      controller.observeUserMessage("session-once", [{ type: "text", text: "Investigate why startup hangs" }]);
+
+      expect(await controller.getSystemHints("session-once")).toHaveLength(1);
+      expect(await controller.getSystemHints("session-once")).toEqual([]);
+
+      controller.observeUserMessage("session-once", [{ type: "text", text: "Fix the bug in startup recovery" }]);
+      expect(await controller.getSystemHints("session-once")).toHaveLength(1);
     });
 
     it("stops nudging after a codebase tool is used", async () => {
@@ -181,6 +247,19 @@ describe("routing hints", () => {
       controller.observeUserMessage("session-3", [{ type: "text", text: "Find all references to `validateToken`" }]);
 
       const hints = await controller.getSystemHints("session-3");
+      expect(hints).toEqual([]);
+    });
+
+    it("stops nudging after codebase_context is used", async () => {
+      const controller = new RoutingHintController(async () => ({
+        indexed: true,
+        compatibility: { compatible: true },
+      }), 200, true);
+
+      controller.observeUserMessage("session-3b", [{ type: "text", text: "Review this codebase for security issues" }]);
+      controller.markToolUsed("session-3b", "codebase_context");
+
+      const hints = await controller.getSystemHints("session-3b");
       expect(hints).toEqual([]);
     });
 
