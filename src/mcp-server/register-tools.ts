@@ -154,6 +154,9 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       if (result.kind === "busy") {
         return { content: [{ type: "text", text: result.text }], isError: true };
       }
+      if (result.kind === "message") {
+        return { content: [{ type: "text", text: result.text }] };
+      }
       return { content: [{ type: "text", text: formatIndexStats(result.stats, args.verbose ?? false) }] };
     },
   );

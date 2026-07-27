@@ -16,6 +16,10 @@ const operationMocks = vi.hoisted(() => ({
   isToolEffectivenessEnabled: vi.fn(() => true),
 }));
 
+const autoIndexMocks = vi.hoisted(() => ({
+  stopAutoIndex: vi.fn(async () => {}),
+}));
+
 vi.mock("../src/tools/operations.js", () => ({
   addKnowledgeBase: vi.fn(() => "Added knowledge base"),
   findSimilarCode: vi.fn(() => []),
@@ -35,6 +39,10 @@ vi.mock("../src/tools/operations.js", () => ({
   recordToolEffectiveness: operationMocks.recordToolEffectiveness,
   getIndexLogs: vi.fn(() => ({ text: "" })),
   isToolEffectivenessEnabled: operationMocks.isToolEffectivenessEnabled,
+}));
+
+vi.mock("../src/utils/auto-index.js", () => ({
+  stopAutoIndex: autoIndexMocks.stopAutoIndex,
 }));
 
 interface RegisteredTool {
@@ -59,11 +67,16 @@ interface RegisteredTool {
 interface RegisteredPiRuntime {
   tools: Map<string, RegisteredTool>;
   beforeAgentStartHandlers: Array<(event: { systemPrompt: string }) => Promise<unknown> | unknown>;
+  sessionShutdownHandlers: Array<(
+    event: { type: "session_shutdown" },
+    ctx: { cwd?: string },
+  ) => Promise<unknown> | unknown>;
 }
 
 async function registerPiTools(): Promise<RegisteredPiRuntime> {
   const tools = new Map<string, RegisteredTool>();
   const beforeAgentStartHandlers: Array<(event: { systemPrompt: string }) => Promise<unknown> | unknown> = [];
+  const sessionShutdownHandlers: RegisteredPiRuntime["sessionShutdownHandlers"] = [];
   const pi = {
     registerTool(tool) {
       tools.set(tool.name, tool);
@@ -72,13 +85,16 @@ async function registerPiTools(): Promise<RegisteredPiRuntime> {
       if (eventName === "before_agent_start") {
         beforeAgentStartHandlers.push(handler as (event: { systemPrompt: string }) => Promise<unknown> | unknown);
       }
+      if (eventName === "session_shutdown") {
+        sessionShutdownHandlers.push(handler as RegisteredPiRuntime["sessionShutdownHandlers"][number]);
+      }
     },
   } satisfies Pick<ExtensionAPI, "registerTool" | "on">;
 
   const { default: codebaseIndexPiExtension } = await import("../src/pi-extension.js");
   codebaseIndexPiExtension(pi);
 
-  return { tools, beforeAgentStartHandlers };
+  return { tools, beforeAgentStartHandlers, sessionShutdownHandlers };
 }
 
 describe("Pi adapter conformance", () => {
@@ -120,6 +136,32 @@ describe("Pi adapter conformance", () => {
     operationMocks.isToolEffectivenessEnabled.mockReset();
     operationMocks.isToolEffectivenessEnabled.mockReturnValue(true);
     operationMocks.getIndexMetrics.mockClear();
+    autoIndexMocks.stopAutoIndex.mockReset();
+    autoIndexMocks.stopAutoIndex.mockResolvedValue(undefined);
+  });
+
+  it("awaits automatic indexing shutdown when the Pi session closes", async () => {
+    let releaseStop!: () => void;
+    const stopping = new Promise<void>((resolve) => {
+      releaseStop = resolve;
+    });
+    autoIndexMocks.stopAutoIndex.mockReturnValueOnce(stopping);
+    const { sessionShutdownHandlers } = await registerPiTools();
+
+    let settled = false;
+    const shutdown = Promise.resolve(sessionShutdownHandlers[0]?.(
+      { type: "session_shutdown" },
+      { cwd: "/repo" },
+    )).then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+
+    expect(autoIndexMocks.stopAutoIndex).toHaveBeenCalledWith("/repo", "pi");
+    expect(settled).toBe(false);
+    releaseStop();
+    await shutdown;
+    expect(settled).toBe(true);
   });
 
   it("registers codebase_context first as the preferred gateway route", async () => {

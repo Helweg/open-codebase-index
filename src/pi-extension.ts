@@ -36,6 +36,7 @@ import {
   resolveCodebaseContext,
 } from "./tools/context.js";
 import { registerPiCallGraphTools } from "./pi-call-graph.js";
+import { stopAutoIndex } from "./utils/auto-index.js";
 
 const HOST = "pi" as const;
 
@@ -53,7 +54,7 @@ function text(text: string, details?: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
 
-function projectRoot(ctx: { cwd?: string } | undefined): string | undefined {
+function projectRoot(ctx: { cwd?: string } | undefined): string {
   return ctx?.cwd ?? process.cwd();
 }
 
@@ -193,6 +194,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
       if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
       if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
+      if (result.kind === "message") return text(result.text);
       return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
     },
   });
@@ -264,6 +266,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow. " +
       "Avoid broad tool calls until semantic locations are known.",
   }));
+
+  pi.on("session_shutdown", async (_event, ctx) => {
+    await stopAutoIndex(projectRoot(ctx), HOST);
+  });
 
   pi.registerTool({
     name: "pr_impact",

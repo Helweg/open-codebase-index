@@ -6,6 +6,7 @@ import type { HostMode } from "./config/host.js";
 import { registerMcpPrompts } from "./mcp-server/register-prompts.js";
 import { registerMcpTools } from "./mcp-server/register-tools.js";
 import { initializeTools } from "./tools/operations.js";
+import { startAutoIndex, stopAutoIndex } from "./utils/auto-index.js";
 
 function getServerInstructions(host: string): string {
   const hostText = `host ${host}`;
@@ -34,6 +35,28 @@ export function createMcpServer(
   });
 
   initializeTools(projectRoot, config, host);
+  startAutoIndex(projectRoot, host, "startup");
+
+  let stopCoordinationPromise: Promise<void> | null = null;
+  const stopCoordination = (): Promise<void> => {
+    stopCoordinationPromise ??= stopAutoIndex(projectRoot, host);
+    return stopCoordinationPromise;
+  };
+  const closeProtocol = server.server.close.bind(server.server);
+  server.server.close = async (): Promise<void> => {
+    await stopCoordination();
+    await closeProtocol();
+  };
+  const closeServer = server.close.bind(server);
+  server.close = async (): Promise<void> => {
+    await stopCoordination();
+    await closeServer();
+  };
+  const onServerClose = server.server.onclose;
+  server.server.onclose = () => {
+    onServerClose?.();
+    void stopCoordination();
+  };
 
   registerMcpTools(server, {
     projectRoot,

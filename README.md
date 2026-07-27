@@ -796,7 +796,10 @@ Zero-config by default (uses `auto` mode). Customize in `.opencode/codebase-inde
 
   // === Indexing ===
   "indexing": {
-    "autoIndex": false,                       // Auto-index on plugin load
+    "autoIndex": false,                       // Explicit opt-in for automatic indexing
+    "autoIndexWaitMs": 10000,                 // First-retrieval wait bound (0-60000ms)
+    "autoIndexMaxRetries": 5,                 // Transient interprocess lock retries (0-10)
+    "autoIndexRetryDelayMs": 100,             // Initial exponential lock retry delay
     "watchFiles": true,                       // Re-index on file changes
     "maxFileSize": 1048576,                   // Max file size in bytes (default: 1MB)
     "maxChunksPerFile": 100,                  // Max chunks per file
@@ -865,6 +868,8 @@ String values in `codebase-index.json` can reference environment variables with 
 
 ### Options Reference
 
+`indexing.autoIndex` remains disabled by default because indexing can invoke a paid embedding provider. When explicitly enabled, MCP hosts start one process-scoped job before accepting tool work where practical, skip a healthy current index, retry transient multiprocess lock contention within the configured bound, and expose sanitized state/progress through `index_status`. If no readable index exists, retrieval tools wait up to `autoIndexWaitMs`; after that they report that indexing is still running or failed instead of returning misleading empty search results. Home-directory and project-marker protections still apply.
+
 | Option | Default | Description |
 |--------|---------|-------------|
 | `embeddingProvider` | `"auto"` | Which AI to use: `auto`, `github-copilot`, `openai`, `google`, `ollama`, `custom` |
@@ -874,7 +879,10 @@ String values in `codebase-index.json` can reference environment variables with 
 | `additionalInclude` | `[]` | Additional file patterns to include (extends defaults, e.g. `"**/*.txt"`, `"**/*.html"`) |
 | `knowledgeBases` | `[]` | External directories to index as knowledge bases (absolute or relative paths) |
 | **indexing** | | |
-| `autoIndex` | `false` | Automatically index on plugin load |
+| `autoIndex` | `false` | Explicitly opt in to automatic startup/first-use indexing. When disabled, retrieval never starts indexing or paid embedding work. |
+| `autoIndexWaitMs` | `10000` | Maximum time (0-60000ms) a first retrieval waits for an enabled automatic index job before returning actionable in-progress status. |
+| `autoIndexMaxRetries` | `5` | Maximum transient interprocess lock retries (0-10) for background automatic indexing. |
+| `autoIndexRetryDelayMs` | `100` | Initial exponential lock retry delay in milliseconds (10-10000). |
 | `watchFiles` | `true` | Re-index when files change |
 | `maxFileSize` | `1048576` | Skip files larger than this (bytes). Default: 1MB |
 | `maxChunksPerFile` | `100` | Maximum chunks to index per file (controls token costs for large files) |
