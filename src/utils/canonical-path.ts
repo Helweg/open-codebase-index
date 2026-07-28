@@ -2,6 +2,8 @@ import * as crypto from "crypto";
 import * as fs from "fs";
 import * as path from "path";
 
+import { caseFold } from "unicode-case-folding";
+
 export interface CanonicalPathComparisonOptions {
   isCaseInsensitive?: (existingAncestor: string) => boolean | undefined;
 }
@@ -84,7 +86,7 @@ function detectCaseInsensitiveFileSystem(existingAncestor: string): boolean | un
 }
 
 function foldMissingPathComponent(component: string): string {
-  return component.replace(/[A-Z]/g, (character) => character.toLowerCase());
+  return caseFold(component);
 }
 
 export function canonicalizePathForComparison(

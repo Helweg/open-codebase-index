@@ -44,6 +44,34 @@ describe("canonical path comparison", () => {
     }));
   });
 
+  it("folds Unicode casing in missing directory and file components", () => {
+    const upperPath = path.join(existingRoot, "Équipe", "Årsrapport.ts");
+    const lowerPath = path.join(existingRoot, "équipe", "årsrapport.ts");
+
+    expect(canonicalizePathForComparison(upperPath, {
+      isCaseInsensitive: () => true,
+    })).toBe(canonicalizePathForComparison(lowerPath, {
+      isCaseInsensitive: () => true,
+    }));
+
+    expect(canonicalizePathForComparison(upperPath, {
+      isCaseInsensitive: () => false,
+    })).not.toBe(canonicalizePathForComparison(lowerPath, {
+      isCaseInsensitive: () => false,
+    }));
+  });
+
+  it("uses context-independent Unicode case folding for missing path components", () => {
+    const upperPath = path.join(existingRoot, "ΟΣ", "ΤΕΛΟΣ");
+    const lowerPath = path.join(existingRoot, "οσ", "τελοσ");
+
+    expect(canonicalizePathForComparison(upperPath, {
+      isCaseInsensitive: () => true,
+    })).toBe(canonicalizePathForComparison(lowerPath, {
+      isCaseInsensitive: () => true,
+    }));
+  });
+
   it("matches the host filesystem semantics for missing suffix casing", () => {
     const probePath = path.join(existingRoot, "CaseProbe");
     const alternateProbePath = path.join(existingRoot, "caseProbe");

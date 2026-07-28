@@ -15,6 +15,7 @@ export default defineConfig({
     "ignore",
     "p-queue",
     "p-retry",
+    "unicode-case-folding",
   ],
   external: [
     "@modelcontextprotocol/sdk",
