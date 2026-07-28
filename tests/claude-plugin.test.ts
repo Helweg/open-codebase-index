@@ -13,7 +13,7 @@ describe("Claude Code plugin", () => {
     };
 
     expect(pluginManifest.name).toBe("codebase-index");
-    expect(pluginManifest.version).toBe("0.19.1");
+    expect(pluginManifest.version).toBe("0.20.0");
     expect(pluginManifest.hooks).toBeUndefined();
     expect(pluginManifest.skills).toBe("./skills/");
 
@@ -42,7 +42,7 @@ describe("Claude Code plugin", () => {
     expect(marketplace.owner.name).toBeTruthy();
     expect(marketplace.plugins).toContainEqual(expect.objectContaining({
       name: "codebase-index",
-      version: "0.19.1",
+      version: "0.20.0",
     }));
   });
 });
