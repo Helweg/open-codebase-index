@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Exact definitions in large files**: Definition and implementation searches now rescue branch-scoped symbols from the uncapped symbol catalog when per-file embedding limits omit their semantic chunks, restoring exact lookup without increasing embedding volume.
+- **Evaluation artifact uploads**: Scheduled quality diagnostics now use a visible output directory so GitHub Actions uploads the generated summaries and per-query evidence on both successful and failed runs.
 - **Silent branch switching by default** (#189): Branch changes no longer print directly to stdout. Opt-in branch diagnostics are recorded through the configured debug logger and remain available through `index_logs` when both `debug.enabled` and `debug.logBranch` are enabled.
 
 ## [0.19.1] - 2026-07-27

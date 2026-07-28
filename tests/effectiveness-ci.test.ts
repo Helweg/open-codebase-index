@@ -71,8 +71,9 @@ describe("effectiveness quality CI", () => {
 
     expect(workflow).toContain("- name: Add evaluation summary\n        if: always()");
     expect(workflow).toContain("- name: Upload evaluation diagnostics\n        if: always()");
-    expect(workflow).toContain("--output .eval-results");
-    expect(workflow).toContain("path: .eval-results");
+    expect(workflow).toContain("--output eval-results");
+    expect(workflow).toContain("path: eval-results");
+    expect(workflow).not.toContain(".eval-results");
     expect(workflow).toContain("if-no-files-found: warn");
     expect(workflow).toContain("retention-days: 14");
     expect(workflow).not.toContain(".codebase-index");

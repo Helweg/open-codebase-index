@@ -873,7 +873,7 @@ function classifyQueryIntentRaw(query: string): "source" | "doc_test" | "neutral
 }
 
 function isImplementationChunkType(chunkType: string): boolean {
-  return [
+  return CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunkType) || [
     "export_statement",
     "function",
     "function_declaration",
@@ -1435,10 +1435,11 @@ function promoteIdentifierMatches(
   return [...promoted, ...remainder];
 }
 
-function buildSymbolDefinitionLane(
+export function buildSymbolDefinitionLane(
   query: string,
   database: Database,
   branchChunkIds: Set<string> | null,
+  branchSymbolIds: Set<string> | null,
   limit: number,
   fallbackCandidates: RankedCandidate[],
   prioritizeSourcePaths: boolean = classifyQueryIntentRaw(query) === "source"
@@ -1462,18 +1463,18 @@ function buildSymbolDefinitionLane(
     identifier: string,
     normalizedIdentifier: string,
     baseScore?: number
-  ) => {
+  ): boolean => {
     if (branchChunkIds && !branchChunkIds.has(chunk.chunkId)) {
-      return;
+      return false;
     }
 
     const chunkType = (chunk.nodeType ?? "other") as ChunkMetadata["chunkType"];
     if (!isImplementationChunkType(chunkType)) {
-      return;
+      return false;
     }
 
     if (!isLikelyImplementationPath(chunk.filePath)) {
-      return;
+      return false;
     }
 
     const nameLower = (chunk.name ?? "").toLowerCase();
@@ -1499,6 +1500,7 @@ function buildSymbolDefinitionLane(
         },
       });
     }
+    return true;
   };
 
   const normalizedHints = identifierHints
@@ -1529,13 +1531,47 @@ function buildSymbolDefinitionLane(
     }
 
     for (const symbol of dedupSymbols.values()) {
+      if (branchSymbolIds && !branchSymbolIds.has(symbol.id)) {
+        continue;
+      }
+      if (filePathHint && !pathMatchesHint(symbol.filePath, filePathHint)) {
+        continue;
+      }
+
       const chunks = database.getChunksByFile(symbol.filePath);
+      let foundCoveringChunk = false;
       for (const chunk of chunks) {
         if (chunk.startLine > symbol.startLine || chunk.endLine < symbol.endLine) {
           continue;
         }
 
-        upsertChunkCandidate(chunk, identifier, normalizedIdentifier);
+        foundCoveringChunk = upsertChunkCandidate(chunk, identifier, normalizedIdentifier) || foundCoveringChunk;
+      }
+
+      if (foundCoveringChunk || !isLikelyImplementationPath(symbol.filePath)) {
+        continue;
+      }
+
+      const symbolName = symbol.name.toLowerCase();
+      const exactName =
+        symbolName === identifier ||
+        symbolName.replace(/_/g, "") === normalizedIdentifier;
+      const score = exactName ? 0.99 : 0.88;
+      const existing = symbolCandidates.get(symbol.id);
+      if (!existing || score > existing.score) {
+        symbolCandidates.set(symbol.id, {
+          id: symbol.id,
+          score,
+          metadata: {
+            filePath: symbol.filePath,
+            startLine: symbol.startLine,
+            endLine: symbol.endLine,
+            chunkType: symbol.kind as ChunkMetadata["chunkType"],
+            name: symbol.name,
+            language: symbol.language,
+            hash: symbol.id,
+          },
+        });
       }
     }
 
@@ -1545,6 +1581,9 @@ function buildSymbolDefinitionLane(
     }
 
     for (const chunk of dedupChunksByName.values()) {
+      if (filePathHint && !pathMatchesHint(chunk.filePath, filePathHint)) {
+        continue;
+      }
       upsertChunkCandidate(chunk, identifier, normalizedIdentifier);
     }
   }
@@ -5096,10 +5135,11 @@ export class Indexer {
     const keywordMs = performance.now() - keywordStartTime;
 
     let branchChunkIds: Set<string> | null = null;
+    let branchSymbolIds: Set<string> | null = null;
     if (filterByBranch && (this.config.scope === "global" || this.currentBranch !== "default")) {
-      branchChunkIds = new Set(
-        this.getBranchCatalogKeys().flatMap((branchKey) => database.getBranchChunkIds(branchKey))
-      );
+      const branchCatalogKeys = this.getBranchCatalogKeys();
+      branchChunkIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchChunkIds(branchKey)));
+      branchSymbolIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchSymbolIds(branchKey)));
     }
 
     const prefilterStartTime = performance.now();
@@ -5192,6 +5232,7 @@ export class Indexer {
       query,
       database,
       branchChunkIds,
+      branchSymbolIds,
       maxResults,
       union,
       sourceIntent
@@ -5215,7 +5256,7 @@ export class Indexer {
     ).slice(0, maxResults);
 
     const identifierFallback = (!options?.definitionIntent && filtered.length === 0 && identifierHints.length > 0)
-      ? buildSymbolDefinitionLane(query, database, branchChunkIds, maxResults, union, true)
+      ? buildSymbolDefinitionLane(query, database, branchChunkIds, branchSymbolIds, maxResults, union, true)
         .filter((r) => matchesSearchFilters(r, options, this.config.search.minScore))
         .slice(0, maxResults)
       : [];

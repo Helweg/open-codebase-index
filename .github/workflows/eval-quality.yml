@@ -143,7 +143,7 @@ jobs:
 
       - name: Run eval quality gate (real provider config required)
         run: |
-          ARGS=(eval run --config .github/eval-quality-config.json --output .eval-results --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
+          ARGS=(eval run --config .github/eval-quality-config.json --output eval-results --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
           if [ -n "${{ steps.eval-provider.outputs.against_path }}" ]; then
             ARGS+=(--against "${{ steps.eval-provider.outputs.against_path }}")
           fi
@@ -152,7 +152,7 @@ jobs:
       - name: Add evaluation summary
         if: always()
         run: |
-          SUMMARY=$(find .eval-results -name summary.md -type f -print 2>/dev/null | sort | tail -n 1)
+          SUMMARY=$(find eval-results -name summary.md -type f -print 2>/dev/null | sort | tail -n 1)
           if [ -n "$SUMMARY" ]; then
             cat "$SUMMARY" >> "$GITHUB_STEP_SUMMARY"
           else
@@ -164,7 +164,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: eval-quality-${{ github.run_id }}
-          path: .eval-results
+          path: eval-results
           if-no-files-found: warn
           retention-days: 14
 
