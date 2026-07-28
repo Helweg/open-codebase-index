@@ -7,14 +7,34 @@ export type GoldenQueryType =
   | "keyword-heavy"
   | "conceptual";
 
+export type GoldenQueryDifficulty = "easy" | "medium" | "hard";
+export type GoldenQueryExpectedOutcome = "results" | "no-results";
+export type GoldenQueryRecoveryExpectation = "none" | "filter-relaxed";
 export type GoldenRetrievalMode = "search" | "context";
 export type EvalResolvedRoute = "search" | "definition";
+export type GoldenExpectedRoute = "search" | "definition";
+
+export interface GoldenGradedEvidence {
+  path: string;
+  symbol?: string;
+  relevance: 1 | 2 | 3;
+}
+
+export interface GoldenQueryArgs {
+  symbol?: string;
+  fileType?: string;
+  directory?: string;
+}
 
 export interface GoldenExpected {
   filePath?: string;
   acceptableFiles?: string[];
   symbol?: string;
   branch?: string;
+  expectedRoute?: GoldenExpectedRoute;
+  expectedOutcome?: GoldenQueryExpectedOutcome;
+  recoveryExpectation?: GoldenQueryRecoveryExpectation;
+  gradedEvidence?: GoldenGradedEvidence[];
 }
 
 export interface GoldenQuery {
@@ -22,6 +42,10 @@ export interface GoldenQuery {
   query: string;
   queryType: GoldenQueryType;
   retrievalMode?: GoldenRetrievalMode;
+  language?: string;
+  difficulty?: GoldenQueryDifficulty;
+  args?: GoldenQueryArgs;
+  tags?: string[];
   expected: GoldenExpected;
 }
 
@@ -77,6 +101,12 @@ export interface PerQueryEvalResult {
   retrievalMode: GoldenRetrievalMode;
   resolvedRoute: EvalResolvedRoute;
   routedQuery: string;
+  routeMatched?: boolean;
+  outcomeMatched?: boolean;
+  recoveryMatched?: boolean;
+  language?: string;
+  difficulty?: GoldenQueryDifficulty;
+  tags?: string[];
   latencyMs: number;
   hitAt1: boolean;
   hitAt3: boolean;
@@ -118,6 +148,9 @@ export interface EvalMetrics {
   hitAt10: number;
   mrrAt10: number;
   ndcgAt10: number;
+  routeAccuracy: number;
+  outcomeAccuracy: number;
+  recoveryAccuracy: number;
   distinctTop3Ratio: number;
   rawDistinctTop3Ratio: number;
   latencyMs: {
@@ -144,6 +177,7 @@ export interface EvalSummary {
   datasetPath: string;
   datasetName: string;
   datasetVersion: string;
+  datasetFingerprint?: string;
   queryCount: number;
   topK: number;
   searchConfig: Pick<SearchConfig, "fusionStrategy" | "hybridWeight" | "rrfK" | "rerankTopN">;

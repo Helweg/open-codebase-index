@@ -19,7 +19,7 @@ function query(overrides: Partial<GoldenQuery> = {}): GoldenQuery {
 describe("eval metrics", () => {
   it("matches expected paths with suffix support", () => {
     expect(pathMatchesExpected("/repo/src/indexer/index.ts", "src/indexer/index.ts")).toBe(true);
-    expect(pathMatchesExpected("src/indexer/index.ts", "/repo/src/indexer/index.ts")).toBe(true);
+    expect(pathMatchesExpected("src/indexer/index.ts", "/repo/src/indexer/index.ts")).toBe(false);
     expect(pathMatchesExpected("/repo/src/tools/index.ts", "src/indexer/index.ts")).toBe(false);
   });
 
@@ -28,6 +28,19 @@ describe("eval metrics", () => {
       expected: {
         filePath: "src/indexer/index.ts",
         acceptableFiles: ["src/tools/index.ts", "src/indexer/index.ts"],
+      },
+    });
+
+    expect(getRelevantPaths(q)).toEqual(["src/indexer/index.ts", "src/tools/index.ts"]);
+  });
+
+  it("builds relevant path set from graded evidence", () => {
+    const q = query({
+      expected: {
+        gradedEvidence: [
+          { path: "src/indexer/index.ts", symbol: "rankHybridResults", relevance: 3 },
+          { path: "src/tools/index.ts", symbol: "toolSymbol", relevance: 2 },
+        ],
       },
     });
 
@@ -104,6 +117,92 @@ describe("eval metrics", () => {
     expect(wrongSymbol.failureBucket).toBe("wrong-symbol");
   });
 
+  it("classifies wrong symbol using graded evidence even when path matches", () => {
+    const q = query({
+      expected: {
+        gradedEvidence: [{ path: "src/indexer/index.ts", symbol: "rankHybridResults", relevance: 3 }],
+      },
+    });
+
+    const wrongSymbol = buildPerQueryResult(
+      q,
+      [
+        {
+          filePath: "/repo/src/indexer/index.ts",
+          startLine: 1,
+          endLine: 2,
+          score: 0.9,
+          chunkType: "function",
+          name: "someOtherFunction",
+        },
+      ],
+      10,
+      10
+    );
+
+    expect(wrongSymbol.failureBucket).toBe("wrong-symbol");
+    expect(wrongSymbol.hitAt1).toBe(false);
+  });
+
+  it("keeps distinct symbols in one file and rewards higher graded evidence", () => {
+    const q = query({
+      expected: {
+        gradedEvidence: [
+          { path: "src/indexer/index.ts", symbol: "rankHybridResults", relevance: 3 },
+          { path: "src/indexer/index.ts", symbol: "rerankResults", relevance: 1 },
+        ],
+      },
+    });
+    const highFirst = buildPerQueryResult(q, [
+      {
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 1,
+        endLine: 2,
+        score: 1,
+        chunkType: "function",
+        name: "rankHybridResults",
+      },
+      {
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 3,
+        endLine: 4,
+        score: 0.9,
+        chunkType: "function",
+        name: "rerankResults",
+      },
+    ], 10, 10);
+    const lowFirst = buildPerQueryResult(q, [...highFirst.results].reverse(), 10, 10);
+
+    expect(highFirst.results).toHaveLength(2);
+    expect(highFirst.ndcgAt10).toBeGreaterThan(lowFirst.ndcgAt10);
+    expect(highFirst.ndcgAt10).toBeCloseTo(1, 8);
+  });
+
+  it("does not inflate nDCG ideal with multiple legacy acceptable files", () => {
+    const q = query({
+      expected: {
+        filePath: "src/indexer/index.ts",
+        acceptableFiles: ["src/tools/index.ts", "src/indexer/index.ts", "src/tools/index.ts"],
+      },
+    });
+
+    const per = buildPerQueryResult(
+      q,
+      [{
+        filePath: "/repo/src/tools/index.ts",
+        startLine: 1,
+        endLine: 2,
+        score: 0.95,
+        chunkType: "function",
+        name: "codebase_search",
+      }],
+      20,
+      10
+    );
+
+    expect(per.ndcgAt10).toBeCloseTo(1, 8);
+  });
+
   it("aggregates eval metrics including latency percentiles and costs", () => {
     const queries: GoldenQuery[] = [
       query({ id: "q1" }),
@@ -159,12 +258,118 @@ describe("eval metrics", () => {
 
     expect(metrics.hitAt1).toBe(0.5);
     expect(metrics.hitAt3).toBe(1);
+    expect(metrics.routeAccuracy).toBe(0);
     expect(metrics.mrrAt10).toBeCloseTo(0.75, 5);
     expect(metrics.distinctTop3Ratio).toBe(1);
     expect(metrics.rawDistinctTop3Ratio).toBe(1);
     expect(metrics.latencyMs.p50).toBeGreaterThan(0);
     expect(metrics.embedding.callCount).toBe(20);
     expect(metrics.embedding.estimatedCostUsd).toBeCloseTo(0.00002, 8);
+  });
+
+  it("tracks route accuracy only for queries with expected routes", () => {
+    const routeQueries: GoldenQuery[] = [
+      query({
+        id: "route-matched",
+        expected: {
+          filePath: "src/indexer/index.ts",
+          expectedRoute: "search",
+        },
+      }),
+      query({
+        id: "route-mismatch",
+        expected: {
+          filePath: "src/indexer/index.ts",
+          expectedRoute: "search",
+        },
+      }),
+    ];
+
+    const routeResults = [
+      buildPerQueryResult(
+        routeQueries[0],
+        [
+          {
+            filePath: "/repo/src/indexer/index.ts",
+            startLine: 1,
+            endLine: 2,
+            score: 1,
+            chunkType: "function",
+            name: "rankHybridResults",
+          },
+        ],
+        10,
+        10,
+        { resolvedRoute: "search", routedQuery: "rankHybridResults" }
+      ),
+      buildPerQueryResult(
+        routeQueries[1],
+        [
+          {
+            filePath: "/repo/src/indexer/index.ts",
+            startLine: 1,
+            endLine: 2,
+            score: 1,
+            chunkType: "function",
+            name: "rankHybridResults",
+          },
+        ],
+        10,
+        10,
+        { resolvedRoute: "definition", routedQuery: "rankHybridResults" }
+      ),
+    ];
+
+    const routeMetrics = computeEvalMetrics(routeQueries, routeResults, 0, 0, 0);
+
+    expect(routeMetrics.routeAccuracy).toBe(0.5);
+    expect(routeResults[0]?.routeMatched).toBe(true);
+    expect(routeResults[1]?.routeMatched).toBe(false);
+  });
+
+  it("tracks result outcomes and filter-relaxation recovery without penalizing positive hit denominators", () => {
+    const positive = query({
+      id: "positive",
+      expected: {
+        filePath: "src/indexer/index.ts",
+        symbol: "rankHybridResults",
+        expectedOutcome: "results",
+        recoveryExpectation: "filter-relaxed",
+      },
+    });
+    const negative = query({
+      id: "negative",
+      expected: { expectedOutcome: "no-results" },
+    });
+    const positiveResult = buildPerQueryResult(
+      positive,
+      [{
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 1,
+        endLine: 2,
+        score: 1,
+        chunkType: "function",
+        name: "rankHybridResults",
+      }],
+      10,
+      10,
+      undefined,
+      {
+        tokenBudget: 1200,
+        responseTokens: 50,
+        candidateCount: 1,
+        deduplicatedCount: 1,
+        omittedCount: 0,
+        recoveryRelaxed: true,
+      },
+    );
+    const negativeResult = buildPerQueryResult(negative, [], 10, 10);
+    const metrics = computeEvalMetrics([positive, negative], [positiveResult, negativeResult], 0, 0, 0);
+
+    expect(metrics.hitAt5).toBe(1);
+    expect(metrics.outcomeAccuracy).toBe(1);
+    expect(metrics.recoveryAccuracy).toBe(1);
+    expect(negativeResult.failureBucket).toBeUndefined();
   });
 
   it("tracks deduped and raw distinctTop3 ratios separately", () => {
