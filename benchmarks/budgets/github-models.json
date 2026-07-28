@@ -2,8 +2,8 @@
   "name": "github-models-eval-budget",
   "failOnMissingBaseline": false,
   "thresholds": {
-    "minHitAt5": 0.5,
-    "minMrrAt10": 0.45,
+    "minHitAt5": 0.75,
+    "minMrrAt10": 0.65,
     "minRawDistinctTop3Ratio": 0.5,
     "p95LatencyMaxAbsoluteMs": 500,
     "maxContextResponseTokensAverage": 1000,

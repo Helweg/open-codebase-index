@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Battery-aware background indexing**: Added the opt-in `indexing.pauseBackgroundIndexingOnBattery` setting. On macOS, automatic startup and watcher-triggered indexing now waits for AC power, coalesces pending work into one update, and keeps manual `index_codebase` requests available. Power detection uses a five-second `pmset` timeout and fails open if the source cannot be determined.
+- **Actionable effectiveness diagnostics**: Privacy-safe runtime metrics now include bounded per-route outcome, result-count, latency, and returned-token histograms. Scheduled quality evaluations retain public synthetic summary and per-query artifacts for 14 days, including failed runs.
 
 ### Changed
 
 - **Broader agent routing hints** (#158): Common repository tasks such as fixing bugs, adding support, investigating failures, refactoring, and reviewing code now receive lightweight `codebase_context`-first guidance. Each matching user message emits the hint at most once, preventing repeated token overhead during tool-call loops. Exact identifier, direct-path, external, and unrelated operational requests remain unnudged.
+- **Stronger retrieval quality gate**: The GitHub Models scheduled evaluation now requires at least 75% Hit@5 and 0.65 MRR@10, so the gate catches material retrieval regressions that the previous permissive floor allowed.
 
 ### Fixed
 
