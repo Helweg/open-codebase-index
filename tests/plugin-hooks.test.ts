@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
 const mockState = vi.hoisted(() => ({
   config: {
+    scope: "project" as "project" | "global",
     search: {
       routingHints: true,
       routingGraphHandoffHints: false,
@@ -12,11 +13,20 @@ const mockState = vi.hoisted(() => ({
     },
     indexing: {
       autoIndex: false,
+      autoIndexWaitMs: 50,
+      autoIndexMaxRetries: 0,
+      autoIndexRetryDelayMs: 10,
       watchFiles: false,
+      pauseBackgroundIndexingOnBattery: false,
       requireProjectMarker: true,
     },
   },
   createWatcherWithIndexer: vi.fn(() => ({ stop: vi.fn() })),
+  indexer: {
+    forceIndex: vi.fn().mockResolvedValue({}),
+    getStatus: vi.fn().mockResolvedValue({ indexed: true }),
+    index: vi.fn().mockResolvedValue({}),
+  },
   initializeTools: vi.fn(),
   hints: ["runtime-routing-hint"],
   routingControllers: [] as Array<{
@@ -48,12 +58,6 @@ vi.mock("../src/commands/loader.js", () => ({
 
 vi.mock("../src/tools/index.js", () => {
   const toolStub = {};
-  const indexerStub = {
-    initialize: vi.fn().mockResolvedValue(undefined),
-    index: vi.fn().mockResolvedValue(undefined),
-    getStatus: vi.fn().mockResolvedValue({ indexed: true, compatibility: { compatible: true } }),
-  };
-
   return {
     codebase_context: toolStub,
     codebase_search: toolStub,
@@ -73,7 +77,8 @@ vi.mock("../src/tools/index.js", () => {
     pr_impact: toolStub,
     index_visualize: toolStub,
     initializeTools: mockState.initializeTools,
-    getSharedIndexer: vi.fn(() => indexerStub),
+    getIndexerForProject: vi.fn(() => mockState.indexer),
+    getSharedIndexer: vi.fn(() => mockState.indexer),
   };
 });
 
@@ -98,10 +103,13 @@ vi.mock("../src/routing-hints.js", () => {
 });
 
 import plugin from "../src/index.js";
+import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
+import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 
 describe("plugin routing hint hook selection", () => {
   beforeEach(() => {
     mockState.config = {
+      scope: "project",
       search: {
         routingHints: true,
         routingGraphHandoffHints: false,
@@ -109,14 +117,35 @@ describe("plugin routing hint hook selection", () => {
       },
       indexing: {
         autoIndex: false,
+        autoIndexWaitMs: 50,
+        autoIndexMaxRetries: 0,
+        autoIndexRetryDelayMs: 10,
         watchFiles: false,
+        pauseBackgroundIndexingOnBattery: false,
         requireProjectMarker: true,
       },
     };
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
     mockState.createWatcherWithIndexer.mockClear();
-    mockState.initializeTools.mockClear();
+    mockState.indexer.forceIndex.mockReset().mockResolvedValue({});
+    mockState.indexer.getStatus.mockReset().mockResolvedValue({ indexed: true });
+    mockState.indexer.index.mockReset().mockResolvedValue({});
+    mockState.initializeTools.mockReset().mockImplementation((
+      projectRoot: string,
+      config: ParsedCodebaseIndexConfig,
+    ) => {
+      configureAutoIndex(
+        projectRoot,
+        "opencode",
+        config,
+        () => mockState.indexer,
+      );
+    });
+  });
+
+  afterEach(async () => {
+    await resetAutoIndexCoordinatorsForTests();
   });
 
   it("does not watch a project symlink that resolves to the home directory", async () => {
@@ -176,6 +205,32 @@ describe("plugin routing hint hook selection", () => {
     expect(runtime.tool).toEqual(expect.objectContaining({
       codebase_context: expect.any(Object),
     }));
+  });
+
+  it("reloads without waiting for a stuck watcher or starting a redundant index", async () => {
+    mockState.config.indexing.autoIndex = true;
+    mockState.config.indexing.watchFiles = true;
+    let resolveIndex: (() => void) | undefined;
+    mockState.indexer.index.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveIndex = () => resolve({});
+    }));
+    const firstWatcher = {
+      stop: vi.fn(() => new Promise<void>(() => {})),
+    };
+    const secondWatcher = { stop: vi.fn().mockResolvedValue(undefined) };
+    mockState.createWatcherWithIndexer
+      .mockReturnValueOnce(firstWatcher)
+      .mockReturnValueOnce(secondWatcher);
+
+    await plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0]);
+    await vi.waitFor(() => expect(mockState.indexer.index).toHaveBeenCalledOnce());
+
+    await expect(plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0])).resolves.toBeDefined();
+
+    expect(firstWatcher.stop).toHaveBeenCalledOnce();
+    expect(mockState.indexer.index).toHaveBeenCalledOnce();
+    resolveIndex?.();
+    await vi.waitFor(() => expect(mockState.indexer.getStatus).toHaveBeenCalled());
   });
 
   it("injects hints through system transform when role is system", async () => {

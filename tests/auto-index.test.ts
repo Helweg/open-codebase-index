@@ -6,6 +6,17 @@ import * as path from "path";
 import { parseConfig } from "../src/config/schema.js";
 import { IndexLockContentionError } from "../src/indexer/index-lock.js";
 import type { IndexFreshnessResult, IndexProgress, IndexStats, StatusResult } from "../src/indexer/index.js";
+import type { BackgroundIndexingPolicy } from "../src/utils/power-source.js";
+
+const powerSource = vi.hoisted(() => ({
+  createBackgroundIndexingPolicy: vi.fn(),
+  policy: null as BackgroundIndexingPolicy | null,
+}));
+
+vi.mock("../src/utils/power-source.js", () => ({
+  createBackgroundIndexingPolicy: powerSource.createBackgroundIndexingPolicy,
+}));
+
 import {
   configureAutoIndex,
   getAutoIndexStatus,
@@ -108,6 +119,8 @@ describe("auto-index coordinator", () => {
   let projectRoot: string;
 
   beforeEach(() => {
+    powerSource.policy = null;
+    powerSource.createBackgroundIndexingPolicy.mockImplementation(() => powerSource.policy);
     projectRoot = mkdtempSync(path.join(os.tmpdir(), "auto-index-coordinator-"));
     mkdirSync(path.join(projectRoot, "src"));
     writeFileSync(path.join(projectRoot, "package.json"), "{}");
@@ -115,6 +128,7 @@ describe("auto-index coordinator", () => {
 
   afterEach(async () => {
     await resetAutoIndexCoordinatorsForTests();
+    vi.useRealTimers();
     rmSync(projectRoot, { recursive: true, force: true });
   });
 
@@ -293,6 +307,128 @@ describe("auto-index coordinator", () => {
     await firstRequest;
     await vi.waitFor(() => expect(secondIndexer.index).toHaveBeenCalledOnce());
     expect(firstIndexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("defers startup indexing on battery power and resumes once on AC power", async () => {
+    vi.useFakeTimers();
+    let onBattery = true;
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn(async () => onBattery),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    const startup = startAutoIndex(projectRoot, "jcode");
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(policy.isPaused).toHaveBeenCalledOnce();
+    expect(indexer.index).not.toHaveBeenCalled();
+
+    onBattery = false;
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(startup).resolves.toMatchObject({ outcome: "ready" });
+    expect(indexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("coalesces battery-deferred watcher requests into one AC reindex", async () => {
+    vi.useFakeTimers();
+    let onBattery = true;
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn(async () => onBattery),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    const requests = [
+      requestBackgroundIndex(projectRoot, "jcode"),
+      requestBackgroundIndex(projectRoot, "jcode"),
+      requestBackgroundIndex(projectRoot, "jcode"),
+    ];
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(policy.isPaused).toHaveBeenCalledOnce();
+    expect(indexer.index).not.toHaveBeenCalled();
+
+    onBattery = false;
+    await vi.advanceTimersByTimeAsync(100);
+
+    await expect(Promise.all(requests)).resolves.toEqual([
+      expect.objectContaining({ outcome: "ready" }),
+      expect.objectContaining({ outcome: "ready" }),
+      expect.objectContaining({ outcome: "ready" }),
+    ]);
+    expect(indexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("drains watcher changes queued while a battery-aware index is running", async () => {
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn().mockResolvedValue(false),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    const firstRun = deferred<IndexStats>();
+    const secondRun = deferred<IndexStats>();
+    indexer.index
+      .mockImplementationOnce(() => firstRun.promise)
+      .mockImplementationOnce(() => secondRun.promise);
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    const firstRequest = requestBackgroundIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const queuedChange = requestBackgroundIndex(projectRoot, "jcode");
+    let queuedChangeSettled = false;
+    void queuedChange?.then(() => {
+      queuedChangeSettled = true;
+    });
+    firstRun.resolve(stats());
+
+    await expect(firstRequest).resolves.toMatchObject({ outcome: "ready" });
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+    expect(queuedChangeSettled).toBe(false);
+    secondRun.resolve(stats());
+    await expect(queuedChange).resolves.toMatchObject({ outcome: "ready" });
+  });
+
+  it("stops a battery-deferred background request without indexing", async () => {
+    vi.useFakeTimers();
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn().mockResolvedValue(true),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    const request = requestBackgroundIndex(projectRoot, "jcode");
+    await vi.advanceTimersByTimeAsync(0);
+    await stopAutoIndex(projectRoot, "jcode");
+
+    await expect(request).resolves.toEqual({ outcome: "stopped" });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(indexer.index).not.toHaveBeenCalled();
+  });
+
+  it("keeps manual indexing available while background work is paused on battery", async () => {
+    const policy: BackgroundIndexingPolicy = {
+      isPaused: vi.fn().mockResolvedValue(true),
+      recheckDelayMs: 100,
+    };
+    powerSource.policy = policy;
+    const indexer = new MockIndexer();
+    configureAutoIndex(projectRoot, "jcode", config({ pauseBackgroundIndexingOnBattery: true }), () => indexer);
+
+    await expect(runCoordinatedIndex(projectRoot, "jcode", false)).resolves.toMatchObject({
+      outcome: "ready",
+    });
+
+    expect(indexer.index).toHaveBeenCalledOnce();
+    expect(policy.isPaused).not.toHaveBeenCalled();
   });
 
   it("drains the old coordinator before starting an index-key replacement", async () => {

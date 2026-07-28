@@ -1,6 +1,7 @@
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { HostMode } from "../config/host.js";
 import type { Indexer, IndexProgress, IndexStats } from "../indexer/index.js";
+import type { BackgroundIndexingPolicy } from "./power-source.js";
 import { existsSync, realpathSync } from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -8,6 +9,7 @@ import * as path from "path";
 import { resolveProjectIndexPath } from "../config/paths.js";
 import { isTransientIndexLockContention } from "../indexer/index-lock.js";
 import { hasProjectMarker } from "./files.js";
+import { createBackgroundIndexingPolicy } from "./power-source.js";
 
 export type AutoIndexCoordinatorState =
   | "idle"
@@ -63,6 +65,7 @@ type CoordinatedIndexer = Pick<
 > & Partial<Pick<Indexer, "getIndexFreshness">>;
 
 interface AutoIndexRegistration {
+  backgroundIndexingPolicy: BackgroundIndexingPolicy | null;
   config: ParsedCodebaseIndexConfig;
   getIndexer: () => CoordinatedIndexer;
   projectRoot: string;
@@ -219,7 +222,13 @@ class AutoIndexCoordinator {
   private activation: Promise<void> = Promise.resolve();
   private inFlight: Promise<CoordinatedIndexResult> | null = null;
   private activeRequest: IndexRequest | null = null;
+  private batteryCheck: Promise<CoordinatedIndexResult> | null = null;
+  private batteryIndexJob: Promise<CoordinatedIndexResult> | null = null;
+  private batteryDeferredRequest: IndexRequest | null = null;
+  private batteryRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private resolveBatteryRetry: (() => void) | null = null;
   private pendingRequest: IndexRequest | null = null;
+  private pendingFollowUp: Promise<CoordinatedIndexResult> | null = null;
   private abortController: AbortController | null = null;
   private stopped = false;
 
@@ -234,6 +243,8 @@ class AutoIndexCoordinator {
   }
 
   update(registration: AutoIndexRegistration): void {
+    const pauseOnBatteryChanged = registration.config.indexing.pauseBackgroundIndexingOnBattery
+      !== this.registration.config.indexing.pauseBackgroundIndexingOnBattery;
     this.registration = registration;
     this.status.enabled = registration.config.indexing.autoIndex;
     this.status.blockedReason = registration.blockedReason;
@@ -248,6 +259,9 @@ class AutoIndexCoordinator {
       if (!this.inFlight) {
         this.setState("idle", { source: undefined });
       }
+    }
+    if (pauseOnBatteryChanged) {
+      this.cancelBatteryRetry();
     }
   }
 
@@ -274,7 +288,30 @@ class AutoIndexCoordinator {
     if (this.stopped) {
       return Promise.resolve({ outcome: "stopped" });
     }
-    return this.activation.then(() => this.enqueueRequest(request));
+    return this.activation.then(() => this.enqueueBatteryAwareRequest(request));
+  }
+
+  private enqueueBatteryAwareRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
+    if (!this.shouldDeferForBattery(request)) {
+      return this.enqueueRequest(request);
+    }
+
+    if (this.batteryCheck && this.batteryIndexJob !== null && this.batteryIndexJob === this.inFlight) {
+      return this.enqueueRequest(request);
+    }
+
+    this.batteryDeferredRequest = mergeRequests(this.batteryDeferredRequest, request);
+    if (this.batteryCheck) {
+      return this.batteryCheck;
+    }
+
+    const batteryCheck = this.waitForACPower();
+    this.batteryCheck = batteryCheck;
+    void batteryCheck.then(
+      () => this.finishBatteryCheck(batteryCheck),
+      () => this.finishBatteryCheck(batteryCheck),
+    );
+    return batteryCheck;
   }
 
   private enqueueRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
@@ -293,6 +330,11 @@ class AutoIndexCoordinator {
       }
       if (request.source === "watcher") {
         this.pendingRequest = mergeRequests(this.pendingRequest, request);
+        const active = this.inFlight;
+        return active.then(() => {
+          if (this.stopped) return { outcome: "stopped" };
+          return this.pendingFollowUp ?? { outcome: "stopped" };
+        });
       }
       return this.inFlight;
     }
@@ -313,6 +355,8 @@ class AutoIndexCoordinator {
 
   async stop(waitForCompletion = false): Promise<void> {
     this.stopped = true;
+    this.batteryDeferredRequest = null;
+    this.cancelBatteryRetry();
     this.pendingRequest = null;
     this.abortController?.abort();
     this.setState("stopped", {
@@ -343,10 +387,20 @@ class AutoIndexCoordinator {
       this.inFlight = null;
       this.activeRequest = null;
       this.abortController = null;
+      if (this.batteryIndexJob === job) {
+        this.batteryIndexJob = null;
+        this.batteryCheck = null;
+      }
       const pending = this.pendingRequest;
       this.pendingRequest = null;
       if (pending && !this.stopped) {
-        this.startRequest(pending);
+        const followUp = this.request(pending);
+        this.pendingFollowUp = followUp;
+        void followUp.then(() => {
+          if (this.pendingFollowUp === followUp) {
+            this.pendingFollowUp = null;
+          }
+        });
       }
     });
     return job;
@@ -527,6 +581,75 @@ class AutoIndexCoordinator {
 
     return this.registration.safeToRun && this.registration.config.indexing.autoIndex;
   }
+
+  private shouldDeferForBattery(request: IndexRequest): boolean {
+    return this.registration.backgroundIndexingPolicy !== null
+      && (request.source === "startup" || request.source === "watcher");
+  }
+
+  private async waitForACPower(): Promise<CoordinatedIndexResult> {
+    while (!this.stopped) {
+      const policy = this.registration.backgroundIndexingPolicy;
+      if (!policy || !await this.isBatteryPauseActive(policy)) {
+        const request = this.batteryDeferredRequest;
+        this.batteryDeferredRequest = null;
+        if (!request) return { outcome: "stopped" };
+        const job = this.enqueueRequest(request);
+        if (this.inFlight === job) {
+          this.batteryIndexJob = job;
+        }
+        return job;
+      }
+      await this.waitForBatteryRetry(policy.recheckDelayMs);
+    }
+    return { outcome: "stopped" };
+  }
+
+  private async isBatteryPauseActive(policy: BackgroundIndexingPolicy): Promise<boolean> {
+    try {
+      return await policy.isPaused();
+    } catch (error) {
+      console.error(
+        `[codebase-index] Failed to apply the background indexing power policy; background indexing will continue: ${safeFailureMessage(error)}`,
+      );
+      return false;
+    }
+  }
+
+  private waitForBatteryRetry(delayMs: number): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const timer = setTimeout(() => {
+        if (this.batteryRetryTimer === timer) {
+          this.batteryRetryTimer = null;
+          this.resolveBatteryRetry = null;
+        }
+        resolve();
+      }, delayMs);
+      timer.unref?.();
+      this.batteryRetryTimer = timer;
+      this.resolveBatteryRetry = resolve;
+    });
+  }
+
+  private cancelBatteryRetry(): void {
+    if (this.batteryRetryTimer) {
+      clearTimeout(this.batteryRetryTimer);
+      this.batteryRetryTimer = null;
+    }
+    const resolve = this.resolveBatteryRetry;
+    this.resolveBatteryRetry = null;
+    resolve?.();
+  }
+
+  private finishBatteryCheck(batteryCheck: Promise<CoordinatedIndexResult>): void {
+    if (this.batteryCheck !== batteryCheck) return;
+    this.batteryCheck = null;
+    const deferredRequest = this.batteryDeferredRequest;
+    this.batteryDeferredRequest = null;
+    if (deferredRequest && !this.stopped) {
+      void this.request(deferredRequest);
+    }
+  }
 }
 
 function getCoordinator(projectRoot: string, host: HostMode): AutoIndexCoordinator | null {
@@ -543,6 +666,9 @@ export function configureAutoIndex(
   const projectKey = projectLookupKey(projectRoot, host);
   const safety = getProjectSafety(projectRoot, config);
   const registration: AutoIndexRegistration = {
+    backgroundIndexingPolicy: createBackgroundIndexingPolicy(
+      config.indexing.pauseBackgroundIndexingOnBattery,
+    ),
     config,
     getIndexer,
     projectRoot,

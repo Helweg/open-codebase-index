@@ -948,6 +948,32 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("failed-batches.json");
   });
 
+  it("keeps manual MCP indexing available when battery pausing is enabled", async () => {
+    await client.close();
+    const config = parseConfig({
+      indexing: {
+        pauseBackgroundIndexingOnBattery: true,
+      },
+    });
+    server = createMcpServer("/tmp/test-project", config);
+    client = new Client({ name: "test-client", version: "1.0.0" });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ]);
+    const indexer = (await import("../src/tools/operations.js"))
+      .getIndexerForProject("/tmp/test-project", "opencode");
+
+    const result = await client.callTool({
+      name: "index_codebase",
+      arguments: {},
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(indexer.index).toHaveBeenCalledOnce();
+  });
+
   it("should return an explicit INDEX_BUSY MCP result", async () => {
     const owner = {
       pid: 4242,

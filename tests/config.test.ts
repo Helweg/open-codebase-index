@@ -87,6 +87,7 @@ describe("config schema", () => {
       expect(config.scope).toBe("project");
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
+      expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
     });
 
     it("should return defaults for null input", () => {
@@ -199,6 +200,7 @@ describe("config schema", () => {
           indexing: {
             autoIndex: true,
             watchFiles: false,
+            pauseBackgroundIndexingOnBattery: true,
             semanticOnly: true,
             autoGc: false,
           },
@@ -206,6 +208,7 @@ describe("config schema", () => {
 
         expect(config.indexing.autoIndex).toBe(true);
         expect(config.indexing.watchFiles).toBe(false);
+        expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(true);
         expect(config.indexing.semanticOnly).toBe(true);
         expect(config.indexing.autoGc).toBe(false);
       });
@@ -215,11 +218,13 @@ describe("config schema", () => {
           indexing: {
             autoIndex: "true",
             watchFiles: 1,
+            pauseBackgroundIndexingOnBattery: "yes",
           },
         });
 
         expect(config.indexing.autoIndex).toBe(false);
         expect(config.indexing.watchFiles).toBe(true);
+        expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
       });
 
       it("should parse numeric indexing options", () => {
