@@ -3,6 +3,7 @@ import {
   containsQuotedIdentifier,
   countWords,
   hasConceptualDiscoveryHint,
+  hasBroadLocalTaskHint,
   hasDefinitionHint,
   hasExactMatchHint,
   hasIdentifierShape,
@@ -14,6 +15,7 @@ import {
 
 export type RoutingIntent =
   | "local_conceptual"
+  | "local_broad_task"
   | "definition_lookup"
   | "exact_identifier"
   | "external"
@@ -70,11 +72,12 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
   const matchedDefinitionHint = hasDefinitionHint(lowered);
   const matchedExactMatchHint = hasExactMatchHint(lowered);
   const matchedNonDiscoveryHint = hasNonDiscoveryHint(lowered);
+  const matchedBroadLocalTask = hasBroadLocalTaskHint(lowered);
   const hasIdentifier = hasIdentifierShape(normalizedText);
   const hasQuotedIdentifier = containsQuotedIdentifier(normalizedText);
   const shortQuery = countWords(lowered) <= 10;
 
-  if (matchedNonDiscoveryHint && !matchedConceptualHint) {
+  if (matchedNonDiscoveryHint && !matchedConceptualHint && !matchedBroadLocalTask) {
     return {
       intent: "other",
       text: normalizedText,
@@ -95,6 +98,14 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
       intent: "definition_lookup",
       text: normalizedText,
       reason: "definition_lookup_request",
+    };
+  }
+
+  if (matchedBroadLocalTask) {
+    return {
+      intent: "local_broad_task",
+      text: normalizedText,
+      reason: "broad_local_code_task",
     };
   }
 
@@ -134,19 +145,19 @@ export function buildRoutingHint(
     return "For this turn, prefer `implementation_lookup` to find the authoritative definition site. Use `codebase_search` only if no definition is found, and use `grep` for exhaustive literal matches.";
   }
 
-  if (assessment.intent !== "local_conceptual") {
+  if (assessment.intent !== "local_conceptual" && assessment.intent !== "local_broad_task") {
     return null;
   }
 
   if (!status || !status.indexed || status.compatibility?.compatible === false) {
-      const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbols." : "";
-      return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Use \`grep\` for exact identifiers or exhaustive matches.`;
+    const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbols." : "";
+    return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Then use \`codebase_context\` as the first local repository lookup. Use \`grep\` for exact identifiers or exhaustive matches.`;
   }
 
   const graphHandoff = includeGraphHandoff
     ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
     : "";
-  return `For this turn, prefer \`codebase_peek\` for local code discovery by behavior or likely location${graphHandoff}. Then use \`codebase_search\` when you need implementation content. Use \`grep\` for exact identifiers or exhaustive matches.`;
+  return `For this turn, prefer \`codebase_context\` for local code discovery, then use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. Use \`grep\` for exact identifiers or exhaustive matches.`;
 }
 
 export class RoutingHintController {
@@ -164,7 +175,10 @@ export class RoutingHintController {
     this.compactSessions();
     this.sessionState.set(sessionID, {
       assessment,
-      pendingHint: assessment.intent === "local_conceptual" || assessment.intent === "definition_lookup",
+      pendingHint:
+        assessment.intent === "local_conceptual"
+        || assessment.intent === "local_broad_task"
+        || assessment.intent === "definition_lookup",
       updatedAt: Date.now(),
     });
 
@@ -184,6 +198,10 @@ export class RoutingHintController {
     const status = await this.safeGetStatus();
     const hint = buildRoutingHint(state.assessment, status, this.includeGraphHandoff);
 
+    state.pendingHint = false;
+    state.updatedAt = Date.now();
+    this.sessionState.set(sessionID, state);
+
     return hint ? [hint] : [];
   }
 
@@ -194,7 +212,8 @@ export class RoutingHintController {
     }
 
     if (
-      toolName === "codebase_peek"
+      toolName === "codebase_context"
+      || toolName === "codebase_peek"
       || toolName === "codebase_search"
       || toolName === "implementation_lookup"
       || toolName === "index_status"
