@@ -1,4 +1,4 @@
-import chokidar, { FSWatcher } from "chokidar";
+import { FSWatcher } from "chokidar";
 import * as path from "path";
 
 import type { HostMode } from "../config/host.js";
@@ -32,6 +32,8 @@ export class FileWatcher {
   private onChanges: ChangeHandler | null = null;
   private readyPromise: Promise<void> | null = null;
   private resolveReady: (() => void) | null = null;
+  private pollingFallbackAttempted = false;
+  private pendingClose: Promise<void> | null = null;
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode = "opencode", options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -46,10 +48,22 @@ export class FileWatcher {
     }
 
     this.onChanges = handler;
+    this.pollingFallbackAttempted = false;
+    this.resetReady();
+    this.createWatcher();
+  }
+
+  private resetReady(): void {
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
+  }
+
+  private createWatcher(usePolling = false): void {
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const watchTargets = this.configPath ? [this.projectRoot, this.configPath] : this.projectRoot;
 
-    this.watcher = chokidar.watch(watchTargets, {
+    const watcherOptions = {
       ignored: (filePath: string) => {
         const relativePath = path.relative(this.projectRoot, filePath);
         if (!relativePath) return false;
@@ -74,34 +88,78 @@ export class FileWatcher {
       },
       persistent: true,
       ignoreInitial: true,
+      ...(usePolling ? { usePolling: true } : {}),
       awaitWriteFinish: {
         stabilityThreshold: 300,
         pollInterval: 100,
       },
-    });
-    this.readyPromise = new Promise<void>((resolve) => {
-      this.resolveReady = resolve;
-    });
-    this.watcher.once("ready", () => {
+    };
+    let watcher: FSWatcher;
+    if (usePolling) {
+      const previousUsePolling = process.env.CHOKIDAR_USEPOLLING;
+      process.env.CHOKIDAR_USEPOLLING = "true";
+      try {
+        watcher = new FSWatcher(watcherOptions);
+      } finally {
+        if (previousUsePolling === undefined) {
+          delete process.env.CHOKIDAR_USEPOLLING;
+        } else {
+          process.env.CHOKIDAR_USEPOLLING = previousUsePolling;
+        }
+      }
+    } else {
+      watcher = new FSWatcher(watcherOptions);
+    }
+    this.watcher = watcher;
+    watcher.once("ready", () => {
+      if (this.watcher !== watcher) return;
       this.resolveReady?.();
       this.resolveReady = null;
     });
 
-    this.watcher.on("error", (error: unknown) => {
+    watcher.on("error", (error: unknown) => {
       const err = error instanceof Error ? (error as NodeJS.ErrnoException) : null;
       if (err?.code === "EPERM" || err?.code === "EACCES") {
         // Silently ignore permission errors — common on macOS restricted paths
         return;
       }
+
+      if (
+        err?.code === "EMFILE"
+        && !watcher.options.usePolling
+        && !this.pollingFallbackAttempted
+        && this.watcher === watcher
+      ) {
+        this.pollingFallbackAttempted = true;
+        console.warn("[codebase-index] File watcher exhausted open file handles; retrying with polling.");
+        this.pendingClose = watcher.close().catch((closeError: unknown) => {
+          console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
+        });
+        if (this.onChanges) {
+          if (!this.resolveReady) {
+            this.resetReady();
+          }
+          this.createWatcher(true);
+        } else {
+          this.watcher = null;
+        }
+        return;
+      }
+
       console.error("[codebase-index] Watcher error:", err?.message ?? error);
     });
 
-    this.watcher.on("add", (filePath) => this.handleChange("add", filePath));
-    this.watcher.on("change", (filePath) => this.handleChange("change", filePath));
-    this.watcher.on("unlink", (filePath) => this.handleChange("unlink", filePath));
+    watcher.on("add", (filePath) => this.handleChange(watcher, "add", filePath));
+    watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
+    watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
+    watcher.add(watchTargets);
   }
 
-  private handleChange(type: FileChangeType, filePath: string): void {
+  private handleChange(watcher: FSWatcher, type: FileChangeType, filePath: string): void {
+    if (this.watcher !== watcher) {
+      return;
+    }
+
     if (this.isProjectConfigPath(filePath)) {
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
@@ -183,18 +241,18 @@ export class FileWatcher {
       this.debounceTimer = null;
     }
 
-    if (this.watcher) {
-      const watcher = this.watcher;
-      this.watcher = null;
-      await watcher.close();
-    }
-
-    this.resolveReady?.();
+    const watcher = this.watcher;
+    const pendingClose = this.pendingClose;
+    const resolveReady = this.resolveReady;
+    this.watcher = null;
+    this.pendingClose = null;
     this.resolveReady = null;
     this.readyPromise = null;
-
     this.pendingChanges.clear();
     this.onChanges = null;
+    await Promise.all([watcher?.close(), pendingClose]);
+
+    resolveReady?.();
   }
 
   isRunning(): boolean {
