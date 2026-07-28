@@ -203,6 +203,77 @@ describe("eval metrics", () => {
     expect(per.ndcgAt10).toBeCloseTo(1, 8);
   });
 
+  it("keeps nDCG bounded when duplicate same-path results match a single path label", () => {
+    const q = query({
+      expected: {
+        filePath: "src/indexer/index.ts",
+      },
+    });
+
+    const per = buildPerQueryResult(q, [
+      {
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 1,
+        endLine: 2,
+        score: 0.99,
+        chunkType: "function",
+        name: "rankHybridResults",
+      },
+      {
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 3,
+        endLine: 4,
+        score: 0.98,
+        chunkType: "function",
+        name: "otherFunction",
+      },
+      {
+        filePath: "/repo/src/indexer/index.ts",
+        startLine: 5,
+        endLine: 6,
+        score: 0.97,
+        chunkType: "function",
+        name: "thirdFunction",
+      },
+    ], 20, 10);
+
+    expect(per.hitAt1).toBe(true);
+    expect(per.ndcgAt10).toBe(1);
+    expect(per.results).toHaveLength(3);
+  });
+
+  it("does not let wrong-symbol-only hits pass symbol-intended mixed evidence", () => {
+    const q = {
+      id: "q-symbol-intended-path-label",
+      query: "where is rankHybridResults implementation",
+      queryType: "definition" as const,
+      expected: {
+        symbol: "rankHybridResults",
+        gradedEvidence: [{ path: "src/indexer/index.ts", relevance: 3 }],
+      },
+    };
+
+    const per = buildPerQueryResult(
+      q,
+      [
+        {
+          filePath: "/repo/src/indexer/index.ts",
+          startLine: 1,
+          endLine: 2,
+          score: 0.99,
+          chunkType: "function",
+          name: "wrongSymbol",
+        },
+      ],
+      20,
+      10,
+    );
+
+    expect(per.hitAt1).toBe(false);
+    expect(per.ndcgAt10).toBe(0);
+    expect(per.failureBucket).toBe("wrong-symbol");
+  });
+
   it("aggregates eval metrics including latency percentiles and costs", () => {
     const queries: GoldenQuery[] = [
       query({ id: "q1" }),

@@ -22,6 +22,10 @@ function branchCommitMetadataKey(catalogIdentity: string): string {
   return `index.branchCommit.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
+function symbolExtractorMetadataKey(catalogIdentity: string): string {
+  return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
+
 vi.mock("../src/tools/changed-files.js", () => ({
   getChangedFiles: vi.fn(),
 }));
@@ -520,6 +524,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a", "sym_b", "sym_c"]);
     db.addSymbolsToBranch("other-branch", ["sym_b"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
+    db.setMetadata(symbolExtractorMetadataKey("feature-branch"), "1");
 
     db.upsertCallEdge({
       id: "edge_ab",
@@ -618,6 +623,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a_feature"]);
     db.addSymbolsToBranch("other-branch", ["sym_a_other"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
+    db.setMetadata(symbolExtractorMetadataKey("feature-branch"), "1");
 
     const result = await indexer.getPrImpact({ pr: 1, checkConflicts: true });
 

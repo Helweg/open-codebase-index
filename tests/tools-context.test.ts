@@ -274,6 +274,66 @@ describe("native OpenCode codebase_context", () => {
     expect(countContextTokens(result)).toBeLessThanOrEqual(512);
   });
 
+  it("packs implementation evidence before higher-scoring docs for source-intent queries", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([
+      {
+        filePath: "README.md",
+        startLine: 1,
+        endLine: 10,
+        chunkType: "other",
+        content: "documentation",
+        score: 0.99,
+      },
+      {
+        filePath: "src/auth.ts",
+        startLine: 20,
+        endLine: 40,
+        name: "validateToken",
+        chunkType: "function",
+        content: "implementation",
+        score: 0.60,
+      },
+    ]);
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "where is authentication implemented",
+      tokenBudget: 512,
+    }, context);
+
+    expect(result.indexOf("src/auth.ts")).toBeLessThan(result.indexOf("README.md"));
+  });
+
+  it("keeps higher-scoring docs first for documentation-intent queries", async () => {
+    operationMocks.searchCodebase.mockResolvedValue([
+      {
+        filePath: "README.md",
+        startLine: 1,
+        endLine: 10,
+        chunkType: "other",
+        content: "documentation",
+        score: 0.99,
+      },
+      {
+        filePath: "src/auth.ts",
+        startLine: 20,
+        endLine: 40,
+        name: "validateToken",
+        chunkType: "function",
+        content: "implementation",
+        score: 0.60,
+      },
+    ]);
+
+    const result = await codebase_context.execute({
+      ...commonArgs,
+      query: "show the authentication documentation",
+      tokenBudget: 512,
+    }, context);
+
+    expect(result.indexOf("README.md")).toBeLessThan(result.indexOf("src/auth.ts"));
+  });
+
   it("routes explicit definitions to compact location evidence", async () => {
     operationMocks.implementationLookup.mockResolvedValue([{
       filePath: "src/auth.ts",

@@ -32,6 +32,10 @@ function branchCommitMetadataKey(catalogIdentity: string): string {
   return `index.branchCommit.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
+function symbolExtractorMetadataKey(catalogIdentity: string): string {
+  return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
+
 describe("automatic branch index preparation", () => {
   let tempDir: string;
   let repo: string;
@@ -175,6 +179,33 @@ function changed(): number {
     const second = await indexer.getPrImpact({ branch: "feature" });
     expect(second.indexPreparation).toEqual({ prepared: false, branch: "feature" });
     expect(fetchSpy.mock.calls.length).toBe(fetchesAfterPreparation);
+  });
+
+  it("reparses a cached alternate branch when its symbol extractor metadata is stale", async () => {
+    await indexer.getPrImpact({ branch: "feature" });
+    const db = await database();
+    expect(db.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
+    expect(db.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
+
+    const status = await indexer.getStatus();
+    await indexer.close();
+    const directDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    directDatabase.setMetadata(symbolExtractorMetadataKey("feature"), "stale");
+    directDatabase.close();
+    indexer = new Indexer(repo, config);
+    const fetchesBeforeMigration = fetchSpy.mock.calls.length;
+
+    const migrated = await indexer.getPrImpact({ branch: "feature" });
+
+    expect(migrated.indexPreparation).toMatchObject({
+      prepared: true,
+      branch: "feature",
+      commit: featureCommit,
+    });
+    expect(fetchSpy.mock.calls.length).toBe(fetchesBeforeMigration);
+    const migratedDb = await database();
+    expect(migratedDb.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
+    expect(migratedDb.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
   });
 
   it("reindexes a moved branch OID, replaces stale catalog data, and preserves primary data", async () => {

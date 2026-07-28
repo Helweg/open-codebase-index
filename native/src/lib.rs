@@ -195,7 +195,19 @@ pub struct FileInput {
 pub struct ParsedFile {
     pub path: String,
     pub chunks: Vec<CodeChunk>,
+    pub symbols: Vec<ParsedSymbol>,
     pub hash: String,
+}
+
+#[napi(object)]
+pub struct ParsedSymbol {
+    pub name: String,
+    pub kind: String,
+    pub start_line: u32,
+    pub start_col: u32,
+    pub end_line: u32,
+    pub end_col: u32,
+    pub language: String,
 }
 
 #[napi(object)]

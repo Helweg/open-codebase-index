@@ -523,6 +523,7 @@ const INDEX_METADATA_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
 const SWIFT_PARSER_VERSION = "1";
 const METAL_PARSER_VERSION = "1";
+const SYMBOL_EXTRACTOR_VERSION = "1";
 const RANKING_TOKEN_CACHE_LIMIT = 4096;
 const RANK_HYBRID_CACHE_LIMIT = 256;
 
@@ -1545,6 +1546,12 @@ export function buildSymbolDefinitionLane(
           continue;
         }
 
+        const chunkName = (chunk.name ?? "").toLowerCase();
+        const symbolName = symbol.name.toLowerCase();
+        if (chunkName !== symbolName && chunkName.replace(/_/g, "") !== symbolName.replace(/_/g, "")) {
+          continue;
+        }
+
         foundCoveringChunk = upsertChunkCandidate(chunk, identifier, normalizedIdentifier) || foundCoveringChunk;
       }
 
@@ -2274,6 +2281,13 @@ export class Indexer {
 
     const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
     return `${key}.${projectHash}`;
+  }
+
+  private getSymbolExtractorVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
+    return `index.symbolExtractorVersion.${hashContent(branchKey).slice(0, 24)}`;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -3995,7 +4009,9 @@ export class Indexer {
       const branchKey = this.getBranchCatalogKey();
       const alreadyIndexed = database.getBranchChunkIds(branchKey).length > 0
         && database.getBranchSymbolIds(branchKey).length > 0;
-      if (alreadyIndexed && this.getStoredBranchCommit(database) === normalizedCommit) {
+      const symbolsCurrent = database.getMetadata(this.getSymbolExtractorVersionMetadataKey())
+        === SYMBOL_EXTRACTOR_VERSION;
+      if (alreadyIndexed && symbolsCurrent && this.getStoredBranchCommit(database) === normalizedCommit) {
         return { prepared: false };
       }
 
@@ -4075,6 +4091,9 @@ export class Indexer {
     const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
     const reparseCachedMetalFiles =
       database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
+    const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
+    const refreshCachedSymbols =
+      database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
     if (
       reparseCachedSwiftFiles &&
       Array.from(this.fileHashCache.keys()).some(
@@ -4142,7 +4161,8 @@ export class Indexer {
         cachedHashMatches &&
         !needsCallGraphRefresh &&
         !requiresSwiftParserUpgrade &&
-        !requiresMetalParserUpgrade
+        !requiresMetalParserUpgrade &&
+        !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(canonicalPath);
         this.logger.recordCacheHit();
@@ -4392,44 +4412,25 @@ export class Indexer {
 
       const fileSymbols: SymbolData[] = [];
 
-      for (const chunk of parsed.chunks) {
-        if (!chunk.name || !CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(chunk.chunkType)) continue;
-
-        // Large Metal functions are split into overlapping chunks. Keep one symbol
-        // spanning the full declaration so same-file resolution does not treat the
-        // fragments as ambiguous overloads.
-        const existingMetalSymbol = chunk.language === "metal"
-          ? fileSymbols.find((symbol) =>
-              symbol.name === chunk.name
-              && symbol.kind === chunk.chunkType
-              && symbol.startLine <= chunk.endLine
-              && chunk.startLine <= symbol.endLine
-            )
-          : undefined;
-        if (existingMetalSymbol) {
-          existingMetalSymbol.startLine = Math.min(existingMetalSymbol.startLine, chunk.startLine);
-          existingMetalSymbol.endLine = Math.max(existingMetalSymbol.endLine, chunk.endLine);
-          existingMetalSymbol.startCol = Math.min(existingMetalSymbol.startCol, chunk.startCol ?? 0);
-          existingMetalSymbol.endCol = Math.max(existingMetalSymbol.endCol, chunk.endCol ?? 0);
-          continue;
-        }
+      for (const parsedSymbol of parsed.symbols) {
+        if (!CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind)) continue;
 
         const preparedNamespace = this.getPreparedBranchNamespace();
         const symbolId = `sym_${hashContent(
           (preparedNamespace ? `${preparedNamespace}:` : "") +
-          parsed.path + ":" + chunk.name + ":" + chunk.chunkType + ":" +
-          chunk.startLine + ":" + (chunk.startCol ?? 0) + ":" + changedFile.hash,
+          parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":" +
+          parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":" + changedFile.hash,
         ).slice(0, 16)}`;
         const symbol: SymbolData = {
           id: symbolId,
           filePath: parsed.path,
-          name: chunk.name,
-          kind: chunk.chunkType,
-          startLine: chunk.startLine,
-          startCol: chunk.startCol ?? 0,
-          endLine: chunk.endLine,
-          endCol: chunk.endCol ?? 0,
-          language: chunk.language,
+          name: parsedSymbol.name,
+          kind: parsedSymbol.kind,
+          startLine: parsedSymbol.startLine,
+          startCol: parsedSymbol.startCol,
+          endLine: parsedSymbol.endLine,
+          endCol: parsedSymbol.endCol,
+          language: parsedSymbol.language,
         };
         fileSymbols.push(symbol);
         allSymbolIds.add(symbolId);
@@ -4440,7 +4441,7 @@ export class Indexer {
       // must lowercase the symbol-map keys here too. Otherwise a declaration
       // like `MyMethod` would not match a lowercased call edge target like
       // `mymethod`, leaving same-file calls unresolved (toSymbolId = NULL).
-      const fileLanguage = parsed.chunks[0]?.language;
+      const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
       const isCaseInsensitiveLanguage =
         !!fileLanguage && CASE_INSENSITIVE_LANGUAGES.has(fileLanguage);
       const normalizeSymbolKey = (name: string): string =>
@@ -4578,6 +4579,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
@@ -4615,6 +4617,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
@@ -4940,6 +4943,7 @@ export class Indexer {
     }
     database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
     database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+    database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
     this.saveBranchCommit(database, indexedCommit);
     this.saveIndexMetadata(configuredProviderInfo);
     this.indexCompatibility = { compatible: true };
@@ -5449,6 +5453,7 @@ export class Indexer {
     if (
       (hasSwiftFiles && database.getMetadata(this.getSwiftParserVersionMetadataKey()) !== SWIFT_PARSER_VERSION)
       || (hasMetalFiles && database.getMetadata(this.getMetalParserVersionMetadataKey()) !== METAL_PARSER_VERSION)
+      || database.getMetadata(this.getSymbolExtractorVersionMetadataKey()) !== SYMBOL_EXTRACTOR_VERSION
       || (hasCallGraphMigrationFiles
         && database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION)
     ) {
@@ -6354,7 +6359,11 @@ export class Indexer {
     const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
     const catalogIdentityMatches = storedCommit === expectedCommit;
 
-    if (branchSymbols.length === 0 || !catalogIdentityMatches) {
+    const symbolsCurrent = database.getMetadata(
+      this.getSymbolExtractorVersionMetadataKey(catalogIdentity),
+    ) === SYMBOL_EXTRACTOR_VERSION;
+
+    if (branchSymbols.length === 0 || !catalogIdentityMatches || !symbolsCurrent) {
       if (!resolvedBranch || resolvedBranch === "default") {
         throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
       }

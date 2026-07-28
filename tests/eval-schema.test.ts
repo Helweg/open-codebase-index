@@ -26,6 +26,14 @@ describe("eval schema", () => {
             id: "q1",
             query: "where is rankHybridResults implementation",
             queryType: "definition",
+            language: "typescript",
+            difficulty: "easy",
+            tags: ["definition", "typescript"],
+            args: {
+              symbol: "rankHybridResults",
+              fileType: "ts",
+              directory: "src/indexer",
+            },
             expected: {
               filePath: "src/indexer/index.ts",
               symbol: "rankHybridResults",
@@ -39,6 +47,11 @@ describe("eval schema", () => {
     expect(dataset.name).toBe("small");
     expect(dataset.queries).toHaveLength(1);
     expect(dataset.queries[0]?.retrievalMode).toBe("search");
+    expect(dataset.queries[0]?.difficulty).toBe("easy");
+    expect(dataset.queries[0]?.tags).toEqual(["definition", "typescript"]);
+    expect(dataset.queries[0]?.args?.symbol).toBe("rankHybridResults");
+    expect(dataset.queries[0]?.args?.fileType).toBe("ts");
+    expect(dataset.queries[0]?.args?.directory).toBe("src/indexer");
   });
 
   it("parses agent-facing context retrieval queries", () => {
@@ -99,7 +112,172 @@ describe("eval schema", () => {
         },
         "dataset.json"
       )
-    ).toThrow(/expected.filePath or expected.acceptableFiles/);
+    ).toThrow(/expected.filePath, expected.acceptableFiles, or expected.gradedEvidence/);
+  });
+
+  it("parses no-results expected outcomes without explicit evidence", () => {
+    const dataset = parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "negative",
+        queries: [
+          {
+            id: "q1",
+            query: "no such symbol exists",
+            queryType: "definition",
+            expected: {
+              expectedOutcome: "no-results",
+            },
+          },
+        ],
+      },
+      "dataset.json"
+    );
+
+    expect(dataset.queries[0]?.expected.expectedOutcome).toBe("no-results");
+  });
+
+  it("rejects invalid difficulty values", () => {
+    expect(() =>
+      parseGoldenDataset(
+        {
+          version: "1.0.0",
+          name: "invalid",
+          queries: [
+            {
+              id: "q1",
+              query: "where",
+              queryType: "conceptual",
+              difficulty: "extreme",
+              expected: {
+                filePath: "src/index.ts",
+              },
+            },
+          ],
+        },
+        "dataset.json"
+      )
+    ).toThrow(/must be one of: easy, medium, hard/);
+  });
+
+  it("rejects invalid recovery expectations", () => {
+    expect(() =>
+      parseGoldenDataset(
+        {
+          version: "1.0.0",
+          name: "invalid",
+          queries: [
+            {
+              id: "q1",
+              query: "where",
+              queryType: "conceptual",
+              expected: {
+                filePath: "src/index.ts",
+                recoveryExpectation: "unknown",
+              },
+            },
+          ],
+        },
+        "dataset.json"
+      )
+    ).toThrow(/must be one of: none, filter-relaxed/);
+  });
+
+  it("accepts graded evidence-only expected entries", () => {
+    const dataset = parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "graded-evidence",
+        queries: [
+          {
+            id: "q1",
+            query: "where is rankHybridResults implementation",
+            queryType: "definition",
+            expected: {
+              gradedEvidence: [
+                {
+                  path: "src/indexer/index.ts",
+                  symbol: "rankHybridResults",
+                  relevance: 3,
+                },
+              ],
+            },
+          },
+        ],
+      },
+      "dataset.json"
+    );
+
+    expect(dataset.queries[0]?.expected.gradedEvidence?.[0]).toEqual({
+      path: "src/indexer/index.ts",
+      symbol: "rankHybridResults",
+      relevance: 3,
+    });
+  });
+
+  it("parses nested filters and permits evidence-free no-result expectations", () => {
+    const dataset = parseGoldenDataset({
+      version: "2.0.0",
+      name: "negative-filter",
+      queries: [{
+        id: "q1",
+        query: "missing symbol",
+        queryType: "definition",
+        language: "typescript",
+        difficulty: "hard",
+        tags: ["negative", "filter"],
+        args: { symbol: "missing", fileType: "ts", directory: "missing/path" },
+        expected: { expectedOutcome: "no-results" },
+      }],
+    }, "dataset.json");
+
+    expect(dataset.queries[0]).toMatchObject({
+      args: { symbol: "missing", fileType: "ts", directory: "missing/path" },
+      difficulty: "hard",
+    });
+  });
+
+  it("rejects invalid difficulty and unbounded tags", () => {
+    const base = {
+      version: "2.0.0",
+      name: "invalid-axes",
+      queries: [{
+        id: "q1",
+        query: "query",
+        queryType: "conceptual",
+        expected: { filePath: "src/index.ts" },
+      }],
+    };
+    expect(() => parseGoldenDataset({
+      ...base,
+      queries: [{ ...base.queries[0], difficulty: "extreme" }],
+    }, "dataset.json")).toThrow(/difficulty.*easy, medium, hard/);
+    expect(() => parseGoldenDataset({
+      ...base,
+      queries: [{ ...base.queries[0], tags: Array.from({ length: 17 }, (_, i) => `tag-${i}`) }],
+    }, "dataset.json")).toThrow(/at most 16 tags/);
+  });
+
+  it("rejects invalid gradedEvidence entries", () => {
+    expect(() =>
+      parseGoldenDataset(
+        {
+          version: "1.0.0",
+          name: "invalid",
+          queries: [
+            {
+              id: "q1",
+              query: "where",
+              queryType: "conceptual",
+              expected: {
+                gradedEvidence: [{ path: 42, symbol: "rankHybridResults" }],
+              },
+            },
+          ],
+        },
+        "dataset.json"
+      )
+    ).toThrow(/0\] must be an object|must be a non-empty string/i);
   });
 
   it("rejects duplicate query ids", () => {

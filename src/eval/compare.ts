@@ -12,6 +12,28 @@ function metricDelta(current: number, baseline: number): MetricDelta {
 }
 
 export function compareSummaries(current: EvalSummary, baseline: EvalSummary, againstPath: string): EvalComparison {
+  const hasCurrentFingerprint = current.datasetFingerprint !== undefined;
+  const hasBaselineFingerprint = baseline.datasetFingerprint !== undefined;
+
+  if (hasCurrentFingerprint !== hasBaselineFingerprint) {
+    throw new Error(
+      `Cannot compare evaluation summaries with mismatched dataset fingerprint presence: current=${
+        hasCurrentFingerprint ? "present" : "missing"
+      }, baseline=${hasBaselineFingerprint ? "present" : "missing"} at ${againstPath}`
+    );
+  }
+
+  if (
+    hasCurrentFingerprint &&
+    hasBaselineFingerprint &&
+    current.datasetFingerprint !== baseline.datasetFingerprint
+  ) {
+    throw new Error(
+      `Cannot compare incompatible evaluation datasets by fingerprint: current=${current.datasetFingerprint}, ` +
+      `baseline=${baseline.datasetFingerprint} at ${againstPath}`
+    );
+  }
+
   if (
     current.datasetName !== baseline.datasetName ||
     current.datasetVersion !== baseline.datasetVersion ||

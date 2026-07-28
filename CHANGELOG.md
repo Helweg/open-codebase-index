@@ -11,15 +11,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Battery-aware background indexing**: Added the opt-in `indexing.pauseBackgroundIndexingOnBattery` setting. On macOS, automatic startup and watcher-triggered indexing now waits for AC power, coalesces pending work into one update, and keeps manual `index_codebase` requests available. Power detection uses a five-second `pmset` timeout and fails open if the source cannot be determined.
 - **Actionable effectiveness diagnostics**: Privacy-safe runtime metrics now include bounded per-route outcome, result-count, latency, and returned-token histograms. Scheduled quality evaluations retain public synthetic summary and per-query artifacts for 14 days, including failed runs.
+- **Representative retrieval evaluation**: Added a versioned hand-labeled benchmark spanning TypeScript, Rust, Swift, and PHP with difficulty and intent axes, scoped filters, recovery expectations, strict negative cases, symbol-aware graded evidence, and per-query route, outcome, and recovery diagnostics.
 
 ### Changed
 
 - **Broader agent routing hints** (#158): Common repository tasks such as fixing bugs, adding support, investigating failures, refactoring, and reviewing code now receive lightweight `codebase_context`-first guidance. Each matching user message emits the hint at most once, preventing repeated token overhead during tool-call loops. Exact identifier, direct-path, external, and unrelated operational requests remain unnudged.
 - **Stronger retrieval quality gate**: The GitHub Models scheduled evaluation now requires at least 75% Hit@5 and 0.65 MRR@10, so the gate catches material retrieval regressions that the previous permissive floor allowed.
+- **Source-aware context packs**: Conceptual agent context now prioritizes implementation files over documentation, tests, and fixtures unless the query explicitly asks for those paths, while preserving the underlying retrieval order within each evidence class.
 
 ### Fixed
 
 - **Exact definitions in large files**: Definition and implementation searches now rescue branch-scoped symbols from the uncapped symbol catalog when per-file embedding limits omit their semantic chunks, restoring exact lookup without increasing embedding volume.
+- **Nested method definitions**: Symbol catalogs now recursively extract nested declarations independently of capped semantic chunks, migrate unchanged indexes without re-embedding content, and restore exact method lookup in large classes.
 - **Evaluation artifact uploads**: Scheduled quality diagnostics now use a visible output directory so GitHub Actions uploads the generated summaries and per-query evidence on both successful and failed runs.
 - **Silent branch switching by default** (#189): Branch changes no longer print directly to stdout. Opt-in branch diagnostics are recorded through the configured debug logger and remain available through `index_logs` when both `debug.enabled` and `debug.logBranch` are enabled.
 

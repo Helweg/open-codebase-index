@@ -4,6 +4,7 @@
   "datasetPath": "benchmarks/golden/small.json",
   "datasetName": "small",
   "datasetVersion": "1.0.0",
+  "datasetFingerprint": "054eccab2ca1480b532cbe5a87ad078a88597d8f832237719b3e07c65aeaf6e5",
   "queryCount": 4,
   "topK": 10,
   "searchConfig": {

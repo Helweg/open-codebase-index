@@ -23,6 +23,41 @@ Run the agent-facing dataset with its matching quality and context-efficiency ga
 npm run eval:agent:ci
 ```
 
+Run the hand-labeled representative retrieval kernel:
+
+```bash
+npm run eval:representative
+```
+
+`benchmarks/golden/representative.json` is a compact, versioned quality set for
+exact and nested definitions, conceptual source discovery, TypeScript, Rust,
+Swift, and PHP, scoped file and directory filters, filter-relaxation recovery,
+graded multi-file evidence, similarity, keyword-heavy retrieval, and a strict
+negative filtered search. It complements the larger existing datasets rather
+than replacing them.
+
+Version 2 golden queries can declare:
+
+- `language`, `difficulty`, and bounded `tags` for per-query diagnostics
+- `args.symbol`, `args.fileType`, and `args.directory`, which the runner passes
+  through the same search/context paths used by production tools
+- `expected.expectedRoute`, `expected.expectedOutcome`, and
+  `expected.recoveryExpectation`
+- `expected.gradedEvidence`, whose entries identify a repository-relative path,
+  optional exact symbol, and relevance grade from 1 to 3
+
+Hit and reciprocal-rank metrics require both the labeled path and symbol when a
+symbol is present. nDCG uses the relevance grades. Legacy `filePath` and
+`acceptableFiles` labels remain supported as binary alternatives. Expected
+paths are matched as exact repository-relative paths or as suffixes of absolute
+result paths, never in the reverse direction. The per-query artifact retains
+the declared axes plus route, outcome, and recovery matches for diagnosis.
+
+This kernel measures retrieval and context packing on this repository. It does
+not prove end-to-end agent success or universal state-of-the-art quality. Keep
+cross-repository, provider-specific, latency, and production telemetry evidence
+separate when making broader claims.
+
 Generate the deterministic privacy-safe effectiveness report without embeddings, network access, or repository indexing:
 
 ```bash
@@ -43,8 +78,12 @@ npx vitest run tests/intent-aware-ranking-eval.test.ts
 
 Opt-in runtime effectiveness counters complement these synthetic reports. `index_metrics` exposes fixed aggregate counters plus bounded per-route outcome, result-count, latency, and returned-token histograms. These route-specific views can reveal that one route has a higher no-result rate or larger response buckets, but they remain process-memory-only and contain no queries, paths, symbols, source, repository identity, or raw measurements. They cannot establish causal end-to-end agent success or compare trends across process restarts.
 
-Evaluation comparisons require the same dataset name, version, and query count. Use the
-agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
+Evaluation comparisons require the same dataset name, version, query count, and dataset
+fingerprint. Summaries created before fingerprints were added are intentionally rejected,
+because matching metadata alone cannot prove that labels and query text are identical. Re-run
+the trusted evaluation and follow the baseline blessing workflow below to regenerate a legacy
+summary. Use the agent-context budget rather than the default search baseline when evaluating
+`agent-context.json`.
 
 Context-mode evaluation applies the production evidence packer with its default
 1200-token response budget. The pack contains location evidence only, removes

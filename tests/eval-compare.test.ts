@@ -3,13 +3,18 @@ import { describe, expect, it } from "vitest";
 import { compareSummaries } from "../src/eval/compare.js";
 import type { EvalSummary } from "../src/eval/types.js";
 
-function summary(overrides: Partial<Pick<EvalSummary, "datasetName" | "datasetVersion" | "queryCount">> = {}): EvalSummary {
+function summary(
+  overrides: Partial<
+    Pick<EvalSummary, "datasetName" | "datasetVersion" | "queryCount" | "datasetFingerprint">
+  > = {},
+): EvalSummary {
   return {
     generatedAt: "2026-07-25T00:00:00.000Z",
     projectRoot: "/repo",
     datasetPath: "dataset.json",
     datasetName: overrides.datasetName ?? "agent-context",
     datasetVersion: overrides.datasetVersion ?? "1.0.0",
+    datasetFingerprint: overrides.datasetFingerprint,
     queryCount: overrides.queryCount ?? 12,
     topK: 10,
     searchConfig: { fusionStrategy: "rrf", hybridWeight: 0.4, rrfK: 60, rerankTopN: 20 },
@@ -46,6 +51,31 @@ function summary(overrides: Partial<Pick<EvalSummary, "datasetName" | "datasetVe
 describe("evaluation comparison", () => {
   it("compares matching datasets", () => {
     expect(compareSummaries(summary(), summary(), "baseline.json").deltas.hitAt5.absolute).toBe(0);
+  });
+
+  it("compares matching datasets when fingerprints match", () => {
+    const comparison = compareSummaries(
+      summary({ datasetFingerprint: "abc123" }),
+      summary({ datasetFingerprint: "abc123" }),
+      "baseline.json"
+    );
+
+    expect(comparison.deltas.hitAt5.absolute).toBe(0);
+  });
+
+  it("rejects when dataset fingerprints do not match", () => {
+    expect(() =>
+      compareSummaries(
+        summary({ datasetFingerprint: "abc123" }),
+        summary({ datasetFingerprint: "def456" }),
+        "baseline.json"
+      )
+    ).toThrow(/incompatible evaluation datasets by fingerprint/);
+  });
+
+  it("rejects comparison when one summary has a fingerprint and the other does not", () => {
+    expect(() => compareSummaries(summary(), summary({ datasetFingerprint: "abc123" }), "baseline.json")).toThrow(/mismatched dataset fingerprint presence/);
+    expect(() => compareSummaries(summary({ datasetFingerprint: "abc123" }), summary(), "baseline.json")).toThrow(/mismatched dataset fingerprint presence/);
   });
 
   it.each([

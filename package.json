@@ -44,6 +44,7 @@
     "dev": "tsup --watch",
     "eval": "npx tsx src/cli.ts eval run",
     "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
+    "eval:representative": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/representative.json",
     "eval:agent:ci": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json --reindex --ci --budget benchmarks/budgets/agent-context.json",
     "eval:smoke": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/small.json",
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",

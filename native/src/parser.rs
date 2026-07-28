@@ -1,5 +1,5 @@
 use crate::types::Language;
-use crate::{CodeChunk, FileInput, ParsedFile};
+use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol};
 use anyhow::{anyhow, Result};
 use lazy_static::lazy_static;
 use rayon::prelude::*;
@@ -78,17 +78,113 @@ pub fn parse_files_parallel(files: Vec<FileInput>) -> Result<Vec<ParsedFile>> {
     let results: Vec<ParsedFile> = files
         .par_iter()
         .filter_map(|file| {
-            let chunks = parse_file_internal(&file.path, &file.content).ok()?;
+            let (chunks, symbols) =
+                parse_file_with_symbols_internal(&file.path, &file.content).ok()?;
             let hash = crate::hasher::xxhash_content(&file.content);
             Some(ParsedFile {
                 path: file.path.clone(),
                 chunks,
+                symbols,
                 hash,
             })
         })
         .collect();
 
     Ok(results)
+}
+
+fn parse_file_with_symbols_internal(
+    file_path: &str,
+    content: &str,
+) -> Result<(Vec<CodeChunk>, Vec<ParsedSymbol>)> {
+    let ext = Path::new(file_path)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .unwrap_or("");
+    let language = Language::from_extension(ext);
+
+    if language == Language::Text {
+        return Ok((chunk_by_lines(content, &language), Vec::new()));
+    }
+
+    let mut parser = Parser::new();
+    let ts_language = match language {
+        Language::TypeScript | Language::TypeScriptTsx => {
+            tree_sitter_typescript::LANGUAGE_TSX.into()
+        }
+        Language::JavaScript | Language::JavaScriptJsx => tree_sitter_javascript::LANGUAGE.into(),
+        Language::Python => tree_sitter_python::LANGUAGE.into(),
+        Language::Rust => tree_sitter_rust::LANGUAGE.into(),
+        Language::Swift => tree_sitter_swift::LANGUAGE.into(),
+        Language::Go => tree_sitter_go::LANGUAGE.into(),
+        Language::Json => tree_sitter_json::LANGUAGE.into(),
+        Language::Java => tree_sitter_java::LANGUAGE.into(),
+        Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
+        Language::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+        Language::Bash => tree_sitter_bash::LANGUAGE.into(),
+        Language::C => tree_sitter_c::LANGUAGE.into(),
+        Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+        Language::Metal => tree_sitter_cpp::LANGUAGE.into(),
+        Language::Toml => tree_sitter_toml_ng::LANGUAGE.into(),
+        Language::Yaml => tree_sitter_yaml::LANGUAGE.into(),
+        Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+        Language::Zig => tree_sitter_zig::LANGUAGE.into(),
+        Language::Gdscript => tree_sitter_gdscript::LANGUAGE.into(),
+        Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
+        Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
+        _ => return Ok((chunk_by_lines(content, &language), Vec::new())),
+    };
+
+    parser.set_language(&ts_language)?;
+    let tree = parser
+        .parse(content, None)
+        .ok_or_else(|| anyhow!("Failed to parse file: {}", file_path))?;
+    let chunks = extract_chunks(&tree, content, &language)?;
+    let symbols = extract_symbols(&tree, content, &language);
+    Ok((chunks, symbols))
+}
+
+fn extract_symbols(tree: &Tree, source: &str, language: &Language) -> Vec<ParsedSymbol> {
+    let mut symbols = Vec::new();
+    let mut cursor = tree.root_node().walk();
+    extract_symbol_nodes(&mut cursor, source, language, &mut symbols, 0);
+    symbols
+}
+
+fn extract_symbol_nodes(
+    cursor: &mut tree_sitter::TreeCursor,
+    source: &str,
+    language: &Language,
+    symbols: &mut Vec<ParsedSymbol>,
+    depth: usize,
+) {
+    const MAX_RECURSION_DEPTH: usize = 1024;
+
+    loop {
+        let node = cursor.node();
+        if is_semantic_node(node.kind(), language) && node.kind() != "export_statement" {
+            if let Some(name) = extract_name(cursor, source, language) {
+                symbols.push(ParsedSymbol {
+                    name,
+                    kind: semantic_chunk_type(&node, source, language),
+                    start_line: node.start_position().row as u32 + 1,
+                    start_col: node.start_position().column as u32,
+                    end_line: node.end_position().row as u32 + 1,
+                    end_col: node.end_position().column as u32,
+                    language: language.as_str().to_string(),
+                });
+            }
+        }
+
+        if depth <= MAX_RECURSION_DEPTH && cursor.goto_first_child() {
+            extract_symbol_nodes(cursor, source, language, symbols, depth + 1);
+            cursor.goto_parent();
+        }
+
+        if !cursor.goto_next_sibling() {
+            break;
+        }
+    }
 }
 
 fn extract_chunks(tree: &Tree, source: &str, language: &Language) -> Result<Vec<CodeChunk>> {
@@ -204,8 +300,13 @@ fn extract_semantic_nodes(
                 node_type,
                 "class_specifier" | "struct_specifier" | "union_specifier"
             );
-        let should_descend =
-            !is_semantic || *language == Language::Swift || descend_into_metal_type;
+        let descend_into_ts_abstract_class =
+            matches!(language, Language::TypeScript | Language::TypeScriptTsx)
+                && node_type == "abstract_class_declaration";
+        let should_descend = !is_semantic
+            || *language == Language::Swift
+            || descend_into_metal_type
+            || descend_into_ts_abstract_class;
         if should_descend && !skip_children && cursor.goto_first_child() {
             extract_semantic_nodes(cursor, source, language, chunks, depth + 1);
             cursor.goto_parent();
@@ -425,6 +526,7 @@ lazy_static! {
         set.insert("enum_declaration");
         set.insert("export_statement");
         set.insert("lexical_declaration");
+        set.insert("abstract_class_declaration");
         // Added 5 most common statement types
         set.insert("expression_statement");
         set.insert("if_statement");
@@ -651,6 +753,12 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
 }
 
 fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Language) -> String {
+    if matches!(language, Language::TypeScript | Language::TypeScriptTsx)
+        && node.kind() == "abstract_class_declaration"
+    {
+        return "class_declaration".to_string();
+    }
+
     if *language != Language::Swift {
         return node.kind().to_string();
     }
@@ -708,6 +816,16 @@ fn extract_name(
             PERF_STATS.lock().unwrap().extract_name_time += elapsed;
         }
         return Some(name.to_string());
+    }
+
+    if node.kind() == "arrow_function" {
+        let name = extract_arrow_binding_name(node, source);
+        #[cfg(debug_assertions)]
+        {
+            let elapsed = start.elapsed().as_micros();
+            PERF_STATS.lock().unwrap().extract_name_time += elapsed;
+        }
+        return name;
     }
 
     if *language == Language::Metal {
@@ -917,6 +1035,21 @@ fn extract_declarator_name(node: tree_sitter::Node<'_>, source: &str) -> Option<
     }
 
     None
+}
+
+fn extract_arrow_binding_name(node: tree_sitter::Node<'_>, source: &str) -> Option<String> {
+    let parent = node.parent()?;
+    if parent.kind() != "variable_declarator" {
+        return None;
+    }
+
+    if let Some(name_node) = parent.child_by_field_name("name") {
+        if let Some(name) = extract_declarator_name(name_node, source) {
+            return Some(name);
+        }
+    }
+
+    extract_declarator_name(parent, source)
 }
 
 fn split_large_chunk(chunk: CodeChunk, chunks: &mut Vec<CodeChunk>) {
@@ -1233,8 +1366,8 @@ class Child: Base, Runnable {
     #[test]
     fn test_parse_typescript() {
         let content = r#"
-function greet(name: string): string {
-    return `Hello, ${name}!`;
+	function greet(name: string): string {
+	    return `Hello, ${name}!`;
 }
 
 class Greeter {
@@ -1255,9 +1388,67 @@ class Greeter {
     }
 
     #[test]
+    fn test_extract_arrow_function_name_uses_variable_binding() {
+        let content = r#"
+	const handle = (event: string) => {
+	  return event.toLowerCase();
+	};
+
+	const normalize = (value: number) => value * 2;
+	const values = [1, 2].map(item => item * 2);
+	"#;
+
+        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content)
+            .expect("should parse TypeScript arrow functions");
+
+        let arrow_names: Vec<String> = symbols
+            .iter()
+            .filter(|symbol| symbol.kind == "arrow_function")
+            .map(|symbol| symbol.name.clone())
+            .collect();
+
+        assert!(arrow_names.iter().any(|name| name == "handle"));
+        assert!(arrow_names.iter().any(|name| name == "normalize"));
+        assert!(!arrow_names.iter().any(|name| name == "event"));
+        assert!(!arrow_names.iter().any(|name| name == "value"));
+        assert!(!arrow_names.iter().any(|name| name == "item"));
+    }
+
+    #[test]
+    fn test_extracts_exported_abstract_class_declaration_and_methods() {
+        let content = r#"
+	export abstract class AbstractAnimal {
+	  identify(): string {
+	    return "animal";
+	  }
+
+	  describe(): string {
+	    return this.identify();
+	  }
+	}
+	"#;
+
+        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content)
+            .expect("should parse exported abstract class");
+
+        assert!(symbols.iter().any(|symbol| {
+            symbol.kind == "class_declaration" && symbol.name == "AbstractAnimal"
+        }));
+
+        let method_names: Vec<String> = symbols
+            .iter()
+            .filter(|symbol| symbol.kind == "method_definition")
+            .map(|symbol| symbol.name.clone())
+            .collect();
+
+        assert!(method_names.iter().any(|name| name == "identify"));
+        assert!(method_names.iter().any(|name| name == "describe"));
+    }
+
+    #[test]
     fn test_parse_python() {
         let content = r#"
-def greet(name: str) -> str:
+	def greet(name: str) -> str:
     return f"Hello, {name}!"
 
 class Greeter:

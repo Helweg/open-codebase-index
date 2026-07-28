@@ -1,5 +1,6 @@
 import type { HostMode } from "../config/host.js";
 import type { SearchResult } from "../indexer/index.js";
+import { analyzeQueryIntent } from "../indexer/intent-aware-ranking.js";
 import {
   getCallGraphData,
   getCallGraphPath,
@@ -464,6 +465,7 @@ export async function resolveSearchContext(
     const results = await tryConceptualSearch(attempt.queryText, attempt.scope, attempt.relaxed);
     if (results.length > 0) {
       const heading = buildPackHeading("conceptual", decisions);
+      const intent = analyzeQueryIntent(attempt.queryText);
       return toResult(
         "conceptual",
         attempt.queryText,
@@ -472,6 +474,8 @@ export async function resolveSearchContext(
           maxResults: limit,
           heading,
           includeExactSearchHandoff: true,
+          preferImplementationPaths:
+            intent.preferSourcePaths || (intent.primary !== "docs" && intent.primary !== "test"),
         }),
       );
     }

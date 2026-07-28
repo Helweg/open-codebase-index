@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../src/config/schema.js";
 import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
-import { Database } from "../src/native/index.js";
+import { Database, hashContent } from "../src/native/index.js";
 
 describe("search integration", () => {
   let tempDir: string;
@@ -179,6 +179,119 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     });
     expect(results[0]?.startLine).toBeGreaterThan(1);
     expect(results[0]?.endLine).toBeGreaterThanOrEqual(results[0]?.startLine ?? 0);
+  });
+
+  it("returns nested class methods that are not standalone semantic chunks", async () => {
+    const classFile = path.join(tempDir, "app", "indexer", "service.ts");
+    fs.writeFileSync(classFile, `export class Service {
+  async getStatus(): Promise<string> {
+    return "ready";
+  }
+}
+`, "utf-8");
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await indexer.index();
+
+    const status = await indexer.getStatus();
+    const database = new Database(path.join(status.indexPath, "codebase.db"));
+    try {
+      expect(database.getSymbolsByName("getStatus")).toEqual([
+        expect.objectContaining({ filePath: classFile, kind: "method_definition" }),
+      ]);
+      expect(database.getChunksByName("getStatus")).toHaveLength(0);
+    } finally {
+      database.close();
+    }
+
+    const results = await indexer.search("find the getStatus method definition", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+    });
+    expect(results[0]).toMatchObject({ filePath: classFile, name: "getStatus" });
+  });
+
+  it("reparses symbols for unchanged files with stale symbolExtractorVersion metadata and restores nested class methods", async () => {
+    const classFile = path.join(tempDir, "app", "indexer", "service.ts");
+    fs.writeFileSync(
+      classFile,
+      `export class Service {
+  getStatus(): string {
+    return "ready";
+  }
+}
+`,
+      "utf-8",
+    );
+
+    const symbolExtractorVersionKey = `index.symbolExtractorVersion.${hashContent("default").slice(0, 24)}`;
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+      search: { maxResults: 10, minScore: 0 },
+    });
+
+    const firstIndexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await firstIndexer.index();
+
+    const firstStatus = await firstIndexer.getStatus();
+    const initialDb = new Database(path.join(firstStatus.indexPath, "codebase.db"));
+    try {
+      const beforeReindex = initialDb.getSymbolsByFile(classFile);
+      expect(beforeReindex).toContainEqual(expect.objectContaining({
+        filePath: classFile,
+        name: "getStatus",
+        kind: "method_definition",
+      }));
+      expect(initialDb.getChunksByName("getStatus")).toHaveLength(0);
+    } finally {
+      initialDb.close();
+    }
+
+    await firstIndexer.close();
+
+    const staleDb = new Database(path.join(firstStatus.indexPath, "codebase.db"));
+    try {
+      staleDb.deleteSymbolsByFile(classFile);
+      staleDb.setMetadata(symbolExtractorVersionKey, "stale");
+    } finally {
+      staleDb.close();
+    }
+
+    const secondIndexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const embeddingCallsBeforeReindex = fetchSpy.mock.calls.length;
+    await secondIndexer.index();
+
+    const secondStatus = await secondIndexer.getStatus();
+    const restoredDb = new Database(path.join(secondStatus.indexPath, "codebase.db"));
+    try {
+      const restoredSymbols = restoredDb.getSymbolsByName("getStatus");
+      expect(restoredSymbols).toContainEqual(expect.objectContaining({
+        filePath: classFile,
+        name: "getStatus",
+        kind: "method_definition",
+      }));
+      expect(restoredDb.getMetadata(symbolExtractorVersionKey)).toBe("1");
+    } finally {
+      restoredDb.close();
+    }
+
+    expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
   });
 
   it("does not rescue capped symbols from another branch", () => {
