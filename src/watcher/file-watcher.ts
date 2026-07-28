@@ -49,17 +49,21 @@ export class FileWatcher {
 
     this.onChanges = handler;
     this.pollingFallbackAttempted = false;
+    this.resetReady();
+    this.createWatcher();
+  }
+
+  private resetReady(): void {
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReady = resolve;
     });
-    this.createWatcher();
   }
 
   private createWatcher(usePolling = false): void {
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const watchTargets = this.configPath ? [this.projectRoot, this.configPath] : this.projectRoot;
 
-    const watcher = new FSWatcher({
+    const watcherOptions = {
       ignored: (filePath: string) => {
         const relativePath = path.relative(this.projectRoot, filePath);
         if (!relativePath) return false;
@@ -89,7 +93,23 @@ export class FileWatcher {
         stabilityThreshold: 300,
         pollInterval: 100,
       },
-    });
+    };
+    let watcher: FSWatcher;
+    if (usePolling) {
+      const previousUsePolling = process.env.CHOKIDAR_USEPOLLING;
+      process.env.CHOKIDAR_USEPOLLING = "true";
+      try {
+        watcher = new FSWatcher(watcherOptions);
+      } finally {
+        if (previousUsePolling === undefined) {
+          delete process.env.CHOKIDAR_USEPOLLING;
+        } else {
+          process.env.CHOKIDAR_USEPOLLING = previousUsePolling;
+        }
+      }
+    } else {
+      watcher = new FSWatcher(watcherOptions);
+    }
     this.watcher = watcher;
     watcher.once("ready", () => {
       if (this.watcher !== watcher) return;
@@ -104,13 +124,21 @@ export class FileWatcher {
         return;
       }
 
-      if (err?.code === "EMFILE" && !usePolling && !this.pollingFallbackAttempted && this.watcher === watcher) {
+      if (
+        err?.code === "EMFILE"
+        && !watcher.options.usePolling
+        && !this.pollingFallbackAttempted
+        && this.watcher === watcher
+      ) {
         this.pollingFallbackAttempted = true;
         console.warn("[codebase-index] File watcher exhausted open file handles; retrying with polling.");
         this.pendingClose = watcher.close().catch((closeError: unknown) => {
           console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
         });
         if (this.onChanges) {
+          if (!this.resolveReady) {
+            this.resetReady();
+          }
           this.createWatcher(true);
         } else {
           this.watcher = null;
@@ -121,13 +149,17 @@ export class FileWatcher {
       console.error("[codebase-index] Watcher error:", err?.message ?? error);
     });
 
-    watcher.on("add", (filePath) => this.handleChange("add", filePath));
-    watcher.on("change", (filePath) => this.handleChange("change", filePath));
-    watcher.on("unlink", (filePath) => this.handleChange("unlink", filePath));
+    watcher.on("add", (filePath) => this.handleChange(watcher, "add", filePath));
+    watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
+    watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
     watcher.add(watchTargets);
   }
 
-  private handleChange(type: FileChangeType, filePath: string): void {
+  private handleChange(watcher: FSWatcher, type: FileChangeType, filePath: string): void {
+    if (this.watcher !== watcher) {
+      return;
+    }
+
     if (this.isProjectConfigPath(filePath)) {
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
@@ -211,16 +243,16 @@ export class FileWatcher {
 
     const watcher = this.watcher;
     const pendingClose = this.pendingClose;
+    const resolveReady = this.resolveReady;
     this.watcher = null;
     this.pendingClose = null;
-    await Promise.all([watcher?.close(), pendingClose]);
-
-    this.resolveReady?.();
     this.resolveReady = null;
     this.readyPromise = null;
-
     this.pendingChanges.clear();
     this.onChanges = null;
+    await Promise.all([watcher?.close(), pendingClose]);
+
+    resolveReady?.();
   }
 
   isRunning(): boolean {
