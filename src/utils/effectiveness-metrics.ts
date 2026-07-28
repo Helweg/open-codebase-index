@@ -1,6 +1,6 @@
 import type { HostMode } from "../config/host.js";
 
-export const EFFECTIVENESS_METRICS_SCHEMA_VERSION = 2 as const;
+export const EFFECTIVENESS_METRICS_SCHEMA_VERSION = 3 as const;
 export const MAX_EFFECTIVENESS_COUNTER = 1_000_000_000;
 
 export const EFFECTIVENESS_TOOL_ROUTES = [
@@ -51,6 +51,7 @@ export type EffectivenessOutcome = typeof EFFECTIVENESS_OUTCOMES[number];
 export type EffectivenessScopeRelaxation = typeof EFFECTIVENESS_SCOPE_RELAXATION_BUCKETS[number];
 
 type CounterMap<T extends readonly string[]> = Record<T[number], number>;
+type RouteHistogram<T extends readonly string[]> = Record<EffectivenessToolRoute, CounterMap<T>>;
 
 export interface EffectivenessMetricEvent {
   route: EffectivenessToolRoute;
@@ -72,7 +73,7 @@ export interface EffectivenessMetricsSnapshot {
     lifetime: "process";
     reset: "index_metrics-reset-or-process-exit";
     maxCounterValue: number;
-    dimensions: "bounded-host-and-category-only";
+    dimensions: "bounded-route-and-bucketed-performance-only";
   };
   totalCalls: number;
   toolRoute: CounterMap<typeof EFFECTIVENESS_TOOL_ROUTES>;
@@ -85,10 +86,22 @@ export interface EffectivenessMetricsSnapshot {
   returnedTokenEstimate: CounterMap<typeof EFFECTIVENESS_RETURNED_TOKEN_BUCKETS>;
   exactHandoffEmitted: CounterMap<typeof EFFECTIVENESS_BOOLEAN_BUCKETS>;
   scopeRelaxation: CounterMap<typeof EFFECTIVENESS_SCOPE_RELAXATION_BUCKETS>;
+
+  routeOutcome: RouteHistogram<typeof EFFECTIVENESS_OUTCOMES>;
+  routeLatency: RouteHistogram<typeof EFFECTIVENESS_LATENCY_BUCKETS>;
+  routeResultCount: RouteHistogram<typeof EFFECTIVENESS_RESULT_COUNT_BUCKETS>;
+  routeReturnedTokenEstimate: RouteHistogram<typeof EFFECTIVENESS_RETURNED_TOKEN_BUCKETS>;
 }
 
 function emptyCounterMap<T extends readonly string[]>(values: T): CounterMap<T> {
   return Object.fromEntries(values.map((value) => [value, 0])) as CounterMap<T>;
+}
+
+function emptyRouteCounterMap<T extends readonly string[]>(
+  routes: typeof EFFECTIVENESS_TOOL_ROUTES,
+  values: T,
+): RouteHistogram<T> {
+  return Object.fromEntries(routes.map((route) => [route, emptyCounterMap(values)])) as RouteHistogram<T>;
 }
 
 function boundedNumber(value: number | undefined): number {
@@ -152,6 +165,14 @@ function cloneCounterMap<T extends string>(counters: Record<T, number>): Record<
   return { ...counters };
 }
 
+function cloneRouteCounterMap<T extends readonly string[]>(
+  counters: RouteHistogram<T>,
+): RouteHistogram<T> {
+  return Object.fromEntries(
+    EFFECTIVENESS_TOOL_ROUTES.map((route) => [route, cloneCounterMap(counters[route])]),
+  ) as RouteHistogram<T>;
+}
+
 export class EffectivenessMetrics {
   private snapshot: EffectivenessMetricsSnapshot;
 
@@ -167,7 +188,7 @@ export class EffectivenessMetrics {
         lifetime: "process",
         reset: "index_metrics-reset-or-process-exit",
         maxCounterValue: this.counterCap,
-        dimensions: "bounded-host-and-category-only",
+        dimensions: "bounded-route-and-bucketed-performance-only",
       },
       totalCalls: 0,
       toolRoute: emptyCounterMap(EFFECTIVENESS_TOOL_ROUTES),
@@ -180,6 +201,13 @@ export class EffectivenessMetrics {
       returnedTokenEstimate: emptyCounterMap(EFFECTIVENESS_RETURNED_TOKEN_BUCKETS),
       exactHandoffEmitted: emptyCounterMap(EFFECTIVENESS_BOOLEAN_BUCKETS),
       scopeRelaxation: emptyCounterMap(EFFECTIVENESS_SCOPE_RELAXATION_BUCKETS),
+      routeOutcome: emptyRouteCounterMap(EFFECTIVENESS_TOOL_ROUTES, EFFECTIVENESS_OUTCOMES),
+      routeLatency: emptyRouteCounterMap(EFFECTIVENESS_TOOL_ROUTES, EFFECTIVENESS_LATENCY_BUCKETS),
+      routeResultCount: emptyRouteCounterMap(EFFECTIVENESS_TOOL_ROUTES, EFFECTIVENESS_RESULT_COUNT_BUCKETS),
+      routeReturnedTokenEstimate: emptyRouteCounterMap(
+        EFFECTIVENESS_TOOL_ROUTES,
+        EFFECTIVENESS_RETURNED_TOKEN_BUCKETS,
+      ),
     };
   }
 
@@ -204,12 +232,21 @@ export class EffectivenessMetrics {
     this.increment(this.snapshot.hostMode, host);
     this.increment(this.snapshot.outcome, outcome);
     this.increment(this.snapshot.recoveryUsed, recoveryUsed);
-    this.increment(this.snapshot.resultCount, resultCountBucket(event.resultCount));
-    this.increment(this.snapshot.latency, latencyBucket(event.latencyMs));
+    const resultCountBucketValue = resultCountBucket(event.resultCount);
+    const latencyBucketValue = latencyBucket(event.latencyMs);
+    const returnedTokenBucketValue = returnedTokenBucket(event.returnedTokenEstimate);
+
+    this.increment(this.snapshot.resultCount, resultCountBucketValue);
+    this.increment(this.snapshot.latency, latencyBucketValue);
     this.increment(this.snapshot.tokenBudget, tokenBudgetBucket(event.tokenBudget));
-    this.increment(this.snapshot.returnedTokenEstimate, returnedTokenBucket(event.returnedTokenEstimate));
+    this.increment(this.snapshot.returnedTokenEstimate, returnedTokenBucketValue);
     this.increment(this.snapshot.exactHandoffEmitted, exactHandoffEmitted);
     this.increment(this.snapshot.scopeRelaxation, scopeRelaxation);
+
+    this.increment(this.snapshot.routeOutcome[route], outcome);
+    this.increment(this.snapshot.routeLatency[route], latencyBucketValue);
+    this.increment(this.snapshot.routeResultCount[route], resultCountBucketValue);
+    this.increment(this.snapshot.routeReturnedTokenEstimate[route], returnedTokenBucketValue);
   }
 
   getSnapshot(): EffectivenessMetricsSnapshot {
@@ -226,6 +263,10 @@ export class EffectivenessMetrics {
       returnedTokenEstimate: cloneCounterMap(this.snapshot.returnedTokenEstimate),
       exactHandoffEmitted: cloneCounterMap(this.snapshot.exactHandoffEmitted),
       scopeRelaxation: cloneCounterMap(this.snapshot.scopeRelaxation),
+      routeOutcome: cloneRouteCounterMap(this.snapshot.routeOutcome),
+      routeLatency: cloneRouteCounterMap(this.snapshot.routeLatency),
+      routeResultCount: cloneRouteCounterMap(this.snapshot.routeResultCount),
+      routeReturnedTokenEstimate: cloneRouteCounterMap(this.snapshot.routeReturnedTokenEstimate),
     };
   }
 
@@ -256,6 +297,10 @@ export function formatEffectivenessMetrics(snapshot: EffectivenessMetricsSnapsho
   const formatCounters = (counters: Record<string, number>): string => Object.entries(counters)
     .map(([bucket, count]) => `${bucket}=${count}`)
     .join(", ");
+  const formatRouteCounters = <T extends readonly string[]>(counters: RouteHistogram<T>): string =>
+    EFFECTIVENESS_TOOL_ROUTES
+      .map((route) => `${route} => ${formatCounters(counters[route])}`)
+      .join("; ");
   const lines = [
     `Privacy-safe effectiveness (schema v${snapshot.schemaVersion}):`,
     `  Retention: ${snapshot.retention.storage}, ${snapshot.retention.lifetime}-lifetime; reset with index_metrics(reset=true) or process exit`,
@@ -270,6 +315,10 @@ export function formatEffectivenessMetrics(snapshot: EffectivenessMetricsSnapsho
     `  Latency bucket: ${formatCounters(snapshot.latency)}`,
     `  Token-budget bucket: ${formatCounters(snapshot.tokenBudget)}`,
     `  Returned-token estimate: ${formatCounters(snapshot.returnedTokenEstimate)}`,
+    `  Route outcome buckets: ${formatRouteCounters(snapshot.routeOutcome)}`,
+    `  Route latency buckets: ${formatRouteCounters(snapshot.routeLatency)}`,
+    `  Route result-count buckets: ${formatRouteCounters(snapshot.routeResultCount)}`,
+    `  Route returned-token buckets: ${formatRouteCounters(snapshot.routeReturnedTokenEstimate)}`,
     `  Exact handoff emitted: ${formatCounters(snapshot.exactHandoffEmitted)}`,
     `  Scope relaxation: ${formatCounters(snapshot.scopeRelaxation)}`,
     "  Privacy: no queries, response text, source, symbols, paths, repository names, user identity, or stable identifiers are retained.",

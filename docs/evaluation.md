@@ -41,6 +41,8 @@ npx vitest run tests/intent-aware-ranking-eval.test.ts
 
 `benchmarks/fixtures/intent-aware-ranking.json` contains eight representative coding-agent queries for exact and Unicode-normalized definitions, test/docs/config/call-flow intent, evidence diversity, and a conceptual-search guardrail. The baseline sorts the supplied candidates by retrieval score and id, while the candidate run applies only the local intent-aware ranker. `benchmarks/baselines/intent-aware-ranking.json` records evidence recall@3 and MRR plus per-query values. The candidate pools and relevance ids are hand-labeled and fixed, so this comparison isolates post-retrieval ordering. It does not measure embedding recall, candidate generation, indexing quality, latency, external rerankers, production repositories, or end-to-end agent success.
 
+Opt-in runtime effectiveness counters complement these synthetic reports. `index_metrics` exposes fixed aggregate counters plus bounded per-route outcome, result-count, latency, and returned-token histograms. These route-specific views can reveal that one route has a higher no-result rate or larger response buckets, but they remain process-memory-only and contain no queries, paths, symbols, source, repository identity, or raw measurements. They cannot establish causal end-to-end agent success or compare trends across process restarts.
+
 Evaluation comparisons require the same dataset name, version, and query count. Use the
 agent-context budget rather than the default search baseline when evaluating `agent-context.json`.
 
@@ -93,6 +95,8 @@ If the referenced baseline summary file contains malformed JSON, compare mode no
 ```bash
 npm run eval:ci
 ```
+
+The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its GitHub Models budget rejects Hit@5 below 0.75 or MRR@10 below 0.65, which catches sustained quality step-downs while leaving room for provider variance. The workflow also writes the latest summary to the GitHub Actions job summary. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
 
 Default script:
 
