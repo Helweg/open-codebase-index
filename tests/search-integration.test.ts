@@ -6,7 +6,8 @@ import { execFileSync } from "child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../src/config/schema.js";
-import { Indexer } from "../src/indexer/index.js";
+import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
+import { Database } from "../src/native/index.js";
 
 describe("search integration", () => {
   let tempDir: string;
@@ -112,6 +113,211 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(topPaths[0]).toContain(path.join("app", "indexer", "index.ts"));
     expect(topPaths).not.toContain(path.join("tests", "fixtures", "call-graph", "same-file-refs.ts"));
     expect(topPaths).not.toContain(path.join("benchmarks", "run.ts"));
+  });
+
+  it("returns exact symbols whose semantic chunks were omitted by the per-file cap", async () => {
+    const largeFile = path.join(tempDir, "app", "indexer", "large.ts");
+    const declarations = Array.from({ length: 30 }, (_, index) =>
+      index === 15
+        ? `export function cappedExactDefinition() {
+  const values = [
+    "target",
+    "semantic",
+    "definition",
+    "omitted",
+    "from",
+    "embedding",
+    "chunks",
+  ];
+  return values.join("-");
+}`
+        : `export function filler${index}() {
+  const value = ${index};
+  return value;
+}`
+    );
+    fs.writeFileSync(largeFile, `${declarations.join("\n\n")}\n`, "utf-8");
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: {
+        watchFiles: false,
+        maxChunksPerFile: 2,
+        fallbackToTextOnMaxChunks: true,
+      },
+      search: {
+        maxResults: 10,
+        minScore: 0,
+      },
+    });
+
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await indexer.index();
+
+    const status = await indexer.getStatus();
+    const database = new Database(path.join(status.indexPath, "codebase.db"));
+    try {
+      expect(database.getSymbolsByName("cappedExactDefinition")).toHaveLength(1);
+      expect(database.getChunksByName("cappedExactDefinition")).toHaveLength(0);
+    } finally {
+      database.close();
+    }
+
+    const results = await indexer.search("where is cappedExactDefinition implementation", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+    });
+
+    expect(results[0]).toMatchObject({
+      filePath: largeFile,
+      name: "cappedExactDefinition",
+    });
+    expect(results[0]?.startLine).toBeGreaterThan(1);
+    expect(results[0]?.endLine).toBeGreaterThanOrEqual(results[0]?.startLine ?? 0);
+  });
+
+  it("does not rescue capped symbols from another branch", () => {
+    const database = new Database(path.join(tempDir, "branch-symbols.db"));
+    try {
+      const symbol = {
+        id: "sym_feature_only",
+        filePath: path.join(tempDir, "app", "feature.ts"),
+        name: "featureOnlyCappedDefinition",
+        kind: "export_statement",
+        startLine: 31,
+        startCol: 0,
+        endLine: 31,
+        endCol: 64,
+        language: "typescript",
+      };
+      database.upsertSymbol(symbol);
+      database.addSymbolsToBranch("feature", [symbol.id]);
+
+      const featureResults = buildSymbolDefinitionLane(
+        "where is featureOnlyCappedDefinition implementation",
+        database,
+        new Set(),
+        new Set(database.getBranchSymbolIds("feature")),
+        5,
+        [],
+        true,
+      );
+      const mainResults = buildSymbolDefinitionLane(
+        "where is featureOnlyCappedDefinition implementation",
+        database,
+        new Set(),
+        new Set(database.getBranchSymbolIds("main")),
+        5,
+        [],
+        true,
+      );
+
+      expect(featureResults[0]).toMatchObject({
+        id: symbol.id,
+        metadata: { name: symbol.name, filePath: symbol.filePath },
+      });
+      expect(mainResults).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps language-specific symbol kinds eligible after rescue", async () => {
+    const pythonFile = path.join(tempDir, "app", "indexer", "large.py");
+    const declarations = Array.from({ length: 30 }, (_, index) =>
+      index === 15
+        ? `def capped_python_definition():
+    values = [
+        "python",
+        "semantic",
+        "definition",
+        "omitted",
+        "from",
+        "embedding",
+        "chunks",
+    ]
+    return "-".join(values)`
+        : `def python_filler_${index}():
+    value = ${index}
+    return value`
+    );
+    fs.writeFileSync(pythonFile, `${declarations.join("\n\n")}\n`, "utf-8");
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: {
+        watchFiles: false,
+        maxChunksPerFile: 2,
+        fallbackToTextOnMaxChunks: true,
+      },
+      search: { maxResults: 10, minScore: 0 },
+    });
+
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await indexer.index();
+    const results = await indexer.search("where is capped_python_definition implementation", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+    });
+
+    expect(results[0]).toMatchObject({
+      filePath: pythonFile,
+      name: "capped_python_definition",
+      chunkType: "function_definition",
+    });
+  });
+
+  it("honors explicit file hints when duplicate rescued symbols exist", () => {
+    const database = new Database(path.join(tempDir, "path-symbols.db"));
+    try {
+      const symbols = ["first", "second"].map((directory, index) => ({
+        id: `sym_duplicate_${directory}`,
+        filePath: path.join(tempDir, "app", directory, "target.ts"),
+        name: "duplicateCappedDefinition",
+        kind: "export_statement",
+        startLine: index + 10,
+        startCol: 0,
+        endLine: index + 12,
+        endCol: 1,
+        language: "typescript",
+      }));
+      database.upsertSymbolsBatch(symbols);
+      database.upsertChunksBatch(["first", "third", "fourth"].map((directory, index) => ({
+        chunkId: `chunk_duplicate_${index}`,
+        contentHash: `hash_duplicate_${index}`,
+        filePath: path.join(tempDir, "app", directory, "target.ts"),
+        startLine: index + 20,
+        endLine: index + 22,
+        nodeType: "export_statement",
+        name: "duplicateCappedDefinition",
+        language: "typescript",
+      })));
+
+      const results = buildSymbolDefinitionLane(
+        "where is duplicateCappedDefinition implementation in app/second/target.ts",
+        database,
+        null,
+        null,
+        1,
+        [],
+        true,
+      );
+
+      expect(results).toHaveLength(1);
+      expect(results[0]?.metadata.filePath).toBe(symbols[1]?.filePath);
+    } finally {
+      database.close();
+    }
   });
 
   it("annotates indexed chunks with git blame and filters by blame author", async () => {
