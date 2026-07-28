@@ -686,6 +686,81 @@ end
       expect(results[0].path).toBe("a.ts");
       expect(results[1].path).toBe("b.ts");
     });
+
+    it("extracts nested class methods as symbols without changing semantic chunks", () => {
+      const [result] = parseFiles([{
+        path: "service.ts",
+        content: `export class Service {
+  async getStatus(): Promise<string> {
+    return "ready";
+  }
+}`,
+      }]);
+
+      expect(result.symbols).toEqual(expect.arrayContaining([
+        expect.objectContaining({ name: "Service", kind: "class_declaration" }),
+        expect.objectContaining({ name: "getStatus", kind: "method_definition" }),
+      ]));
+      expect(result.chunks.some((chunk) => chunk.name === "getStatus")).toBe(false);
+    });
+
+    it("names TypeScript arrow-function symbols using variable bindings", () => {
+      const [result] = parseFiles([
+        {
+          path: "arrows.ts",
+          content: `
+const handler = (event: string) => {
+  return event.toLowerCase();
+};
+
+const normalize = (value: number) => value * 2;
+const values = [1, 2].map(item => item * 2);
+`,
+        },
+      ]);
+
+      const arrowSymbols = result.symbols.filter((symbol) => symbol.kind === "arrow_function");
+      const names = arrowSymbols.map((symbol) => symbol.name);
+
+      expect(names).toEqual(expect.arrayContaining(["handler", "normalize"]));
+      expect(names).not.toContain("event");
+      expect(names).not.toContain("value");
+      expect(names).not.toContain("item");
+    });
+
+    it("includes exported abstract class declarations and their methods", () => {
+      const [result] = parseFiles([
+        {
+          path: "animals.ts",
+          content: `export abstract class AbstractAnimal {
+  identify(): string {
+    return "animal";
+  }
+
+  describe(): string {
+    return this.identify();
+  }
+}`,
+        },
+      ]);
+
+      expect(result.symbols).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            kind: "class_declaration",
+            name: "AbstractAnimal",
+          }),
+          expect.objectContaining({
+            kind: "method_definition",
+            name: "identify",
+          }),
+          expect.objectContaining({
+            kind: "method_definition",
+            name: "describe",
+          }),
+        ]),
+      );
+    });
   });
 
   describe("hashContent", () => {

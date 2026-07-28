@@ -1,3 +1,4 @@
+import * as crypto from "node:crypto";
 import { existsSync } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
@@ -30,12 +31,38 @@ import type {
   EvalComparison,
   EvalGateResult,
   EvalRunOptions,
+  GoldenDataset,
   EvalSummary,
   PerQueryEvalResult,
   SweepAggregateReport,
   SweepDefinition,
   SweepRunSummary,
 } from "./types.js";
+
+function normalizeForFingerprint(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeForFingerprint(entry));
+  }
+
+  if (value && typeof value === "object") {
+    const normalized: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      const normalizedValue = normalizeForFingerprint((value as Record<string, unknown>)[key]);
+      if (normalizedValue !== undefined) {
+        normalized[key] = normalizedValue;
+      }
+    }
+
+    return normalized;
+  }
+
+  return value;
+}
+
+function buildDatasetFingerprint(dataset: GoldenDataset): string {
+  const canonical = JSON.stringify(normalizeForFingerprint(dataset));
+  return crypto.createHash("sha256").update(canonical).digest("hex");
+}
 
 export interface EvalRunResult {
   outputDir: string;
@@ -81,28 +108,44 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       const contextResult = query.retrievalMode === "context"
         ? await resolveSearchContext({
           query: query.query,
+          symbol: query.args?.symbol,
+          fileType: query.args?.fileType,
+          directory: query.args?.directory,
           limit: 10,
           tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
         }, {
-          lookup: (symbol, limit, _scope) => indexer.search(symbol, limit, {
+          lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
             metadataOnly: true,
             filterByBranch: !!query.expected.branch,
             definitionIntent: true,
+            fileType: scope.fileType,
+            directory: scope.directory,
           }),
-          search: (searchQuery, limit, _scope) => indexer.search(searchQuery, limit, {
+          search: (searchQuery, limit, scope) => indexer.search(searchQuery, limit, {
             metadataOnly: true,
             filterByBranch: !!query.expected.branch,
             definitionIntent: false,
+            fileType: scope.fileType,
+            directory: scope.directory,
           }),
         })
         : undefined;
       const result = contextResult?.details?.results ?? await indexer.search(query.query, 10, {
         metadataOnly: true,
         filterByBranch: !!query.expected.branch,
+        fileType: query.args?.fileType,
+        directory: query.args?.directory,
       });
       const elapsed = performance.now() - start;
       const resolvedRoute = contextResult?.details?.route === "definition" ? "definition" : "search";
       const routedQuery = contextResult?.details?.routedQuery ?? query.query;
+      const successfulRecoveryAttempt = contextResult?.details?.recovery?.successfulAttemptIndex;
+      const recoveryAttempts = contextResult?.details?.recovery?.attempts ?? [];
+      const recoveryRelaxed = successfulRecoveryAttempt === undefined
+        ? false
+        : (recoveryAttempts[successfulRecoveryAttempt]?.relaxedFields.length ?? 0) > 0;
+      const recoveryUsed = recoveryAttempts.length > 1
+        || recoveryAttempts.some((attempt) => attempt.relaxedFields.length > 0);
 
       const materialized = result.map((item) => ({
         filePath: item.filePath,
@@ -122,6 +165,8 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         candidateCount: contextResult.details.candidateCount ?? 0,
         deduplicatedCount: contextResult.details.deduplicatedCount ?? 0,
         omittedCount: contextResult.details.omittedCount ?? 0,
+        recoveryUsed,
+        recoveryRelaxed,
       } : undefined));
     }
 
@@ -136,6 +181,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       datasetPath,
       datasetName: dataset.name,
       datasetVersion: dataset.version,
+      datasetFingerprint: buildDatasetFingerprint(dataset),
       queryCount: dataset.queries.length,
       topK: 10,
       searchConfig: {

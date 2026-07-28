@@ -130,7 +130,18 @@ export type ChunkType =
 export interface ParsedFile {
   path: string;
   chunks: CodeChunk[];
+  symbols: ParsedSymbol[];
   hash: string;
+}
+
+export interface ParsedSymbol {
+  name: string;
+  kind: string;
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+  language: string;
 }
 
 
@@ -240,8 +251,21 @@ export function parseFiles(files: FileInput[]): ParsedFile[] {
   return result.map((f: any) => ({
     path: f.path,
     chunks: f.chunks.map(mapChunk),
+    symbols: (f.symbols ?? []).map(mapParsedSymbol),
     hash: f.hash,
   }));
+}
+
+function mapParsedSymbol(symbol: any): ParsedSymbol {
+  return {
+    name: symbol.name,
+    kind: symbol.kind,
+    startLine: symbol.startLine ?? symbol.start_line,
+    startCol: symbol.startCol ?? symbol.start_col,
+    endLine: symbol.endLine ?? symbol.end_line,
+    endCol: symbol.endCol ?? symbol.end_col,
+    language: symbol.language,
+  };
 }
 
 function mapChunk(c: any): CodeChunk {

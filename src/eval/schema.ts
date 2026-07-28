@@ -4,7 +4,12 @@ import type {
   EvalBudget,
   GoldenDataset,
   GoldenExpected,
+  GoldenGradedEvidence,
   GoldenQuery,
+  GoldenQueryArgs,
+  GoldenQueryDifficulty,
+  GoldenQueryExpectedOutcome,
+  GoldenQueryRecoveryExpectation,
   GoldenRetrievalMode,
   GoldenQueryType,
 } from "./types.js";
@@ -26,6 +31,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 function asPositiveNumber(value: unknown, path: string): number {
@@ -50,10 +59,144 @@ function parseQueryType(value: unknown, path: string): GoldenQueryType {
   );
 }
 
+function parseExpectedRoute(
+  value: unknown,
+  path: string,
+): "search" | "definition" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "search" || value === "definition") return value;
+  throw new Error(`${path} must be one of: search, definition`);
+}
+
+function parseExpectedOutcome(
+  value: unknown,
+  path: string,
+): GoldenQueryExpectedOutcome | undefined {
+  if (value === undefined) return undefined;
+  if (value === "results" || value === "no-results") {
+    return value;
+  }
+  throw new Error(`${path} must be one of: results, no-results`);
+}
+
+function parseRecoveryExpectation(
+  value: unknown,
+  path: string,
+): GoldenQueryRecoveryExpectation | undefined {
+  if (value === undefined) return undefined;
+  if (value === "none" || value === "filter-relaxed") {
+    return value;
+  }
+  throw new Error(`${path} must be one of: none, filter-relaxed`);
+}
+
+function parseQueryDifficulty(
+  value: unknown,
+  path: string,
+): GoldenQueryDifficulty | undefined {
+  if (value === undefined) return undefined;
+  if (value === "easy" || value === "medium" || value === "hard") {
+    return value;
+  }
+  throw new Error(`${path} must be one of: easy, medium, hard`);
+}
+
+function parseQueryTags(value: unknown, path: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!isStringArray(value) || value.some((tag) => tag.trim().length === 0)) {
+    throw new Error(`${path} must be an array of non-empty strings`);
+  }
+  if (value.length > 16) {
+    throw new Error(`${path} must contain at most 16 tags`);
+  }
+
+  return value;
+}
+
+function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+
+  const symbol = parseStringOrUndefined(value.symbol, `${path}.symbol`);
+  const fileType = parseStringOrUndefined(value.fileType, `${path}.fileType`);
+  const directory = parseStringOrUndefined(value.directory, `${path}.directory`);
+  return {
+    ...(symbol !== undefined ? { symbol } : {}),
+    ...(fileType !== undefined ? { fileType } : {}),
+    ...(directory !== undefined ? { directory } : {}),
+  };
+}
+
+const SEMVER_VERSION_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
+
+function parseSemanticVersion(value: unknown, path: string): string {
+  if (!isNonEmptyString(value)) {
+    throw new Error(`${path} must be a non-empty string`);
+  }
+  if (!SEMVER_VERSION_PATTERN.test(value)) {
+    throw new Error(`${path} must be a valid semantic version (MAJOR.MINOR.PATCH)`);
+  }
+
+  return value;
+}
+
 function parseRetrievalMode(value: unknown, path: string): GoldenRetrievalMode {
   if (value === undefined || value === "search") return "search";
   if (value === "context") return value;
   throw new Error(`${path} must be one of: search, context`);
+}
+
+function parseStringOrUndefined(value: unknown, path: string): string | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isNonEmptyString(value)) {
+    throw new Error(`${path} must be a non-empty string`);
+  }
+
+  return value;
+}
+
+function parseGradedEvidence(value: unknown, path: string): GoldenGradedEvidence[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array`);
+  }
+
+  return value.map((entry, index) => {
+    if (!isRecord(entry)) {
+      throw new Error(`${path}[${index}] must be an object`);
+    }
+
+    const evidencePath = parseStringOrUndefined(entry.path, `${path}[${index}].path`);
+    if (evidencePath === undefined) {
+      throw new Error(`${path}[${index}].path is required`);
+    }
+
+    const symbol = parseStringOrUndefined(entry.symbol, `${path}[${index}].symbol`);
+    const relevance = parseEvidenceRelevance(entry.relevance, `${path}[${index}].relevance`);
+
+    return {
+      path: evidencePath,
+      ...(symbol !== undefined ? { symbol } : {}),
+      relevance,
+    };
+  });
+}
+
+function parseEvidenceRelevance(
+  value: unknown,
+  path: string,
+): 1 | 2 | 3 {
+  if (value === undefined) {
+    throw new Error(`${path} is required`);
+  }
+  if (value !== 1 && value !== 2 && value !== 3) {
+    throw new Error(`${path} must be 1, 2, or 3`);
+  }
+
+  return value;
 }
 
 function parseExpected(input: unknown, path: string): GoldenExpected {
@@ -65,12 +208,25 @@ function parseExpected(input: unknown, path: string): GoldenExpected {
   const acceptableFilesRaw = input.acceptableFiles;
   const symbolRaw = input.symbol;
   const branchRaw = input.branch;
+  const expectedRouteRaw = input.expectedRoute;
+  const expectedOutcomeRaw = input.expectedOutcome;
+  const recoveryExpectationRaw = input.recoveryExpectation;
+  const gradedEvidenceRaw = input.gradedEvidence;
 
-  const filePath = typeof filePathRaw === "string" ? filePathRaw : undefined;
+  const filePath = parseStringOrUndefined(filePathRaw, `${path}.filePath`);
   const acceptableFiles = isStringArray(acceptableFilesRaw) ? acceptableFilesRaw : undefined;
+  const gradedEvidence = parseGradedEvidence(gradedEvidenceRaw, `${path}.gradedEvidence`);
 
-  if (!filePath && (!acceptableFiles || acceptableFiles.length === 0)) {
-    throw new Error(`${path} must include either expected.filePath or expected.acceptableFiles`);
+  const expectedOutcome = parseExpectedOutcome(expectedOutcomeRaw, `${path}.expectedOutcome`);
+  if (
+    expectedOutcome !== "no-results" &&
+    !filePath &&
+    (!acceptableFiles || acceptableFiles.length === 0) &&
+    gradedEvidence.length === 0
+  ) {
+    throw new Error(
+      `${path} must include expected.filePath, expected.acceptableFiles, or expected.gradedEvidence`
+    );
   }
 
   if (acceptableFilesRaw !== undefined && !isStringArray(acceptableFilesRaw)) {
@@ -85,12 +241,26 @@ function parseExpected(input: unknown, path: string): GoldenExpected {
     throw new Error(`${path}.branch must be a string when provided`);
   }
 
+  const expectedRoute = parseExpectedRoute(expectedRouteRaw, `${path}.expectedRoute`);
+  const recoveryExpectation = parseRecoveryExpectation(
+    recoveryExpectationRaw,
+    `${path}.recoveryExpectation`
+  );
+
   return {
     filePath,
     acceptableFiles,
     symbol: typeof symbolRaw === "string" ? symbolRaw : undefined,
     branch: typeof branchRaw === "string" ? branchRaw : undefined,
+    expectedRoute,
+    expectedOutcome,
+    recoveryExpectation,
+    ...(gradedEvidence.length > 0 ? { gradedEvidence } : {}),
   };
+}
+
+function parseQueryLanguage(value: unknown, path: string): string | undefined {
+  return parseStringOrUndefined(value, path);
 }
 
 function parseQuery(input: unknown, index: number): GoldenQuery {
@@ -104,6 +274,10 @@ function parseQuery(input: unknown, index: number): GoldenQuery {
   const queryType = input.queryType;
   const retrievalMode = input.retrievalMode;
   const expected = input.expected;
+  const language = input.language;
+  const difficulty = input.difficulty;
+  const tags = input.tags;
+  const args = input.args;
 
   if (typeof id !== "string" || id.trim().length === 0) {
     throw new Error(`${path}.id must be a non-empty string`);
@@ -116,11 +290,15 @@ function parseQuery(input: unknown, index: number): GoldenQuery {
   return {
     id,
     query,
-    queryType: parseQueryType(queryType, `${path}.queryType`),
-    retrievalMode: parseRetrievalMode(retrievalMode, `${path}.retrievalMode`),
-    expected: parseExpected(expected, `${path}.expected`),
-  };
-}
+      queryType: parseQueryType(queryType, `${path}.queryType`),
+      retrievalMode: parseRetrievalMode(retrievalMode, `${path}.retrievalMode`),
+      language: parseQueryLanguage(language, `${path}.language`),
+      difficulty: parseQueryDifficulty(difficulty, `${path}.difficulty`),
+      args: parseQueryArgs(args, `${path}.args`),
+      tags: parseQueryTags(tags, `${path}.tags`),
+      expected: parseExpected(expected, `${path}.expected`),
+    };
+  }
 
 export function parseGoldenDataset(raw: unknown, sourceLabel: string): GoldenDataset {
   if (!isRecord(raw)) {
@@ -132,9 +310,7 @@ export function parseGoldenDataset(raw: unknown, sourceLabel: string): GoldenDat
   const description = raw.description;
   const queriesRaw = raw.queries;
 
-  if (typeof version !== "string" || version.trim().length === 0) {
-    throw new Error(`${sourceLabel}.version must be a non-empty string`);
-  }
+  const validatedVersion = parseSemanticVersion(version, `${sourceLabel}.version`);
 
   if (typeof name !== "string" || name.trim().length === 0) {
     throw new Error(`${sourceLabel}.name must be a non-empty string`);
@@ -163,7 +339,7 @@ export function parseGoldenDataset(raw: unknown, sourceLabel: string): GoldenDat
   }
 
   return {
-    version,
+    version: validatedVersion,
     name,
     description: typeof description === "string" ? description : undefined,
     queries,
@@ -238,16 +414,8 @@ export function parseBudget(raw: unknown, sourceLabel: string): EvalBudget {
         "p95LatencyMaxAbsoluteMs",
         sourceLabel
       ),
-      minHitAt5: parseThresholdValue(
-        thresholds.minHitAt5,
-        "minHitAt5",
-        sourceLabel
-      ),
-      minMrrAt10: parseThresholdValue(
-        thresholds.minMrrAt10,
-        "minMrrAt10",
-        sourceLabel
-      ),
+      minHitAt5: parseThresholdValue(thresholds.minHitAt5, "minHitAt5", sourceLabel),
+      minMrrAt10: parseThresholdValue(thresholds.minMrrAt10, "minMrrAt10", sourceLabel),
       minRawDistinctTop3Ratio: parseThresholdValue(
         thresholds.minRawDistinctTop3Ratio,
         "minRawDistinctTop3Ratio",

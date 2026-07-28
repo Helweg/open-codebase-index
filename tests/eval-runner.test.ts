@@ -122,6 +122,7 @@ describe("eval runner", () => {
     });
 
     expect(result.summary.queryCount).toBe(1);
+    expect(result.summary.datasetFingerprint).toMatch(/^[0-9a-f]{64}$/);
     expect(result.perQuery[0]?.resolvedRoute).toBe("definition");
     expect(result.perQuery[0]?.routedQuery).toBe("rankHybridResults");
     expect(typeof result.summary.metrics.distinctTop3Ratio).toBe("number");
@@ -136,6 +137,117 @@ describe("eval runner", () => {
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("Context response tokens max");
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8")).toContain("# Evaluation Summary");
     expect(readFileSync(path.join(result.outputDir, "per-query.json"), "utf-8")).toContain("\"queries\"");
+
+    const repeatRun = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
+  });
+
+  it("applies query args as search filters in search mode", async () => {
+    const datasetPath = path.join(tempDir, "benchmarks", "golden", "args-search.json");
+    writeFileSync(
+      datasetPath,
+      JSON.stringify(
+        {
+          version: "1.0.0",
+          name: "args-search",
+          queries: [
+            {
+              id: "q-search",
+              query: "codebase_search",
+              queryType: "keyword-heavy",
+              retrievalMode: "search",
+              language: "typescript",
+              difficulty: "easy",
+              tags: ["filters", "search"],
+              args: {
+                fileType: "ts",
+                directory: "src/tools",
+              },
+              expected: {
+                filePath: "src/tools/index.ts",
+                expectedOutcome: "results",
+              },
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      "utf-8"
+    );
+
+    const result = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/args-search.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    expect(result.perQuery).toHaveLength(1);
+    expect(result.perQuery[0]?.results[0]?.filePath).toContain("src/tools/index.ts");
+    expect(result.perQuery[0]?.failureBucket).toBeUndefined();
+  });
+
+  it("records metadata and recovery outcome for context queries", async () => {
+    const datasetPath = path.join(tempDir, "benchmarks", "golden", "args-context.json");
+    writeFileSync(
+      datasetPath,
+      JSON.stringify(
+        {
+          version: "1.0.0",
+          name: "args-context",
+          queries: [
+            {
+              id: "q-context",
+              query: "where is rankHybridResults implementation",
+              queryType: "definition",
+              retrievalMode: "context",
+              language: "typescript",
+              difficulty: "medium",
+              tags: ["context", "filters"],
+              args: {
+                symbol: "rankHybridResults",
+                fileType: "ts",
+                directory: "src/indexer",
+              },
+              expected: {
+                filePath: "src/indexer/index.ts",
+                symbol: "rankHybridResults",
+                expectedRoute: "definition",
+                expectedOutcome: "results",
+                recoveryExpectation: "none",
+              },
+            },
+          ],
+        },
+        null,
+        2
+      ),
+      "utf-8"
+    );
+
+    const result = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/args-context.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    expect(result.perQuery).toHaveLength(1);
+    expect(result.perQuery[0]?.language).toBe("typescript");
+    expect(result.perQuery[0]?.difficulty).toBe("medium");
+    expect(result.perQuery[0]?.tags).toEqual(["context", "filters"]);
+    expect(result.perQuery[0]?.routeMatched).toBe(true);
+    expect(result.perQuery[0]?.recoveryMatched).toBe(true);
   });
 
   it("does not delete an inherited main-repo project index when reindexing from a fresh worktree", async () => {
@@ -783,6 +895,32 @@ describe("eval runner", () => {
     expect(readFileSync(path.join(compareRun.outputDir, "compare.json"), "utf-8")).toContain("\"distinctTop3Ratio\"");
     expect(readFileSync(path.join(compareRun.outputDir, "compare.json"), "utf-8")).toContain("\"rawDistinctTop3Ratio\"");
     expect(readFileSync(path.join(compareRun.outputDir, "compare.json"), "utf-8")).toContain("\"deltas\"");
+  });
+
+  it("rejects comparisons when one summary lacks dataset fingerprint", async () => {
+    const baselineRun = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    const baselineSummary = { ...baselineRun.summary } as Record<string, unknown>;
+    delete baselineSummary.datasetFingerprint;
+    const baselinePath = path.join(tempDir, "benchmarks", "baselines", "legacy-fingerprint-summary.json");
+    writeFileSync(baselinePath, JSON.stringify(baselineSummary, null, 2), "utf-8");
+
+    await expect(
+      runEvaluation({
+        projectRoot: tempDir,
+        datasetPath: "benchmarks/golden/small.json",
+        outputRoot: "benchmarks/results",
+        againstPath: "benchmarks/baselines/legacy-fingerprint-summary.json",
+        ciMode: false,
+        reindex: false,
+      }),
+    ).rejects.toThrow(/mismatched dataset fingerprint presence/);
   });
 
   it("fails fast when baseline summary is missing required diversity metrics", async () => {

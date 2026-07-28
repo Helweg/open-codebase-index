@@ -776,6 +776,74 @@ describe("tools utils", () => {
       expect(names).toEqual(["a1", "b1", "c1", "a2"]);
     });
 
+    it("puts implementation files before docs and tests when source evidence is requested", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "README.md",
+          startLine: 1,
+          endLine: 5,
+          content: "docs",
+          score: 0.99,
+          chunkType: "other",
+        },
+        {
+          filePath: "tests/feature.test.ts",
+          startLine: 1,
+          endLine: 8,
+          content: "test",
+          score: 0.98,
+          chunkType: "function",
+        },
+        {
+          filePath: "src/feature.ts",
+          startLine: 10,
+          endLine: 20,
+          content: "implementation",
+          score: 0.60,
+          chunkType: "function",
+          name: "implementFeature",
+        },
+      ];
+
+      const packed = buildContextPack(results, {
+        tokenBudget: 2048,
+        preferImplementationPaths: true,
+      });
+
+      expect(packed.results.map((result) => result.filePath)).toEqual([
+        "src/feature.ts",
+        "README.md",
+        "tests/feature.test.ts",
+      ]);
+    });
+
+    it("preserves score ordering when implementation preference is disabled", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "README.md",
+          startLine: 1,
+          endLine: 5,
+          content: "docs",
+          score: 0.99,
+          chunkType: "other",
+        },
+        {
+          filePath: "src/feature.ts",
+          startLine: 10,
+          endLine: 20,
+          content: "implementation",
+          score: 0.60,
+          chunkType: "function",
+        },
+      ];
+
+      const packed = buildContextPack(results, { tokenBudget: 2048 });
+      expect(packed.results.map((result) => result.filePath)).toEqual([
+        "README.md",
+        "src/feature.ts",
+      ]);
+    });
+
     it("is deterministic for identical input", () => {
       const results: SearchResult[] = [
         {

@@ -1,0 +1,258 @@
+{
+  "version": "2.0.0",
+  "name": "representative-retrieval",
+  "description": "Hand-labeled retrieval kernel covering exact and nested definitions, conceptual source discovery, language and path filters, scoped recovery, graded multi-file evidence, similarity, keywords, and a negative filtered search.",
+  "queries": [
+    {
+      "id": "ts-definition-top-level",
+      "query": "where is fuseResultsRrf implemented?",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "easy",
+      "tags": ["definition", "top-level", "routing"],
+      "expected": {
+        "expectedRoute": "definition",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/index.ts", "symbol": "fuseResultsRrf", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "ts-definition-nested-method",
+      "query": "find the getStatus method definition",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["definition", "nested-symbol", "large-file"],
+      "expected": {
+        "expectedRoute": "definition",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/index.ts", "symbol": "getStatus", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "rust-call-extraction-concept",
+      "query": "extract function calls from syntax trees for the repository graph",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "medium",
+      "tags": ["conceptual", "rust", "call-graph", "file-filter"],
+      "args": { "fileType": "rs" },
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "native/src/call_extractor.rs", "symbol": "extract_calls", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "eval-metrics-concept",
+      "query": "calculate retrieval hit rate reciprocal rank and discounted cumulative gain",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["conceptual", "ranking-metrics", "source-vs-docs"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/eval/metrics.ts", "symbol": "computeEvalMetrics", "relevance": 3 },
+          { "path": "src/eval/metrics.ts", "symbol": "reciprocalRankAtK", "relevance": 3 },
+          { "path": "src/eval/metrics.ts", "symbol": "ndcgAtK", "relevance": 3 },
+          { "path": "src/eval/metrics.ts", "symbol": "buildPerQueryResult", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "index-lock-concept",
+      "query": "prevent two processes from mutating the same code index concurrently",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "medium",
+      "tags": ["conceptual", "concurrency", "implementation"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/index-lock.ts", "symbol": "acquireIndexLock", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "mcp-registration-concept",
+      "query": "register and route the MCP tools exposed to coding agents",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "medium",
+      "tags": ["conceptual", "mcp", "implementation"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/mcp-server/register-tools.ts", "symbol": "registerMcpTools", "relevance": 3 },
+          { "path": "src/mcp-server.ts", "symbol": "createMcpServer", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "config-loading-graded-evidence",
+      "query": "load project and user configuration then validate defaults",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "medium",
+      "tags": ["conceptual", "configuration", "multi-evidence"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/config/merger.ts", "relevance": 3 },
+          { "path": "src/config/schema.ts", "relevance": 2 },
+          { "path": "src/config/index.ts", "relevance": 1 }
+        ]
+      }
+    },
+    {
+      "id": "file-watcher-implementation",
+      "query": "implementation that watches source files and refreshes the index after code changes",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "medium",
+      "tags": ["implementation", "watcher", "multi-evidence"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/watcher/file-watcher.ts", "symbol": "FileWatcher", "relevance": 3 },
+          { "path": "src/watcher/index.ts", "symbol": "createWatcherWithIndexer", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "swift-nested-method-filtered",
+      "query": "show the UserRepository load method definition",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "language": "swift",
+      "difficulty": "hard",
+      "tags": ["definition", "swift", "nested-symbol", "filters"],
+      "args": {
+        "symbol": "load",
+        "fileType": "swift",
+        "directory": "tests/fixtures/swift"
+      },
+      "expected": {
+        "expectedRoute": "definition",
+        "expectedOutcome": "results",
+        "recoveryExpectation": "none",
+        "gradedEvidence": [
+          { "path": "tests/fixtures/swift/ModernService.swift", "symbol": "load", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "php-path-and-type-filter",
+      "query": "find the helper function used by the PHP caller fixture",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "language": "php",
+      "difficulty": "medium",
+      "tags": ["definition", "php", "filters", "ambiguity"],
+      "args": {
+        "symbol": "helper",
+        "fileType": "php",
+        "directory": "tests/fixtures/call-graph"
+      },
+      "expected": {
+        "expectedRoute": "definition",
+        "expectedOutcome": "results",
+        "recoveryExpectation": "none",
+        "gradedEvidence": [
+          { "path": "tests/fixtures/call-graph/php-simple-calls.php", "symbol": "helper", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "scoped-recovery-definition",
+      "query": "find the getStatus method definition",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["definition", "recovery", "directory-filter"],
+      "args": {
+        "symbol": "getStatus",
+        "directory": "does/not/exist"
+      },
+      "expected": {
+        "expectedRoute": "definition",
+        "expectedOutcome": "results",
+        "recoveryExpectation": "filter-relaxed",
+        "gradedEvidence": [
+          { "path": "src/indexer/index.ts", "symbol": "getStatus", "relevance": 3 }
+        ]
+      }
+    },
+    {
+      "id": "similarity-rrf-fusion",
+      "query": "find code similar to combining semantic and keyword rankings with reciprocal rank fusion",
+      "queryType": "similarity",
+      "retrievalMode": "search",
+      "language": "typescript",
+      "difficulty": "medium",
+      "tags": ["similarity", "ranking", "fusion"],
+      "expected": {
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/index.ts", "symbol": "fuseResultsRrf", "relevance": 3 },
+          { "path": "src/indexer/index.ts", "symbol": "rankHybridResults", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "keyword-search-knobs",
+      "query": "fusionStrategy hybridWeight rrfK rerankTopN",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "typescript",
+      "difficulty": "easy",
+      "tags": ["keyword", "configuration", "multi-evidence"],
+      "expected": {
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/config/schema.ts", "relevance": 3 },
+          { "path": "src/indexer/index.ts", "relevance": 2 },
+          { "path": "src/eval/runner-config.ts", "symbol": "resolveSearchConfig", "relevance": 2 },
+          { "path": "src/eval/runner.ts", "symbol": "runSweep", "relevance": 1 },
+          { "path": "src/eval/cli-parser.ts", "symbol": "hasSweepOptions", "relevance": 1 }
+        ]
+      }
+    },
+    {
+      "id": "negative-strict-directory-filter",
+      "query": "symbolThatCannotExistInThisRepository",
+      "queryType": "definition",
+      "retrievalMode": "search",
+      "language": "typescript",
+      "difficulty": "easy",
+      "tags": ["negative", "no-result", "directory-filter"],
+      "args": {
+        "directory": "does/not/exist"
+      },
+      "expected": {
+        "expectedOutcome": "no-results"
+      }
+    }
+  ]
+}

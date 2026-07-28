@@ -3,6 +3,8 @@ import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolutio
 import type { LogEntry } from "../utils/logger.js";
 import { get_encoding } from "tiktoken";
 
+import { isLikelyImplementationPath } from "../indexer/intent-aware-ranking.js";
+
 export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
 export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
 export const DEFAULT_CONTEXT_PACK_TOKEN_BUDGET = 1200;
@@ -18,6 +20,7 @@ export interface ContextPackOptions {
   heading?: string;
   maxResults?: number;
   includeExactSearchHandoff?: boolean;
+  preferImplementationPaths?: boolean;
 }
 
 export interface ContextPackResult {
@@ -93,10 +96,22 @@ function normalizedLineRange(result: SearchResult): { start: number; end: number
     : { start: result.endLine, end: result.startLine };
 }
 
-function rankContextCandidates(results: SearchResult[]): RankedSearchResult[] {
+function rankContextCandidates(
+  results: SearchResult[],
+  preferImplementationPaths: boolean,
+): RankedSearchResult[] {
   return results
     .map((result, originalIndex) => ({ result, originalIndex }))
-    .sort((left, right) => right.result.score - left.result.score || left.originalIndex - right.originalIndex);
+    .sort((left, right) => {
+      if (preferImplementationPaths) {
+        const leftIsImplementation = isLikelyImplementationPath(left.result.filePath);
+        const rightIsImplementation = isLikelyImplementationPath(right.result.filePath);
+        if (leftIsImplementation !== rightIsImplementation) {
+          return leftIsImplementation ? -1 : 1;
+        }
+      }
+      return right.result.score - left.result.score || left.originalIndex - right.originalIndex;
+    });
 }
 
 function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchResult[] {
@@ -213,7 +228,12 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const maxResults = Math.max(0, Math.floor(options.maxResults ?? results.length));
   const includeExactSearchHandoff = options.includeExactSearchHandoff ?? false;
   const candidateCount = results.length;
-  const deduplicated = deduplicateContextCandidates(rankContextCandidates(results));
+  const deduplicated = deduplicateContextCandidates(
+    rankContextCandidates(
+      results,
+      options.preferImplementationPaths ?? false,
+    ),
+  );
   const diversified = diversifyContextCandidates(deduplicated);
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
