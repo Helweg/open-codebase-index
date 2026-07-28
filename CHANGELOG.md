@@ -15,12 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Maintained GitHub Actions runtime**: Updated JavaScript-based workflow actions to immutable Node.js 24 releases, including Release Drafter, checkout, artifact, setup, and script actions.
 - **Broader agent routing hints** (#158): Common repository tasks such as fixing bugs, adding support, investigating failures, refactoring, and reviewing code now receive lightweight `codebase_context`-first guidance. Each matching user message emits the hint at most once, preventing repeated token overhead during tool-call loops. Exact identifier, direct-path, external, and unrelated operational requests remain unnudged.
 - **Stronger retrieval quality gate**: The GitHub Models scheduled evaluation now requires at least 75% Hit@5 and 0.65 MRR@10, so the gate catches material retrieval regressions that the previous permissive floor allowed.
 - **Source-aware context packs**: Conceptual agent context now prioritizes implementation files over documentation, tests, and fixtures unless the query explicitly asks for those paths, while preserving the underlying retrieval order within each evidence class.
 
 ### Fixed
 
+- **Development dependency advisories**: Updated the pinned PostCSS and brace-expansion transitive dependencies to patched releases.
 - **Exact definitions in large files**: Definition and implementation searches now rescue branch-scoped symbols from the uncapped symbol catalog when per-file embedding limits omit their semantic chunks, restoring exact lookup without increasing embedding volume.
 - **Nested method definitions**: Symbol catalogs now recursively extract nested declarations independently of capped semantic chunks, migrate unchanged indexes without re-embedding content, and restore exact method lookup in large classes.
 - **Evaluation artifact uploads**: Scheduled quality diagnostics now use a visible output directory so GitHub Actions uploads the generated summaries and per-query evidence on both successful and failed runs.

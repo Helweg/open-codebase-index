@@ -2,46 +2,52 @@ name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
 no-changes-template: '- No user-facing changes in this release.'
-version-resolver:
-  major:
-    labels:
-      - 'semver:major'
-  minor:
-    labels:
-      - 'semver:minor'
-  patch:
-    labels:
-      - 'semver:patch'
-      - 'bug'
-      - 'dependencies'
-      - 'documentation'
-      - 'enhancement'
-  default: patch
 categories:
+  - type: 'pre-exclude'
+    when:
+      label: 'skip-changelog'
+  - type: 'version-resolver'
+    semver-increment: 'major'
+    when:
+      label: 'semver:major'
+  - type: 'version-resolver'
+    semver-increment: 'minor'
+    when:
+      label: 'semver:minor'
+  - type: 'version-resolver'
+    semver-increment: 'patch'
+    when:
+      labels:
+        - 'semver:patch'
+        - 'bug'
+        - 'dependencies'
+        - 'documentation'
+        - 'enhancement'
   - title: '🚀 Features'
-    labels:
-      - 'feature'
-      - 'semver:minor'
+    when:
+      labels:
+        - 'feature'
+        - 'semver:minor'
   - title: '🐛 Fixes'
-    labels:
-      - 'bug'
-      - 'semver:patch'
+    when:
+      labels:
+        - 'bug'
+        - 'semver:patch'
   - title: '⚡ Performance'
-    labels:
-      - 'performance'
+    when:
+      label: 'performance'
   - title: '🧰 Maintenance'
-    labels:
-      - 'dependencies'
-      - 'refactor'
-      - 'chore'
+    when:
+      labels:
+        - 'dependencies'
+        - 'refactor'
+        - 'chore'
   - title: '📚 Documentation'
-    labels:
-      - 'documentation'
+    when:
+      label: 'documentation'
   - title: '🧪 Tests'
-    labels:
-      - 'test'
-exclude-labels:
-  - 'skip-changelog'
+    when:
+      label: 'test'
 autolabeler:
   - label: 'documentation'
     files:
