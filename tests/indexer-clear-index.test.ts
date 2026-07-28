@@ -14,6 +14,10 @@ function canonicalPath(filePath: string): string {
   return fs.realpathSync.native(filePath);
 }
 
+function projectIdentityHash(projectRoot: string): string {
+  return hashContent(canonicalPath(projectRoot)).slice(0, 16);
+}
+
 describe("indexer clearIndex force rebuild", () => {
   let tempDir: string;
   let sourceFile: string;
@@ -179,7 +183,7 @@ describe("indexer clearIndex force rebuild", () => {
     expect(fileHashes[sourcePath]).toBeUndefined();
   });
 
-  it("clears legacy branch ownership through an equivalent symlinked project root", async () => {
+  it("clears branch ownership through an equivalent symlinked project root", async () => {
     vi.stubEnv("HOME", tempHome);
     vi.stubEnv("USERPROFILE", tempHome);
 
@@ -194,15 +198,52 @@ describe("indexer clearIndex force rebuild", () => {
 
     const db = trackDb(new Database(path.join(tempHome, ".opencode", "global-index", "codebase.db")));
     const chunk = db.getChunksByFile(sourcePath)[0];
-    const physicalBranch = `${hashContent(path.resolve(physicalProjectRoot)).slice(0, 16)}:default`;
+    const physicalBranch = `${projectIdentityHash(physicalProjectRoot)}:default`;
     const legacyBranch = "feature/old";
     db.addChunksToBranchBatch(legacyBranch, [chunk.chunkId]);
 
     await createIndexer(projectRoot, 8, "global").clearIndex();
 
     expect(db.chunkExistsOnBranch(legacyBranch, chunk.chunkId)).toBe(false);
-    expect(db.chunkExistsOnBranch(physicalBranch, chunk.chunkId)).toBe(true);
-    expect(db.getChunk(chunk.chunkId)).not.toBeNull();
+    expect(db.chunkExistsOnBranch(physicalBranch, chunk.chunkId)).toBe(false);
+    expect(db.getChunk(chunk.chunkId)).toBeNull();
+  });
+
+  it("uses one global catalog identity for physical and symlinked project roots", async () => {
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const physicalProjectRoot = path.join(tempDir, "physical-project");
+    const projectRootAlias = path.join(tempDir, "project-alias");
+    const physicalSourcePath = path.join(physicalProjectRoot, "src", "owned.ts");
+    const aliasSourcePath = path.join(projectRootAlias, "src", "owned.ts");
+    fs.mkdirSync(path.dirname(physicalSourcePath), { recursive: true });
+    fs.writeFileSync(physicalSourcePath, "export const owned = true;\n", "utf-8");
+    fs.symlinkSync(physicalProjectRoot, projectRootAlias, "dir");
+
+    await createIndexer(physicalProjectRoot, 8, "global").index();
+
+    const db = trackDb(new Database(path.join(tempHome, ".opencode", "global-index", "codebase.db")));
+    const initialChunkCount = db.getStats().chunkCount;
+    const canonicalBranch = `${hashContent(canonicalPath(physicalProjectRoot)).slice(0, 16)}:default`;
+    const lexicalAliasBranch = `${hashContent(path.resolve(projectRootAlias)).slice(0, 16)}:default`;
+
+    await createIndexer(projectRootAlias, 8, "global").index();
+
+    expect(db.getAllBranches()).toEqual([canonicalBranch]);
+    expect(db.getAllBranches()).not.toContain(lexicalAliasBranch);
+    expect(db.getStats().chunkCount).toBe(initialChunkCount);
+    expect(db.getChunksByFile(physicalSourcePath)).toHaveLength(0);
+    expect(db.getChunksByFile(aliasSourcePath).length).toBeGreaterThan(0);
+
+    const aliasChunk = db.getChunksByFile(aliasSourcePath)[0];
+    db.addChunksToBranchBatch(lexicalAliasBranch, [aliasChunk.chunkId]);
+
+    await createIndexer(physicalProjectRoot, 8, "global").clearIndex();
+
+    expect(db.getStats().chunkCount).toBe(0);
+    expect(db.getStats().branchChunkCount).toBe(0);
+    expect(db.chunkExistsOnBranch(lexicalAliasBranch, aliasChunk.chunkId)).toBe(false);
   });
 
   it("marks older embedding strategy metadata as incompatible until force rebuild", async () => {
@@ -556,8 +597,8 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
-    const projectBHash = hashContent(path.resolve(projectB)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
+    const projectBHash = projectIdentityHash(projectB);
     db.setMetadata(`index.embeddingStrategyVersion.${projectAHash}`, "1");
 
     const restartedIndexerA = createIndexer(projectA, 8, "global");
@@ -596,7 +637,7 @@ describe("indexer clearIndex force rebuild", () => {
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
     const chunk = db.getChunksByFile(projectAFile)[0];
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const branchKey = `${projectHash}:default`;
 
     db.setMetadata("index.embeddingStrategyVersion", "1");
@@ -633,7 +674,7 @@ describe("indexer clearIndex force rebuild", () => {
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
     const chunk = db.getChunksByFile(projectAFile)[0];
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const branchKey = `${projectHash}:feature/test`;
 
     db.setMetadata("index.embeddingStrategyVersion", "1");
@@ -666,7 +707,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const branchKey = `${projectHash}:default`;
 
     db.setMetadata("index.embeddingStrategyVersion", "1");
@@ -695,7 +736,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const branchKey = `${projectHash}:default`;
     const projectSymbol = `sym_${hashContent(`${projectAFile}:alpha:function:1`).slice(0, 16)}`;
 
@@ -789,7 +830,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     db.setMetadata(`index.embeddingStrategyVersion.${projectAHash}`, "1");
 
     const beforeResetCalls = embedInputs.length;
@@ -880,7 +921,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const projectABranch = `${projectAHash}:default`;
     db.setMetadata(`index.embeddingStrategyVersion.${projectAHash}`, "1");
 
@@ -930,8 +971,8 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
-    const projectBHash = hashContent(path.resolve(projectB)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
+    const projectBHash = projectIdentityHash(projectB);
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
     const projectBChunk = db.getChunksByFile(projectBFile)[0];
 
@@ -973,8 +1014,8 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
-    const projectBHash = hashContent(path.resolve(projectB)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
+    const projectBHash = projectIdentityHash(projectB);
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
     const projectBChunk = db.getChunksByFile(projectBFile)[0];
     const projectASymbol = `sym_${hashContent(`${projectAFile}:alpha:function:1`).slice(0, 16)}`;
@@ -1211,12 +1252,12 @@ describe("indexer clearIndex force rebuild", () => {
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
     const projectBChunk = db.getChunksByFile(projectBFile)[0];
-    const projectAKey = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
-    const projectBKey = `${hashContent(path.resolve(projectB)).slice(0, 16)}:default`;
+    const projectAKey = `${projectIdentityHash(projectA)}:default`;
+    const projectBKey = `${projectIdentityHash(projectB)}:default`;
 
     db.clearBranch(projectBKey);
     db.addChunksToBranchBatch("default", [projectBChunk.chunkId]);
-    db.deleteMetadata(`index.globalBranchMigration.${hashContent(path.resolve(projectB)).slice(0, 16)}`);
+    db.deleteMetadata(`index.globalBranchMigration.${projectIdentityHash(projectB)}`);
     db.clearBranch(projectAKey);
 
     const searchResults = await createIndexer(projectB, 8, "global").search("beta", 5);
@@ -1243,12 +1284,12 @@ describe("indexer clearIndex force rebuild", () => {
     const db = trackDb(new Database(dbPath));
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
     const projectBChunk = db.getChunksByFile(projectBFile)[0];
-    const projectAKey = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
-    const projectBKey = `${hashContent(path.resolve(projectB)).slice(0, 16)}:default`;
+    const projectAKey = `${projectIdentityHash(projectA)}:default`;
+    const projectBKey = `${projectIdentityHash(projectB)}:default`;
 
     db.clearBranch(projectAKey);
     db.addChunksToBranchBatch("default", [projectAChunk.chunkId]);
-    db.deleteMetadata(`index.globalBranchMigration.${hashContent(path.resolve(projectA)).slice(0, 16)}`);
+    db.deleteMetadata(`index.globalBranchMigration.${projectIdentityHash(projectA)}`);
 
     const legacyVisibleResults = await createIndexer(projectA, 8, "global").search("alpha", 5);
     expect(legacyVisibleResults.some((result) => result.filePath === projectAFile)).toBe(true);
@@ -1260,7 +1301,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const isolatedResults = await createIndexer(projectA, 8, "global").search("beta", 5);
     expect(isolatedResults.some((result) => result.filePath === projectBFile)).toBe(false);
-    expect(db.getMetadata(`index.globalBranchMigration.${hashContent(path.resolve(projectA)).slice(0, 16)}`)).toBe("done");
+    expect(db.getMetadata(`index.globalBranchMigration.${projectIdentityHash(projectA)}`)).toBe("done");
     expect(db.getBranchChunkIds(projectBKey).length).toBeGreaterThan(0);
   });
 
@@ -1279,7 +1320,7 @@ describe("indexer clearIndex force rebuild", () => {
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
-    const namespacedBranch = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
+    const namespacedBranch = `${projectIdentityHash(projectA)}:default`;
 
     db.addChunksToBranchBatch("default", [projectAChunk.chunkId]);
 
@@ -1314,7 +1355,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const defaultBranch = `${projectAHash}:default`;
     const featureBranch = `${projectAHash}:feature/test`;
     const legacyFeatureBranch = "feature/test";
@@ -1360,7 +1401,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const defaultBranch = `${projectAHash}:default`;
     const featureBranch = `${projectAHash}:feature/test`;
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
@@ -1394,7 +1435,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const defaultBranch = `${projectAHash}:default`;
     const deletedLegacyBranch = "feature/old";
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
@@ -1434,7 +1475,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const namespacedDefaultBranch = `${projectAHash}:default`;
     const legacyFeatureBranch = "feature/test";
     const projectAChunk = db.getChunksByFile(projectAFile)[0];
@@ -1498,7 +1539,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectAHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectAHash = projectIdentityHash(projectA);
     const projectAProjectChunk = db.getChunksByFile(projectAFile)[0];
     const sharedChunk = db.getChunksByFile(canonicalSharedFile)[0];
     const foreignLegacyBranch = "feature/test";
@@ -1641,8 +1682,8 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectABranch = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
-    const projectBBranch = `${hashContent(path.resolve(projectB)).slice(0, 16)}:default`;
+    const projectABranch = `${projectIdentityHash(projectA)}:default`;
+    const projectBBranch = `${projectIdentityHash(projectB)}:default`;
     const sharedChunk = db.getChunksByFile(canonicalSharedFile)[0];
 
     db.deleteBranchChunksForBranch(projectABranch, [sharedChunk.chunkId]);
@@ -1707,8 +1748,8 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectABranch = `${hashContent(path.resolve(projectA)).slice(0, 16)}:default`;
-    const projectBBranch = `${hashContent(path.resolve(projectB)).slice(0, 16)}:default`;
+    const projectABranch = `${projectIdentityHash(projectA)}:default`;
+    const projectBBranch = `${projectIdentityHash(projectB)}:default`;
 
     const sharedSymbolId = `sym_${hashContent(`${sharedFile}:sharedHelper:function:1`).slice(0, 16)}`;
     const betaSymbolId = `sym_${hashContent(`${projectBFile}:beta:function:1`).slice(0, 16)}`;

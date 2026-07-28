@@ -9,6 +9,10 @@ import { Indexer } from "../src/indexer/index.js";
 import { Database, VectorStore, hashContent } from "../src/native/index.js";
 import { formatStatus } from "../src/tools/utils.js";
 
+function projectIdentityHash(projectRoot: string): string {
+  return hashContent(fs.realpathSync.native(projectRoot)).slice(0, 16);
+}
+
 describe("indexer failed batch recovery", () => {
   let tempDir: string;
   let sourceFile: string;
@@ -1364,7 +1368,7 @@ describe("indexer failed batch recovery", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const projectABranch = `${projectHash}:default`;
     db.setMetadata(`index.embeddingStrategyVersion.${projectHash}`, "1");
 

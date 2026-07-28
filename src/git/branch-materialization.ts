@@ -5,6 +5,8 @@ import * as os from "os";
 import * as path from "path";
 import { promisify } from "util";
 
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+
 const execFileAsync = promisify(execFile);
 const FULL_COMMIT_RE = /^[0-9a-f]{40}$/i;
 const SAFE_REMOTE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
@@ -421,36 +423,16 @@ async function pathExists(targetPath: string): Promise<boolean> {
   return fsPromises.stat(targetPath).then(() => true, () => false);
 }
 
-async function canonicalizePath(targetPath: string): Promise<string> {
-  const resolved = path.resolve(targetPath);
-  const missingParts: string[] = [];
-  let candidate = resolved;
-
-  while (true) {
-    try {
-      return path.join(await fsPromises.realpath(candidate), ...missingParts);
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") throw error;
-
-      const parent = path.dirname(candidate);
-      if (parent === candidate) return resolved;
-      missingParts.unshift(path.basename(candidate));
-      candidate = parent;
-    }
-  }
-}
-
 async function isWorktreeRegistered(projectRoot: string, worktreePath: string): Promise<boolean> {
   const output = await runGitRaw(projectRoot, ["worktree", "list", "--porcelain", "-z"]);
-  const target = await canonicalizePath(worktreePath);
+  const target = canonicalizePathForComparison(worktreePath);
   const worktreePaths = output
     .split("\0")
     .filter((entry) => entry.startsWith("worktree "))
     .map((entry) => entry.slice("worktree ".length));
 
   for (const registeredPath of worktreePaths) {
-    if (await canonicalizePath(registeredPath) === target) return true;
+    if (canonicalizePathForComparison(registeredPath) === target) return true;
   }
   return false;
 }
@@ -476,7 +458,7 @@ async function pruneExactMissingWorktreeRegistration(
     throw error;
   }
 
-  const target = await canonicalizePath(worktreePath);
+  const target = canonicalizePathForComparison(worktreePath);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const registrationPath = path.join(registrationsRoot, entry.name);
@@ -492,7 +474,7 @@ async function pruneExactMissingWorktreeRegistration(
     const resolvedGitdirPath = path.isAbsolute(gitdirPath)
       ? gitdirPath
       : path.resolve(registrationPath, gitdirPath);
-    if (await canonicalizePath(path.dirname(resolvedGitdirPath)) !== target) continue;
+    if (canonicalizePathForComparison(path.dirname(resolvedGitdirPath)) !== target) continue;
     await fsPromises.rm(registrationPath, { recursive: true, force: true });
     return true;
   }
