@@ -126,7 +126,7 @@ describe("indexer failed batch recovery", () => {
       },
     });
 
-    return _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
   }
 
   function createLimitedBatchIndexer(maxBatchSize: number): Indexer {
@@ -145,7 +145,7 @@ describe("indexer failed batch recovery", () => {
       },
     });
 
-    return _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
   }
 
   function createOllamaIndexer(): Indexer {
@@ -159,7 +159,7 @@ describe("indexer failed batch recovery", () => {
       },
     });
 
-    return _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
   }
 
   it("retries saved failed batches on a later successful rerun without force", async () => {
@@ -1190,7 +1190,7 @@ describe("indexer failed batch recovery", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    }))) - 1];
+    }), "opencode")) - 1];
 
     const stats = await indexer.index();
     expect(stats.failedChunks).toBe(0);
@@ -1276,7 +1276,7 @@ describe("indexer failed batch recovery", () => {
         retries: 3,
         retryDelayMs: 1,
       },
-    }))) - 1];
+    }), "opencode")) - 1];
 
     await retryingIndexer.initialize();
     const retry = await retryingIndexer.retryFailedBatches();
@@ -1358,7 +1358,7 @@ describe("indexer failed batch recovery", () => {
           retries: 0,
           retryDelayMs: 1,
         },
-      }));
+      }), "opencode");
       _indexers.push(idx);
       return idx;
     };

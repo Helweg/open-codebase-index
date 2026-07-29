@@ -113,7 +113,7 @@ export function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer
   return indexer;
 }
 
-export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode = "opencode"): void {
+export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode): void {
   defaultProjectRoots.set(host, projectRoot);
   const key = getIndexerCacheKey(projectRoot, host);
   configCache.set(key, config);
@@ -121,11 +121,11 @@ export function initializeTools(projectRoot: string, config: ParsedCodebaseIndex
   configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
 }
 
-export function getSharedIndexer(host: HostMode = "opencode"): Indexer {
+export function getSharedIndexer(host: HostMode): Indexer {
   return getIndexerForProject(undefined, host);
 }
 
-export function getIndexerForProject(projectRoot: string | undefined, host: HostMode = "opencode"): Indexer {
+export function getIndexerForProject(projectRoot: string | undefined, host: HostMode): Indexer {
   const root = getProjectRoot(projectRoot, host);
   return getOrCreateIndexer(root, host);
 }
@@ -141,7 +141,7 @@ export function recordToolEffectiveness(
 
 export function refreshIndexerForDirectory(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
   config: ParsedCodebaseIndexConfig = parseConfig(loadRuntimeConfig(projectRoot, host)),
 ): ParsedCodebaseIndexConfig {
   const key = getIndexerCacheKey(projectRoot, host);

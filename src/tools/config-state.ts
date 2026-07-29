@@ -29,19 +29,19 @@ function toConfigRecord(rawConfig: unknown): Record<string, unknown> {
   return { ...(rawConfig as Record<string, unknown>) };
 }
 
-export function getConfigPath(projectRoot: string, host: HostMode = "opencode"): string {
+export function getConfigPath(projectRoot: string, host: HostMode): string {
   return resolveWritableProjectConfigPath(projectRoot, host);
 }
 
-export function loadRuntimeConfig(projectRoot: string, host: HostMode = "opencode"): Record<string, unknown> {
+export function loadRuntimeConfig(projectRoot: string, host: HostMode): Record<string, unknown> {
   return normalizeKnowledgeBasePaths(toConfigRecord(loadMergedConfig(projectRoot, host)), projectRoot);
 }
 
-export function loadEditableConfig(projectRoot: string, host: HostMode = "opencode"): Record<string, unknown> {
+export function loadEditableConfig(projectRoot: string, host: HostMode): Record<string, unknown> {
   return normalizeKnowledgeBasePaths(toConfigRecord(loadProjectConfigLayer(projectRoot, host)), projectRoot);
 }
 
-export function saveConfig(projectRoot: string, config: Record<string, unknown>, host: HostMode = "opencode"): void {
+export function saveConfig(projectRoot: string, config: Record<string, unknown>, host: HostMode): void {
   const configPath = getConfigPath(projectRoot, host);
   const configDir = path.dirname(configPath);
   const configBaseDir = path.dirname(configDir);

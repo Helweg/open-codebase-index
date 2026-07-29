@@ -116,7 +116,7 @@ export function loadConfigFile(filePath: string): unknown {
   return loadJsonFile(filePath);
 }
 
-export function loadProjectConfigLayer(projectRoot: string, host: HostMode = "opencode"): Record<string, unknown> {
+export function loadProjectConfigLayer(projectRoot: string, host: HostMode): Record<string, unknown> {
   const projectConfigPath = resolveProjectConfigPath(projectRoot, host);
   const projectConfig = loadJsonFile(projectConfigPath) as Record<string, unknown> | null;
 
@@ -148,7 +148,7 @@ export function loadProjectConfigLayer(projectRoot: string, host: HostMode = "op
  * - For additionalInclude: merge arrays (union, deduplicated)
  * - For include/exclude: project overrides global if set, otherwise load global
  */
-export function loadMergedConfig(projectRoot: string, host: HostMode = "opencode"): unknown {
+export function loadMergedConfig(projectRoot: string, host: HostMode): unknown {
   const globalConfigPath = resolveGlobalConfigPath(host);
   const projectConfigPath = resolveProjectConfigPath(projectRoot, host);
   let globalConfig: Record<string, unknown> | null = null;

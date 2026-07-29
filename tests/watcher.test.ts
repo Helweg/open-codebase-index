@@ -71,12 +71,12 @@ describe("FileWatcher", () => {
 
   describe("constructor and lifecycle", () => {
     it("should create watcher without starting", () => {
-      watcher = new FileWatcher(tempDir, createTestConfig());
+      watcher = new FileWatcher(tempDir, createTestConfig(), "opencode");
       expect(watcher.isRunning()).toBe(false);
     });
 
     it("should start and stop correctly", () => {
-      watcher = new FileWatcher(tempDir, createTestConfig());
+      watcher = new FileWatcher(tempDir, createTestConfig(), "opencode");
       const handler = vi.fn();
 
       watcher.start(handler);
@@ -87,7 +87,7 @@ describe("FileWatcher", () => {
     });
 
     it("should not start twice", () => {
-      watcher = new FileWatcher(tempDir, createTestConfig());
+      watcher = new FileWatcher(tempDir, createTestConfig(), "opencode");
       const handler1 = vi.fn();
       const handler2 = vi.fn();
 
@@ -98,7 +98,7 @@ describe("FileWatcher", () => {
     });
 
     it("should clear pending changes on stop", () => {
-      watcher = new FileWatcher(tempDir, createTestConfig());
+      watcher = new FileWatcher(tempDir, createTestConfig(), "opencode");
       const handler = vi.fn();
 
       watcher.start(handler);
@@ -111,7 +111,7 @@ describe("FileWatcher", () => {
   describe("file filtering", () => {
     it("should only watch files matching include patterns", async () => {
       const changes: FileChange[] = [];
-      watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }));
+      watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "opencode");
 
       watcher.start(async (c) => {
         changes.push(...c);
@@ -133,7 +133,7 @@ describe("FileWatcher", () => {
 
     it("should include matching root-level files", async () => {
       const changes: FileChange[] = [];
-      watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }));
+      watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "opencode");
 
       watcher.start(async (c) => {
         changes.push(...c);
@@ -216,6 +216,7 @@ describe("FileWatcher", () => {
             logBranch: false,
           },
         }),
+        "opencode",
       );
 
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -244,7 +245,8 @@ describe("FileWatcher", () => {
       const combinedWatcher = createWatcherWithIndexer(
         () => indexer,
         tempDir,
-        createTestConfig()
+        createTestConfig(),
+        "opencode",
       );
 
       await new Promise((r) => setTimeout(r, 100));
@@ -269,7 +271,8 @@ describe("FileWatcher", () => {
       const combinedWatcher = createWatcherWithIndexer(
         () => indexer,
         tempDir,
-        createTestConfig()
+        createTestConfig(),
+        "opencode",
       );
 
       await new Promise((r) => setTimeout(r, 100));
@@ -301,6 +304,7 @@ describe("FileWatcher", () => {
         () => indexer,
         tempDir,
         createTestConfig(),
+        "opencode",
       );
 
       await combinedWatcher.fileWatcher.waitUntilReady();
@@ -330,6 +334,7 @@ describe("FileWatcher", () => {
         () => indexer,
         tempDir,
         createTestConfig(),
+        "opencode",
       );
 
       await combinedWatcher.fileWatcher.waitUntilReady();
@@ -354,7 +359,8 @@ describe("FileWatcher", () => {
       const combinedWatcher = createWatcherWithIndexer(
         () => currentIndexer,
         tempDir,
-        createTestConfig()
+        createTestConfig(),
+        "opencode",
       );
 
       await new Promise((r) => setTimeout(r, 100));
@@ -378,7 +384,8 @@ describe("FileWatcher", () => {
       const combinedWatcher = createWatcherWithIndexer(
         () => indexer,
         tempDir,
-        createTestConfig()
+        createTestConfig(),
+        "opencode",
       );
 
       expect(combinedWatcher.fileWatcher.isRunning()).toBe(true);

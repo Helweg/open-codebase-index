@@ -100,7 +100,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     const stats = await indexer.index();
     expect(stats.totalFiles).toBeGreaterThan(0);
 
@@ -156,7 +156,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const status = await indexer.getStatus();
@@ -200,7 +200,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       indexing: { watchFiles: false },
       search: { maxResults: 10, minScore: 0 },
     });
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const status = await indexer.getStatus();
@@ -246,7 +246,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       search: { maxResults: 10, minScore: 0 },
     });
 
-    const firstIndexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const firstIndexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await firstIndexer.index();
 
     const firstStatus = await firstIndexer.getStatus();
@@ -273,7 +273,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       staleDb.close();
     }
 
-    const secondIndexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const secondIndexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     const embeddingCallsBeforeReindex = fetchSpy.mock.calls.length;
     await secondIndexer.index();
 
@@ -376,7 +376,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       search: { maxResults: 10, minScore: 0 },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
     const results = await indexer.search("where is capped_python_definition implementation", 5, {
       metadataOnly: true,
@@ -494,7 +494,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
           minScore: 0,
         },
       });
-      const disabledIndexer = new Indexer(authoredDir, disabledConfig);
+      const disabledIndexer = new Indexer(authoredDir, disabledConfig, "opencode");
       await disabledIndexer.index();
       await disabledIndexer.close();
 
@@ -515,7 +515,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
         },
       });
 
-      const indexer = new Indexer(authoredDir, config);
+      const indexer = new Indexer(authoredDir, config, "opencode");
       _indexers.push(indexer);
       await indexer.index();
 
@@ -575,7 +575,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const results = await indexer.search("rankHybridResults documentation guide", 5, {
@@ -606,7 +606,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const results = await indexer.search("rankHybridResults", 5, {
@@ -640,7 +640,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const results = await indexer.search("rankHybridResults", 5, {
@@ -673,7 +673,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const withoutOverride = await indexer.search("where is rankHybridResults documentation", 5, {
@@ -747,7 +747,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const results = await indexer.search("where is rankHybridResults implementation", 5, {
@@ -813,7 +813,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
 
     const results = await indexer.search("rankHybridResults documentation guide", 5, {
@@ -914,7 +914,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
         },
       });
 
-      scopedIndexer = new Indexer(scopedDir, config);
+      scopedIndexer = new Indexer(scopedDir, config, "opencode");
       await scopedIndexer.index();
       const results = await scopedIndexer.search("authorize incoming requests with active sessions", 10, {
         metadataOnly: true,
@@ -957,7 +957,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
       },
     });
 
-    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
     await indexer.index();
     fetchSpy.mockRejectedValue(new Error("embedding endpoint unavailable"));
     const warningLog = vi.spyOn(indexer.getLogger(), "warn");

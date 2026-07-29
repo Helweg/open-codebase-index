@@ -108,7 +108,7 @@ function loadRawConfig(projectRoot: string, configPath?: string): unknown {
     );
   }
 
-  const projectConfig = resolveProjectConfigPath(projectRoot);
+  const projectConfig = resolveProjectConfigPath(projectRoot, "opencode");
   if (existsSync(projectConfig)) {
     return normalizeEvalConfigKnowledgeBases(
       parseJsonConfigFile(projectConfig),
@@ -127,8 +127,8 @@ function loadRawConfig(projectRoot: string, configPath?: string): unknown {
 
 function getIndexRootPath(projectRoot: string, scope: "project" | "global"): string {
   return scope === "global"
-    ? getGlobalIndexPath()
-    : resolveProjectIndexPath(projectRoot, scope);
+    ? getGlobalIndexPath("opencode")
+    : resolveProjectIndexPath(projectRoot, scope, "opencode");
 }
 
 function getLocalProjectIndexRoot(projectRoot: string): string {
@@ -152,7 +152,7 @@ export function ensureLocalEvalProjectConfig(projectRoot: string, configPath?: s
   const localConfigPath = getLocalProjectConfigPath(projectRoot);
   const resolvedConfigPath = configPath
     ? toAbsolute(projectRoot, configPath)
-    : resolveProjectConfigPath(projectRoot);
+    : resolveProjectConfigPath(projectRoot, "opencode");
 
   if (!configPath && existsSync(localConfigPath)) {
     return localConfigPath;

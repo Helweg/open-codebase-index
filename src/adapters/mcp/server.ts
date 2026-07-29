@@ -16,7 +16,7 @@ function getServerInstructions(host: string): string {
 export function createMcpServer(
   projectRoot: string,
   config: ParsedCodebaseIndexConfig,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): McpServer {
   const server = new McpServer({
     name: "opencode-codebase-index",

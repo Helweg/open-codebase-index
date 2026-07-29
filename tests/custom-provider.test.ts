@@ -622,7 +622,7 @@ describe("Indexer custom provider initialization", () => {
     // parseConfig() would normally reject this, but initialize() has its own guard for safety.
     const baseConfig = parseConfig({ embeddingProvider: "openai" });
     const config = { ...baseConfig, embeddingProvider: "custom" as const, customProvider: undefined };
-    const indexer = new Indexer(tempDir, config);
+    const indexer = new Indexer(tempDir, config, "opencode");
     await expect(indexer.initialize()).rejects.toThrow(
       "embeddingProvider is 'custom' but customProvider config is missing"
     );

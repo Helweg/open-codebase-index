@@ -31,7 +31,7 @@ export function createWatcherWithIndexer(
   getIndexer: () => Indexer,
   projectRoot: string,
   config: CodebaseIndexConfig,
-  host: HostMode = "opencode",
+  host: HostMode,
   options: WatcherOptions = {},
 ): CombinedWatcher {
   const fileWatcher = new FileWatcher(projectRoot, config, host, options);

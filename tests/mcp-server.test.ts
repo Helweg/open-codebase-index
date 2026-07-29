@@ -323,7 +323,7 @@ vi.mock("../src/indexer/index.js", () => {
 describe("createMcpServer", () => {
   it("should create a server instance", () => {
     const config = parseConfig({ effectivenessMetrics: { enabled: true } });
-    const server = createMcpServer("/tmp/test-project", config);
+    const server = createMcpServer("/tmp/test-project", config, "opencode");
 
     expect(server).toBeDefined();
     expect(server).toHaveProperty("connect");
@@ -331,7 +331,7 @@ describe("createMcpServer", () => {
 
   it("should have the correct server name", () => {
     const config = parseConfig({});
-    const server = createMcpServer("/tmp/test-project", config);
+    const server = createMcpServer("/tmp/test-project", config, "opencode");
 
     expect(server).toBeDefined();
   });
@@ -386,7 +386,7 @@ describe("MCP server tools and prompts", () => {
     };
 
     const config = parseConfig({ effectivenessMetrics: { enabled: true } });
-    server = createMcpServer("/tmp/test-project", config);
+    server = createMcpServer("/tmp/test-project", config, "opencode");
     client = new Client({ name: "test-client", version: "1.0.0" });
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -605,6 +605,7 @@ describe("MCP server tools and prompts", () => {
     const disabledServer = createMcpServer(
       `/tmp/effectiveness-disabled-host-${process.pid}`,
       parseConfig(undefined),
+      "opencode",
     );
     const disabledClient = new Client({ name: "disabled-test-client", version: "1.0.0" });
     const [disabledClientTransport, disabledServerTransport] = InMemoryTransport.createLinkedPair();
@@ -941,7 +942,7 @@ describe("MCP server tools and prompts", () => {
         pauseBackgroundIndexingOnBattery: true,
       },
     });
-    server = createMcpServer("/tmp/test-project", config);
+    server = createMcpServer("/tmp/test-project", config, "opencode");
     client = new Client({ name: "test-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await Promise.all([
@@ -1078,7 +1079,7 @@ describe("MCP server tools and prompts", () => {
       },
       scope: "project",
     });
-    server = createMcpServer("/tmp/test-project", runtimeConfig);
+    server = createMcpServer("/tmp/test-project", runtimeConfig, "opencode");
     client = new Client({ name: "test-client", version: "1.0.0" });
 
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

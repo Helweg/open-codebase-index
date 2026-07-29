@@ -115,7 +115,7 @@ describe("indexer clearIndex force rebuild", () => {
       },
     });
 
-    return trackIndexer(new Indexer(projectRoot, config));
+    return trackIndexer(new Indexer(projectRoot, config, "opencode"));
   }
 
   it("clears persisted embeddings before a force rebuild with new dimensions", async () => {
@@ -329,7 +329,7 @@ describe("indexer clearIndex force rebuild", () => {
     const mainDb = trackDb(new Database(path.join(mainRepoDir, ".opencode", "index", "codebase.db")));
     const mainStatsBefore = mainDb.getStats();
 
-    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
+    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode"));
     await expect(worktreeIndexer.clearIndex()).resolves.toBeUndefined();
 
     expect(mainDb.getStats()).toEqual(mainStatsBefore);
@@ -375,7 +375,7 @@ describe("indexer clearIndex force rebuild", () => {
       operation: "index", token: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
     }));
 
-    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir))));
+    const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode"));
     await expect(worktreeIndexer.index()).resolves.toMatchObject({ failedChunks: 0 });
     expect(fs.existsSync(path.join(worktreeDir, ".opencode", "index", "codebase.db"))).toBe(true);
     expect(fs.existsSync(lockPath)).toBe(true);
@@ -823,7 +823,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();
@@ -914,7 +914,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();
@@ -1138,7 +1138,7 @@ describe("indexer clearIndex force rebuild", () => {
         autoGc: true,
         gcOrphanThreshold: 0,
       },
-    })));
+    }), "opencode"));
 
     const initialStats = await indexer.index();
     expect(initialStats.indexedChunks).toBeGreaterThan(0);
@@ -1217,7 +1217,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();
@@ -1532,7 +1532,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();
@@ -1675,7 +1675,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();
@@ -1741,7 +1741,7 @@ describe("indexer clearIndex force rebuild", () => {
         retries: 0,
         retryDelayMs: 1,
       },
-    })));
+    }), "opencode"));
 
     await createKbIndexer(projectA).index();
     await createKbIndexer(projectB).index();

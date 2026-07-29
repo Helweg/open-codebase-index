@@ -90,8 +90,8 @@ function parseVisualizeArgs(argv: string[], cwd: string): VisualizeArgs {
 async function handleVisualizeCommand(argv: string[], cwd: string): Promise<number> {
   try {
     const args = parseVisualizeArgs(argv, cwd);
-    const config = parseConfig(loadMergedConfig(args.project));
-    const indexer = new Indexer(args.project, config);
+    const config = parseConfig(loadMergedConfig(args.project, "opencode"));
+    const indexer = new Indexer(args.project, config, "opencode");
     const rawData = await indexer.getVisualizationData({
       directory: args.directory,
     });

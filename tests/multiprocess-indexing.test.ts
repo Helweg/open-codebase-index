@@ -371,7 +371,7 @@ describe("multiprocess indexing", () => {
       search,
       debug: { enabled: false },
     });
-    const indexer = new Indexer(projectRoot, config);
+    const indexer = new Indexer(projectRoot, config, "opencode");
     localIndexers.push(indexer);
     return indexer;
   }
