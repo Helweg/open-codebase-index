@@ -8,7 +8,7 @@ Tool availability depends on the host mode.
 |---|---|---|
 | `opencode` (plugin) | 17 tools in total (13 portable MCP tools + 4 OpenCode-native tools) | Slash commands and native knowledge-base management |
 | MCP clients, including `codex`, `claude`, and `jcode` | 13 tools + 5 prompts | No OpenCode slash commands |
-| `pi` (Pi extension) | 14 tools total (11 retrieval/index/impact tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
+| `pi` (Pi extension) | 16 tools total (13 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
 
 ### Portable MCP core (13 tools)
 
@@ -55,7 +55,7 @@ Pi does not expose the OpenCode-native knowledge-base names. It registers equiva
 - `knowledge_base_add`
 - `knowledge_base_remove`
 
-Pi currently exposes the core retrieval, indexing, metrics, and PR-impact tools, but not `call_graph` or `call_graph_path` as standalone tools.
+Pi exposes all 13 portable tools, including `call_graph` and `call_graph_path`, plus its three host-specific knowledge-base aliases.
 
 ## Recommended selection order
 

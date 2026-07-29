@@ -26,6 +26,7 @@ import {
   initializeTools,
   pr_impact,
 } from "./tools/index.js";
+import { TOOL_NAME } from "./tools/tool-names.js";
 import { loadCommandsFromDirectory } from "./commands/loader.js";
 import { RoutingHintController } from "./routing-hints.js";
 import { isHomeDirectory, startAutoIndex } from "./utils/auto-index.js";
@@ -130,23 +131,23 @@ const plugin: Plugin = async ({ directory, worktree }) => {
 
     return {
       tool: {
-        codebase_context,
-        codebase_search,
-        codebase_peek,
-        index_codebase,
-        index_status,
-        index_health_check,
-        index_metrics,
-        index_logs,
-        find_similar,
-        call_graph,
-        call_graph_path,
-        implementation_lookup,
-        add_knowledge_base,
-        list_knowledge_bases,
-        remove_knowledge_base,
-        pr_impact,
-        index_visualize,
+        [TOOL_NAME.CODEBASE_CONTEXT]: codebase_context,
+        [TOOL_NAME.CODEBASE_SEARCH]: codebase_search,
+        [TOOL_NAME.CODEBASE_PEEK]: codebase_peek,
+        [TOOL_NAME.INDEX_CODEBASE]: index_codebase,
+        [TOOL_NAME.INDEX_STATUS]: index_status,
+        [TOOL_NAME.INDEX_HEALTH_CHECK]: index_health_check,
+        [TOOL_NAME.INDEX_METRICS]: index_metrics,
+        [TOOL_NAME.INDEX_LOGS]: index_logs,
+        [TOOL_NAME.FIND_SIMILAR]: find_similar,
+        [TOOL_NAME.CALL_GRAPH]: call_graph,
+        [TOOL_NAME.CALL_GRAPH_PATH]: call_graph_path,
+        [TOOL_NAME.IMPLEMENTATION_LOOKUP]: implementation_lookup,
+        [TOOL_NAME.ADD_KNOWLEDGE_BASE]: add_knowledge_base,
+        [TOOL_NAME.LIST_KNOWLEDGE_BASES]: list_knowledge_bases,
+        [TOOL_NAME.REMOVE_KNOWLEDGE_BASE]: remove_knowledge_base,
+        [TOOL_NAME.PR_IMPACT]: pr_impact,
+        [TOOL_NAME.INDEX_VISUALIZE]: index_visualize,
       },
 
       async "chat.message"(input, output) {

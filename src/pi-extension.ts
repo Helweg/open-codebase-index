@@ -37,6 +37,7 @@ import {
 } from "./tools/context.js";
 import { registerPiCallGraphTools } from "./pi-call-graph.js";
 import { stopAutoIndex } from "./utils/auto-index.js";
+import { TOOL_NAME } from "./tools/tool-names.js";
 
 const HOST = "pi" as const;
 
@@ -60,7 +61,7 @@ function projectRoot(ctx: { cwd?: string } | undefined): string {
 
 export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.registerTool({
-    name: "codebase_context",
+    name: TOOL_NAME.CODEBASE_CONTEXT,
     label: "Codebase Context",
     description: "PREFERRED FIRST TOOL for any repository question. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow. Use fromFilePath/toFilePath only when duplicate path endpoints are reported.",
     parameters: Type.Object({
@@ -95,7 +96,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "codebase_search",
+    name: TOOL_NAME.CODEBASE_SEARCH,
     label: "Codebase Search",
     description: "Use this after codebase_context when you need semantic content, not just locations. Describe behavior, not syntax.",
     parameters: Type.Object({
@@ -123,7 +124,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "codebase_peek",
+    name: TOOL_NAME.CODEBASE_PEEK,
     label: "Codebase Peek",
     description: "LOW-TOKEN location-first retrieval. Prefer codebase_context first, then use this for cheap conceptual lookup.",
     parameters: Type.Object({
@@ -148,7 +149,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "find_similar",
+    name: TOOL_NAME.FIND_SIMILAR,
     label: "Find Similar Code",
     description: "Find code similar to a snippet for duplicate detection, pattern discovery, and refactor planning.",
     parameters: Type.Object({
@@ -166,7 +167,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "implementation_lookup",
+    name: TOOL_NAME.IMPLEMENTATION_LOOKUP,
     label: "Implementation Lookup",
     description: "Find likely symbol definitions or implementations after codebase_context identifies a symbol.",
     parameters: Type.Object({
@@ -182,7 +183,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "index_codebase",
+    name: TOOL_NAME.INDEX_CODEBASE,
     label: "Index Codebase",
     description: "Build or refresh the semantic codebase index. Run index_status when freshness is unknown.",
     parameters: Type.Object({
@@ -200,7 +201,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "index_status",
+    name: TOOL_NAME.INDEX_STATUS,
     label: "Index Status",
     description: "Check index health and current status.",
     parameters: Type.Object({}),
@@ -211,7 +212,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "index_health_check",
+    name: TOOL_NAME.INDEX_HEALTH_CHECK,
     label: "Index Health Check",
     description: "Garbage collect orphaned embeddings/chunks and report index health status.",
     parameters: Type.Object({}),
@@ -223,7 +224,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "index_metrics",
+    name: TOOL_NAME.INDEX_METRICS,
     label: "Index Metrics",
     description: "Return operational metrics and opt-in memory-only privacy-safe effectiveness counters.",
     parameters: Type.Object({
@@ -236,7 +237,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "index_logs",
+    name: TOOL_NAME.INDEX_LOGS,
     label: "Index Logs",
     description: "Return recent debug logs when debug logging is enabled.",
     parameters: Type.Object({
@@ -272,7 +273,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "pr_impact",
+    name: TOOL_NAME.PR_IMPACT,
     label: "PR Impact",
     description: "Analyze PR or branch impact through changed symbols and call graph neighborhoods.",
     parameters: Type.Object({
@@ -290,7 +291,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "knowledge_base_list",
+    name: TOOL_NAME.PI_KNOWLEDGE_BASE_LIST,
     label: "List Knowledge Bases",
     description: "List configured knowledge-base paths included in the index.",
     parameters: Type.Object({}),
@@ -300,7 +301,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "knowledge_base_add",
+    name: TOOL_NAME.PI_KNOWLEDGE_BASE_ADD,
     label: "Add Knowledge Base",
     description: "Add a knowledge-base path to the codebase index config.",
     parameters: Type.Object({ path: Type.String({ description: "File or directory path to add" }) }),
@@ -310,7 +311,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "knowledge_base_remove",
+    name: TOOL_NAME.PI_KNOWLEDGE_BASE_REMOVE,
     label: "Remove Knowledge Base",
     description: "Remove a knowledge-base path from the codebase index config.",
     parameters: Type.Object({ path: Type.String({ description: "File or directory path to remove" }) }),

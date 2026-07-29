@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 import { getCallGraphData, getCallGraphPath } from "./tools/operations.js";
 import { formatCallGraphPathResult, formatCallGraphResult } from "./tools/utils.js";
+import { TOOL_NAME } from "./tools/tool-names.js";
 
 const HOST = "pi" as const;
 
@@ -25,7 +26,7 @@ function projectRoot(ctx: { cwd?: string } | undefined): string | undefined {
 
 export function registerPiCallGraphTools(pi: ExtensionAPI): void {
   pi.registerTool({
-    name: "call_graph",
+    name: TOOL_NAME.CALL_GRAPH,
     label: "Call Graph",
     description: "Find callers or callees by function or method name. Unique names resolve automatically; use filePath when duplicate names are reported.",
     parameters: Type.Object({
@@ -42,7 +43,7 @@ export function registerPiCallGraphTools(pi: ExtensionAPI): void {
   });
 
   pi.registerTool({
-    name: "call_graph_path",
+    name: TOOL_NAME.CALL_GRAPH_PATH,
     label: "Call Graph Path",
     description: "Find a call path between two named functions or methods. Use fromFilePath or toFilePath when duplicate endpoints are reported.",
     parameters: Type.Object({

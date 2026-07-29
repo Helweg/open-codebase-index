@@ -3,6 +3,11 @@ import * as fs from "fs";
 import { describe, expect, it } from "vitest";
 
 import codebaseIndexPiExtension from "../src/pi-extension.js";
+import {
+  PORTABLE_TOOL_NAMES,
+  PI_TOOL_NAMES,
+  TOOL_NAME,
+} from "../src/tools/tool-names.js";
 
 describe("Pi package integration", () => {
   it("declares a Pi package manifest with extension and skill resources", () => {
@@ -39,27 +44,22 @@ describe("Pi package integration", () => {
       on() {},
     } as Parameters<typeof codebaseIndexPiExtension>[0]);
 
-    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
-      "codebase_context",
-      "codebase_search",
-      "codebase_peek",
-      "find_similar",
-      "implementation_lookup",
-      "index_codebase",
-      "index_status",
-      "index_health_check",
-      "index_metrics",
-      "index_logs",
-      "call_graph",
-      "call_graph_path",
-      "pr_impact",
-      "knowledge_base_list",
-      "knowledge_base_add",
-      "knowledge_base_remove",
-    ]));
+    const toolNames = tools.map((tool) => tool.name);
+    const toolNameSet = new Set(toolNames);
+    const coreToolNameSet = new Set(PORTABLE_TOOL_NAMES);
 
-    const searchParams = JSON.stringify(tools.find((tool) => tool.name === "codebase_search")?.parameters);
-    const peekParams = JSON.stringify(tools.find((tool) => tool.name === "codebase_peek")?.parameters);
+    expect(toolNames).toHaveLength(PI_TOOL_NAMES.length);
+    expect(toolNames).toEqual([...PI_TOOL_NAMES]);
+    expect(toolNameSet).toEqual(new Set(PI_TOOL_NAMES));
+    expect(new Set(toolNames.filter((toolName) => coreToolNameSet.has(toolName))).size).toBe(PORTABLE_TOOL_NAMES.length);
+    expect(toolNames).toContain(TOOL_NAME.PI_KNOWLEDGE_BASE_ADD);
+    expect(toolNames).toContain(TOOL_NAME.PI_KNOWLEDGE_BASE_LIST);
+    expect(toolNames).toContain(TOOL_NAME.PI_KNOWLEDGE_BASE_REMOVE);
+    expect(toolNames).not.toContain(TOOL_NAME.ADD_KNOWLEDGE_BASE);
+    expect(toolNames).not.toContain(TOOL_NAME.INDEX_VISUALIZE);
+
+    const searchParams = JSON.stringify(tools.find((tool) => tool.name === TOOL_NAME.CODEBASE_SEARCH)?.parameters);
+    const peekParams = JSON.stringify(tools.find((tool) => tool.name === TOOL_NAME.CODEBASE_PEEK)?.parameters);
     for (const params of [searchParams, peekParams]) {
       expect(params).toContain("blameAuthor");
       expect(params).toContain("blameSha");

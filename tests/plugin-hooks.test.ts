@@ -105,6 +105,7 @@ vi.mock("../src/routing-hints.js", () => {
 import plugin from "../src/index.js";
 import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
+import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";
 
 describe("plugin routing hint hook selection", () => {
   beforeEach(() => {
@@ -199,12 +200,11 @@ describe("plugin routing hint hook selection", () => {
     }
   });
 
-  it("registers codebase_context in the native OpenCode tool map", async () => {
+  it("registers the exact canonical OpenCode tool inventory", async () => {
     const runtime = await plugin({ directory: "/tmp/project" } as Parameters<typeof plugin>[0]);
 
-    expect(runtime.tool).toEqual(expect.objectContaining({
-      codebase_context: expect.any(Object),
-    }));
+    expect(Object.keys(runtime.tool ?? {})).toEqual([...OPENCODE_TOOL_NAMES]);
+    expect(new Set(Object.keys(runtime.tool ?? {})).size).toBe(OPENCODE_TOOL_NAMES.length);
   });
 
   it("reloads without waiting for a stuck watcher or starting a redundant index", async () => {
