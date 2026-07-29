@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-07-29
+
+### Changed
+
+- **Maintainable internal boundaries**: Split the TypeScript native facade, search and definition ranking, embedding batches, tool adapters and runtime, context packing and recovery, Git branch resolution, native Database bindings, and SQLite call-graph persistence into focused modules while preserving existing public APIs and behavior.
+- **Focused documentation**: Reorganized the README into a concise entry point with dedicated installation, configuration, and tool-reference guides, and refreshed architecture, contribution, troubleshooting, and language-support documentation to match the current source tree.
+
+### Fixed
+
+- **Stable filesystem path identities** (#178): Canonicalize physical, symlinked, missing-descendant, case-insensitive, and Unicode-equivalent paths before comparing project ownership and index state, preventing duplicate identities and incomplete cleanup across equivalent checkout paths. Added cross-platform path-semantics CI coverage and bundled the pinned Unicode case-folding dependency with its license notice.
+- **Watcher file-descriptor exhaustion** (#179): Fall back once from native file watching to polling after `EMFILE`, while preserving readiness, pending changes, restart behavior, asynchronous shutdown, and the native-watcher default.
+
 ## [0.20.0] - 2026-07-28
 
 ### Added
@@ -535,7 +547,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.1...HEAD
+[0.20.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.1...v0.20.0
+[0.19.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.0...v0.19.1
 [0.19.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...v0.18.0

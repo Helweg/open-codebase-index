@@ -12,8 +12,9 @@ describe("Claude Code plugin", () => {
       mcpServers?: Record<string, { command: string; args: string[] }>;
     };
 
+    const packageManifest = JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string };
     expect(pluginManifest.name).toBe("codebase-index");
-    expect(pluginManifest.version).toBe("0.20.0");
+    expect(pluginManifest.version).toBe(packageManifest.version);
     expect(pluginManifest.hooks).toBeUndefined();
     expect(pluginManifest.skills).toBe("./skills/");
 
@@ -38,11 +39,12 @@ describe("Claude Code plugin", () => {
       plugins: Array<{ name: string; source: string; version: string }>;
     };
 
+    const packageManifest = JSON.parse(fs.readFileSync("package.json", "utf-8")) as { version: string };
     expect(marketplace.name).toBe("helweg-plugins");
     expect(marketplace.owner.name).toBeTruthy();
     expect(marketplace.plugins).toContainEqual(expect.objectContaining({
       name: "codebase-index",
-      version: "0.20.0",
+      version: packageManifest.version,
     }));
   });
 });
