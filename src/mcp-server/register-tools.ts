@@ -39,6 +39,7 @@ import {
   searchCodebaseWithEffectiveness,
 } from "../tools/operations.js";
 import type { McpServerRuntime } from "./shared.js";
+import { TOOL_NAME } from "../tools/tool-names.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
   return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;
@@ -46,7 +47,7 @@ function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
 
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   server.tool(
-    "codebase_context",
+    TOOL_NAME.CODEBASE_CONTEXT,
     "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for a definition; or provide only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
     {
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
@@ -76,7 +77,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
 
   server.tool(
-    "codebase_search",
+    TOOL_NAME.CODEBASE_SEARCH,
     "FULL-CONTENT semantic retrieval. Use after codebase_peek when you need implementation text, not as the default first step. For exact identifiers or exhaustive matches use grep instead.",
     {
       query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
@@ -109,7 +110,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "codebase_peek",
+    TOOL_NAME.CODEBASE_PEEK,
     "DIRECT LOW-TOKEN semantic location lookup for unfamiliar-code discovery. Prefer codebase_context when the request may involve definitions or graph navigation; use this specialized tool when you only need conceptual locations.",
     {
       query: z.string().describe("Natural language description of what code you're looking for."),
@@ -141,7 +142,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "index_codebase",
+    TOOL_NAME.INDEX_CODEBASE,
     "Create or refresh the semantic index. Call index_status first when readiness is unknown, then use this tool only if the index is missing, stale, or incompatible. Incremental by default; force=true rebuilds everything.",
     {
       force: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Force reindex even if already indexed"),
@@ -155,7 +156,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "index_status",
+    TOOL_NAME.INDEX_STATUS,
     "START HERE once per repository task when index readiness or freshness is unknown. Reports whether semantic retrieval is ready, chunk counts, compatibility, and the embedding provider. If ready, continue with codebase_peek or implementation_lookup; otherwise run index_codebase.",
     {},
     async () => {
@@ -165,7 +166,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "index_health_check",
+    TOOL_NAME.INDEX_HEALTH_CHECK,
     "Check index health and remove stale entries from deleted files. Run this to clean up the index after files have been deleted.",
     {},
     async () => {
@@ -175,7 +176,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "index_metrics",
+    TOOL_NAME.INDEX_METRICS,
     "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Metrics are memory-only. Set reset=true to clear them before reading. Operational metrics require debug.enabled=true and debug.metrics=true. Privacy-safe aggregates require only effectivenessMetrics.enabled=true.",
     {
       reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
@@ -187,7 +188,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "index_logs",
+    TOOL_NAME.INDEX_LOGS,
     "Get recent debug logs from the codebase indexer. Requires debug.enabled=true in config.",
     {
       limit: allowNullAsUndefined(z.number().optional().default(20)).describe("Maximum number of log entries to return"),
@@ -205,7 +206,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "find_similar",
+    TOOL_NAME.FIND_SIMILAR,
     "Use when you already have a code snippet and need analogous implementations, duplicates, patterns, or refactoring candidates. For a natural-language concept without example code, start with codebase_peek instead.",
     {
       code: z.string().describe("The code snippet to find similar code for"),
@@ -233,7 +234,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "implementation_lookup",
+    TOOL_NAME.IMPLEMENTATION_LOOKUP,
     "FIRST TOOL only for known-symbol definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Do not use for callers, callees, dependency paths, or code flow; use codebase_context with direction or from/to for those questions.",
     {
       query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
@@ -248,7 +249,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "call_graph",
+    TOOL_NAME.CALL_GRAPH,
     "Find direct callers or callees by function or method name. Unique names resolve automatically; when duplicate names are reported, retry with filePath."
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
     {
@@ -269,7 +270,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
 
   server.tool(
-    "call_graph_path",
+    TOOL_NAME.CALL_GRAPH_PATH,
     "Find the shortest known call path between two named functions or methods. Unique names resolve automatically; when duplicate endpoints are reported, retry with fromFilePath or toFilePath.",
     {
       from: z.string().describe("Source function/method name (starting point)"),
@@ -284,7 +285,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
   );
   server.tool(
-    "pr_impact",
+    TOOL_NAME.PR_IMPACT,
     "FIRST TOOL for pull-request or branch blast-radius questions. Analyzes changed files, affected symbols, transitive dependencies, communities, hub nodes, conflicts, and risk before merging.",
     {
       pr: allowNullAsUndefined(z.number().optional()).describe("Pull request number to analyze"),

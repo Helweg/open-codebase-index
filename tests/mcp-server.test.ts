@@ -17,6 +17,7 @@ import {
   initializeTools,
   searchCodebaseWithEffectiveness,
 } from "../src/tools/operations.js";
+import { MCP_TOOL_NAMES } from "../src/tools/tool-names.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
@@ -404,27 +405,12 @@ describe("MCP server tools and prompts", () => {
   it("should register all 13 tools", async () => {
     const tools = await client.listTools();
 
-    expect(tools.tools).toHaveLength(13);
+    expect(tools.tools).toHaveLength(MCP_TOOL_NAMES.length);
 
-    const toolNames = tools.tools.map(t => t.name).sort();
-    const expectedNames = [
-      "call_graph",
-      "call_graph_path",
-      "codebase_context",
-      "codebase_peek",
-      "codebase_search",
-      "find_similar",
-      "implementation_lookup",
-      "pr_impact",
+    const toolNames = tools.tools.map((tool) => tool.name);
+    const expectedToolNames = [...MCP_TOOL_NAMES];
 
-      "index_codebase",
-      "index_health_check",
-      "index_logs",
-      "index_metrics",
-      "index_status",
-    ].sort();
-
-    expect(toolNames).toEqual(expectedNames);
+    expect(toolNames).toEqual(expectedToolNames);
   });
 
   it("should expose self-routing descriptions even when the client ignores server instructions", async () => {
