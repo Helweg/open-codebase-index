@@ -1097,6 +1097,12 @@ describe("MCP server tools and prompts", () => {
 
     expect(indexerMockState.constructorArgs.length).toBeGreaterThanOrEqual(2);
     expect(indexerMockState.constructorArgs.at(-1)).toEqual(["/tmp/test-project", runtimeConfig]);
+    const forcedIndexerIndex = indexerMockState.instances.findIndex(
+      (instance) => instance.forceIndex.mock.calls.length > 0,
+    );
+    expect(forcedIndexerIndex).toBeGreaterThanOrEqual(0);
+    expect(indexerMockState.instances[forcedIndexerIndex]?.forceIndex).toHaveBeenCalledOnce();
+    expect(indexerMockState.constructorArgs[forcedIndexerIndex]).toEqual(["/tmp/test-project", runtimeConfig]);
     expect(indexerMockState.instances[0]?.initialize).not.toHaveBeenCalled();
     expect(indexerMockState.instances[0]?.getStatus).not.toHaveBeenCalled();
   });
