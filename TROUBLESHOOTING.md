@@ -198,12 +198,20 @@ Or run `/index force`.
 Only use force reindex for a full rebuild. If `/status` reports failed embedding batches, fix the provider/auth issue first and rerun `/index` normally.
 
 ### Reset Everything
-Delete the entire index directory:
+Delete the index directory for your host only after confirming you no longer need the existing index:
+
 ```bash
+# OpenCode project index
 rm -rf .opencode/index/
+
+# Codex, Pi, or Jcode project index
+rm -rf .codebase-index/index/
+
+# Claude project index
+rm -rf .claude/index/
 ```
 
-The next `/index` will rebuild from scratch.
+The next indexing request will rebuild from scratch. Prefer `index_health_check` and a normal incremental index before deleting the entire index.
 
 ---
 

@@ -18,14 +18,7 @@ This document explains the architecture of opencode-codebase-index, including da
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              OpenCode Agent                                 │
-│                                                                             │
-│  Tools: codebase_search, codebase_peek, find_similar, call_graph,           │
-│         index_codebase, index_status, index_health_check, index_metrics,    │
-│         index_logs, add_knowledge_base, list_knowledge_bases,               │
-│         remove_knowledge_base                                               │
-│  Commands: /definition, /peek, /search, /find, /call-graph, /index,        │
-│            /reindex, /status                                                │
+│  Interfaces: OpenCode, Pi, MCP hosts, slash commands, and skills            │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
@@ -50,13 +43,14 @@ This document explains the architecture of opencode-codebase-index, including da
                                       │
                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Storage Layer                                  │
-│                                                                             │
-│  .opencode/index/                                                           │
-│  ├── codebase.db           # SQLite: embeddings, chunks, branch catalog     │
-│  ├── vectors.usearch       # Vector index (uSearch)                         │
-│  ├── inverted-index.json   # BM25 keyword index                             │
-│  └── file-hashes.json      # File change detection                          │
+│  Host-specific project storage                                              │
+│  ├── .opencode/index/      # OpenCode                                        │
+│  ├── .claude/index/        # Claude                                          │
+│  └── .codebase-index/index/ # Codex, Pi, Jcode                              │
+│      ├── SQLite metadata and branch catalogs                                │
+│      ├── usearch vector artifacts                                            │
+│      ├── BM25 inverted-index artifacts                                       │
+│      └── index metadata and file-state artifacts                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -140,13 +134,15 @@ The central orchestrator. Responsibilities:
 - Handles rate limiting and retries
 - Tracks per-file hashes for delta detection
 
-Key methods:
+Key public methods include:
+
 | Method | Purpose |
 |--------|---------|
-| `index()` | Main entry: orchestrates full indexing flow |
-| `searchSemantic()` | Pure vector similarity search |
-| `searchHybrid()` | Combines semantic + BM25 |
-| `cleanup()` | Garbage collection for orphaned data |
+| `index()` | Orchestrate full or incremental indexing |
+| `search()` | Run branch-aware hybrid retrieval and result assembly |
+| `findSimilar()` | Find semantically similar code for a snippet |
+| `getStatus()` | Report readiness, compatibility, and index metadata |
+| `healthCheck()` | Inspect and clean stale index state |
 
 ### Embedding Provider (`src/embeddings/`)
 
@@ -159,7 +155,7 @@ Abstracts different AI embedding APIs:
 | Google | Gemini API | 5 concurrent, 200ms delay |
 | Ollama | Local REST | 5 concurrent, no delay |
 
-Detection order: GitHub Copilot → OpenAI → Google → Ollama
+Detection order: Ollama → GitHub Copilot → OpenAI → Google
 
 ### Native Module (`native/src/`)
 
