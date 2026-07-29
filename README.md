@@ -209,6 +209,7 @@ Native changes require Rust and `npm run build:native`. See [Contributing](CONTR
 - [Evaluation](docs/evaluation.md)
 - [Cross-repository benchmarking](docs/benchmarking-cross-repo.md)
 - [Adding language support](docs/adding-language-support.md)
+- [Future `open-codebase-index` rename plan](docs/rename-to-open-codebase-index.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 - [Changelog](CHANGELOG.md)
