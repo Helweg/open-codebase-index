@@ -55,6 +55,10 @@ function createIndexerConfig(): ReturnType<typeof parseConfig> {
   });
 }
 
+function migrationMetadataKey(prefix: string, catalogIdentity = "default"): string {
+  return `${prefix}.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
+
   function buildFileSymbols(filePath: string, content: string): SymbolData[] {
     const parsed = parseFiles([{ path: filePath, content }])[0];
     const symbols: SymbolData[] = [];
@@ -451,7 +455,7 @@ function buildReport(): string {
         }
 
         const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        database.deleteMetadata("index.callGraphResolutionVersion");
+        database.deleteMetadata(migrationMetadataKey("index.callGraphResolutionVersion"));
         database.close();
         const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
 
@@ -523,7 +527,7 @@ function caller(): string { return namespace\\helper(); }
         }
 
         const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        database.setMetadata("index.callGraphResolutionVersion", "3");
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "3");
         database.close();
         const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
         indexer = new Indexer(projectDir, config, "opencode");
@@ -1370,7 +1374,7 @@ const math = @import("math.zig");
       }
 
       const database = new Database(path.join(tempDir, ".opencode", "index", "codebase.db"));
-      database.setMetadata("index.callGraphResolutionVersion", "2");
+      database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "2");
       database.close();
       const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
 
@@ -1709,7 +1713,7 @@ struct Runner {
           path.join(tempDir, ".opencode", "index", "codebase.db"),
         );
         database.deleteSymbolsByFile("Runner.swift");
-        database.deleteMetadata("index.parser.swiftVersion");
+        database.deleteMetadata(migrationMetadataKey("index.parser.swiftVersion"));
         database.close();
         expect(
           (await indexer.getSymbolsForBranch()).some(
@@ -1920,7 +1924,7 @@ kernel void long_kernel(const device float* input [[buffer(0)]],
           path.join(tempDir, ".opencode", "index", "codebase.db"),
         );
         database.deleteSymbolsByFile("representative.metal");
-        database.deleteMetadata("index.parser.metalVersion");
+        database.deleteMetadata(migrationMetadataKey("index.parser.metalVersion"));
         database.close();
         expect(
           (await indexer.getSymbolsForBranch()).some(

@@ -1414,37 +1414,50 @@ export class Indexer {
     return `index.forceReembed.${this.projectIdentityHash}`;
   }
 
-  private getCallGraphResolutionMetadataKey(): string {
-    if (this.config.scope !== "global") {
-      return "index.callGraphResolutionVersion";
-    }
-
-    return `index.callGraphResolutionVersion.${this.projectIdentityHash}`;
+  private getBranchMigrationMetadataKey(
+    prefix: string,
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
+    return `${prefix}.${hashContent(branchKey).slice(0, 24)}`;
   }
 
-  private getSwiftParserVersionMetadataKey(): string {
-    const key = "index.parser.swiftVersion";
-    if (this.config.scope !== "global") {
-      return key;
-    }
-
-    return `${key}.${this.projectIdentityHash}`;
+  private getCallGraphResolutionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
   }
 
-  private getMetalParserVersionMetadataKey(): string {
-    const key = "index.parser.metalVersion";
-    if (this.config.scope !== "global") {
-      return key;
-    }
+  private getSwiftParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.swiftVersion", catalogIdentity);
+  }
 
-    return `${key}.${this.projectIdentityHash}`;
+  private getMetalParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.metalVersion", catalogIdentity);
   }
 
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
-    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
-    return `index.symbolExtractorVersion.${hashContent(branchKey).slice(0, 24)}`;
+    return this.getBranchMigrationMetadataKey("index.symbolExtractorVersion", catalogIdentity);
+  }
+
+  private areBranchMigrationVersionsCurrent(
+    database: Database,
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): boolean {
+    return database.getMetadata(this.getCallGraphResolutionMetadataKey(catalogIdentity))
+      === CALL_GRAPH_RESOLUTION_VERSION
+      && database.getMetadata(this.getSwiftParserVersionMetadataKey(catalogIdentity))
+      === SWIFT_PARSER_VERSION
+      && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
+      === METAL_PARSER_VERSION
+      && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
+      === SYMBOL_EXTRACTOR_VERSION;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -3206,9 +3219,8 @@ export class Indexer {
       const branchKey = this.getBranchCatalogKey();
       const alreadyIndexed = database.getBranchChunkIds(branchKey).length > 0
         && database.getBranchSymbolIds(branchKey).length > 0;
-      const symbolsCurrent = database.getMetadata(this.getSymbolExtractorVersionMetadataKey())
-        === SYMBOL_EXTRACTOR_VERSION;
-      if (alreadyIndexed && symbolsCurrent && this.getStoredBranchCommit(database) === normalizedCommit) {
+      const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database);
+      if (alreadyIndexed && migrationsCurrent && this.getStoredBranchCommit(database) === normalizedCommit) {
         return { prepared: false };
       }
 
@@ -4256,6 +4268,22 @@ export class Indexer {
     return intersection / union;
   }
 
+  private getBranchPrefilterState(
+    database: Database,
+    branchChunkIds: Set<string> | null,
+  ): {
+    hasInitializedBranchCatalog: boolean;
+    shouldPrefilterByBranch: boolean;
+  } {
+    const hasInitializedBranchCatalog = branchChunkIds !== null
+      && database.getAllBranches().length > 0;
+    return {
+      hasInitializedBranchCatalog,
+      shouldPrefilterByBranch: branchChunkIds !== null
+        && (this.config.scope === "global" || hasInitializedBranchCatalog),
+    };
+  }
+
   async search(
     query: string,
     limit?: number,
@@ -4344,21 +4372,14 @@ export class Indexer {
     }
 
     const prefilterStartTime = performance.now();
-    const shouldPrefilterByBranch = branchChunkIds !== null && (this.config.scope === "global" || branchChunkIds.size > 0);
-    const allowBranchPrefilterFallback = this.config.scope !== "global";
-    const prefilteredSemantic = shouldPrefilterByBranch && branchChunkIds
+    const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
+      this.getBranchPrefilterState(database, branchChunkIds);
+    const semanticCandidates = shouldPrefilterByBranch && branchChunkIds
       ? semanticResults.filter((r) => branchChunkIds.has(r.id))
       : semanticResults;
-    const prefilteredKeyword = shouldPrefilterByBranch && branchChunkIds
+    const keywordCandidates = shouldPrefilterByBranch && branchChunkIds
       ? keywordResults.filter((r) => branchChunkIds.has(r.id))
       : keywordResults;
-
-    const semanticCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0)
-      ? semanticResults
-      : prefilteredSemantic;
-    const keywordCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && keywordResults.length > 0 && prefilteredKeyword.length === 0)
-      ? keywordResults
-      : prefilteredKeyword;
     const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
       matchesHardSearchFilters(candidate, options, this.projectRoot)
     );
@@ -4367,20 +4388,8 @@ export class Indexer {
     );
     const prefilterMs = performance.now() - prefilterStartTime;
 
-    if (this.config.scope !== "global" && branchChunkIds && branchChunkIds.size === 0) {
+    if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
-        branch: this.currentBranch,
-      });
-    }
-
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no semantic overlap, using unfiltered semantic candidates", {
-        branch: this.currentBranch,
-      });
-    }
-
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && keywordResults.length > 0 && prefilteredKeyword.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no keyword overlap, using unfiltered keyword candidates", {
         branch: this.currentBranch,
       });
     }
@@ -4640,23 +4649,7 @@ export class Indexer {
       }
     }
 
-    const hasSwiftFiles = Array.from(currentFileHashes.keys()).some(
-      (filePath) => path.extname(filePath).toLowerCase() === ".swift",
-    );
-    const hasMetalFiles = Array.from(currentFileHashes.keys()).some(
-      (filePath) => path.extname(filePath).toLowerCase() === ".metal",
-    );
-    const hasCallGraphMigrationFiles = Array.from(currentFileHashes.keys()).some((filePath) => {
-      const extension = path.extname(filePath).toLowerCase();
-      return extension === ".php" || extension === ".c" || extension === ".cc" || extension === ".cpp" || extension === ".cxx";
-    });
-    if (
-      (hasSwiftFiles && database.getMetadata(this.getSwiftParserVersionMetadataKey()) !== SWIFT_PARSER_VERSION)
-      || (hasMetalFiles && database.getMetadata(this.getMetalParserVersionMetadataKey()) !== METAL_PARSER_VERSION)
-      || database.getMetadata(this.getSymbolExtractorVersionMetadataKey()) !== SYMBOL_EXTRACTOR_VERSION
-      || (hasCallGraphMigrationFiles
-        && database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION)
-    ) {
+    if (!this.areBranchMigrationVersionsCurrent(database)) {
       return { readable: true, current: false, reason: "migration-required" };
     }
 
@@ -5224,24 +5217,15 @@ export class Indexer {
     }
 
     const prefilterStartTime = performance.now();
-    const shouldPrefilterByBranch = branchChunkIds !== null && (this.config.scope === "global" || branchChunkIds.size > 0);
-    const allowBranchPrefilterFallback = this.config.scope !== "global";
-    const prefilteredSemantic = shouldPrefilterByBranch && branchChunkIds
+    const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
+      this.getBranchPrefilterState(database, branchChunkIds);
+    const semanticCandidates = shouldPrefilterByBranch && branchChunkIds
       ? semanticResults.filter((r) => branchChunkIds.has(r.id))
       : semanticResults;
-    const semanticCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0)
-      ? semanticResults
-      : prefilteredSemantic;
     const prefilterMs = performance.now() - prefilterStartTime;
 
-    if (this.config.scope !== "global" && branchChunkIds && branchChunkIds.size === 0) {
+    if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
-        branch: this.currentBranch,
-      });
-    }
-
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no semantic overlap, using unfiltered semantic candidates", {
         branch: this.currentBranch,
       });
     }
@@ -5587,11 +5571,9 @@ export class Indexer {
     const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
     const catalogIdentityMatches = storedCommit === expectedCommit;
 
-    const symbolsCurrent = database.getMetadata(
-      this.getSymbolExtractorVersionMetadataKey(catalogIdentity),
-    ) === SYMBOL_EXTRACTOR_VERSION;
+    const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database, catalogIdentity);
 
-    if (branchSymbols.length === 0 || !catalogIdentityMatches || !symbolsCurrent) {
+    if (branchSymbols.length === 0 || !catalogIdentityMatches || !migrationsCurrent) {
       if (!resolvedBranch || resolvedBranch === "default") {
         throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
       }

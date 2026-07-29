@@ -12,13 +12,44 @@ vi.mock("../src/tools/operations.js", () => ({
   refreshIndexerForDirectory: operationMocks.refreshIndexerForDirectory,
 }));
 
-vi.mock("../src/git/index.js", () => ({
+vi.mock("../src/git/index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/git/index.js")>()),
   isGitRepo: vi.fn(() => false),
-  resolveWorktreeMainRepoRoot: vi.fn(() => null),
 }));
 
 import { parseConfig } from "../src/config/schema.js";
 import { createWatcherWithIndexer } from "../src/watcher/index.js";
+
+function createLinkedWorktree(root: string): {
+  configPath: string;
+  worktreeDir: string;
+} {
+  const mainRepoDir = path.join(root, "main-repo");
+  const worktreeDir = path.join(root, "feature-worktree");
+  const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
+  const configPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
+  mkdirSync(worktreeGitDir, { recursive: true });
+  mkdirSync(worktreeDir, { recursive: true });
+  mkdirSync(path.dirname(configPath), { recursive: true });
+  writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
+  writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
+  writeFileSync(configPath, JSON.stringify({ include: ["**/*.ts"] }));
+  return { configPath, worktreeDir };
+}
+
+function createLinkedWorktreeWatcher(root: string) {
+  const { configPath, worktreeDir } = createLinkedWorktree(root);
+  const indexer = {
+    index: vi.fn().mockResolvedValue(undefined),
+  };
+  const watcher = createWatcherWithIndexer(
+    () => indexer,
+    worktreeDir,
+    parseConfig({ include: ["**/*.ts"] }),
+    "opencode",
+  );
+  return { configPath, indexer, watcher, worktreeDir };
+}
 
 describe("watcher config refresh", () => {
   let tempDir: string;
@@ -134,6 +165,68 @@ describe("watcher config refresh", () => {
     }, { timeout: 2500 });
 
     await watcher.stop();
+  });
+
+  it("refreshes a linked worktree when its inherited project config changes", async () => {
+    const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
+
+    try {
+      await watcher.whenReady();
+      writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"] }));
+
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          worktreeDir,
+          "opencode",
+          undefined,
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: 2500 });
+    } finally {
+      await watcher.stop();
+    }
+  });
+
+  it("refreshes a linked worktree when its inherited project config is removed", async () => {
+    const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
+
+    try {
+      await watcher.whenReady();
+      rmSync(configPath);
+
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          worktreeDir,
+          "opencode",
+          undefined,
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: 2500 });
+    } finally {
+      await watcher.stop();
+    }
+  });
+
+  it("refreshes a linked worktree when a local project override is created", async () => {
+    const { indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
+    const localConfigPath = path.join(worktreeDir, ".opencode", "codebase-index.json");
+
+    try {
+      await watcher.whenReady();
+      mkdirSync(path.dirname(localConfigPath), { recursive: true });
+      writeFileSync(localConfigPath, JSON.stringify({ include: ["feature/**/*.ts"] }));
+
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          worktreeDir,
+          "opencode",
+          undefined,
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: 2500 });
+    } finally {
+      await watcher.stop();
+    }
   });
 
   it("refreshes from explicit config path when configured", async () => {

@@ -24,8 +24,8 @@ export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private projectRoot: string;
   private config: CodebaseIndexConfig;
-  private host: HostMode;
   private configPath: string | undefined;
+  private projectConfigPaths: string[];
   private pendingChanges: Map<string, FileChangeType> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
   private debounceMs = 1000;
@@ -38,8 +38,13 @@ export class FileWatcher {
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
     this.config = config;
-    this.host = host;
     this.configPath = options.configPath;
+    this.projectConfigPaths = options.configPath
+      ? [options.configPath]
+      : [
+          resolveProjectConfigPath(projectRoot, host),
+          resolveWritableProjectConfigPath(projectRoot, host),
+        ];
   }
 
   start(handler: ChangeHandler): void {
@@ -61,7 +66,19 @@ export class FileWatcher {
 
   private createWatcher(usePolling = false): void {
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
-    const watchTargets = this.configPath ? [this.projectRoot, this.configPath] : this.projectRoot;
+    let watchTargets: string | string[] = this.projectRoot;
+    if (this.configPath) {
+      watchTargets = [this.projectRoot, this.configPath];
+    } else {
+      const projectConfigPath = this.projectConfigPaths[0];
+      const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
+      const configIsOutsideProject = relativeConfigPath === ".."
+        || relativeConfigPath.startsWith(`..${path.sep}`)
+        || path.isAbsolute(relativeConfigPath);
+      if (configIsOutsideProject) {
+        watchTargets = [this.projectRoot, projectConfigPath];
+      }
+    }
 
     const watcherOptions = {
       ignored: (filePath: string) => {
@@ -197,14 +214,9 @@ export class FileWatcher {
   }
 
   private getProjectConfigRelativePaths(): string[] {
-    if (this.configPath) {
-      return [path.normalize(path.relative(this.projectRoot, this.configPath))];
-    }
-
-    return [
-      resolveProjectConfigPath(this.projectRoot, this.host),
-      resolveWritableProjectConfigPath(this.projectRoot, this.host),
-    ].map((configPath) => path.normalize(path.relative(this.projectRoot, configPath)));
+    return this.projectConfigPaths.map(
+      (configPath) => path.normalize(path.relative(this.projectRoot, configPath)),
+    );
   }
 
   private scheduleFlush(): void {

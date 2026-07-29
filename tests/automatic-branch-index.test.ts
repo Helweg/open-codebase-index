@@ -36,6 +36,10 @@ function symbolExtractorMetadataKey(catalogIdentity: string): string {
   return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
+function migrationMetadataKey(prefix: string, catalogIdentity: string): string {
+  return `${prefix}.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
+
 describe("automatic branch index preparation", () => {
   let tempDir: string;
   let repo: string;
@@ -258,6 +262,69 @@ function changed(): number {
     const migratedDb = await database();
     expect(migratedDb.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
     expect(migratedDb.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
+  });
+
+  it("reparses only the cached branch whose parser migration marker is stale", async () => {
+    git(repo, ["checkout", "feature"]);
+    fs.writeFileSync(
+      path.join(repo, "src", "feature.swift"),
+      "func featureSwiftMarker() -> Int { return 42 }\n",
+    );
+    git(repo, ["add", "--", "src/feature.swift"]);
+    git(repo, ["commit", "-m", "add feature swift source"]);
+    featureCommit = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", "main"]);
+
+    await indexer.getPrImpact({ branch: "feature" });
+    const status = await indexer.getStatus();
+    await indexer.close();
+
+    const swiftPrefix = "index.parser.swiftVersion";
+    const directDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    expect(
+      directDatabase.getSymbolsByFile("src/feature.swift").some(
+        (symbol) => symbol.name === "featureSwiftMarker",
+      ),
+    ).toBe(true);
+    directDatabase.deleteSymbolsByFile("src/feature.swift");
+    directDatabase.setMetadata(migrationMetadataKey(swiftPrefix, "feature"), "stale");
+    directDatabase.close();
+
+    git(repo, ["checkout", "feature"]);
+    indexer = new Indexer(repo, config);
+    await expect(indexer.getIndexFreshness()).resolves.toEqual({
+      readable: true,
+      current: false,
+      reason: "migration-required",
+    });
+    await indexer.close();
+    git(repo, ["checkout", "main"]);
+
+    indexer = new Indexer(repo, config);
+    const fetchesBeforeMigration = fetchSpy.mock.calls.length;
+    const migrated = await indexer.getPrImpact({ branch: "feature" });
+
+    expect(migrated.indexPreparation).toMatchObject({
+      prepared: true,
+      branch: "feature",
+      commit: featureCommit,
+    });
+    expect(fetchSpy.mock.calls.length).toBe(fetchesBeforeMigration);
+
+    const migratedDb = await database();
+    expect(
+      migratedDb.getSymbolsByFile("src/feature.swift").some(
+        (symbol) => symbol.name === "featureSwiftMarker",
+      ),
+    ).toBe(true);
+    for (const [prefix, version] of [
+      ["index.callGraphResolutionVersion", "4"],
+      [swiftPrefix, "1"],
+      ["index.parser.metalVersion", "1"],
+    ] as const) {
+      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "main"))).toBe(version);
+      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "feature"))).toBe(version);
+    }
   });
 
   it("reindexes a moved branch OID, replaces stale catalog data, and preserves primary data", async () => {

@@ -429,6 +429,97 @@ describe("worktree fallback (issue #60)", () => {
     }
   });
 
+  it("keeps shared project search results strictly scoped to the active branch", async () => {
+    const mainSourcePath = path.join(mainRepoDir, "src", "main-only.ts");
+    const featureSourcePath = path.join(worktreeDir, "src", "feature-only.ts");
+    fs.mkdirSync(path.dirname(mainSourcePath), { recursive: true });
+    fs.mkdirSync(path.dirname(featureSourcePath), { recursive: true });
+    fs.writeFileSync(
+      mainSourcePath,
+      "export function mainOnlyBranchMarker() { return 'main-only'; }\n",
+      "utf-8",
+    );
+    fs.writeFileSync(
+      featureSourcePath,
+      "export function featureOnlyBranchMarker() { return 'feature-only'; }\n",
+      "utf-8",
+    );
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      const texts = Array.isArray(body.input) ? body.input : [];
+      return new Response(JSON.stringify({
+        data: texts.map((text, index) => ({
+          embedding: Array.from(
+            { length: 8 },
+            (_, dimension) => ((text.length + index * 13 + dimension * 17) % 997) / 997,
+          ),
+        })),
+        usage: { total_tokens: Math.max(1, texts.length * 8) },
+      }), { status: 200 });
+    });
+
+    const mainIndexer = new Indexer(mainRepoDir, parseConfig(loadMergedConfig(mainRepoDir)));
+    const worktreeIndexer = new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+
+    try {
+      await mainIndexer.index();
+      await worktreeIndexer.index();
+
+      const runtime = worktreeIndexer as unknown as {
+        database: Database;
+        store: VectorStore;
+      };
+      const featureChunkIds = new Set(runtime.database.getBranchChunkIds("feature/x/y"));
+      const mainChunkId = runtime.database.getBranchChunkIds("main").find(
+        (chunkId) => !featureChunkIds.has(chunkId),
+      );
+      expect(mainChunkId).toBeDefined();
+      const mainMetadata = runtime.store.getMetadata(mainChunkId!);
+      expect(mainMetadata).toBeDefined();
+      vi.spyOn(runtime.store, "search").mockReturnValue([{
+        id: mainChunkId!,
+        score: 0.99,
+        metadata: mainMetadata!,
+      }]);
+
+      await expect(
+        worktreeIndexer.search("mainOnlyBranchMarker", 1, { metadataOnly: true }),
+      ).resolves.toEqual([]);
+      await expect(
+        worktreeIndexer.findSimilar("function mainOnlyBranchMarker() {}", 1),
+      ).resolves.toEqual([]);
+
+      const unscopedSearch = await worktreeIndexer.search(
+        "mainOnlyBranchMarker",
+        1,
+        { metadataOnly: true, filterByBranch: false },
+      );
+      const unscopedSimilar = await worktreeIndexer.findSimilar(
+        "function mainOnlyBranchMarker() {}",
+        1,
+        { filterByBranch: false },
+      );
+      expect(unscopedSearch[0]?.name).toBe("mainOnlyBranchMarker");
+      expect(unscopedSimilar[0]?.name).toBe("mainOnlyBranchMarker");
+
+      for (const branch of runtime.database.getAllBranches()) {
+        runtime.database.clearBranch(branch);
+        runtime.database.clearBranchSymbols(branch);
+      }
+      expect(runtime.database.getAllBranches()).toEqual([]);
+      expect(
+        (await worktreeIndexer.search("mainOnlyBranchMarker", 1, { metadataOnly: true }))[0]?.name,
+      ).toBe("mainOnlyBranchMarker");
+      expect(
+        (await worktreeIndexer.findSimilar("function mainOnlyBranchMarker() {}", 1))[0]?.name,
+      ).toBe("mainOnlyBranchMarker");
+    } finally {
+      await Promise.all([mainIndexer.close(), worktreeIndexer.close()]);
+      fetchSpy.mockRestore();
+    }
+  });
+
   it("keeps an explicit worktree-local config and its project index local", () => {
     fs.mkdirSync(path.join(worktreeDir, ".opencode"), { recursive: true });
     fs.writeFileSync(

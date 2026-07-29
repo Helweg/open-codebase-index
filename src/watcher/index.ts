@@ -35,6 +35,7 @@ export function createWatcherWithIndexer(
   options: WatcherOptions = {},
 ): CombinedWatcher {
   const fileWatcher = new FileWatcher(projectRoot, config, host, options);
+  const configPaths = getConfigPaths(projectRoot, host, options);
   configureAutoIndex(projectRoot, host, parseConfig(config), getIndexer);
   let stopped = false;
   const requestReindex = () => {
@@ -53,7 +54,6 @@ export function createWatcherWithIndexer(
     const hasDelete = changes.some((c) => c.type === "unlink");
 
     if (hasAddOrChange || hasDelete) {
-      const configPaths = getConfigPaths(projectRoot, host, options);
       if (changes.some((change) => configPaths.includes(pathNormalize(change.path)))) {
         const parsedConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
         const refreshedConfig = refreshIndexerForDirectory(projectRoot, host, parsedConfig);
