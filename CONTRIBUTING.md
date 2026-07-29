@@ -31,7 +31,7 @@ Use this when you just want the shortest path to a good PR:
    ```
 3. **Install dependencies**:
    ```bash
-   npm install
+   npm ci
    ```
 4. **Build the project**:
    ```bash
@@ -42,7 +42,7 @@ Use this when you just want the shortest path to a good PR:
 
 ### Prerequisites
 
-- Node.js >= 18
+- Node.js >= 20
 - Rust toolchain (for native module)
 - npm
 
