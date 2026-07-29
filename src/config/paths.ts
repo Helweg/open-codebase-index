@@ -57,10 +57,30 @@ export function getHostProjectIndexRelativePath(host: HostMode): string {
   return getProjectIndexRelativePath(host);
 }
 
+export function getProjectConfigCandidatePaths(
+  projectRoot: string,
+  host: HostMode,
+): string[] {
+  const candidates = [path.join(projectRoot, getProjectConfigRelativePath(host))];
+  if (host !== "opencode") {
+    candidates.push(path.join(projectRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH));
+  }
+
+  const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
+  if (mainRepoRoot) {
+    candidates.push(path.join(mainRepoRoot, getProjectConfigRelativePath(host)));
+    if (host !== "opencode") {
+      candidates.push(path.join(mainRepoRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH));
+    }
+  }
+
+  return [...new Set(candidates)];
+}
+
 export function isProjectIndexPathOwnedByProject(
   projectRoot: string,
   indexPath: string,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): boolean {
   const projectRoots = [projectRoot];
   const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
@@ -151,31 +171,9 @@ export function resolveGlobalIndexPath(host: HostMode): string {
 }
 
 export function resolveProjectConfigPath(projectRoot: string, host: HostMode): string {
-  const hostConfigPath = path.join(projectRoot, getProjectConfigRelativePath(host));
-  if (existsSync(hostConfigPath)) {
-    return hostConfigPath;
-  }
-
-  if (host !== "opencode") {
-    const legacyConfigPath = path.join(projectRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH);
-    if (existsSync(legacyConfigPath)) {
-      return legacyConfigPath;
-    }
-  }
-
-  const hostFallback = resolveWorktreeFallbackPath(projectRoot, getProjectConfigRelativePath(host));
-  if (hostFallback) {
-    return hostFallback;
-  }
-
-  if (host !== "opencode") {
-    const legacyFallback = resolveWorktreeFallbackPath(projectRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH);
-    if (legacyFallback) {
-      return legacyFallback;
-    }
-  }
-
-  return hostConfigPath;
+  const candidates = getProjectConfigCandidatePaths(projectRoot, host);
+  return candidates.find((candidate) => existsSync(candidate))
+    ?? path.join(projectRoot, getProjectConfigRelativePath(host));
 }
 
 export function resolveWritableProjectConfigPath(projectRoot: string, host: HostMode): string {

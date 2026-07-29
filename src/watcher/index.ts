@@ -3,7 +3,7 @@ import type { HostMode } from "../config/host.js";
 import type { Indexer } from "../indexer/index.js";
 
 import { parseConfig } from "../config/schema.js";
-import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
+import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { loadConfigFile } from "../config/merger.js";
 import { isGitRepo } from "../git/index.js";
 import { refreshIndexerForDirectory } from "../tools/operations.js";
@@ -102,8 +102,7 @@ function getConfigPaths(projectRoot: string, host: HostMode, options: WatcherOpt
     return [pathNormalize(options.configPath)];
   }
 
-  return [
-    resolveProjectConfigPath(projectRoot, host),
-    resolveWritableProjectConfigPath(projectRoot, host),
-  ].map((configPath) => pathNormalize(configPath));
+  return getProjectConfigCandidatePaths(projectRoot, host).map(
+    (configPath) => pathNormalize(configPath),
+  );
 }

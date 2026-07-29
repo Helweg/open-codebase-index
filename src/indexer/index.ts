@@ -4284,6 +4284,58 @@ export class Indexer {
     };
   }
 
+  private searchCandidatesWithBranchPrefilter<T>(
+    initialLimit: number,
+    totalCount: number,
+    branchChunkIds: Set<string> | null,
+    shouldPrefilterByBranch: boolean,
+    search: (limit: number) => T[],
+    getChunkId: (candidate: T) => string,
+  ): T[] {
+    const normalizedLimit = Math.max(0, Math.floor(initialLimit));
+    if (normalizedLimit === 0) return [];
+    if (!shouldPrefilterByBranch || !branchChunkIds) {
+      return search(normalizedLimit);
+    }
+
+    const targetCount = Math.min(normalizedLimit, branchChunkIds.size);
+    if (targetCount === 0 || totalCount === 0) return [];
+
+    let requestedLimit = Math.min(normalizedLimit, totalCount);
+    while (true) {
+      const results = search(requestedLimit);
+      const branchResults = results.filter((candidate) => branchChunkIds.has(getChunkId(candidate)));
+      if (
+        branchResults.length >= targetCount
+        || results.length < requestedLimit
+        || requestedLimit >= totalCount
+      ) {
+        return branchResults;
+      }
+
+      const nextLimit = Math.min(totalCount, Math.max(requestedLimit + 1, requestedLimit * 2));
+      if (nextLimit === requestedLimit) return branchResults;
+      requestedLimit = nextLimit;
+    }
+  }
+
+  private searchSemanticCandidates(
+    store: VectorStore,
+    embedding: number[],
+    initialLimit: number,
+    branchChunkIds: Set<string> | null,
+    shouldPrefilterByBranch: boolean,
+  ): RankedCandidate[] {
+    return this.searchCandidatesWithBranchPrefilter(
+      initialLimit,
+      store.count(),
+      branchChunkIds,
+      shouldPrefilterByBranch,
+      (requestedLimit) => store.search(embedding, requestedLimit),
+      (candidate) => candidate.id,
+    );
+  }
+
   async search(
     query: string,
     limit?: number,
@@ -4355,14 +4407,7 @@ export class Indexer {
     }
     const embeddingMs = performance.now() - embeddingStartTime;
 
-    const vectorStartTime = performance.now();
-    const semanticResults = embedding ? store.search(embedding, maxResults * 4) : [];
-    const vectorMs = performance.now() - vectorStartTime;
-
-    const keywordStartTime = performance.now();
-    const keywordResults = await this.keywordSearch(query, maxResults * 4, store, invertedIndex);
-    const keywordMs = performance.now() - keywordStartTime;
-
+    const prefilterStartTime = performance.now();
     let branchChunkIds: Set<string> | null = null;
     let branchSymbolIds: Set<string> | null = null;
     if (filterByBranch && (this.config.scope === "global" || this.currentBranch !== "default")) {
@@ -4370,23 +4415,39 @@ export class Indexer {
       branchChunkIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchChunkIds(branchKey)));
       branchSymbolIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchSymbolIds(branchKey)));
     }
-
-    const prefilterStartTime = performance.now();
     const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
       this.getBranchPrefilterState(database, branchChunkIds);
-    const semanticCandidates = shouldPrefilterByBranch && branchChunkIds
-      ? semanticResults.filter((r) => branchChunkIds.has(r.id))
-      : semanticResults;
-    const keywordCandidates = shouldPrefilterByBranch && branchChunkIds
-      ? keywordResults.filter((r) => branchChunkIds.has(r.id))
-      : keywordResults;
+    const prefilterMs = performance.now() - prefilterStartTime;
+
+    const vectorStartTime = performance.now();
+    const semanticCandidates = embedding
+      ? this.searchSemanticCandidates(
+          store,
+          embedding,
+          maxResults * 4,
+          branchChunkIds,
+          shouldPrefilterByBranch,
+        )
+      : [];
+    const vectorMs = performance.now() - vectorStartTime;
+
+    const keywordStartTime = performance.now();
+    const keywordCandidates = await this.keywordSearch(
+      query,
+      maxResults * 4,
+      store,
+      invertedIndex,
+      branchChunkIds,
+      shouldPrefilterByBranch,
+    );
+    const keywordMs = performance.now() - keywordStartTime;
+
     const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
       matchesHardSearchFilters(candidate, options, this.projectRoot)
     );
     const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
       matchesHardSearchFilters(candidate, options, this.projectRoot)
     );
-    const prefilterMs = performance.now() - prefilterStartTime;
 
     if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
@@ -4541,8 +4602,21 @@ export class Indexer {
     limit: number,
     store: VectorStore,
     invertedIndex: InvertedIndex,
+    branchChunkIds: Set<string> | null = null,
+    shouldPrefilterByBranch = false,
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
-    const scores = invertedIndex.search(query);
+    const normalizedLimit = Math.max(0, Math.floor(limit));
+    if (normalizedLimit === 0) return [];
+
+    const scoreEntries = this.searchCandidatesWithBranchPrefilter(
+      normalizedLimit,
+      invertedIndex.getDocumentCount(),
+      branchChunkIds,
+      shouldPrefilterByBranch,
+      (requestedLimit) => Array.from(invertedIndex.search(query, requestedLimit)),
+      ([chunkId]) => chunkId,
+    );
+    const scores = new Map(scoreEntries);
 
     if (scores.size === 0) {
       return [];
@@ -4562,7 +4636,7 @@ export class Indexer {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return results.slice(0, normalizedLimit);
   }
 
   async getStatus(): Promise<StatusResult> {
@@ -5205,24 +5279,26 @@ export class Indexer {
     const embeddingMs = performance.now() - embeddingStartTime;
     this.logger.recordEmbeddingApiCall(tokensUsed);
 
-    const vectorStartTime = performance.now();
-    const semanticResults = store.search(embedding, limit * 2);
-    const vectorMs = performance.now() - vectorStartTime;
-
+    const prefilterStartTime = performance.now();
     let branchChunkIds: Set<string> | null = null;
     if (filterByBranch && (this.config.scope === "global" || this.currentBranch !== "default")) {
       branchChunkIds = new Set(
         this.getBranchCatalogKeys().flatMap((branchKey) => database.getBranchChunkIds(branchKey))
       );
     }
-
-    const prefilterStartTime = performance.now();
     const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
       this.getBranchPrefilterState(database, branchChunkIds);
-    const semanticCandidates = shouldPrefilterByBranch && branchChunkIds
-      ? semanticResults.filter((r) => branchChunkIds.has(r.id))
-      : semanticResults;
     const prefilterMs = performance.now() - prefilterStartTime;
+
+    const vectorStartTime = performance.now();
+    const semanticCandidates = this.searchSemanticCandidates(
+      store,
+      embedding,
+      limit * 2,
+      branchChunkIds,
+      shouldPrefilterByBranch,
+    );
+    const vectorMs = performance.now() - vectorStartTime;
 
     if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {

@@ -8,7 +8,7 @@ import { loadMergedConfig } from "../src/config/merger.js";
 import { parseConfig } from "../src/config/schema.js";
 import { resolveProjectConfigPath, resolveProjectIndexPath, resolveWritableProjectConfigPath } from "../src/config/paths.js";
 import { Indexer } from "../src/indexer/index.js";
-import { Database, hashContent, VectorStore } from "../src/native/index.js";
+import { Database, hashContent, InvertedIndex, VectorStore } from "../src/native/index.js";
 
 function readBranchFileHashes(indexPath: string, branch: string): Record<string, string> {
   const branchHash = hashContent(branch).slice(0, 16);
@@ -430,15 +430,17 @@ describe("worktree fallback (issue #60)", () => {
   });
 
   it("keeps shared project search results strictly scoped to the active branch", async () => {
-    const mainSourcePath = path.join(mainRepoDir, "src", "main-only.ts");
+    const mainSourceDir = path.join(mainRepoDir, "src");
     const featureSourcePath = path.join(worktreeDir, "src", "feature-only.ts");
-    fs.mkdirSync(path.dirname(mainSourcePath), { recursive: true });
+    fs.mkdirSync(mainSourceDir, { recursive: true });
     fs.mkdirSync(path.dirname(featureSourcePath), { recursive: true });
-    fs.writeFileSync(
-      mainSourcePath,
-      "export function mainOnlyBranchMarker() { return 'main-only'; }\n",
-      "utf-8",
-    );
+    for (let index = 0; index < 6; index++) {
+      fs.writeFileSync(
+        path.join(mainSourceDir, `main-only-${index}.ts`),
+        `export function mainOnlyBranchMarker${index}() { return 'main-only-${index}'; }\n`,
+        "utf-8",
+      );
+    }
     fs.writeFileSync(
       featureSourcePath,
       "export function featureOnlyBranchMarker() { return 'feature-only'; }\n",
@@ -468,40 +470,83 @@ describe("worktree fallback (issue #60)", () => {
 
       const runtime = worktreeIndexer as unknown as {
         database: Database;
+        invertedIndex: InvertedIndex;
         store: VectorStore;
       };
       const featureChunkIds = new Set(runtime.database.getBranchChunkIds("feature/x/y"));
-      const mainChunkId = runtime.database.getBranchChunkIds("main").find(
-        (chunkId) => !featureChunkIds.has(chunkId),
+      const featureChunkId = Array.from(featureChunkIds).find(
+        (chunkId) => runtime.store.getMetadata(chunkId)?.name === "featureOnlyBranchMarker",
       );
-      expect(mainChunkId).toBeDefined();
-      const mainMetadata = runtime.store.getMetadata(mainChunkId!);
-      expect(mainMetadata).toBeDefined();
-      vi.spyOn(runtime.store, "search").mockReturnValue([{
-        id: mainChunkId!,
-        score: 0.99,
-        metadata: mainMetadata!,
-      }]);
+      expect(featureChunkId).toBeDefined();
+      const featureMetadata = runtime.store.getMetadata(featureChunkId!);
+      expect(featureMetadata).toBeDefined();
+      const foreignCandidates = runtime.database.getBranchChunkIds("main")
+        .filter((chunkId) => !featureChunkIds.has(chunkId))
+        .map((chunkId) => ({ chunkId, metadata: runtime.store.getMetadata(chunkId) }))
+        .filter((candidate) => candidate.metadata?.name?.startsWith("mainOnlyBranchMarker"))
+        .slice(0, 5)
+        .map(({ chunkId, metadata }, index) => ({
+          id: chunkId,
+          score: 0.99 - index * 0.01,
+          metadata: metadata!,
+        }));
+      expect(foreignCandidates).toHaveLength(5);
+      const activeCandidate = {
+        id: featureChunkId!,
+        score: 0.8,
+        metadata: featureMetadata!,
+      };
+      const rankedCandidates = [...foreignCandidates, activeCandidate];
+      const semanticSearchSpy = vi.spyOn(runtime.store, "search").mockImplementation(
+        (_embedding, requestedLimit = 10) => rankedCandidates.slice(0, requestedLimit),
+      );
+      const keywordSearchSpy = vi.spyOn(runtime.invertedIndex, "search").mockImplementation(
+        (_query, requestedLimit = 100) => new Map(
+          rankedCandidates.slice(0, requestedLimit).map((candidate) => [candidate.id, candidate.score]),
+        ),
+      );
 
+      const scopedSearch = await worktreeIndexer.search(
+        "ranked branch retrieval probe",
+        1,
+        { metadataOnly: true },
+      );
+      expect(scopedSearch[0]?.name).toBe("featureOnlyBranchMarker");
+      expect(semanticSearchSpy.mock.calls.some(([, requestedLimit]) => requestedLimit > 4)).toBe(true);
+      expect(keywordSearchSpy.mock.calls.some(([, requestedLimit]) => (requestedLimit ?? 0) > 4)).toBe(true);
+
+      semanticSearchSpy.mockClear();
+      const scopedSimilar = await worktreeIndexer.findSimilar("ranked branch retrieval probe", 1);
+      expect(scopedSimilar[0]?.name).toBe("featureOnlyBranchMarker");
+      expect(semanticSearchSpy.mock.calls.some(([, requestedLimit]) => requestedLimit > 2)).toBe(true);
+
+      semanticSearchSpy.mockImplementation(
+        (_embedding, requestedLimit = 10) => foreignCandidates.slice(0, requestedLimit),
+      );
+      keywordSearchSpy.mockImplementation(
+        (_query, requestedLimit = 100) => new Map(
+          foreignCandidates.slice(0, requestedLimit).map((candidate) => [candidate.id, candidate.score]),
+        ),
+      );
       await expect(
-        worktreeIndexer.search("mainOnlyBranchMarker", 1, { metadataOnly: true }),
+        worktreeIndexer.search("ranked branch retrieval probe", 1, { metadataOnly: true }),
       ).resolves.toEqual([]);
       await expect(
-        worktreeIndexer.findSimilar("function mainOnlyBranchMarker() {}", 1),
+        worktreeIndexer.findSimilar("ranked branch retrieval probe", 1),
       ).resolves.toEqual([]);
 
       const unscopedSearch = await worktreeIndexer.search(
-        "mainOnlyBranchMarker",
+        "ranked branch retrieval probe",
         1,
         { metadataOnly: true, filterByBranch: false },
       );
       const unscopedSimilar = await worktreeIndexer.findSimilar(
-        "function mainOnlyBranchMarker() {}",
+        "ranked branch retrieval probe",
         1,
         { filterByBranch: false },
       );
-      expect(unscopedSearch[0]?.name).toBe("mainOnlyBranchMarker");
-      expect(unscopedSimilar[0]?.name).toBe("mainOnlyBranchMarker");
+      expect(unscopedSearch[0]?.name).toBe(foreignCandidates[0]?.metadata.name);
+      expect(unscopedSimilar[0]?.name).toBe(foreignCandidates[0]?.metadata.name);
 
       for (const branch of runtime.database.getAllBranches()) {
         runtime.database.clearBranch(branch);
@@ -509,11 +554,11 @@ describe("worktree fallback (issue #60)", () => {
       }
       expect(runtime.database.getAllBranches()).toEqual([]);
       expect(
-        (await worktreeIndexer.search("mainOnlyBranchMarker", 1, { metadataOnly: true }))[0]?.name,
-      ).toBe("mainOnlyBranchMarker");
+        (await worktreeIndexer.search("ranked branch retrieval probe", 1, { metadataOnly: true }))[0]?.name,
+      ).toBe(foreignCandidates[0]?.metadata.name);
       expect(
-        (await worktreeIndexer.findSimilar("function mainOnlyBranchMarker() {}", 1))[0]?.name,
-      ).toBe("mainOnlyBranchMarker");
+        (await worktreeIndexer.findSimilar("ranked branch retrieval probe", 1))[0]?.name,
+      ).toBe(foreignCandidates[0]?.metadata.name);
     } finally {
       await Promise.all([mainIndexer.close(), worktreeIndexer.close()]);
       fetchSpy.mockRestore();

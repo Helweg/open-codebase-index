@@ -1,9 +1,10 @@
+import { existsSync } from "fs";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
 
 import type { HostMode } from "../config/host.js";
 import type { CodebaseIndexConfig } from "../config/schema.js";
-import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
+import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 
@@ -41,10 +42,7 @@ export class FileWatcher {
     this.configPath = options.configPath;
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
-      : [
-          resolveProjectConfigPath(projectRoot, host),
-          resolveWritableProjectConfigPath(projectRoot, host),
-        ];
+      : getProjectConfigCandidatePaths(projectRoot, host);
   }
 
   start(handler: ChangeHandler): void {
@@ -70,13 +68,17 @@ export class FileWatcher {
     if (this.configPath) {
       watchTargets = [this.projectRoot, this.configPath];
     } else {
-      const projectConfigPath = this.projectConfigPaths[0];
-      const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
-      const configIsOutsideProject = relativeConfigPath === ".."
-        || relativeConfigPath.startsWith(`..${path.sep}`)
-        || path.isAbsolute(relativeConfigPath);
-      if (configIsOutsideProject) {
-        watchTargets = [this.projectRoot, projectConfigPath];
+      const externalConfigTargets = this.projectConfigPaths
+        .filter((projectConfigPath) => {
+          const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
+          return this.isOutsideProjectPath(relativeConfigPath);
+        })
+        .map((projectConfigPath) => existsSync(projectConfigPath)
+          ? projectConfigPath
+          : this.getNearestExistingDirectory(path.dirname(projectConfigPath)));
+      const uniqueExternalConfigTargets = [...new Set(externalConfigTargets)];
+      if (uniqueExternalConfigTargets.length > 0) {
+        watchTargets = [this.projectRoot, ...uniqueExternalConfigTargets];
       }
     }
 
@@ -87,6 +89,10 @@ export class FileWatcher {
 
         if (this.isProjectConfigPathOrAncestor(relativePath)) {
           return false;
+        }
+
+        if (this.isOutsideProjectPath(relativePath)) {
+          return true;
         }
 
         if (hasFilteredPathSegment(relativePath, path.sep)) {
@@ -211,6 +217,22 @@ export class FileWatcher {
     return this.getProjectConfigRelativePaths().some(
       (configPath) => configPath === normalizedRelativePath || configPath.startsWith(`${normalizedRelativePath}${path.sep}`),
     );
+  }
+
+  private isOutsideProjectPath(relativePath: string): boolean {
+    return relativePath === ".."
+      || relativePath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePath);
+  }
+
+  private getNearestExistingDirectory(directoryPath: string): string {
+    let candidate = directoryPath;
+    while (!existsSync(candidate)) {
+      const parent = path.dirname(candidate);
+      if (parent === candidate) break;
+      candidate = parent;
+    }
+    return candidate;
   }
 
   private getProjectConfigRelativePaths(): string[] {

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 const operationMocks = vi.hoisted(() => ({
   refreshIndexerForDirectory: vi.fn(),
@@ -20,7 +20,23 @@ vi.mock("../src/git/index.js", async (importOriginal) => ({
 import { parseConfig } from "../src/config/schema.js";
 import { createWatcherWithIndexer } from "../src/watcher/index.js";
 
-function createLinkedWorktree(root: string): {
+const originalUsePolling = process.env.CHOKIDAR_USEPOLLING;
+
+beforeAll(() => {
+  if (originalUsePolling === undefined) {
+    process.env.CHOKIDAR_USEPOLLING = "1";
+  }
+});
+
+afterAll(() => {
+  if (originalUsePolling === undefined) {
+    delete process.env.CHOKIDAR_USEPOLLING;
+  } else {
+    process.env.CHOKIDAR_USEPOLLING = originalUsePolling;
+  }
+});
+
+function createLinkedWorktree(root: string, writeMainConfig = true): {
   configPath: string;
   worktreeDir: string;
 } {
@@ -33,12 +49,14 @@ function createLinkedWorktree(root: string): {
   mkdirSync(path.dirname(configPath), { recursive: true });
   writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
   writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
-  writeFileSync(configPath, JSON.stringify({ include: ["**/*.ts"] }));
+  if (writeMainConfig) {
+    writeFileSync(configPath, JSON.stringify({ include: ["**/*.ts"] }));
+  }
   return { configPath, worktreeDir };
 }
 
-function createLinkedWorktreeWatcher(root: string) {
-  const { configPath, worktreeDir } = createLinkedWorktree(root);
+function createLinkedWorktreeWatcher(root: string, writeMainConfig = true) {
+  const { configPath, worktreeDir } = createLinkedWorktree(root, writeMainConfig);
   const indexer = {
     index: vi.fn().mockResolvedValue(undefined),
   };
@@ -223,6 +241,39 @@ describe("watcher config refresh", () => {
           undefined,
         );
         expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: 2500 });
+    } finally {
+      await watcher.stop();
+    }
+  });
+
+  it("refreshes a linked worktree across inherited config creation, deletion, and recreation", async () => {
+    const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir, false);
+
+    try {
+      await watcher.whenReady();
+      mkdirSync(path.dirname(configPath), { recursive: true });
+      writeFileSync(configPath, JSON.stringify({ include: ["created/**/*.ts"] }));
+
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          worktreeDir,
+          "opencode",
+          undefined,
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: 2500 });
+
+      rmSync(configPath);
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledTimes(2);
+        expect(indexer.index).toHaveBeenCalledTimes(2);
+      }, { timeout: 2500 });
+
+      writeFileSync(configPath, JSON.stringify({ include: ["recreated/**/*.ts"] }));
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledTimes(3);
+        expect(indexer.index).toHaveBeenCalledTimes(3);
       }, { timeout: 2500 });
     } finally {
       await watcher.stop();
