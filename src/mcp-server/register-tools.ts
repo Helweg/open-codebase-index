@@ -1,17 +1,10 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { formatCostEstimate } from "../utils/cost.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
-  formatCallGraphPathResult,
-  formatCallGraphResult,
   formatCodebasePeek,
-  formatDefinitionLookup,
-  formatHealthCheck,
-  formatIndexStats,
   formatSearchResults,
-  formatStatus,
   MAX_CONTEXT_PACK_TOKEN_BUDGET,
   MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "../tools/utils.js";
@@ -20,23 +13,32 @@ import {
   MAX_CONTEXT_RESULT_LIMIT,
   MIN_CONTEXT_PATH_DEPTH,
   MIN_CONTEXT_RESULT_LIMIT,
-  resolveCodebaseContext,
 } from "../tools/context.js";
+import {
+  CALL_GRAPH_DIRECTIONS,
+  CHUNK_TYPES,
+  INDEX_LOG_CATEGORIES,
+  INDEX_LOG_LEVELS,
+  RELATIONSHIP_TYPES,
+} from "../tools/contracts.js";
+import {
+  executeCallGraph,
+  executeCallGraphPath,
+  executeCodebaseContext,
+  executeIndexCodebase,
+  executeIndexHealthCheck,
+  executeIndexLogs,
+  executeIndexMetrics,
+  executeIndexStatus,
+  executeImplementationLookup,
+} from "../tools/execute-common.js";
 import { formatPrImpact } from "../tools/format-pr-impact.js";
 import {
   findSimilarCode,
-  getCallGraphData,
-  getCallGraphPath,
-  getIndexLogs,
-  getIndexMetrics,
-  getIndexStatus,
   getPrImpact,
-  implementationLookup,
-  runIndexCodebase,
-  runIndexHealthCheck,
   searchCodebaseWithEffectiveness,
 } from "../tools/operations.js";
-import { CHUNK_TYPE_ENUM, type McpServerRuntime } from "./shared.js";
+import type { McpServerRuntime } from "./shared.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
   return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;
@@ -67,7 +69,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       ).describe(`Maximum response tokens for this context pack (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
     },
     async (args) => {
-      const result = await resolveCodebaseContext(runtime.projectRoot, runtime.host, args);
+      const result = await executeCodebaseContext(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
@@ -81,7 +83,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results to return"),
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPES).optional()).describe("Filter by code chunk type"),
       contextLines: allowNullAsUndefined(z.number().optional()).describe("Number of extra lines to include before/after each match (default: 0)"),
       blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
       blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
@@ -114,7 +116,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPES).optional()).describe("Filter by code chunk type"),
       blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
       blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
@@ -147,17 +149,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       verbose: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Show detailed info about skipped files and parsing failures"),
     },
     async (args) => {
-      const result = await runIndexCodebase(runtime.projectRoot, runtime.host, args);
-      if (result.kind === "estimate") {
-        return { content: [{ type: "text", text: formatCostEstimate(result.estimate) }] };
-      }
-      if (result.kind === "busy") {
-        return { content: [{ type: "text", text: result.text }], isError: true };
-      }
-      if (result.kind === "message") {
-        return { content: [{ type: "text", text: result.text }] };
-      }
-      return { content: [{ type: "text", text: formatIndexStats(result.stats, args.verbose ?? false) }] };
+      const result = await executeIndexCodebase(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }], ...(result.isError ? { isError: true } : {}) };
     },
   );
 
@@ -166,8 +159,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "START HERE once per repository task when index readiness or freshness is unknown. Reports whether semantic retrieval is ready, chunk counts, compatibility, and the embedding provider. If ready, continue with codebase_peek or implementation_lookup; otherwise run index_codebase.",
     {},
     async () => {
-      const status = await getIndexStatus(runtime.projectRoot, runtime.host);
-      return { content: [{ type: "text", text: formatStatus(status) }] };
+      const result = await executeIndexStatus(runtime.projectRoot, runtime.host);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 
@@ -176,11 +169,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "Check index health and remove stale entries from deleted files. Run this to clean up the index after files have been deleted.",
     {},
     async () => {
-      const result = await runIndexHealthCheck(runtime.projectRoot, runtime.host);
-      if (result.kind === "busy") {
-        return { content: [{ type: "text" as const, text: result.text }], isError: true };
-      }
-      return { content: [{ type: "text" as const, text: formatHealthCheck(result.health) }] };
+      const result = await executeIndexHealthCheck(runtime.projectRoot, runtime.host);
+      return { content: [{ type: "text" as const, text: result.text }], ...(result.isError ? { isError: true } : {}) };
     },
   );
 
@@ -191,7 +181,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
     },
     async (args) => {
-      const result = await getIndexMetrics(runtime.projectRoot, runtime.host, { reset: args.reset });
+      const result = await executeIndexMetrics(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
@@ -202,14 +192,14 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     {
       limit: allowNullAsUndefined(z.number().optional().default(20)).describe("Maximum number of log entries to return"),
       category: allowNullAsUndefined(
-        z.enum(["search", "embedding", "cache", "gc", "branch", "general"]).optional(),
+        z.enum(INDEX_LOG_CATEGORIES).optional(),
       ).describe("Filter by log category"),
       level: allowNullAsUndefined(
-        z.enum(["error", "warn", "info", "debug"]).optional(),
+        z.enum(INDEX_LOG_LEVELS).optional(),
       ).describe("Filter by minimum log level"),
     },
     async (args) => {
-      const result = await getIndexLogs(runtime.projectRoot, runtime.host, args);
+      const result = await executeIndexLogs(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
@@ -222,7 +212,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
-      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPE_ENUM).optional()).describe("Filter by code chunk type"),
+      chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPES).optional()).describe("Filter by code chunk type"),
       excludeFile: allowNullAsUndefined(z.string().optional()).describe("Exclude results from this file path"),
     },
     async (args) => {
@@ -252,13 +242,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils')"),
     },
     async (args) => {
-      const results = await implementationLookup(runtime.projectRoot, runtime.host, args.query, {
-        limit: args.limit ?? 5,
-        fileType: args.fileType,
-        directory: args.directory,
-      });
-
-      return { content: [{ type: "text", text: formatDefinitionLookup(results, args.query) }] };
+      const result = await executeImplementationLookup(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 
@@ -269,17 +254,17 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     {
       name: z.string().describe("Function or method name to query"),
       direction: allowNullAsUndefined(
-        z.enum(["callers", "callees"]).default("callers"),
+        z.enum(CALL_GRAPH_DIRECTIONS).default("callers"),
       ).describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
       filePath: allowNullAsUndefined(z.string().optional()).describe("Optional file path used to disambiguate duplicate symbol names"),
       symbolId: allowNullAsUndefined(z.string().optional()).describe("Optional backward-compatible symbol ID escape hatch"),
       relationshipType: allowNullAsUndefined(
-        z.enum(["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"]).optional(),
+        z.enum(RELATIONSHIP_TYPES).optional(),
       ).describe("Filter by relationship type. Omit to show all."),
     },
     async (args) => {
-      const graph = await getCallGraphData(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: formatCallGraphResult(graph) }] };
+      const result = await executeCallGraph(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 
@@ -294,16 +279,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
     async (args) => {
-      const path = await getCallGraphPath(
-        runtime.projectRoot,
-        runtime.host,
-        args.from,
-        args.to,
-        args.maxDepth,
-        args.fromFilePath,
-        args.toFilePath,
-      );
-      return { content: [{ type: "text", text: formatCallGraphPathResult(path) }] };
+      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
   server.tool(
