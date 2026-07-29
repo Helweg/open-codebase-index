@@ -1,6 +1,6 @@
 {
   "name": "codebase-index",
-  "version": "0.20.0",
+  "version": "0.20.1",
   "description": "Semantic code search and codebase graph tools for Codex",
   "author": {
     "name": "Kenneth",
