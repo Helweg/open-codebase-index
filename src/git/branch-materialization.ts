@@ -5,6 +5,8 @@ import * as os from "os";
 import * as path from "path";
 import { promisify } from "util";
 
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+
 const execFileAsync = promisify(execFile);
 const FULL_COMMIT_RE = /^[0-9a-f]{40}$/i;
 const SAFE_REMOTE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
@@ -423,11 +425,16 @@ async function pathExists(targetPath: string): Promise<boolean> {
 
 async function isWorktreeRegistered(projectRoot: string, worktreePath: string): Promise<boolean> {
   const output = await runGitRaw(projectRoot, ["worktree", "list", "--porcelain", "-z"]);
-  const target = path.resolve(worktreePath);
-  return output
+  const target = canonicalizePathForComparison(worktreePath);
+  const worktreePaths = output
     .split("\0")
     .filter((entry) => entry.startsWith("worktree "))
-    .some((entry) => path.resolve(entry.slice("worktree ".length)) === target);
+    .map((entry) => entry.slice("worktree ".length));
+
+  for (const registeredPath of worktreePaths) {
+    if (canonicalizePathForComparison(registeredPath) === target) return true;
+  }
+  return false;
 }
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
@@ -451,7 +458,7 @@ async function pruneExactMissingWorktreeRegistration(
     throw error;
   }
 
-  const target = path.resolve(worktreePath);
+  const target = canonicalizePathForComparison(worktreePath);
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
     const registrationPath = path.join(registrationsRoot, entry.name);
@@ -467,7 +474,7 @@ async function pruneExactMissingWorktreeRegistration(
     const resolvedGitdirPath = path.isAbsolute(gitdirPath)
       ? gitdirPath
       : path.resolve(registrationPath, gitdirPath);
-    if (path.resolve(path.dirname(resolvedGitdirPath)) !== target) continue;
+    if (canonicalizePathForComparison(path.dirname(resolvedGitdirPath)) !== target) continue;
     await fsPromises.rm(registrationPath, { recursive: true, force: true });
     return true;
   }

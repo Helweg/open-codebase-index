@@ -2,7 +2,7 @@ import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   isValidGitRefName,
@@ -42,6 +42,7 @@ describe("branch materialization", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -243,6 +244,25 @@ describe("branch materialization", () => {
 
   it("removes only the exact stale registration when the materialized directory disappears", async () => {
     const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
+
+    await expect(withMaterializedBranch(
+      { projectRoot: repo, branch: "feature" },
+      async (worktreePath) => {
+        fs.rmSync(worktreePath, { recursive: true, force: true });
+        throw new Error("primary indexing failure");
+      },
+    )).rejects.toThrow("primary indexing failure");
+
+    expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
+  });
+
+  it("removes a missing temporary worktree registered through a symlinked temp path", async () => {
+    const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
+    const physicalTempDir = path.join(tempDir, "physical-temp");
+    const linkedTempDir = path.join(tempDir, "linked-temp");
+    fs.mkdirSync(physicalTempDir);
+    fs.symlinkSync(physicalTempDir, linkedTempDir, "dir");
+    vi.stubEnv("TMPDIR", linkedTempDir);
 
     await expect(withMaterializedBranch(
       { projectRoot: repo, branch: "feature" },

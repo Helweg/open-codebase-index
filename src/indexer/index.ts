@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { execFile } from "child_process";
@@ -64,6 +64,7 @@ import {
   type IndexLockOwner,
   type IndexMutationOperation,
 } from "./index-lock.js";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
@@ -1863,6 +1864,7 @@ export class Indexer {
   private readonly catalogIdentityOverride: string | undefined;
   private readonly expectedCommitOverride: string | undefined;
   private readonly indexPathOverride: string | undefined;
+  private readonly projectIdentityHash: string;
   private indexPath: string;
   private store: VectorStore | null = null;
   private invertedIndex: InvertedIndex | null = null;
@@ -1897,6 +1899,7 @@ export class Indexer {
     runtimeOptions: IndexerRuntimeOptions = {},
   ) {
     this.projectRoot = projectRoot;
+    this.projectIdentityHash = hashContent(this.getCanonicalPath(projectRoot)).slice(0, 16);
     this.materializedProjectRoot = runtimeOptions.materializedProjectRoot ?? projectRoot;
     this.branchNameOverride = runtimeOptions.branchName;
     this.catalogIdentityOverride = runtimeOptions.catalogIdentity;
@@ -1973,11 +1976,10 @@ export class Indexer {
   }
 
   private getCanonicalPath(targetPath: string): string {
-    const resolved = path.resolve(targetPath);
     try {
-      return realpathSync.native(resolved);
+      return canonicalizePathForComparison(targetPath);
     } catch {
-      return resolved;
+      return path.resolve(targetPath);
     }
   }
 
@@ -2164,8 +2166,7 @@ export class Indexer {
       return branchName;
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `${projectHash}:${branchName}`;
+    return `${this.projectIdentityHash}:${branchName}`;
   }
 
   private getBranchCommitMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
@@ -2240,18 +2241,15 @@ export class Indexer {
   }
 
   private getLegacyMigrationMetadataKey(): string {
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `index.globalBranchMigration.${projectHash}`;
+    return `index.globalBranchMigration.${this.projectIdentityHash}`;
   }
 
   private getProjectEmbeddingStrategyMetadataKey(): string {
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `index.embeddingStrategyVersion.${projectHash}`;
+    return `index.embeddingStrategyVersion.${this.projectIdentityHash}`;
   }
 
   private getProjectForceReembedMetadataKey(): string {
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `index.forceReembed.${projectHash}`;
+    return `index.forceReembed.${this.projectIdentityHash}`;
   }
 
   private getCallGraphResolutionMetadataKey(): string {
@@ -2259,8 +2257,7 @@ export class Indexer {
       return "index.callGraphResolutionVersion";
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `index.callGraphResolutionVersion.${projectHash}`;
+    return `index.callGraphResolutionVersion.${this.projectIdentityHash}`;
   }
 
   private getSwiftParserVersionMetadataKey(): string {
@@ -2269,8 +2266,7 @@ export class Indexer {
       return key;
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `${key}.${projectHash}`;
+    return `${key}.${this.projectIdentityHash}`;
   }
 
   private getMetalParserVersionMetadataKey(): string {
@@ -2279,8 +2275,7 @@ export class Indexer {
       return key;
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
-    return `${key}.${projectHash}`;
+    return `${key}.${this.projectIdentityHash}`;
   }
 
   private getSymbolExtractorVersionMetadataKey(
@@ -2408,15 +2403,14 @@ export class Indexer {
       return { chunkIds, symbolIds };
     }
 
-    const projectRootPath = path.resolve(this.projectRoot);
     const projectLocalFilePaths = new Set<string>([
       ...Array.from(this.fileHashCache.keys()).filter(
-        (filePath) => this.isFileInCurrentScope(filePath, roots) && isPathWithinRoot(filePath, projectRootPath)
+        (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
       ),
       ...(this.store?.getAllMetadata() ?? [])
         .map(({ metadata }) => metadata.filePath)
         .filter(
-          (filePath) => this.isFileInCurrentScope(filePath, roots) && isPathWithinRoot(filePath, projectRootPath)
+          (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
         ),
     ]);
 
@@ -2438,18 +2432,13 @@ export class Indexer {
       return this.getBranchCatalogCleanupKeys();
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
     const keys = new Set<string>();
     const projectChunkIdSet = new Set(projectChunkIds);
     const projectSymbolIdSet = new Set(projectSymbolIds);
 
     for (const branchKey of this.database?.getAllBranches() ?? []) {
-      if (branchKey.startsWith(`${projectHash}:`)) {
+      if (branchKey.startsWith(`${this.projectIdentityHash}:`)) {
         keys.add(branchKey);
-        continue;
-      }
-
-      if (branchKey.includes(":")) {
         continue;
       }
 
@@ -2468,7 +2457,14 @@ export class Indexer {
   }
 
   private isFileInCurrentScope(filePath: string, roots: string[]): boolean {
-    return roots.some((root) => isPathWithinRoot(filePath, root));
+    if (roots.some((root) => isPathWithinRoot(filePath, root))) return true;
+    const canonicalFilePath = this.getCanonicalPath(filePath);
+    return roots.some((root) => isPathWithinRoot(canonicalFilePath, root));
+  }
+
+  private isFileInProjectRoot(filePath: string): boolean {
+    if (isPathWithinRoot(filePath, this.projectRoot)) return true;
+    return isPathWithinRoot(this.getCanonicalPath(filePath), this.getCanonicalPath(this.projectRoot));
   }
 
   private clearScopedFileHashCache(roots: string[]): void {
@@ -2542,7 +2538,6 @@ export class Indexer {
       return false;
     }
 
-    const projectHash = hashContent(path.resolve(this.projectRoot)).slice(0, 16);
     const roots = this.getScopedRoots();
     const { chunkIds: projectLocalChunkIds, symbolIds: projectLocalSymbolIds } = this.getProjectLocalScopedOwnershipIds(roots);
 
@@ -2555,17 +2550,13 @@ export class Indexer {
           return false;
         }
 
-        if (branchKey.startsWith(`${projectHash}:`)) {
+        if (branchKey.startsWith(`${this.projectIdentityHash}:`)) {
           return false;
         }
 
-        if (!branchKey.includes(":")) {
-          const referencesCurrentProjectChunks = branchChunkIds.some((chunkId) => projectLocalChunkIds.has(chunkId));
-          const referencesCurrentProjectSymbols = branchSymbolIds.some((symbolId) => projectLocalSymbolIds.has(symbolId));
-          return !(referencesCurrentProjectChunks || referencesCurrentProjectSymbols);
-        }
-
-        return true;
+        const referencesCurrentProjectChunks = branchChunkIds.some((chunkId) => projectLocalChunkIds.has(chunkId));
+        const referencesCurrentProjectSymbols = branchSymbolIds.some((symbolId) => projectLocalSymbolIds.has(symbolId));
+        return !(referencesCurrentProjectChunks || referencesCurrentProjectSymbols);
       }
     );
   }
@@ -2588,9 +2579,8 @@ export class Indexer {
       ...scopedEntries.map(({ metadata }) => metadata.filePath),
     ]);
 
-    const projectRootPath = path.resolve(this.projectRoot);
     const projectLocalFilePaths = new Set<string>(
-      Array.from(filePaths).filter((filePath) => isPathWithinRoot(filePath, projectRootPath))
+      Array.from(filePaths).filter((filePath) => this.isFileInProjectRoot(filePath))
     );
 
     const removedChunkIds = new Set<string>(scopedEntries.map(({ key }) => key));
@@ -2603,7 +2593,7 @@ export class Indexer {
 
     const projectLocalChunkIds = new Set<string>(
       scopedEntries
-        .filter(({ metadata }) => isPathWithinRoot(metadata.filePath, projectRootPath))
+        .filter(({ metadata }) => this.isFileInProjectRoot(metadata.filePath))
         .map(({ key }) => key)
     );
     for (const filePath of projectLocalFilePaths) {
@@ -4046,7 +4036,6 @@ export class Indexer {
     const restrictExistingChunksToBranch = this.branchNameOverride !== undefined
       || previousBranchChunkIds.length > 0
       || database.getAllBranches().length > 0;
-    const projectRootPath = path.resolve(this.projectRoot);
     const forceScopedReembed = scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
     const failedForcedChunkIds = new Set<string>();
 
@@ -4203,7 +4192,7 @@ export class Indexer {
       }
       if (
         restrictExistingChunksToBranch
-        && isPathWithinRoot(metadata.filePath, projectRootPath)
+        && this.isFileInProjectRoot(metadata.filePath)
         && !previousBranchChunkIdSet.has(key)
       ) {
         continue;

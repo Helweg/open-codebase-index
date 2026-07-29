@@ -9,6 +9,10 @@ import { Indexer } from "../src/indexer/index.js";
 import { Database, VectorStore, hashContent } from "../src/native/index.js";
 import { formatStatus } from "../src/tools/utils.js";
 
+function projectIdentityHash(projectRoot: string): string {
+  return hashContent(fs.realpathSync.native(projectRoot)).slice(0, 16);
+}
+
 describe("indexer failed batch recovery", () => {
   let tempDir: string;
   let sourceFile: string;
@@ -1309,6 +1313,7 @@ describe("indexer failed batch recovery", () => {
     fs.writeFileSync(projectAFile, "export function alpha() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(projectBFile, "export function beta() { return sharedDoc(); }\n", "utf-8");
     fs.writeFileSync(kbFile, "export function sharedDoc() { return 'shared'; }\n", "utf-8");
+    const canonicalKbFile = fs.realpathSync.native(kbFile);
 
     const kbPrompt = "export function sharedDoc() { return 'shared'; }";
     let failSharedKbEmbedding = false;
@@ -1363,7 +1368,7 @@ describe("indexer failed batch recovery", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    const projectHash = hashContent(path.resolve(projectA)).slice(0, 16);
+    const projectHash = projectIdentityHash(projectA);
     const projectABranch = `${projectHash}:default`;
     db.setMetadata(`index.embeddingStrategyVersion.${projectHash}`, "1");
 
@@ -1375,7 +1380,7 @@ describe("indexer failed batch recovery", () => {
     expect(failedStats.failedChunks).toBeGreaterThan(0);
     expect(db.getMetadata(`index.forceReembed.${projectHash}`)).toBe("true");
 
-    const sharedChunkId = db.getChunksByFile(kbFile)[0]?.chunkId;
+    const sharedChunkId = db.getChunksByFile(canonicalKbFile)[0]?.chunkId;
     expect(sharedChunkId).toBeTruthy();
     expect(db.chunkExistsOnBranch(projectABranch, sharedChunkId!)).toBe(false);
 
