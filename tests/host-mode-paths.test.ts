@@ -192,8 +192,43 @@ describe("host-aware path resolution", () => {
     ["pi", ".codebase-index"],
     ["jcode", ".codebase-index"],
     ["claude", ".claude"],
-  ] as const)("keeps the %s project index local when only the main repo has an index", (host, indexDir) => {
+  ] as const)("inherits the %s project index from the main checkout", (host, indexDir) => {
     fs.mkdirSync(path.join(mainRepoDir, indexDir, "index"), { recursive: true });
+
+    expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
+      path.join(mainRepoDir, indexDir, "index"),
+    );
+  });
+
+  it.each([
+    ["opencode", ".opencode"],
+    ["codex", ".codebase-index"],
+    ["pi", ".codebase-index"],
+    ["jcode", ".codebase-index"],
+    ["claude", ".claude"],
+  ] as const)("ignores a stale local %s worktree index without a local config", (host, indexDir) => {
+    fs.mkdirSync(path.join(mainRepoDir, indexDir, "index"), { recursive: true });
+    fs.mkdirSync(path.join(worktreeDir, indexDir, "index"), { recursive: true });
+
+    expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
+      path.join(mainRepoDir, indexDir, "index"),
+    );
+  });
+
+  it.each([
+    ["opencode", ".opencode", "codebase-index.json"],
+    ["codex", ".codebase-index", "config.json"],
+    ["pi", ".codebase-index", "config.json"],
+    ["jcode", ".codebase-index", "config.json"],
+    ["claude", ".claude", "codebase-index.json"],
+  ] as const)("keeps an explicit %s worktree config boundary local", (host, indexDir, configFile) => {
+    fs.mkdirSync(path.join(mainRepoDir, indexDir, "index"), { recursive: true });
+    fs.mkdirSync(path.join(worktreeDir, indexDir), { recursive: true });
+    fs.writeFileSync(
+      path.join(worktreeDir, indexDir, configFile),
+      JSON.stringify({ knowledgeBases: ["worktree-docs"] }, null, 2),
+      "utf-8",
+    );
 
     expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
       path.join(worktreeDir, indexDir, "index"),
@@ -255,13 +290,13 @@ describe("host-aware path resolution", () => {
   });
 
   it.each(["codex", "pi", "jcode"] as const)(
-    "does not inherit the main repo's %s index when native and legacy indexes both exist",
+    "inherits the main checkout's %s native index when native and legacy indexes both exist",
     (host) => {
       fs.mkdirSync(path.join(mainRepoDir, ".codebase-index", "index"), { recursive: true });
       fs.mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
 
       expect(resolveProjectIndexPath(worktreeDir, "project", host)).toBe(
-        path.join(worktreeDir, ".codebase-index", "index"),
+        path.join(mainRepoDir, ".codebase-index", "index"),
       );
     },
   );

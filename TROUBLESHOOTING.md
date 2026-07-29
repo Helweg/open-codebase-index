@@ -197,6 +197,12 @@ Or run `/index force`.
 
 Only use force reindex for a full rebuild. If `/status` reports failed embedding batches, fix the provider/auth issue first and rerun `/index` normally.
 
+### Persisted Runtime Cache Warnings
+
+Git project indexes keep branch-specific runtime state in `file-hashes.<branch-hash>.json` and `failed-batches.<branch-hash>.json`. Non-Git project indexes and global indexes use the corresponding unnamespaced filenames.
+
+If debug logs report that one of these files is corrupted or unreadable, the indexer safely resets that branch's in-memory hash cache or skips its persisted retry batches for the run. If the warning recurs, remove the exact affected file reported in the warning and rebuild with `/index force`.
+
 ### Reset Everything
 Delete the index directory for your host only after confirming you no longer need the existing index:
 

@@ -1428,7 +1428,7 @@ describe("indexer failed batch recovery", () => {
               content: "export function alpha() { return 'alpha'; }",
               contentHash: "stale-hash",
               metadata: {
-                filePath: sourceFile,
+                filePath: "src/index.ts",
                 startLine: 1,
                 endLine: 3,
                 language: "typescript",

@@ -204,6 +204,7 @@ describe("FileWatcher", () => {
       const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
       const indexer = {
         index: vi.fn().mockResolvedValue(undefined),
+        refreshBranchInfo: vi.fn(),
         getLogger: vi.fn().mockReturnValue({ branch }),
       };
       const combinedWatcher = createWatcherWithIndexer(
@@ -229,6 +230,7 @@ describe("FileWatcher", () => {
         });
       }, { timeout: 2500 });
       await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce(), { timeout: 2500 });
+      expect(indexer.refreshBranchInfo).toHaveBeenCalledOnce();
       expect(consoleLog).not.toHaveBeenCalled();
 
       await combinedWatcher.stop();

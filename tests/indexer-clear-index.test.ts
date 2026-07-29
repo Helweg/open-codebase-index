@@ -264,6 +264,33 @@ describe("indexer clearIndex force rebuild", () => {
     await expect(restartedIndexer.index()).rejects.toThrow("Run index_codebase with force=true to rebuild the index");
   });
 
+  it("marks legacy absolute path storage as incompatible until force rebuild", async () => {
+    const indexer = createIndexer(tempDir, 8);
+    await indexer.index();
+
+    const dbPath = path.join(tempDir, ".opencode", "index", "codebase.db");
+    const db = trackDb(new Database(dbPath));
+    db.setMetadata("schema_version", "6");
+    db.setMetadata("index.pathStorageVersion", "1");
+
+    const restartedIndexer = createIndexer(tempDir, 8);
+    const callsBeforeCompatibilityCheck = fetchSpy.mock.calls.length;
+    const status = await restartedIndexer.getStatus();
+
+    expect(status.compatibility?.compatible).toBe(false);
+    expect(status.compatibility?.reason).toContain("Path storage format mismatch");
+    expect(status.compatibility?.reason).toContain("force=true");
+    await expect(restartedIndexer.index()).rejects.toThrow("Path storage format mismatch");
+    expect(fetchSpy.mock.calls).toHaveLength(callsBeforeCompatibilityCheck);
+
+    await restartedIndexer.forceIndex();
+
+    expect(db.getMetadata("schema_version")).toBe("7");
+    expect(db.getMetadata("index.pathStorageVersion")).toBe("2");
+    expect(db.getChunksByFile("src/index.ts").length).toBeGreaterThan(0);
+    expect(db.getChunksByFile(sourceFile)).toHaveLength(0);
+  });
+
   it("keeps an in-flight search usable while the same Indexer reloads for a mutation", async () => {
     const indexer = createIndexer(tempDir, 8);
     await indexer.index();
@@ -302,7 +329,7 @@ describe("indexer clearIndex force rebuild", () => {
     invertedLoad.mockRestore();
   });
 
-  it("clears only the worktree-local index when project config is inherited", async () => {
+  it("clears the shared main index when project config is inherited", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo");
     const worktreeDir = path.join(tempDir, "worktree-feature");
     const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
@@ -327,18 +354,17 @@ describe("indexer clearIndex force rebuild", () => {
 
     await createIndexer(mainRepoDir, 8).index();
     const mainDb = trackDb(new Database(path.join(mainRepoDir, ".opencode", "index", "codebase.db")));
-    const mainStatsBefore = mainDb.getStats();
+    expect(mainDb.getStats().chunkCount).toBeGreaterThan(0);
 
     const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode"));
     await expect(worktreeIndexer.clearIndex()).resolves.toBeUndefined();
 
-    expect(mainDb.getStats()).toEqual(mainStatsBefore);
-    const localDb = trackDb(new Database(path.join(worktreeDir, ".opencode", "index", "codebase.db")));
-    expect(localDb.getStats().chunkCount).toBe(0);
-    expect(localDb.getStats().embeddingCount).toBe(0);
+    expect(mainDb.getStats().chunkCount).toBe(0);
+    expect(mainDb.getStats().embeddingCount).toBe(0);
+    expect(fs.existsSync(path.join(worktreeDir, ".opencode", "index", "codebase.db"))).toBe(false);
   });
 
-  it("ignores a crashed main-index owner when indexing from an isolated worktree", async () => {
+  it("recovers a crashed shared-index owner when indexing from a worktree", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo-recovery");
     const worktreeDir = path.join(tempDir, "worktree-recovery");
     const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "recovery");
@@ -377,8 +403,9 @@ describe("indexer clearIndex force rebuild", () => {
 
     const worktreeIndexer = trackIndexer(new Indexer(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode"));
     await expect(worktreeIndexer.index()).resolves.toMatchObject({ failedChunks: 0 });
-    expect(fs.existsSync(path.join(worktreeDir, ".opencode", "index", "codebase.db"))).toBe(true);
-    expect(fs.existsSync(lockPath)).toBe(true);
+    expect(fs.existsSync(path.join(mainIndexPath, "codebase.db"))).toBe(true);
+    expect(fs.existsSync(path.join(worktreeDir, ".opencode", "index", "codebase.db"))).toBe(false);
+    expect(fs.existsSync(lockPath)).toBe(false);
   });
 
   it("allows codex force clearing a local legacy OpenCode project index", async () => {
@@ -437,6 +464,28 @@ describe("indexer clearIndex force rebuild", () => {
     expect(fs.existsSync(path.join(secondTarget, "codebase.db"))).toBe(false);
   });
 
+  it("keeps a schema-v6 global index readable because its paths remain absolute", async () => {
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const writer = createIndexer(tempDir, 8, "global");
+    await writer.index();
+    await writer.close();
+
+    const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
+    const db = trackDb(new Database(dbPath));
+    db.setMetadata("schema_version", "6");
+
+    const reader = createIndexer(tempDir, 8, "global");
+    const status = await reader.getStatus();
+    const results = await reader.search("alpha", 5, { metadataOnly: true });
+
+    expect(status.indexed).toBe(true);
+    expect(status.compatibility?.compatible).toBe(true);
+    expect(results.some((result) => result.filePath === sourceFile)).toBe(true);
+    expect(db.getMetadata("schema_version")).toBe("6");
+  });
+
   it("clears only the current project from a shared global index when compatibility is unchanged", async () => {
     vi.stubEnv("HOME", tempHome);
     vi.stubEnv("USERPROFILE", tempHome);
@@ -468,6 +517,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempHome, ".opencode", "global-index", "codebase.db");
     const db = trackDb(new Database(dbPath));
+    expect(db.getMetadata("index.pathStorageVersion")).toBe("1");
     expect(db.getChunksByFile(projectAFile)).toHaveLength(0);
     expect(db.getChunksByFile(projectBFile).length).toBeGreaterThan(0);
 
@@ -489,7 +539,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempDir, ".opencode", "index", "codebase.db");
     const dbBefore = trackDb(new Database(dbPath));
-    const chunkIdsBefore = dbBefore.getChunksByFile(sourceFile).map((chunk) => chunk.chunkId);
+    const chunkIdsBefore = dbBefore.getChunksByFile("src/index.ts").map((chunk) => chunk.chunkId);
 
     fs.writeFileSync(
       sourceFile,
@@ -513,7 +563,7 @@ describe("indexer clearIndex force rebuild", () => {
     removeSpy.mockRestore();
 
     const dbAfter = trackDb(new Database(dbPath));
-    const chunkIdsAfter = new Set(dbAfter.getChunksByFile(sourceFile).map((chunk) => chunk.chunkId));
+    const chunkIdsAfter = new Set(dbAfter.getChunksByFile("src/index.ts").map((chunk) => chunk.chunkId));
     expect(chunkIdsBefore.some((chunkId) => !chunkIdsAfter.has(chunkId))).toBe(true);
   });
 
@@ -1097,7 +1147,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     const dbPath = path.join(tempDir, ".opencode", "index", "codebase.db");
     const db = trackDb(new Database(dbPath));
-    expect(db.getChunksByFile(retainedFile).length).toBeGreaterThan(0);
+    expect(db.getChunksByFile("src/retained.ts").length).toBeGreaterThan(0);
   });
 
   it("refuses to auto-reset a corrupted shared global sqlite index", async () => {

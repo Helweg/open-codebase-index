@@ -10,7 +10,13 @@ Configuration is optional. Defaults are applied when fields are omitted.
 | Claude | `.claude/codebase-index.json` | `.claude/index/` | `~/.claude/codebase-index.json` | `~/.claude/global-index/` |
 | Codex, Pi, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` | `~/.codebase-index/global-index/` |
 
-Non-OpenCode hosts can fall back to existing OpenCode configuration or index state when a host-specific location does not exist. Linked worktrees may inherit configuration from the main repository, but mutable project indexes remain separate.
+Non-OpenCode hosts can fall back to existing OpenCode configuration or index state when a host-specific location does not exist.
+
+Linked worktrees without their own host-specific project config inherit both the config and project index from the main checkout. Project-owned paths are stored relative to the project root, while branch catalogs and branch-scoped runtime state keep each checkout's contents separate. Adding a project config inside a worktree creates a local config and index boundary instead.
+
+Because inheriting worktrees operate on the same project index, clearing or force-rebuilding it from one checkout affects the main checkout and every other inheriting worktree. Legacy project indexes that contain absolute stored paths must be rebuilt once with `index_codebase` and `force: true`. Global indexes continue to use canonical absolute paths.
+
+Git project indexes store file-change and retry state in `file-hashes.<branch-hash>.json` and `failed-batches.<branch-hash>.json`. Non-Git project indexes and global indexes keep the unnamespaced `file-hashes.json` and `failed-batches.json` filenames.
 
 ## Minimal example
 

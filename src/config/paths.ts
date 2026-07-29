@@ -4,6 +4,7 @@ import * as path from "path";
 
 import type { HostMode } from "./host.js";
 import { resolveWorktreeMainRepoRoot } from "../git/index.js";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 
 const OPENCODE_PROJECT_CONFIG_RELATIVE_PATH = path.join(".opencode", "codebase-index.json");
 const OPENCODE_PROJECT_INDEX_RELATIVE_PATH = path.join(".opencode", "index");
@@ -54,6 +55,31 @@ export function getHostProjectConfigRelativePath(host: HostMode): string {
 
 export function getHostProjectIndexRelativePath(host: HostMode): string {
   return getProjectIndexRelativePath(host);
+}
+
+export function isProjectIndexPathOwnedByProject(
+  projectRoot: string,
+  indexPath: string,
+  host: HostMode = "opencode",
+): boolean {
+  const projectRoots = [projectRoot];
+  const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
+  if (mainRepoRoot) {
+    projectRoots.push(mainRepoRoot);
+  }
+
+  const ownedIndexPaths = projectRoots.flatMap((root) => {
+    const indexPaths = [path.join(root, getProjectIndexRelativePath(host))];
+    if (host !== "opencode") {
+      indexPaths.push(path.join(root, OPENCODE_PROJECT_INDEX_RELATIVE_PATH));
+    }
+    return indexPaths;
+  });
+
+  const canonicalIndexPath = canonicalizePathForComparison(indexPath);
+  return ownedIndexPaths.some(
+    (ownedPath) => canonicalizePathForComparison(ownedPath) === canonicalIndexPath,
+  );
 }
 
 function hasHostProjectConfig(projectRoot: string, host: HostMode): boolean {
@@ -166,6 +192,37 @@ export function resolveProjectIndexPath(
   }
 
   const localIndexPath = path.join(projectRoot, getProjectIndexRelativePath(host));
+  const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
+  if (mainRepoRoot) {
+    if (hasHostProjectConfig(projectRoot, host)) {
+      return localIndexPath;
+    }
+
+    if (host !== "opencode") {
+      const localLegacyConfigPath = path.join(projectRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH);
+      if (existsSync(localLegacyConfigPath)) {
+        return path.join(projectRoot, OPENCODE_PROJECT_INDEX_RELATIVE_PATH);
+      }
+
+      const mainHostConfigPath = path.join(mainRepoRoot, getProjectConfigRelativePath(host));
+      const mainHostIndexPath = path.join(mainRepoRoot, getProjectIndexRelativePath(host));
+      const mainLegacyConfigPath = path.join(mainRepoRoot, OPENCODE_PROJECT_CONFIG_RELATIVE_PATH);
+      const mainLegacyIndexPath = path.join(mainRepoRoot, OPENCODE_PROJECT_INDEX_RELATIVE_PATH);
+      if (
+        !existsSync(mainHostConfigPath)
+        && !existsSync(mainHostIndexPath)
+        && (existsSync(mainLegacyConfigPath) || existsSync(mainLegacyIndexPath))
+      ) {
+        return mainLegacyIndexPath;
+      }
+    }
+
+    // Project indexes use root-relative paths and are serialized by the shared
+    // index lease, so inherited worktrees can safely reuse the main checkout.
+    // A stale worktree-local index is ignored unless a local config opts out.
+    return path.join(mainRepoRoot, getProjectIndexRelativePath(host));
+  }
+
   if (existsSync(localIndexPath)) {
     return localIndexPath;
   }
@@ -178,11 +235,6 @@ export function resolveProjectIndexPath(
   }
 
   if (hasHostProjectConfig(projectRoot, host)) {
-    return localIndexPath;
-  }
-
-  // A worktree may inherit project configuration, but never a mutable project index.
-  if (resolveWorktreeMainRepoRoot(projectRoot)) {
     return localIndexPath;
   }
 

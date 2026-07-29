@@ -1708,7 +1708,7 @@ struct Runner {
         const database = new Database(
           path.join(tempDir, ".opencode", "index", "codebase.db"),
         );
-        database.deleteSymbolsByFile(path.join(tempDir, "Runner.swift"));
+        database.deleteSymbolsByFile("Runner.swift");
         database.deleteMetadata("index.parser.swiftVersion");
         database.close();
         expect(
@@ -1919,7 +1919,7 @@ kernel void long_kernel(const device float* input [[buffer(0)]],
         const database = new Database(
           path.join(tempDir, ".opencode", "index", "codebase.db"),
         );
-        database.deleteSymbolsByFile(filePath);
+        database.deleteSymbolsByFile("representative.metal");
         database.deleteMetadata("index.parser.metalVersion");
         database.close();
         expect(

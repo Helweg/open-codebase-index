@@ -18,7 +18,7 @@ pub enum DbError {
 pub type DbResult<T> = Result<T, DbError>;
 
 /// Schema version for migrations
-const SCHEMA_VERSION: i32 = 6;
+const SCHEMA_VERSION: i32 = 7;
 
 /// Maximum number of SQL bind parameters per query.
 /// SQLite defaults to 999 (SQLITE_MAX_VARIABLE_NUMBER). We use 900 to stay safely under.
@@ -56,7 +56,7 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
     Ok(conn)
 }
 
-/// Ouvre une base publiée sans créer de fichier ni exécuter de migration.
+/// Opens a published database without creating files or running migrations.
 pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
     let conn = Connection::open_with_flags(
         db_path,
@@ -82,7 +82,10 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
         ))
     })?;
 
-    if current_version != SCHEMA_VERSION {
+    // v7 changes path-storage semantics without changing the SQLite layout.
+    // The TypeScript layer knows the index scope and decides whether v6 paths
+    // require a project rebuild or remain valid for a global index.
+    if current_version != 6 && current_version != SCHEMA_VERSION {
         return Err(DbError::ReadOnlySchema(format!(
             "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
         )));
@@ -91,7 +94,7 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
     Ok(conn)
 }
 
-/// Crée un catalogue vide en mémoire, puis le verrouille en lecture seule.
+/// Creates an empty in-memory catalog, then locks it for read-only access.
 pub fn create_empty_read_only_db() -> DbResult<Connection> {
     let conn = Connection::open_in_memory()?;
     migrate_schema(&conn, 0)?;
@@ -301,6 +304,15 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
             "#,
         )?;
 
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
+            params![SCHEMA_VERSION.to_string()],
+        )?;
+    }
+
+    if from_version == 6 {
+        // v7 is the schema gate for project-relative catalog paths. The writer
+        // owns the cross-artifact rebuild, so this step only advances the marker.
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
             params![SCHEMA_VERSION.to_string()],
@@ -1179,7 +1191,7 @@ mod tests {
     }
 
     #[test]
-    fn test_init_db() {
+    fn test_schema_v7_fresh_database() {
         let (_temp_dir, conn) = setup_test_db();
         let version: String = conn
             .query_row(
@@ -1188,7 +1200,129 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "6");
+        assert_eq!(version, "7");
+    }
+
+    #[test]
+    fn test_schema_v7_read_only_accepts_structurally_compatible_v6() {
+        let (temp_dir, conn) = setup_test_db();
+        let db_path = temp_dir.path().join("test.db");
+        set_metadata(&conn, "schema_version", "6").unwrap();
+        drop(conn);
+
+        let read_only = open_db_read_only(&db_path).unwrap();
+        assert_eq!(
+            get_metadata(&read_only, "schema_version").unwrap().unwrap(),
+            "6"
+        );
+        drop(read_only);
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "6");
+        set_metadata(&conn, "schema_version", "5").unwrap();
+        drop(conn);
+
+        let error = open_db_read_only(&db_path).err().unwrap();
+        assert_eq!(
+            error.to_string(),
+            "Read-only database schema error: found version 5, expected 7; a writer must migrate the index"
+        );
+    }
+
+    #[test]
+    fn test_schema_v7_migration_preserves_catalog_and_metadata() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("migration-v6.db");
+        let legacy_path = "/legacy/worktree-link/../checkout/src/main.ts";
+
+        {
+            let conn = init_db(&db_path).unwrap();
+            upsert_embedding(
+                &conn,
+                "legacy-hash",
+                &[1, 2, 3],
+                "legacy content",
+                "legacy-model",
+            )
+            .unwrap();
+            upsert_chunk(
+                &conn,
+                "legacy-chunk",
+                "legacy-hash",
+                legacy_path,
+                1,
+                3,
+                Some("function"),
+                Some("legacyFunction"),
+                "typescript",
+            )
+            .unwrap();
+            add_chunks_to_branch(&conn, "main", &["legacy-chunk".to_string()]).unwrap();
+
+            upsert_symbol(
+                &conn,
+                &SymbolRow {
+                    id: "legacy-symbol".to_string(),
+                    file_path: legacy_path.to_string(),
+                    name: "legacyFunction".to_string(),
+                    kind: "function".to_string(),
+                    start_line: 1,
+                    start_col: 0,
+                    end_line: 3,
+                    end_col: 1,
+                    language: "typescript".to_string(),
+                },
+            )
+            .unwrap();
+            add_symbols_to_branch(&conn, "main", &["legacy-symbol".to_string()]).unwrap();
+            upsert_call_edge(
+                &conn,
+                &CallEdgeRow {
+                    id: "legacy-edge".to_string(),
+                    from_symbol_id: "legacy-symbol".to_string(),
+                    target_name: "dependency".to_string(),
+                    to_symbol_id: None,
+                    call_type: "Call".to_string(),
+                    confidence: "Direct".to_string(),
+                    line: 2,
+                    col: 4,
+                    is_resolved: false,
+                },
+            )
+            .unwrap();
+            set_metadata(&conn, "index.embeddingModel", "legacy-model").unwrap();
+            set_metadata(&conn, "schema_version", "6").unwrap();
+        }
+
+        let conn = init_db(&db_path).unwrap();
+
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "7");
+        assert_eq!(
+            get_metadata(&conn, "index.embeddingModel")
+                .unwrap()
+                .unwrap(),
+            "legacy-model"
+        );
+        assert_eq!(
+            get_metadata(&conn, "index.pathStorageVersion").unwrap(),
+            None
+        );
+        assert_eq!(
+            get_chunk(&conn, "legacy-chunk").unwrap().unwrap().file_path,
+            legacy_path
+        );
+        assert_eq!(
+            get_symbols_for_branch(&conn, "main").unwrap()[0].file_path,
+            legacy_path
+        );
+
+        let stats = get_stats(&conn).unwrap();
+        assert_eq!(stats.embedding_count, 1);
+        assert_eq!(stats.chunk_count, 1);
+        assert_eq!(stats.branch_chunk_count, 1);
+        assert_eq!(stats.branch_count, 1);
+        assert_eq!(stats.symbol_count, 1);
+        assert_eq!(stats.call_edge_count, 1);
     }
 
     #[test]
@@ -1915,7 +2049,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(schema_version, "6");
+        assert_eq!(schema_version, "7");
 
         let on_delete: String = conn
             .query_row("PRAGMA foreign_key_list(call_edges)", [], |row| row.get(6))

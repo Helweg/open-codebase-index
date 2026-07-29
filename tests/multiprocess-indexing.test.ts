@@ -392,6 +392,7 @@ describe("multiprocess indexing", () => {
     for (const chunkId of branchChunkIds) {
       const chunk = database.getChunk(chunkId);
       expect(chunk).not.toBeNull();
+      expect(chunk!.filePath).toBe("src/index.ts");
       expect(database.getEmbedding(chunk!.contentHash)).not.toBeNull();
     }
     database.close();
@@ -399,15 +400,17 @@ describe("multiprocess indexing", () => {
     const vectors = new VectorStore(path.join(indexPath, "vectors"), 8);
     vectors.load();
     expect(vectors.count()).toBe(stats?.chunkCount);
-    expect(vectors.getAllMetadata().map(({ key }) => key).sort()).toEqual([...branchChunkIds].sort());
+    const vectorMetadata = vectors.getAllMetadata();
+    expect(vectorMetadata.map(({ key }) => key).sort()).toEqual([...branchChunkIds].sort());
+    expect(vectorMetadata.every(({ metadata }) => metadata.filePath === "src/index.ts")).toBe(true);
 
     const inverted = new InvertedIndex(path.join(indexPath, "inverted-index.json"));
     inverted.load();
     expect(inverted.getDocumentCount()).toBe(stats?.chunkCount);
     expect(Array.from(inverted.search("function", 20).keys()).some((chunkId) => branchChunkIds.includes(chunkId))).toBe(true);
     const hashes = JSON.parse(fs.readFileSync(path.join(indexPath, "file-hashes.json"), "utf-8")) as Record<string, string>;
-    expect(Object.keys(hashes).length).toBeGreaterThan(0);
-    expect(hashes[sourcePath]).toBeTypeOf("string");
+    expect(Object.keys(hashes)).toEqual(["src/index.ts"]);
+    expect(hashes["src/index.ts"]).toBeTypeOf("string");
     expect(fs.existsSync(path.join(indexPath, "failed-batches.json"))).toBe(false);
     expect(fs.existsSync(path.join(indexPath, "indexing.lock"))).toBe(false);
     expect(fs.readdirSync(indexPath).some((name) => name.includes(".tmp.") || name.includes(".bak.") || name.startsWith("indexing.lock."))).toBe(false);
@@ -811,7 +814,7 @@ describe("multiprocess indexing", () => {
     assertIndexIntegrity();
   });
 
-  it("defers legacy database creation to the next writer without re-embedding", async () => {
+  it("requires a forced rebuild when only legacy vector artifacts remain", async () => {
     await seedIndex();
     embeddingServer.reset();
     const indexPath = path.join(projectRoot, ".opencode", "index");
@@ -829,19 +832,24 @@ describe("multiprocess indexing", () => {
     expect(fs.existsSync(dbPath)).toBe(false);
     expect(embeddingServer.requestCount).toBe(0);
 
-    const stats = await indexer.index();
+    await expect(indexer.index()).rejects.toThrow(/path storage format mismatch.*force=true/i);
+    expect(embeddingServer.requestCount).toBe(0);
+
+    const stats = await indexer.forceIndex();
     const writerStatus = await indexer.getStatus();
     const database = new Database(dbPath);
     try {
-      expect(stats.indexedChunks).toBe(0);
+      expect(stats.indexedChunks).toBeGreaterThan(0);
       expect(writerStatus.indexed).toBe(true);
       expect(writerStatus.warning).toBeUndefined();
       expect(database.getStats().chunkCount).toBeGreaterThan(0);
       expect(database.getBranchChunkIds("default").length).toBeGreaterThan(0);
-      expect(embeddingServer.requestCount).toBe(0);
+      expect(database.getMetadata("index.pathStorageVersion")).toBe("2");
+      expect(embeddingServer.requestCount).toBeGreaterThan(0);
     } finally {
       database.close();
     }
+    assertIndexIntegrity();
   });
 
   it("publishes BM25 atomically while a cold reader overlaps the writer save", async () => {
