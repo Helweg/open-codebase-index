@@ -7,20 +7,20 @@ import {
   formatSearchResults,
   MAX_CONTEXT_PACK_TOKEN_BUDGET,
   MIN_CONTEXT_PACK_TOKEN_BUDGET,
-} from "../tools/utils.js";
+} from "../../tools/utils.js";
 import {
   MAX_CONTEXT_PATH_DEPTH,
   MAX_CONTEXT_RESULT_LIMIT,
   MIN_CONTEXT_PATH_DEPTH,
   MIN_CONTEXT_RESULT_LIMIT,
-} from "../tools/context.js";
+} from "../../tools/context.js";
 import {
   CALL_GRAPH_DIRECTIONS,
   CHUNK_TYPES,
   INDEX_LOG_CATEGORIES,
   INDEX_LOG_LEVELS,
   RELATIONSHIP_TYPES,
-} from "../tools/contracts.js";
+} from "../../tools/contracts.js";
 import {
   executeCallGraph,
   executeCallGraphPath,
@@ -31,15 +31,15 @@ import {
   executeIndexMetrics,
   executeIndexStatus,
   executeImplementationLookup,
-} from "../tools/execute-common.js";
-import { formatPrImpact } from "../tools/format-pr-impact.js";
+} from "../../tools/execute-common.js";
+import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import {
   findSimilarCode,
   getPrImpact,
   searchCodebaseWithEffectiveness,
-} from "../tools/operations.js";
+} from "../../tools/operations.js";
 import type { McpServerRuntime } from "./shared.js";
-import { TOOL_NAME } from "../tools/tool-names.js";
+import { TOOL_NAME } from "../../tools/tool-names.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
   return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;

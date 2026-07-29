@@ -1,4 +1,4 @@
-import type { HostMode } from "../config/host.js";
+import type { HostMode } from "../../config/host.js";
 
 export const MAX_CONTENT_LINES = 30;
 
