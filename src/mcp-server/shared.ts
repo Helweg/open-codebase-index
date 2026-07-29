@@ -11,11 +11,6 @@ export function truncateContent(content: string): string {
   );
 }
 
-export const CHUNK_TYPE_ENUM = [
-  "function", "class", "method", "interface", "type",
-  "enum", "struct", "impl", "trait", "module", "other",
-] as const;
-
 export interface McpServerRuntime {
   projectRoot: string;
   host: HostMode;

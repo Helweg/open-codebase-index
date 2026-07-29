@@ -3,45 +3,47 @@ import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import type { HostMode } from "../config/host.js";
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { Indexer } from "../indexer/index.js";
-import { formatCostEstimate } from "../utils/cost.js";
+import {
+  CALL_GRAPH_DIRECTIONS,
+  CHUNK_TYPES,
+  INDEX_LOG_LEVELS,
+  INDEX_LOG_CATEGORIES,
+  RELATIONSHIP_TYPES,
+} from "./contracts.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
   formatCodebasePeek,
-  formatCallGraphPathResult,
-  formatCallGraphResult,
-  formatDefinitionLookup,
-  formatHealthCheck,
-  formatIndexStats,
   formatSearchResults,
-  formatStatus,
   MAX_CONTEXT_PACK_TOKEN_BUDGET,
   MIN_CONTEXT_PACK_TOKEN_BUDGET,
 } from "./utils.js";
 import {
   addKnowledgeBase,
   findSimilarCode,
-  getCallGraphData,
-  getCallGraphPath,
-  getIndexLogs,
-  getIndexMetrics,
   getIndexerForProject as getOperationIndexerForProject,
-  getIndexStatus,
   getSharedIndexer as getOperationSharedIndexer,
-  implementationLookup,
   initializeTools as initializeToolOperations,
   listKnowledgeBases,
   removeKnowledgeBase,
-  runIndexCodebase,
-  runIndexHealthCheck,
   searchCodebaseWithEffectiveness,
 } from "./operations.js";
 import { pr_impact } from "./pr-impact.js";
+import {
+  executeCallGraph,
+  executeCallGraphPath,
+  executeCodebaseContext,
+  executeIndexCodebase,
+  executeIndexHealthCheck,
+  executeIndexLogs,
+  executeIndexMetrics,
+  executeIndexStatus,
+  executeImplementationLookup,
+} from "./execute-common.js";
 import {
   MAX_CONTEXT_PATH_DEPTH,
   MAX_CONTEXT_RESULT_LIMIT,
   MIN_CONTEXT_PATH_DEPTH,
   MIN_CONTEXT_RESULT_LIMIT,
-  resolveCodebaseContext,
 } from "./context.js";
 import { writeFileSync } from "fs";
 import * as os from "os";
@@ -51,20 +53,8 @@ import { generateVisualizationHtml, transformForVisualization } from "./visualiz
 
 const z = tool.schema;
 const DEFAULT_HOST: HostMode = "opencode";
-const CHUNK_TYPE_VALUES = [
-  "function",
-  "class",
-  "method",
-  "interface",
-  "type",
-  "enum",
-  "struct",
-  "impl",
-  "trait",
-  "module",
-  "other",
-] as const;
-const RELATIONSHIP_TYPE_VALUES = ["Call", "MethodCall", "Constructor", "Import", "Inherits", "Implements"] as const;
+const CHUNK_TYPE_VALUES = CHUNK_TYPES;
+const RELATIONSHIP_TYPE_VALUES = RELATIONSHIP_TYPES;
 
 export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig): void {
   initializeToolOperations(projectRoot, config, DEFAULT_HOST);
@@ -99,7 +89,7 @@ export const codebase_context: ToolDefinition = tool({
       .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
   },
   async execute(args, context) {
-    return (await resolveCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
@@ -142,13 +132,9 @@ export const index_codebase: ToolDefinition = tool({
     verbose: z.boolean().optional().default(false).describe("Show detailed info about skipped files and parsing failures"),
   },
   async execute(args, context) {
-    const result = await runIndexCodebase(context?.worktree, DEFAULT_HOST, args, (title, metadata) => {
+    return (await executeIndexCodebase(context?.worktree, DEFAULT_HOST, args, (title, metadata) => {
       context.metadata({ title, metadata });
-    });
-
-    if (result.kind === "estimate") return formatCostEstimate(result.estimate);
-    if (result.kind === "busy" || result.kind === "message") return result.text;
-    return formatIndexStats(result.stats, args.verbose ?? false);
+    })).text;
   },
 });
 
@@ -157,7 +143,7 @@ export const index_status: ToolDefinition = tool({
     "Check the status of the codebase index. Shows whether the codebase is indexed, how many chunks are stored, and the embedding provider being used.",
   args: {},
   async execute(_args, context) {
-    return formatStatus(await getIndexStatus(context?.worktree, DEFAULT_HOST));
+    return (await executeIndexStatus(context?.worktree, DEFAULT_HOST)).text;
   },
 });
 
@@ -166,9 +152,7 @@ export const index_health_check: ToolDefinition = tool({
     "Check index health and remove stale entries from deleted files. Run this to clean up the index after files have been deleted.",
   args: {},
   async execute(_args, context) {
-    const result = await runIndexHealthCheck(context?.worktree, DEFAULT_HOST);
-    if (result.kind === "busy") return result.text;
-    return formatHealthCheck(result.health);
+    return (await executeIndexHealthCheck(context?.worktree, DEFAULT_HOST)).text;
   },
 });
 
@@ -179,7 +163,7 @@ export const index_metrics: ToolDefinition = tool({
     reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
   },
   async execute(args, context) {
-    return (await getIndexMetrics(context?.worktree, DEFAULT_HOST, { reset: args.reset })).text;
+    return (await executeIndexMetrics(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
@@ -188,11 +172,11 @@ export const index_logs: ToolDefinition = tool({
     "Get recent debug logs from the codebase indexer. Shows timestamped log entries with level and category. Requires debug.enabled=true in config.",
   args: {
     limit: z.number().optional().default(20).describe("Maximum number of log entries to return"),
-    category: z.enum(["search", "embedding", "cache", "gc", "branch", "general"]).optional().describe("Filter by log category"),
-    level: z.enum(["error", "warn", "info", "debug"]).optional().describe("Filter by minimum log level"),
+    category: z.enum(INDEX_LOG_CATEGORIES).optional().describe("Filter by log category"),
+    level: z.enum(INDEX_LOG_LEVELS).optional().describe("Filter by minimum log level"),
   },
   async execute(args, context) {
-    return (await getIndexLogs(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeIndexLogs(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
@@ -270,12 +254,7 @@ export const implementation_lookup: ToolDefinition = tool({
     directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils')"),
   },
   async execute(args, context) {
-    const results = await implementationLookup(context?.worktree, DEFAULT_HOST, args.query, {
-      limit: args.limit ?? 5,
-      fileType: args.fileType,
-      directory: args.directory,
-    });
-    return formatDefinitionLookup(results, args.query);
+    return (await executeImplementationLookup(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
@@ -285,14 +264,13 @@ export const call_graph: ToolDefinition = tool({
     + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
   args: {
     name: z.string().describe("Function or method name to query"),
-    direction: z.enum(["callers", "callees"]).default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
+    direction: z.enum(CALL_GRAPH_DIRECTIONS).default("callers").describe("Direction: 'callers' finds who calls this function, 'callees' finds what this function calls"),
     filePath: z.string().optional().describe("Optional file path used to disambiguate duplicate symbol names"),
     symbolId: z.string().optional().describe("Optional backward-compatible symbol ID escape hatch"),
     relationshipType: z.enum(RELATIONSHIP_TYPE_VALUES).optional().describe("Filter by relationship type. Omit to show all."),
   },
   async execute(args, context) {
-    const graph = await getCallGraphData(context?.worktree, DEFAULT_HOST, args);
-    return formatCallGraphResult(graph);
+    return (await executeCallGraph(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
@@ -307,16 +285,7 @@ export const call_graph_path: ToolDefinition = tool({
     maxDepth: z.number().optional().default(10).describe("Maximum traversal depth (default: 10)"),
   },
   async execute(args, context) {
-    const path = await getCallGraphPath(
-      context?.worktree,
-      DEFAULT_HOST,
-      args.from,
-      args.to,
-      args.maxDepth,
-      args.fromFilePath,
-      args.toFilePath,
-    );
-    return formatCallGraphPathResult(path);
+    return (await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 
