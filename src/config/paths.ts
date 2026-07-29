@@ -64,7 +64,7 @@ function hasHostGlobalConfig(host: HostMode): boolean {
   return existsSync(getGlobalConfigPath(host));
 }
 
-export function getGlobalIndexPath(host: HostMode = "opencode"): string {
+export function getGlobalIndexPath(host: HostMode): string {
   switch (host) {
     case "opencode":
       return path.join(os.homedir(), ".opencode", "global-index");
@@ -76,7 +76,7 @@ export function getGlobalIndexPath(host: HostMode = "opencode"): string {
   }
 }
 
-export function getGlobalConfigPath(host: HostMode = "opencode"): string {
+export function getGlobalConfigPath(host: HostMode): string {
   switch (host) {
     case "opencode":
       return path.join(os.homedir(), ".config", "opencode", "codebase-index.json");
@@ -88,7 +88,7 @@ export function getGlobalConfigPath(host: HostMode = "opencode"): string {
   }
 }
 
-export function resolveGlobalConfigPath(host: HostMode = "opencode"): string {
+export function resolveGlobalConfigPath(host: HostMode): string {
   const hostConfigPath = getGlobalConfigPath(host);
   if (existsSync(hostConfigPath)) {
     return hostConfigPath;
@@ -104,7 +104,7 @@ export function resolveGlobalConfigPath(host: HostMode = "opencode"): string {
   return hostConfigPath;
 }
 
-export function resolveGlobalIndexPath(host: HostMode = "opencode"): string {
+export function resolveGlobalIndexPath(host: HostMode): string {
   const hostIndexPath = getGlobalIndexPath(host);
   if (existsSync(hostIndexPath)) {
     return hostIndexPath;
@@ -124,7 +124,7 @@ export function resolveGlobalIndexPath(host: HostMode = "opencode"): string {
   return hostIndexPath;
 }
 
-export function resolveProjectConfigPath(projectRoot: string, host: HostMode = "opencode"): string {
+export function resolveProjectConfigPath(projectRoot: string, host: HostMode): string {
   const hostConfigPath = path.join(projectRoot, getProjectConfigRelativePath(host));
   if (existsSync(hostConfigPath)) {
     return hostConfigPath;
@@ -152,14 +152,14 @@ export function resolveProjectConfigPath(projectRoot: string, host: HostMode = "
   return hostConfigPath;
 }
 
-export function resolveWritableProjectConfigPath(projectRoot: string, host: HostMode = "opencode"): string {
+export function resolveWritableProjectConfigPath(projectRoot: string, host: HostMode): string {
   return path.join(projectRoot, getProjectConfigRelativePath(host));
 }
 
 export function resolveProjectIndexPath(
   projectRoot: string,
   scope: "project" | "global",
-  host: HostMode = "opencode",
+  host: HostMode,
 ): string {
   if (scope === "global") {
     return resolveGlobalIndexPath(host);

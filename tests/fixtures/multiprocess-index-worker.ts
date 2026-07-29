@@ -47,7 +47,7 @@ const config = parseConfig({
   debug: { enabled: false },
 });
 
-const indexer = new Indexer(projectRoot, config);
+const indexer = new Indexer(projectRoot, config, "opencode");
 let watcher: CombinedWatcher | null = null;
 let running = false;
 

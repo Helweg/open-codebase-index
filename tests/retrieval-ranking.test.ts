@@ -516,7 +516,7 @@ describe("retrieval ranking", () => {
         topN: 3,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const firstPath = createTempFile("src/first.ts", "const SECRET_BEFORE = 'private';\nexport function firstThing() {\n  return 'first';\n}\nconst SECRET_AFTER = 'private';\n");
     const secondPath = createTempFile("src/second.ts", "export function secondThing() {\n  return 'second';\n}\n");
@@ -573,7 +573,7 @@ describe("retrieval ranking", () => {
         topN: 2,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const firstPath = createTempFile("src/first.ts", "export function firstThing() {\n  return 'first';\n}\n");
     const secondPath = createTempFile("src/second.ts", "export function secondThing() {\n  return 'second';\n}\n");
@@ -617,7 +617,7 @@ describe("retrieval ranking", () => {
         topN: 3,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const fetchSpy = globalThis.fetch;
     let rerankCalled = false;
@@ -672,7 +672,7 @@ describe("retrieval ranking", () => {
         topN: 3,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const fetchSpy = globalThis.fetch;
     let rerankCalled = false;
@@ -731,7 +731,7 @@ describe("retrieval ranking", () => {
         topN: 3,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const fileA1 = createTempFile("src/auth.ts", "export function validateAuth() {\n  return true;\n}\n");
     const fileA2 = fileA1;
@@ -785,7 +785,7 @@ describe("retrieval ranking", () => {
         topN: 3,
       },
     });
-    const indexer = new Indexer("/repo", config);
+    const indexer = new Indexer("/repo", config, "opencode");
 
     const authFile = createTempFile("src/auth.ts", "export function validateAuth() {\n  return true;\n}\nexport function refreshAuth() {\n  return false;\n}\n");
 

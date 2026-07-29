@@ -1002,7 +1002,7 @@ export class Indexer {
   constructor(
     projectRoot: string,
     config: ParsedCodebaseIndexConfig,
-    host: HostMode = "opencode",
+    host: HostMode,
     runtimeOptions: IndexerRuntimeOptions = {},
   ) {
     this.projectRoot = projectRoot;

@@ -362,7 +362,7 @@ class ReportBuilder {
           },
           indexing: { watchFiles: false },
         });
-        const indexer = new Indexer(projectDir, config);
+        const indexer = new Indexer(projectDir, config, "opencode");
 
         try {
           await indexer.index();
@@ -435,7 +435,7 @@ function buildReport(): string {
         });
 
         CASE_INSENSITIVE_LANGUAGES.delete("php");
-        let indexer = new Indexer(projectDir, config);
+        let indexer = new Indexer(projectDir, config, "opencode");
         try {
           await indexer.index();
           const caller = (await indexer.getSymbolsForBranch()).find(
@@ -455,7 +455,7 @@ function buildReport(): string {
         database.close();
         const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
 
-        indexer = new Indexer(projectDir, config);
+        indexer = new Indexer(projectDir, config, "opencode");
         try {
           await indexer.index();
           const symbols = await indexer.getSymbolsForBranch();
@@ -509,7 +509,7 @@ function caller(): string { return namespace\\helper(); }
         });
 
         CALL_GRAPH_LANGUAGES.delete("php");
-        let indexer = new Indexer(projectDir, config);
+        let indexer = new Indexer(projectDir, config, "opencode");
         try {
           await indexer.index();
           const caller = (await indexer.getSymbolsForBranch()).find(
@@ -526,7 +526,7 @@ function caller(): string { return namespace\\helper(); }
         database.setMetadata("index.callGraphResolutionVersion", "3");
         database.close();
         const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
-        indexer = new Indexer(projectDir, config);
+        indexer = new Indexer(projectDir, config, "opencode");
         try {
           await indexer.index();
           const caller = (await indexer.getSymbolsForBranch()).find(
@@ -1258,7 +1258,7 @@ const math = @import("math.zig");
         },
         indexing: { watchFiles: false },
       });
-      const indexer = new Indexer(tempDir, config);
+      const indexer = new Indexer(tempDir, config, "opencode");
 
       try {
         await indexer.index();
@@ -1356,7 +1356,7 @@ const math = @import("math.zig");
       });
 
       CALL_GRAPH_LANGUAGES.delete("c");
-      let indexer = new Indexer(tempDir, config);
+      let indexer = new Indexer(tempDir, config, "opencode");
       try {
         await indexer.index();
         const caller = (await indexer.getSymbolsForBranch()).find(
@@ -1374,7 +1374,7 @@ const math = @import("math.zig");
       database.close();
       const embeddingCallsBeforeUpgrade = fetchSpy.mock.calls.length;
 
-      indexer = new Indexer(tempDir, config);
+      indexer = new Indexer(tempDir, config, "opencode");
       try {
         await indexer.index();
         const symbols = await indexer.getSymbolsForBranch();
@@ -1674,7 +1674,7 @@ struct Runner {
           retryDelayMs: 1,
         },
       });
-      const indexer = new Indexer(tempDir, config);
+      const indexer = new Indexer(tempDir, config, "opencode");
 
       try {
         await indexer.index();
@@ -1893,7 +1893,7 @@ kernel void long_kernel(const device float* input [[buffer(0)]],
         },
         indexing: { watchFiles: false },
       });
-      const indexer = new Indexer(tempDir, config);
+      const indexer = new Indexer(tempDir, config, "opencode");
 
       try {
         const stats = await indexer.index();
@@ -3237,7 +3237,7 @@ main() {
       });
 
       const callPath = async (fromSymbolId: string, toSymbolId: string, maxDepth = 10) => {
-        const indexer = new Indexer(tempDir, createIndexerConfig());
+        const indexer = new Indexer(tempDir, createIndexerConfig(), "opencode");
         try {
           return await indexer.findCallPathBySymbolIds(fromSymbolId, toSymbolId, maxDepth);
         } finally {

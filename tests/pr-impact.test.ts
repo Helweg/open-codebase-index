@@ -100,8 +100,8 @@ describe("pr_impact tool", () => {
       },
       indexing: { watchFiles: false },
     });
-    initializeTools(tempDir, config);
-    const indexer = new Indexer(tempDir, config);
+    initializeTools(tempDir, config, "opencode");
+    const indexer = new Indexer(tempDir, config, "opencode");
     _indexers.push(indexer);
     await indexer.index();
     return indexer;

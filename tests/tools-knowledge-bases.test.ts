@@ -109,7 +109,7 @@ describe("knowledge base tool config refresh", () => {
     kbDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-source-"));
     vi.stubEnv("HOME", path.join(tempDir, "home"));
     vi.stubEnv("USERPROFILE", path.join(tempDir, "home"));
-    initializeTools(tempDir, parseConfig({ indexing: { watchFiles: false } }));
+    initializeTools(tempDir, parseConfig({ indexing: { watchFiles: false } }), "opencode");
   });
 
   afterEach(() => {
@@ -188,7 +188,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
     await add_knowledge_base.execute({ path: kbDir });
 
@@ -235,7 +235,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
     await add_knowledge_base.execute({ path: kbDir });
 
@@ -266,7 +266,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(tempDir, parseConfig(loadMergedConfig(tempDir)));
+    initializeTools(tempDir, parseConfig(loadMergedConfig(tempDir, "opencode")), "opencode");
 
     await add_knowledge_base.execute({ path: kbDir });
 
@@ -313,7 +313,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
     await add_knowledge_base.execute({ path: kbDir });
 
@@ -355,7 +355,7 @@ describe("knowledge base tool config refresh", () => {
         "utf-8"
       );
 
-      const merged = loadMergedConfig(tempDir) as { knowledgeBases?: string[] };
+      const merged = loadMergedConfig(tempDir, "opencode") as { knowledgeBases?: string[] };
       expect(merged.knowledgeBases).toEqual([path.normalize(kbDir)]);
     } finally {
       vi.unstubAllEnvs();
@@ -397,7 +397,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
     await add_knowledge_base.execute({ path: kbDir });
 
@@ -435,7 +435,7 @@ describe("knowledge base tool config refresh", () => {
     );
 
     indexerInstances.length = 0;
-    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+    initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
     await index_codebase.execute({ force: true, estimateOnly: false, verbose: false }, {
       metadata: () => undefined,
@@ -450,7 +450,7 @@ describe("knowledge base tool config refresh", () => {
       JSON.stringify({ knowledgeBases: ["docs/updated"] }, null, 2),
       "utf-8"
     );
-    expect((loadMergedConfig(worktreeDir) as { knowledgeBases?: string[] }).knowledgeBases).toEqual(["docs/updated"]);
+    expect((loadMergedConfig(worktreeDir, "opencode") as { knowledgeBases?: string[] }).knowledgeBases).toEqual(["docs/updated"]);
   });
 
   it("does not snapshot global-only settings when materializing a local config boundary", async () => {
@@ -488,7 +488,7 @@ describe("knowledge base tool config refresh", () => {
       );
 
       indexerInstances.length = 0;
-      initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir)));
+      initializeTools(worktreeDir, parseConfig(loadMergedConfig(worktreeDir, "opencode")), "opencode");
 
       await add_knowledge_base.execute({ path: kbDir });
 

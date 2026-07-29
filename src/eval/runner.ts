@@ -90,7 +90,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
     clearIndexRoot(options.projectRoot, effectiveConfig.scope);
   }
 
-  const indexer = new Indexer(options.projectRoot, effectiveConfig);
+  const indexer = new Indexer(options.projectRoot, effectiveConfig, "opencode");
 
   try {
     await indexer.index();

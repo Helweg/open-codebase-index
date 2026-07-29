@@ -98,7 +98,7 @@ interface ChatTransformOutput {
 const plugin: Plugin = async ({ directory, worktree }) => {
   try {
     const projectRoot = resolveProjectRoot(directory, worktree);
-    const rawConfig = loadMergedConfig(projectRoot);
+    const rawConfig = loadMergedConfig(projectRoot, "opencode");
     const config = parseConfig(rawConfig);
 
     initializeTools(projectRoot, config);

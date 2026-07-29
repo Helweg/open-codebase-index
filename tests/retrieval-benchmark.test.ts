@@ -373,7 +373,7 @@ describe("retrieval benchmark", () => {
         },
       });
 
-      indexer = new Indexer(tempDir, config);
+      indexer = new Indexer(tempDir, config, "opencode");
       await indexer.index();
 
       const samples: number[] = [];

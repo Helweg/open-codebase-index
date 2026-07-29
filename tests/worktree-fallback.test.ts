@@ -86,8 +86,8 @@ describe("worktree fallback (issue #60)", () => {
   });
 
   it("loads project config from the main repo when the worktree has no local config", () => {
-    const configPath = resolveProjectConfigPath(worktreeDir);
-    const loaded = loadMergedConfig(worktreeDir) as Record<string, unknown>;
+    const configPath = resolveProjectConfigPath(worktreeDir, "opencode");
+    const loaded = loadMergedConfig(worktreeDir, "opencode") as Record<string, unknown>;
 
     expect(configPath).toBe(path.join(mainRepoDir, ".opencode", "codebase-index.json"));
     expect(loaded.scope).toBe("project");
@@ -99,7 +99,7 @@ describe("worktree fallback (issue #60)", () => {
     const configPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
     fs.writeFileSync(configPath, '{"embeddingProvider":"custom",', "utf-8");
 
-    expect(() => loadMergedConfig(worktreeDir)).toThrow(
+    expect(() => loadMergedConfig(worktreeDir, "opencode")).toThrow(
       new RegExp(`Failed to load config file ${configPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
     );
   });
@@ -108,7 +108,7 @@ describe("worktree fallback (issue #60)", () => {
     const configPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
     fs.writeFileSync(configPath, JSON.stringify({ knowledgeBases: "docs/reference" }, null, 2), "utf-8");
 
-    expect(() => loadMergedConfig(worktreeDir)).toThrow(/field 'knowledgeBases' must be an array of strings/);
+    expect(() => loadMergedConfig(worktreeDir, "opencode")).toThrow(/field 'knowledgeBases' must be an array of strings/);
   });
 
   it("throws a file-specific error when the global config is malformed", () => {
@@ -124,7 +124,7 @@ describe("worktree fallback (issue #60)", () => {
       const repoConfigPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
       fs.rmSync(repoConfigPath, { force: true });
 
-      expect(() => loadMergedConfig(worktreeDir)).toThrow(
+      expect(() => loadMergedConfig(worktreeDir, "opencode")).toThrow(
         new RegExp(`Failed to load config file ${globalConfigPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)
       );
     } finally {
@@ -142,7 +142,7 @@ describe("worktree fallback (issue #60)", () => {
       fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
       fs.writeFileSync(globalConfigPath, '{"debug":', "utf-8");
 
-      const loaded = loadMergedConfig(worktreeDir) as Record<string, unknown>;
+      const loaded = loadMergedConfig(worktreeDir, "opencode") as Record<string, unknown>;
 
       expect(loaded.scope).toBe("project");
       expect(loaded.additionalInclude).toEqual(["docs/**/*.md"]);
@@ -193,7 +193,7 @@ describe("worktree fallback (issue #60)", () => {
       "utf-8"
     );
 
-    const loaded = loadMergedConfig(worktreeDir) as {
+    const loaded = loadMergedConfig(worktreeDir, "opencode") as {
       indexing?: Record<string, unknown>;
     };
 
@@ -226,18 +226,18 @@ describe("worktree fallback (issue #60)", () => {
       "utf-8"
     );
 
-    const loaded = loadMergedConfig(worktreeDir) as Record<string, unknown>;
+    const loaded = loadMergedConfig(worktreeDir, "opencode") as Record<string, unknown>;
 
     expect(loaded.knowledgeBases).toEqual(["docs/reference"]);
   });
 
   it("keeps the project index local when the worktree inherits its config", async () => {
-    const config = parseConfig(loadMergedConfig(worktreeDir));
-    const indexer = new Indexer(worktreeDir, config);
+    const config = parseConfig(loadMergedConfig(worktreeDir, "opencode"));
+    const indexer = new Indexer(worktreeDir, config, "opencode");
     try {
       const status = await indexer.getStatus();
 
-      expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(path.join(worktreeDir, ".opencode", "index"));
+      expect(resolveProjectIndexPath(worktreeDir, "project", "opencode")).toBe(path.join(worktreeDir, ".opencode", "index"));
       expect(status.indexPath).toBe(path.join(worktreeDir, ".opencode", "index"));
       expect(status.currentBranch).toBe("feature/x/y");
     } finally {
@@ -275,10 +275,10 @@ describe("worktree fallback (issue #60)", () => {
       }), { status: 200 });
     });
 
-    const mainConfig = parseConfig(loadMergedConfig(mainRepoDir));
-    const worktreeConfig = parseConfig(loadMergedConfig(worktreeDir));
-    const mainIndexer = new Indexer(mainRepoDir, mainConfig);
-    const worktreeIndexer = new Indexer(worktreeDir, worktreeConfig);
+    const mainConfig = parseConfig(loadMergedConfig(mainRepoDir, "opencode"));
+    const worktreeConfig = parseConfig(loadMergedConfig(worktreeDir, "opencode"));
+    const mainIndexer = new Indexer(mainRepoDir, mainConfig, "opencode");
+    const worktreeIndexer = new Indexer(worktreeDir, worktreeConfig, "opencode");
     const indexers = [mainIndexer, worktreeIndexer];
 
     try {
@@ -292,7 +292,7 @@ describe("worktree fallback (issue #60)", () => {
       await worktreeIndexer.close();
 
       const worktreeIndexPath = path.join(worktreeDir, ".opencode", "index");
-      expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(worktreeIndexPath);
+      expect(resolveProjectIndexPath(worktreeDir, "project", "opencode")).toBe(worktreeIndexPath);
       expect(snapshotProjectIndex(mainIndexPath)).toEqual(mainSnapshotBefore);
 
       const worktreeSnapshot = snapshotProjectIndex(worktreeIndexPath);
@@ -302,8 +302,8 @@ describe("worktree fallback (issue #60)", () => {
         chunk !== null && chunk.filePath.startsWith(`${path.resolve(worktreeDir)}${path.sep}`)
       )).toBe(true);
 
-      const mainReader = new Indexer(mainRepoDir, mainConfig);
-      const worktreeReader = new Indexer(worktreeDir, worktreeConfig);
+      const mainReader = new Indexer(mainRepoDir, mainConfig, "opencode");
+      const worktreeReader = new Indexer(worktreeDir, worktreeConfig, "opencode");
       indexers.push(mainReader, worktreeReader);
       const [mainResults, worktreeResults] = await Promise.all([
         mainReader.search("worktreeIsolationMarker", 5, { metadataOnly: true, filterByBranch: false }),
@@ -326,9 +326,9 @@ describe("worktree fallback (issue #60)", () => {
       "utf-8"
     );
 
-    const configPath = resolveProjectConfigPath(worktreeDir);
-    const indexPath = resolveProjectIndexPath(worktreeDir, "project");
-    const loaded = loadMergedConfig(worktreeDir) as Record<string, unknown>;
+    const configPath = resolveProjectConfigPath(worktreeDir, "opencode");
+    const indexPath = resolveProjectIndexPath(worktreeDir, "project", "opencode");
+    const loaded = loadMergedConfig(worktreeDir, "opencode") as Record<string, unknown>;
 
     expect(configPath).toBe(path.join(worktreeDir, ".opencode", "codebase-index.json"));
     expect(indexPath).toBe(path.join(worktreeDir, ".opencode", "index"));
@@ -338,9 +338,9 @@ describe("worktree fallback (issue #60)", () => {
   it("keeps a worktree-local config on a local worktree index boundary", () => {
     fs.mkdirSync(path.join(worktreeDir, ".opencode", "index"), { recursive: true });
 
-    expect(resolveWritableProjectConfigPath(worktreeDir)).toBe(path.join(worktreeDir, ".opencode", "codebase-index.json"));
-    expect(resolveProjectConfigPath(worktreeDir)).toBe(path.join(mainRepoDir, ".opencode", "codebase-index.json"));
-    expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(path.join(worktreeDir, ".opencode", "index"));
+    expect(resolveWritableProjectConfigPath(worktreeDir, "opencode")).toBe(path.join(worktreeDir, ".opencode", "codebase-index.json"));
+    expect(resolveProjectConfigPath(worktreeDir, "opencode")).toBe(path.join(mainRepoDir, ".opencode", "codebase-index.json"));
+    expect(resolveProjectIndexPath(worktreeDir, "project", "opencode")).toBe(path.join(worktreeDir, ".opencode", "index"));
   });
 
   it("keeps explicit worktree-local config and index when they exist", () => {
@@ -360,6 +360,6 @@ describe("worktree fallback (issue #60)", () => {
       "utf-8"
     );
 
-    expect(resolveProjectIndexPath(worktreeDir, "project")).toBe(path.join(worktreeDir, ".opencode", "index"));
+    expect(resolveProjectIndexPath(worktreeDir, "project", "opencode")).toBe(path.join(worktreeDir, ".opencode", "index"));
   });
 });

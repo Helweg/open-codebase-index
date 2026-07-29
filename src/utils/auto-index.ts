@@ -703,7 +703,7 @@ export function configureAutoIndex(
 
 export function startAutoIndex(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
   source: "startup" | "retrieval" = "startup",
 ): Promise<CoordinatedIndexResult> | null {
   return getCoordinator(projectRoot, host)?.start(source) ?? null;
@@ -711,7 +711,7 @@ export function startAutoIndex(
 
 export function requestBackgroundIndex(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): Promise<CoordinatedIndexResult> | null {
   return getCoordinator(projectRoot, host)?.request({
     checkFreshness: false,
@@ -736,7 +736,7 @@ export function runCoordinatedIndex(
 
 export function getAutoIndexStatus(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): AutoIndexStatusSnapshot {
   return getCoordinator(projectRoot, host)?.snapshot() ?? {
     enabled: false,
@@ -747,7 +747,7 @@ export function getAutoIndexStatus(
 
 export async function waitForAutoIndexForRetrieval(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): Promise<AutoIndexRetrievalResult> {
   const coordinator = getCoordinator(projectRoot, host);
   if (!coordinator) return { ready: true };
@@ -804,7 +804,7 @@ export async function waitForAutoIndexForRetrieval(
 
 export async function stopAutoIndex(
   projectRoot: string,
-  host: HostMode = "opencode",
+  host: HostMode,
 ): Promise<void> {
   await getCoordinator(projectRoot, host)?.stop();
 }

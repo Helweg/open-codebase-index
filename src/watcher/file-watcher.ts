@@ -35,7 +35,7 @@ export class FileWatcher {
   private pollingFallbackAttempted = false;
   private pendingClose: Promise<void> | null = null;
 
-  constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode = "opencode", options: FileWatcherOptions = {}) {
+  constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
     this.config = config;
     this.host = host;

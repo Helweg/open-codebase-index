@@ -114,7 +114,7 @@ function changed(): number {
       indexing: { watchFiles: false, autoGc: false },
       knowledgeBases: ["linked-knowledge-base"],
     });
-    indexer = new Indexer(repo, config);
+    indexer = new Indexer(repo, config, "opencode");
     await indexer.index();
   });
 
@@ -192,7 +192,7 @@ function changed(): number {
     const directDatabase = new Database(path.join(status.indexPath, "codebase.db"));
     directDatabase.setMetadata(symbolExtractorMetadataKey("feature"), "stale");
     directDatabase.close();
-    indexer = new Indexer(repo, config);
+    indexer = new Indexer(repo, config, "opencode");
     const fetchesBeforeMigration = fetchSpy.mock.calls.length;
 
     const migrated = await indexer.getPrImpact({ branch: "feature" });
@@ -261,7 +261,7 @@ function advancedChange(): number {
     directDatabase.deleteMetadata(branchCommitMetadataKey("feature"));
     directDatabase.close();
 
-    indexer = new Indexer(repo, config);
+    indexer = new Indexer(repo, config, "opencode");
     const rebuilt = await indexer.getPrImpact({ branch: "feature" });
     expect(rebuilt.indexPreparation).toMatchObject({
       prepared: true,
