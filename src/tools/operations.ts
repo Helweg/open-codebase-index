@@ -1,13 +1,12 @@
 import { existsSync, realpathSync, statSync } from "fs";
 import * as path from "path";
-import { parseConfig, type ParsedCodebaseIndexConfig } from "../config/schema.js";
+import { parseConfig } from "../config/schema.js";
 import { getHostProjectConfigRelativePath } from "../config/paths.js";
 import type { HostMode } from "../config/host.js";
 import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
-import { isIndexLockContentionError } from "../indexer/index-lock.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
-import { calculatePercentage, countContextTokens, formatProgressTitle, formatStatus } from "./utils.js";
+import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
@@ -15,19 +14,33 @@ import type { AutoIndexStatusSnapshot } from "../utils/auto-index.js";
 import {
   formatEffectivenessMetrics,
   getProcessEffectivenessMetrics,
-  recordProcessEffectiveness,
   resetProcessEffectivenessMetrics,
-  type EffectivenessMetricEvent,
 } from "../utils/effectiveness-metrics.js";
 import {
-  configureAutoIndex,
   getAutoIndexStatus,
   runCoordinatedIndex,
-  waitForAutoIndexForRetrieval,
 } from "../utils/auto-index.js";
 import { getConfigPath, loadEditableConfig, loadRuntimeConfig, saveConfig } from "./config-state.js";
+import {
+  AutoIndexRetrievalUnavailableError,
+  ensureAutoIndexReadyForRetrieval,
+  configCache,
+  getIndexBusyResult,
+  getIndexerCacheKey,
+  getIndexerForProject,
+  indexerCache,
+  getProjectRoot,
+  getSharedIndexer,
+  initializeTools,
+  isToolEffectivenessEnabled,
+  rawEffectivenessMetricsEnabled,
+  recordToolEffectiveness,
+  refreshIndexerForDirectory,
+  safelyCountReturnedTokens,
+  safelyRecordToolEffectiveness,
+  type IndexBusyResult,
+} from "./operation-runtime.js";
 
-type IndexerCacheKey = `${HostMode}::${string}`;
 
 type SearchResult = Awaited<ReturnType<Indexer["search"]>>[number];
 type IndexStats = Awaited<ReturnType<Indexer["index"]>>;
@@ -35,14 +48,9 @@ type StatusResult = Awaited<ReturnType<Indexer["getStatus"]>>;
 export type IndexStatusResult = StatusResult & { autoIndex: AutoIndexStatusSnapshot };
 type HealthCheckResult = Awaited<ReturnType<Indexer["healthCheck"]>>;
 type PrImpactResult = Awaited<ReturnType<Indexer["getPrImpact"]>>;
-type IndexBusyResult = { kind: "busy"; text: string };
 type IndexMessageResult = { kind: "message"; text: string };
 
 type ProgressCb = (title: string, metadata: Record<string, unknown>) => void | Promise<void>;
-
-const indexerCache = new Map<IndexerCacheKey, Indexer>();
-const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>();
-const defaultProjectRoots = new Map<HostMode, string>();
 const MAX_CALL_GRAPH_CANDIDATES = 5;
 
 export interface CallGraphSymbolCandidate {
@@ -195,158 +203,7 @@ function resolveCallGraphSymbol(
   };
 }
 
-function getIndexBusyResult(error: unknown): IndexBusyResult | null {
-  if (!isIndexLockContentionError(error)) return null;
 
-  const owner = error.owner;
-  const ownerText = owner
-    ? `PID ${owner.pid}, operation ${owner.operation}, since ${owner.startedAt}`
-    : "unreadable owner";
-  if (error.reason === "legacy-lock") {
-    return {
-      kind: "busy",
-      text: `INDEX_BUSY: legacy lock format detected (${ownerText}). Verify the PID and remove this lock manually only if it is stale.`,
-    };
-  }
-  if (error.reason === "unknown-owner") {
-    return {
-      kind: "busy",
-      text: `INDEX_BUSY: unreadable or remote lock owner (${ownerText}). Automatic recovery was refused; manual verification is required.`,
-    };
-  }
-  return { kind: "busy", text: `INDEX_BUSY: another index operation is already in progress (${ownerText}).` };
-}
-
-function getProjectRoot(projectRoot: string | undefined, host: HostMode): string {
-  if (projectRoot) {
-    return projectRoot;
-  }
-
-  const root = defaultProjectRoots.get(host);
-  if (!root) {
-    throw new Error("Codebase index tools not initialized. Plugin may not be loaded correctly.");
-  }
-
-  return root;
-}
-
-function getIndexerCacheKey(projectRoot: string, host: HostMode): IndexerCacheKey {
-  return `${host}::${projectRoot}`;
-}
-
-function rawEffectivenessMetricsEnabled(rawConfig: unknown): boolean {
-  if (!rawConfig || typeof rawConfig !== "object") return false;
-  const value = (rawConfig as Record<string, unknown>).effectivenessMetrics;
-  return Boolean(value && typeof value === "object" && (value as Record<string, unknown>).enabled === true);
-}
-
-export function isToolEffectivenessEnabled(
-  projectRoot: string | undefined,
-  host: HostMode,
-): boolean {
-  try {
-    const root = getProjectRoot(projectRoot, host);
-    const cached = configCache.get(getIndexerCacheKey(root, host));
-    if (cached) return cached.effectivenessMetrics.enabled;
-    return rawEffectivenessMetricsEnabled(loadRuntimeConfig(root, host));
-  } catch {
-    // Metrics are best-effort and must never alter repository tool behavior.
-    return false;
-  }
-}
-
-function safelyRecordToolEffectiveness(event: EffectivenessMetricEvent): void {
-  try {
-    recordProcessEffectiveness(event);
-  } catch {
-    // Metrics are best-effort and must never alter repository tool behavior.
-  }
-}
-
-function safelyCountReturnedTokens(text: string): number {
-  try {
-    return countContextTokens(text);
-  } catch {
-    return 0;
-  }
-}
-
-function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer {
-  const key = getIndexerCacheKey(projectRoot, host);
-  const cached = indexerCache.get(key);
-  if (cached) {
-    return cached;
-  }
-
-  let config = configCache.get(key);
-  if (!config) {
-    config = parseConfig(loadRuntimeConfig(projectRoot, host));
-    configCache.set(key, config);
-  }
-  const indexer = new Indexer(projectRoot, config, host);
-  indexerCache.set(key, indexer);
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
-  return indexer;
-}
-
-export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode = "opencode"): void {
-  defaultProjectRoots.set(host, projectRoot);
-  const key = getIndexerCacheKey(projectRoot, host);
-  configCache.set(key, config);
-  indexerCache.set(key, new Indexer(projectRoot, config, host));
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
-}
-
-export function getSharedIndexer(host: HostMode = "opencode"): Indexer {
-  return getIndexerForProject(undefined, host);
-}
-
-export function getIndexerForProject(projectRoot: string | undefined, host: HostMode = "opencode"): Indexer {
-  const root = getProjectRoot(projectRoot, host);
-  return getOrCreateIndexer(root, host);
-}
-
-export function recordToolEffectiveness(
-  projectRoot: string | undefined,
-  host: HostMode,
-  event: EffectivenessMetricEvent,
-): void {
-  if (!isToolEffectivenessEnabled(projectRoot, host)) return;
-  safelyRecordToolEffectiveness(event);
-}
-
-export function refreshIndexerForDirectory(
-  projectRoot: string,
-  host: HostMode = "opencode",
-  config: ParsedCodebaseIndexConfig = parseConfig(loadRuntimeConfig(projectRoot, host)),
-): ParsedCodebaseIndexConfig {
-  const key = getIndexerCacheKey(projectRoot, host);
-  configCache.set(key, config);
-  indexerCache.set(key, new Indexer(projectRoot, config, host));
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
-  return config;
-}
-
-export class AutoIndexRetrievalUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "AutoIndexRetrievalUnavailableError";
-  }
-}
-
-async function ensureAutoIndexReadyForRetrieval(
-  projectRoot: string | undefined,
-  host: HostMode,
-): Promise<void> {
-  const root = getProjectRoot(projectRoot, host);
-  getIndexerForProject(root, host);
-  const result = await waitForAutoIndexForRetrieval(root, host);
-  if (!result.ready) {
-    throw new AutoIndexRetrievalUnavailableError(
-      result.text ?? "Automatic indexing has not produced a readable index yet. Call index_status and retry.",
-    );
-  }
-}
 
 export async function searchCodebase(
   projectRoot: string | undefined,
@@ -891,4 +748,13 @@ export function removeKnowledgeBase(
   return result;
 }
 
-export { formatStatus };
+export {
+  AutoIndexRetrievalUnavailableError,
+  getIndexerForProject,
+  initializeTools,
+  isToolEffectivenessEnabled,
+  recordToolEffectiveness,
+  refreshIndexerForDirectory,
+  getSharedIndexer,
+  formatStatus,
+};
