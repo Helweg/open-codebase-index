@@ -134,6 +134,13 @@ The central orchestrator. Responsibilities:
 - Handles rate limiting and retries
 - Tracks per-file hashes for delta detection
 
+Focused helpers keep ranking and batch mechanics out of the orchestrator:
+
+- `search-ranking.ts` handles generic fusion, filtering, diversity, and result assembly.
+- `definition-ranking.ts` handles definition-query normalization and evidence ranking.
+- `embedding-batches.ts` handles pending embedding batches, retry state, and vector pooling.
+- `call-graph-constants.ts` owns the shared declaration chunk-type allowlist.
+
 Key public methods include:
 
 | Method | Purpose |
@@ -168,6 +175,20 @@ Rust components exposed via NAPI:
 | Database | rusqlite | Persistent storage with batch ops |
 | InvertedIndex | Custom | BM25 keyword search |
 | Hasher | xxhash-rust | Fast content hashing |
+
+The crate root in `native/src/lib.rs` remains the NAPI assembly facade. The Database NAPI class lives in `native/src/bindings/database.rs`. SQLite call-graph rows and queries live in `native/src/db/call_graph.rs`, while the remaining schema, migrations, chunk, embedding, and branch persistence stay in `native/src/db.rs`.
+
+### Tool Runtime (`src/tools/`)
+
+Tool adapters keep their existing public facades while delegating cohesive mechanics:
+
+- `context.ts` owns path/direct-edge routing and effectiveness reporting; `context-search.ts` owns definition/conceptual recovery.
+- `utils.ts` owns general response formatting; `context-pack.ts` owns token budgeting, evidence selection, and packing.
+- `operations.ts` owns repository operations; `operation-runtime.ts` owns Indexer caches, initialization, retrieval readiness, and best-effort metrics plumbing.
+
+### Git Branch Materialization (`src/git/`)
+
+`branch-resolution.ts` validates and resolves local, remote, and pull-request refs through temporary fetch refs. `branch-materialization.ts` owns temporary worktree registration, callback execution, rollback, and cleanup.
 
 ### Watcher (`src/watcher/index.ts`)
 
@@ -368,7 +389,11 @@ No credentials are stored by the plugin.
 
 ### Adding a New Storage Backend
 
-1. Implement storage interface (see `native/src/db.rs`)
-2. Expose via NAPI in `native/src/lib.rs`
-3. Update `src/native/index.ts` wrapper
+1. Implement persistence in `native/src/db.rs` or a focused `native/src/db/` submodule
+2. Expose Database methods in `native/src/bindings/database.rs` and re-export through `native/src/lib.rs`
+3. Update the focused wrapper under `src/native/` and preserve `src/native/index.ts` as the facade
 4. Update `src/indexer/index.ts` to use new backend
+
+### Structural Boundaries
+
+Large files are not split solely by line count. `src/utils/auto-index.ts` remains one state machine because lease, retry, and publication transitions must be reviewed together. `native/src/parser.rs` and `native/src/call_extractor.rs` keep language policy beside their extensive grammar tests. `native/src/community.rs` remains a cohesive graph-algorithm module, and `native/src/store.rs` remains the vector persistence boundary because its format and publication invariants are tightly coupled.

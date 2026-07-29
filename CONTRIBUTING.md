@@ -131,15 +131,19 @@ If you're contributing parser or call-graph support for a new language, use [`do
 
 ```
 src/                  # TypeScript source
-  ├── indexer/        # Core indexing logic
+  ├── indexer/        # Index orchestration, ranking, batching, locks, and impact analysis
   ├── embeddings/     # Embedding providers
-  ├── tools/          # OpenCode tool definitions
-  ├── native/         # Rust module wrapper
+  ├── tools/          # Tool contracts, operations, context routing, and formatting
+  ├── git/            # Branch detection, ref resolution, and temporary materialization
+  ├── native/         # Focused TypeScript wrappers around Rust bindings
   └── config/         # Configuration schema
 
 native/src/           # Rust native module
-  ├── parser.rs       # Tree-sitter parsing
-  ├── store.rs        # Vector storage
+  ├── bindings/       # NAPI class facades
+  ├── db/             # Focused SQLite persistence domains
+  ├── parser.rs       # Tree-sitter parsing and parser policy
+  ├── call_extractor.rs # Language-aware call extraction
+  ├── store.rs        # Vector storage and publication
   └── inverted_index.rs # BM25 search
 
 tests/                # Unit tests

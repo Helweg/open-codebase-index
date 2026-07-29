@@ -63,7 +63,7 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 - a `native/queries/<language>-calls.scm` file exists
 - `native/src/call_extractor.rs` routes the language correctly
 - `src/indexer/index.ts` includes the language in `CALL_GRAPH_LANGUAGES`
-- `src/indexer/index.ts` includes the relevant declaration chunk types in `CALL_GRAPH_SYMBOL_CHUNK_TYPES`
+- `src/indexer/call-graph-constants.ts` includes the relevant declaration chunk types in `CALL_GRAPH_SYMBOL_CHUNK_TYPES`
 - `tests/call-graph.test.ts` covers the supported call/query forms
 - full verification passes again
 
@@ -80,7 +80,8 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 
 - `native/src/call_extractor.rs` — call extraction routing
 - `native/queries/<language>-calls.scm` — tree-sitter query file
-- `src/indexer/index.ts` — call-graph language + symbol chunk-type allowlists
+- `src/indexer/index.ts` — call-graph language allowlist and indexing integration
+- `src/indexer/call-graph-constants.ts` — shared symbol chunk-type allowlist
 - `tests/call-graph.test.ts` — call-graph coverage
 
 ### Only when adding a grammar dependency
@@ -120,7 +121,8 @@ Use this exact sequence:
 - [ ] Run `npm run build` and `npm run test:run`
 - [ ] If call graph is needed, add `native/queries/<language>-calls.scm`
 - [ ] Wire the language into `native/src/call_extractor.rs`
-- [ ] Add the language and chunk types to `src/indexer/index.ts`
+- [ ] Add the language to `CALL_GRAPH_LANGUAGES` in `src/indexer/index.ts`
+- [ ] Add its declaration chunk types to `src/indexer/call-graph-constants.ts`
 - [ ] Add call-graph tests in `tests/call-graph.test.ts`
 - [ ] Update `README.md` if supported-language claims changed
 - [ ] Verify the third-party notice with `npm pack --dry-run --ignore-scripts`
@@ -210,7 +212,7 @@ Add the language to:
 
 Add the language to `CALL_GRAPH_LANGUAGES` and add relevant declaration chunk types to `CALL_GRAPH_SYMBOL_CHUNK_TYPES`.
 
-Those chunk-type strings must match the tree-sitter node kinds that actually become chunks in `native/src/parser.rs`.
+Those chunk-type strings in `src/indexer/call-graph-constants.ts` must match the tree-sitter node kinds that actually become chunks in `native/src/parser.rs`.
 
 ### `tests/call-graph.test.ts`
 
@@ -244,7 +246,7 @@ Also check that the query capture names match what `native/src/call_extractor.rs
 
 ### Call extraction works, but `call_graph` is still empty
 
-The language is missing from `CALL_GRAPH_LANGUAGES` or its symbol chunk types are missing from `CALL_GRAPH_SYMBOL_CHUNK_TYPES` in `src/indexer/index.ts`.
+The language is missing from `CALL_GRAPH_LANGUAGES` in `src/indexer/index.ts`, or its symbol chunk types are missing from `CALL_GRAPH_SYMBOL_CHUNK_TYPES` in `src/indexer/call-graph-constants.ts`.
 
 ## Verification
 
@@ -266,7 +268,7 @@ npm run test:run
 
 ## Practical note for PHP
 
-PHP is already integrated at all three levels: file discovery, semantic parsing, and call graph extraction. Changes must therefore preserve `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts`, and their tests together.
+PHP is already integrated at all three levels: file discovery, semantic parsing, and call graph extraction. Changes must therefore preserve `native/src/types.rs`, `native/src/parser.rs`, `native/queries/php-calls.scm`, `src/indexer/index.ts`, `src/indexer/call-graph-constants.ts`, and their tests together.
 
 A `parseFile()` content assertion alone does not prove syntax compatibility because Tree-sitter can return chunks while the tree still contains `ERROR` nodes. PHP grammar tests must also assert `!tree.root_node().has_error()` in Rust, then verify the chunk names and types exposed through NAPI.
 
