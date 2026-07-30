@@ -26,6 +26,14 @@ function symbolExtractorMetadataKey(catalogIdentity: string): string {
   return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
+function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: string): void {
+  const suffix = hashContent(catalogIdentity).slice(0, 24);
+  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "4");
+  database.setMetadata(`index.parser.swiftVersion.${suffix}`, "1");
+  database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
+  database.setMetadata(symbolExtractorMetadataKey(catalogIdentity), "1");
+}
+
 vi.mock("../src/tools/changed-files.js", () => ({
   getChangedFiles: vi.fn(),
 }));
@@ -127,7 +135,7 @@ describe("pr_impact tool", () => {
 
     db.upsertSymbol({
       id: "sym_a",
-      filePath: path.join(tempDir, "src", "a.ts"),
+      filePath: "src/a.ts",
       name: "funcA",
       kind: "function",
       startLine: 1,
@@ -138,7 +146,7 @@ describe("pr_impact tool", () => {
     });
     db.upsertSymbol({
       id: "sym_b",
-      filePath: path.join(tempDir, "src", "b.ts"),
+      filePath: "src/b.ts",
       name: "funcB",
       kind: "function",
       startLine: 1,
@@ -239,7 +247,7 @@ describe("pr_impact tool", () => {
     const db = await getDatabase(indexer);
     db.upsertSymbol({
       id: "sym_detached",
-      filePath: path.join(tempDir, "src", "a.ts"),
+      filePath: "src/a.ts",
       name: "detachedFunc",
       kind: "function",
       startLine: 1,
@@ -253,6 +261,9 @@ describe("pr_impact tool", () => {
     const result = await indexer.getPrImpact({});
 
     expect(result.directSymbols.map((s) => s.id)).toContain("sym_detached");
+    expect(result.directSymbols.find((symbol) => symbol.id === "sym_detached")?.filePath).toBe(
+      path.join(tempDir, "src", "a.ts"),
+    );
   });
 
   it("detects hub nodes and flags HIGH risk", async () => {
@@ -270,7 +281,7 @@ describe("pr_impact tool", () => {
 
     db.upsertSymbol({
       id: "sym_hub",
-      filePath: path.join(tempDir, "src", "db.ts"),
+      filePath: "src/db.ts",
       name: "DatabasePool",
       kind: "class",
       startLine: 1,
@@ -286,7 +297,7 @@ describe("pr_impact tool", () => {
       callerSymbols.push(id);
       db.upsertSymbol({
         id,
-        filePath: path.join(tempDir, "src", `caller${i}.ts`),
+        filePath: `src/caller${i}.ts`,
         name: `caller${i}`,
         kind: "function",
         startLine: 1,
@@ -323,7 +334,7 @@ describe("pr_impact tool", () => {
 
     db.upsertSymbol({
       id: "sym_x",
-      filePath: path.join(tempDir, "src", "x.ts"),
+      filePath: "src/x.ts",
       name: "funcX",
       kind: "function",
       startLine: 1,
@@ -334,7 +345,7 @@ describe("pr_impact tool", () => {
     });
     db.upsertSymbol({
       id: "sym_y",
-      filePath: path.join(tempDir, "src", "y.ts"),
+      filePath: "src/y.ts",
       name: "funcY",
       kind: "function",
       startLine: 1,
@@ -370,15 +381,15 @@ describe("pr_impact tool", () => {
 
     // Build: X -> A -> B (X calls A, A calls B)
     db.upsertSymbol({
-      id: "sym_x", filePath: path.join(tempDir, "src", "x.ts"), name: "funcX",
+      id: "sym_x", filePath: "src/x.ts", name: "funcX",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_a", filePath: path.join(tempDir, "src", "a.ts"), name: "funcA",
+      id: "sym_a", filePath: "src/a.ts", name: "funcA",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_b", filePath: path.join(tempDir, "src", "b.ts"), name: "funcB",
+      id: "sym_b", filePath: "src/b.ts", name: "funcB",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.addSymbolsToBranch("main", ["sym_x", "sym_a", "sym_b"]);
@@ -404,15 +415,15 @@ describe("pr_impact tool", () => {
 
     // Build: X -> A -> B
     db.upsertSymbol({
-      id: "sym_x", filePath: path.join(tempDir, "src", "x.ts"), name: "funcX",
+      id: "sym_x", filePath: "src/x.ts", name: "funcX",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_a", filePath: path.join(tempDir, "src", "a.ts"), name: "funcA",
+      id: "sym_a", filePath: "src/a.ts", name: "funcA",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_b", filePath: path.join(tempDir, "src", "b.ts"), name: "funcB",
+      id: "sym_b", filePath: "src/b.ts", name: "funcB",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.addSymbolsToBranch("main", ["sym_x", "sym_a", "sym_b"]);
@@ -438,15 +449,15 @@ describe("pr_impact tool", () => {
 
     // Build: X -> A -> B
     db.upsertSymbol({
-      id: "sym_x", filePath: path.join(tempDir, "src", "x.ts"), name: "funcX",
+      id: "sym_x", filePath: "src/x.ts", name: "funcX",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_a", filePath: path.join(tempDir, "src", "a.ts"), name: "funcA",
+      id: "sym_a", filePath: "src/a.ts", name: "funcA",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.upsertSymbol({
-      id: "sym_b", filePath: path.join(tempDir, "src", "b.ts"), name: "funcB",
+      id: "sym_b", filePath: "src/b.ts", name: "funcB",
       kind: "function", startLine: 1, startCol: 0, endLine: 10, endCol: 0, language: "typescript",
     });
     db.addSymbolsToBranch("main", ["sym_x", "sym_a", "sym_b"]);
@@ -498,7 +509,7 @@ describe("pr_impact tool", () => {
 
     db.upsertSymbol({
       id: "sym_a",
-      filePath: path.join(tempDir, "src", "a.ts"),
+      filePath: "src/a.ts",
       name: "funcA",
       kind: "function",
       startLine: 1, startCol: 0, endLine: 10, endCol: 0,
@@ -506,7 +517,7 @@ describe("pr_impact tool", () => {
     });
     db.upsertSymbol({
       id: "sym_b",
-      filePath: path.join(tempDir, "src", "b.ts"),
+      filePath: "src/b.ts",
       name: "funcB",
       kind: "function",
       startLine: 1, startCol: 0, endLine: 10, endCol: 0,
@@ -514,7 +525,7 @@ describe("pr_impact tool", () => {
     });
     db.upsertSymbol({
       id: "sym_c",
-      filePath: path.join(tempDir, "src", "c.ts"),
+      filePath: "src/c.ts",
       name: "funcC",
       kind: "function",
       startLine: 1, startCol: 0, endLine: 10, endCol: 0,
@@ -524,7 +535,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a", "sym_b", "sym_c"]);
     db.addSymbolsToBranch("other-branch", ["sym_b"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
-    db.setMetadata(symbolExtractorMetadataKey("feature-branch"), "1");
+    setBranchMigrationMetadataCurrent(db, "feature-branch");
 
     db.upsertCallEdge({
       id: "edge_ab",
@@ -592,7 +603,7 @@ describe("pr_impact tool", () => {
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
 
-    const filePath = path.join(tempDir, "src", "a.ts");
+    const filePath = "src/a.ts";
 
     // Symbol on the current branch at line 1.
     db.upsertSymbol({
@@ -623,7 +634,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a_feature"]);
     db.addSymbolsToBranch("other-branch", ["sym_a_other"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
-    db.setMetadata(symbolExtractorMetadataKey("feature-branch"), "1");
+    setBranchMigrationMetadataCurrent(db, "feature-branch");
 
     const result = await indexer.getPrImpact({ pr: 1, checkConflicts: true });
 

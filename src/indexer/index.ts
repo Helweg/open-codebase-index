@@ -37,7 +37,7 @@ import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, Community
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
-import { getHostProjectIndexRelativePath, resolveProjectIndexPath } from "../config/paths.js";
+import { isProjectIndexPathOwnedByProject, resolveProjectIndexPath } from "../config/paths.js";
 import { getChangedFiles } from "../tools/changed-files.js";
 import type { PrImpactResult } from "./pr-impact-types.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
@@ -432,6 +432,7 @@ interface RerankDocumentPayload {
 
 interface IndexMetadata {
   indexVersion: string;
+  pathStorageVersion: string;
   embeddingProvider: string;
   embeddingModel: string;
   embeddingDimensions: number;
@@ -444,6 +445,7 @@ enum IncompatibilityCode {
   DIMENSION_MISMATCH = "DIMENSION_MISMATCH",
   MODEL_MISMATCH = "MODEL_MISMATCH",
   EMBEDDING_STRATEGY_MISMATCH = "EMBEDDING_STRATEGY_MISMATCH",
+  PATH_STORAGE_MISMATCH = "PATH_STORAGE_MISMATCH",
 }
 
 interface IndexCompatibility {
@@ -454,6 +456,8 @@ interface IndexCompatibility {
 }
 
 const INDEX_METADATA_VERSION = "1";
+const PROJECT_PATH_STORAGE_VERSION = "2";
+const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
 const SWIFT_PARSER_VERSION = "1";
 const METAL_PARSER_VERSION = "1";
@@ -893,7 +897,8 @@ export function selectIndexableChunks<T extends { chunkType: string }>(
 
 function matchesHardSearchFilters(
   candidate: RankedCandidate,
-  options: SearchFilterOptions | undefined
+  options: SearchFilterOptions | undefined,
+  projectRoot: string,
 ): boolean {
   if (options?.fileType) {
     const ext = candidate.metadata.filePath.split(".").pop()?.toLowerCase();
@@ -902,14 +907,13 @@ function matchesHardSearchFilters(
   }
 
   if (options?.directory) {
-    const normalizedPath = candidate.metadata.filePath.replace(/\\/g, "/");
-    const normalizedDir = options.directory.trim().replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/$/, "");
-    const isAbsoluteDirectory = normalizedDir.startsWith("/");
-    const matchesDirectory = isAbsoluteDirectory
-      ? normalizedPath === normalizedDir || normalizedPath.startsWith(`${normalizedDir}/`)
-      : normalizedPath === normalizedDir || normalizedPath.startsWith(`${normalizedDir}/`) ||
-        normalizedPath.includes(`/${normalizedDir}/`) || normalizedPath.endsWith(`/${normalizedDir}`);
-    if (!matchesDirectory) return false;
+    const candidatePath = canonicalizePathForComparison(
+      path.resolve(projectRoot, candidate.metadata.filePath.replace(/\\/g, path.sep)),
+    );
+    const directoryPath = canonicalizePathForComparison(
+      path.resolve(projectRoot, options.directory.trim().replace(/\\/g, path.sep)),
+    );
+    if (!isPathWithinRoot(candidatePath, directoryPath)) return false;
   }
 
   if (options?.chunkType && candidate.metadata.chunkType !== options.chunkType) {
@@ -940,9 +944,10 @@ function matchesHardSearchFilters(
 function matchesSearchFilters(
   candidate: RankedCandidate,
   options: SearchFilterOptions | undefined,
-  minScore: number
+  minScore: number,
+  projectRoot: string,
 ): boolean {
-  return candidate.score >= minScore && matchesHardSearchFilters(candidate, options);
+  return candidate.score >= minScore && matchesHardSearchFilters(candidate, options, projectRoot);
 }
 
 function unionCandidates(
@@ -1017,9 +1022,15 @@ export class Indexer {
     this.indexPathOverride = runtimeOptions.indexPath;
     this.config = config;
     this.host = host;
+    if (isGitRepo(this.materializedProjectRoot)) {
+      this.currentBranch = this.branchNameOverride ?? getBranchOrDefault(this.materializedProjectRoot);
+      this.baseBranch = getBaseBranch(this.materializedProjectRoot);
+    } else {
+      this.currentBranch = "default";
+      this.baseBranch = "default";
+    }
     this.indexPath = this.getIndexPath();
-    this.fileHashCachePath = this.getRuntimeArtifactPath("file-hashes.json");
-    this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
+    this.refreshRuntimeArtifactPaths();
     this.logger = initializeLogger(config.debug);
   }
 
@@ -1028,6 +1039,9 @@ export class Indexer {
   }
 
   private toCanonicalFilePath(filePath: string): string {
+    if (!path.isAbsolute(filePath)) {
+      return this.resolveStoredFilePath(filePath, this.projectRoot);
+    }
     if (
       path.resolve(this.materializedProjectRoot) === path.resolve(this.projectRoot)
       || !isPathWithinRoot(filePath, this.materializedProjectRoot)
@@ -1037,14 +1051,55 @@ export class Indexer {
     return path.resolve(this.projectRoot, path.relative(this.materializedProjectRoot, filePath));
   }
 
-  private toMaterializedFilePath(filePath: string): string {
+  private toStoredFilePath(filePath: string): string {
+    const canonicalFilePath = this.toCanonicalFilePath(filePath);
     if (
-      path.resolve(this.materializedProjectRoot) === path.resolve(this.projectRoot)
-      || !isPathWithinRoot(filePath, this.projectRoot)
+      this.config.scope !== "project"
+      || !isPathWithinRoot(canonicalFilePath, this.projectRoot)
     ) {
+      return canonicalFilePath;
+    }
+
+    return path.relative(this.projectRoot, canonicalFilePath).split(path.sep).join("/");
+  }
+
+  private resolveStoredFilePath(filePath: string, rootPath = this.projectRoot): string {
+    if (path.isAbsolute(filePath)) {
       return filePath;
     }
-    return path.resolve(this.materializedProjectRoot, path.relative(this.projectRoot, filePath));
+
+    const resolvedPath = path.resolve(rootPath, ...filePath.split("/"));
+    if (!isPathWithinRoot(resolvedPath, rootPath)) {
+      throw new Error(`Stored project path escapes project root: ${JSON.stringify(filePath)}`);
+    }
+    return resolvedPath;
+  }
+
+  private getCanonicalStoredFilePath(filePath: string): string {
+    return this.getCanonicalPath(this.resolveStoredFilePath(filePath));
+  }
+
+  private resolveFilePathRecord<T extends { filePath: string }>(record: T): T {
+    return {
+      ...record,
+      filePath: this.resolveStoredFilePath(record.filePath),
+    };
+  }
+
+  private resolveCallEdgeFilePath(edge: CallEdgeData): CallEdgeData {
+    if (!edge.fromSymbolFilePath) return edge;
+    return {
+      ...edge,
+      fromSymbolFilePath: this.resolveStoredFilePath(edge.fromSymbolFilePath),
+    };
+  }
+
+  private toMaterializedFilePath(filePath: string): string {
+    const storedFilePath = this.toStoredFilePath(filePath);
+    if (path.isAbsolute(storedFilePath)) {
+      return storedFilePath;
+    }
+    return this.resolveStoredFilePath(storedFilePath, this.materializedProjectRoot);
   }
 
   private getPreparedBranchNamespace(): string | null {
@@ -1052,12 +1107,24 @@ export class Indexer {
     return hashContent(this.getBranchCatalogKey()).slice(0, 16);
   }
 
+  private getRuntimeArtifactNamespace(): string | null {
+    if (this.config.scope !== "project" || this.getBranchCatalogIdentity() === "default") {
+      return this.getPreparedBranchNamespace();
+    }
+    return hashContent(this.getBranchCatalogKey()).slice(0, 16);
+  }
+
   private getRuntimeArtifactPath(fileName: string): string {
-    const namespace = this.getPreparedBranchNamespace();
+    const namespace = this.getRuntimeArtifactNamespace();
     if (!namespace) return path.join(this.indexPath, fileName);
     const extension = path.extname(fileName);
     const baseName = fileName.slice(0, fileName.length - extension.length);
     return path.join(this.indexPath, `${baseName}.${namespace}${extension}`);
+  }
+
+  private refreshRuntimeArtifactPaths(): void {
+    this.fileHashCachePath = this.getRuntimeArtifactPath("file-hashes.json");
+    this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
   }
 
   private getPreparedChunkId(chunkId: string): string {
@@ -1090,20 +1157,8 @@ export class Indexer {
     }
   }
 
-  private isLocalProjectIndexPath(): boolean {
-    const localProjectIndexPaths = [path.join(this.projectRoot, getHostProjectIndexRelativePath(this.host))];
-    if (this.host !== "opencode") {
-      localProjectIndexPaths.push(path.join(this.projectRoot, getHostProjectIndexRelativePath("opencode")));
-    }
-
-    return localProjectIndexPaths.some((localPath) => {
-      if (!existsSync(localPath) || !existsSync(this.indexPath)) {
-        return path.resolve(this.indexPath) === path.resolve(localPath);
-      }
-      const indexStats = statSync(this.indexPath);
-      const localStats = statSync(localPath);
-      return indexStats.dev === localStats.dev && indexStats.ino === localStats.ino;
-    });
+  private isProjectOwnedIndexPath(): boolean {
+    return isProjectIndexPathOwnedByProject(this.projectRoot, this.indexPath, this.host);
   }
 
   private resetLoadedIndexState(retireDatabase = false): void {
@@ -1144,10 +1199,10 @@ export class Indexer {
     operation: IndexMutationOperation,
     callback: (recoveredOwners: readonly IndexLockOwner[]) => Promise<T>,
   ): Promise<T> {
+    this.refreshBranchInfo();
     const lease = acquireIndexLock(this.indexPath, operation);
     this.indexPath = lease.canonicalIndexPath;
-    this.fileHashCachePath = this.getRuntimeArtifactPath("file-hashes.json");
-    this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
+    this.refreshRuntimeArtifactPaths();
     this.activeIndexLease = lease;
 
     let result: T | undefined;
@@ -1359,37 +1414,50 @@ export class Indexer {
     return `index.forceReembed.${this.projectIdentityHash}`;
   }
 
-  private getCallGraphResolutionMetadataKey(): string {
-    if (this.config.scope !== "global") {
-      return "index.callGraphResolutionVersion";
-    }
-
-    return `index.callGraphResolutionVersion.${this.projectIdentityHash}`;
+  private getBranchMigrationMetadataKey(
+    prefix: string,
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
+    return `${prefix}.${hashContent(branchKey).slice(0, 24)}`;
   }
 
-  private getSwiftParserVersionMetadataKey(): string {
-    const key = "index.parser.swiftVersion";
-    if (this.config.scope !== "global") {
-      return key;
-    }
-
-    return `${key}.${this.projectIdentityHash}`;
+  private getCallGraphResolutionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
   }
 
-  private getMetalParserVersionMetadataKey(): string {
-    const key = "index.parser.metalVersion";
-    if (this.config.scope !== "global") {
-      return key;
-    }
+  private getSwiftParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.swiftVersion", catalogIdentity);
+  }
 
-    return `${key}.${this.projectIdentityHash}`;
+  private getMetalParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.metalVersion", catalogIdentity);
   }
 
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
-    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
-    return `index.symbolExtractorVersion.${hashContent(branchKey).slice(0, 24)}`;
+    return this.getBranchMigrationMetadataKey("index.symbolExtractorVersion", catalogIdentity);
+  }
+
+  private areBranchMigrationVersionsCurrent(
+    database: Database,
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): boolean {
+    return database.getMetadata(this.getCallGraphResolutionMetadataKey(catalogIdentity))
+      === CALL_GRAPH_RESOLUTION_VERSION
+      && database.getMetadata(this.getSwiftParserVersionMetadataKey(catalogIdentity))
+      === SWIFT_PARSER_VERSION
+      && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
+      === METAL_PARSER_VERSION
+      && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
+      === SYMBOL_EXTRACTOR_VERSION;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -1564,14 +1632,15 @@ export class Indexer {
   }
 
   private isFileInCurrentScope(filePath: string, roots: string[]): boolean {
-    if (roots.some((root) => isPathWithinRoot(filePath, root))) return true;
-    const canonicalFilePath = this.getCanonicalPath(filePath);
+    const canonicalFilePath = this.getCanonicalStoredFilePath(filePath);
     return roots.some((root) => isPathWithinRoot(canonicalFilePath, root));
   }
 
   private isFileInProjectRoot(filePath: string): boolean {
-    if (isPathWithinRoot(filePath, this.projectRoot)) return true;
-    return isPathWithinRoot(this.getCanonicalPath(filePath), this.getCanonicalPath(this.projectRoot));
+    return isPathWithinRoot(
+      this.getCanonicalStoredFilePath(filePath),
+      this.getCanonicalPath(this.projectRoot),
+    );
   }
 
   private clearScopedFileHashCache(roots: string[]): void {
@@ -2093,7 +2162,10 @@ export class Indexer {
     parts.push(`intent_hint: ${intent}`);
 
     try {
-      const fileContent = await fsPromises.readFile(candidate.metadata.filePath, "utf-8");
+      const fileContent = await fsPromises.readFile(
+        this.toMaterializedFilePath(candidate.metadata.filePath),
+        "utf-8",
+      );
       const lines = fileContent.split("\n");
       const snippetStartLine = Math.max(1, candidate.metadata.startLine);
       const snippetEndLine = Math.min(lines.length, candidate.metadata.endLine);
@@ -2190,7 +2262,7 @@ export class Indexer {
     if (this.config.scope === "global") {
       return "Shared vector index could not be read. Restore or repair the complete fingerprinted shared vector artifacts; automatic reset is disabled for global scope.";
     }
-    if (!this.isLocalProjectIndexPath()) {
+    if (!this.isProjectOwnedIndexPath()) {
       return "Vector index could not be read from an inherited project index. Restore or fingerprint it from the checkout that owns the index; do not remove or rebuild it from this worktree.";
     }
     return "Vector index could not be read. Run index_codebase after the active writer finishes to fingerprint a structurally valid legacy pair, or remove this checkout's local index directory and run index_codebase to rebuild it.";
@@ -2200,7 +2272,7 @@ export class Indexer {
     if (this.config.scope === "global") {
       return "Shared keyword index could not be read; semantic search remains available. Restore or repair the shared keyword artifact; automatic reset is disabled for global scope.";
     }
-    if (!this.isLocalProjectIndexPath()) {
+    if (!this.isProjectOwnedIndexPath()) {
       return "Keyword index could not be read from an inherited project index; semantic search remains available. Restore or repair it from the checkout that owns the index; do not rebuild it from this worktree.";
     }
     return "Keyword index could not be read; semantic search remains available. Restore a readable published keyword index, or run index_codebase with force=true after the active writer finishes.";
@@ -2210,10 +2282,10 @@ export class Indexer {
     if (this.config.scope === "global") {
       return "Shared index database could not be read. Restore or repair the shared SQLite database; automatic reset is disabled for global scope.";
     }
-    if (!this.isLocalProjectIndexPath()) {
+    if (!this.isProjectOwnedIndexPath()) {
       return "Index database could not be read from an inherited project index. Restore or repair it from the checkout that owns the index; do not migrate or rebuild it from this worktree.";
     }
-    return "Index database could not be read. Run index_codebase after the active writer finishes to repair or migrate it under the writer lease.";
+    return "Index database could not be read. Run index_codebase with force=true to rebuild a legacy absolute-path schema, or repair the database after the active writer finishes.";
   }
 
   private getReaderFileFingerprint(filePath: string, identityOnly = false): string {
@@ -2452,7 +2524,7 @@ export class Indexer {
       await fsPromises.mkdir(this.indexPath, { recursive: true });
 
       // Interrupted recovery remains entirely under the writer lease.
-      if (recoveredOwners.length > 0 && this.config.scope === "project" && !this.isLocalProjectIndexPath()) {
+      if (recoveredOwners.length > 0 && this.config.scope === "project" && !this.isProjectOwnedIndexPath()) {
         throw new Error(
           "Interrupted indexing recovery is unsafe while using an inherited worktree index. " +
           "Run index_codebase with force=true to create a local project index boundary."
@@ -2561,6 +2633,7 @@ export class Indexer {
       this.baseBranch = "default";
       this.logger.branch("debug", "Not a git repository, using default branch");
     }
+    this.refreshRuntimeArtifactPaths();
 
     if (mode === "writer" && recoveredOwners.length > 0) {
       await this.recoverFromInterruptedIndexingUnlocked(recoveredOwners);
@@ -2758,6 +2831,18 @@ export class Indexer {
     return `Detected a corrupted local SQLite index at ${dbPath} and reset the local index. Run index_codebase to rebuild search data.`;
   }
 
+  private async removeProjectRuntimeStateArtifacts(): Promise<void> {
+    if (!existsSync(this.indexPath)) return;
+
+    const names = await fsPromises.readdir(this.indexPath);
+    const runtimeStatePattern = /^(?:file-hashes|failed-batches)(?:\.[a-f0-9]{16})?\.json$/;
+    await Promise.all(
+      names
+        .filter((name) => runtimeStatePattern.test(name))
+        .map((name) => fsPromises.rm(path.join(this.indexPath, name), { force: true })),
+    );
+  }
+
   private async resetLocalIndexArtifacts(): Promise<void> {
     this.store = null;
     this.invertedIndex = null;
@@ -2779,11 +2864,10 @@ export class Indexer {
       path.join(this.indexPath, "vectors.usearch"),
       path.join(this.indexPath, "vectors.meta.json"),
       path.join(this.indexPath, "inverted-index.json"),
-      path.join(this.indexPath, "file-hashes.json"),
-      path.join(this.indexPath, "failed-batches.json"),
     ];
 
     await Promise.all(resetPaths.map((targetPath) => fsPromises.rm(targetPath, { recursive: true, force: true })));
+    await this.removeProjectRuntimeStateArtifacts();
     await fsPromises.mkdir(this.indexPath, { recursive: true });
   }
 
@@ -2843,21 +2927,36 @@ export class Indexer {
     this.database.addChunksToBranchBatch(this.getBranchCatalogKey(), chunkIds);
   }
 
+  private getExpectedPathStorageVersion(): string {
+    return this.config.scope === "project"
+      ? PROJECT_PATH_STORAGE_VERSION
+      : GLOBAL_PATH_STORAGE_VERSION;
+  }
+
+  private hasStoredIndexData(): boolean {
+    const stats = this.database?.getStats();
+    return (this.store?.count() ?? 0) > 0
+      || (stats?.chunkCount ?? 0) > 0
+      || (stats?.symbolCount ?? 0) > 0
+      || this.fileHashCache.size > 0;
+  }
+
   private loadIndexMetadata(): IndexMetadata | null {
     if (!this.database) return null;
 
     const version = this.database.getMetadata("index.version");
     if (!version) return null;
 
-      return {
-        indexVersion: version,
-        embeddingProvider: this.database.getMetadata("index.embeddingProvider") ?? "",
-        embeddingModel: this.database.getMetadata("index.embeddingModel") ?? "",
-        embeddingDimensions: parseInt(this.database.getMetadata("index.embeddingDimensions") ?? "0", 10),
-        embeddingStrategyVersion: this.loadStoredEmbeddingStrategyVersion() ?? EMBEDDING_STRATEGY_VERSION,
-        createdAt: this.database.getMetadata("index.createdAt") ?? "",
-        updatedAt: this.database.getMetadata("index.updatedAt") ?? "",
-      };
+    return {
+      indexVersion: version,
+      pathStorageVersion: this.database.getMetadata("index.pathStorageVersion") ?? GLOBAL_PATH_STORAGE_VERSION,
+      embeddingProvider: this.database.getMetadata("index.embeddingProvider") ?? "",
+      embeddingModel: this.database.getMetadata("index.embeddingModel") ?? "",
+      embeddingDimensions: parseInt(this.database.getMetadata("index.embeddingDimensions") ?? "0", 10),
+      embeddingStrategyVersion: this.loadStoredEmbeddingStrategyVersion() ?? EMBEDDING_STRATEGY_VERSION,
+      createdAt: this.database.getMetadata("index.createdAt") ?? "",
+      updatedAt: this.database.getMetadata("index.updatedAt") ?? "",
+    };
   }
 
   private saveIndexMetadata(provider: ConfiguredProviderInfo): void {
@@ -2868,6 +2967,7 @@ export class Indexer {
     const completeProjectEmbeddingStrategyReset = !this.hasProjectForceReembedPending();
 
     this.database.setMetadata("index.version", INDEX_METADATA_VERSION);
+    this.database.setMetadata("index.pathStorageVersion", this.getExpectedPathStorageVersion());
     this.database.setMetadata("index.embeddingProvider", provider.provider);
     this.database.setMetadata("index.embeddingModel", provider.modelInfo.model);
     this.database.setMetadata("index.embeddingDimensions", provider.modelInfo.dimensions.toString());
@@ -2892,6 +2992,18 @@ export class Indexer {
 
   private validateIndexCompatibility(provider: ConfiguredProviderInfo): IndexCompatibility {
     const storedMetadata = this.loadIndexMetadata();
+
+    const storedPathStorageVersion = this.database?.getMetadata("index.pathStorageVersion")
+      ?? GLOBAL_PATH_STORAGE_VERSION;
+    const expectedPathStorageVersion = this.getExpectedPathStorageVersion();
+    if (this.hasStoredIndexData() && storedPathStorageVersion !== expectedPathStorageVersion) {
+      return {
+        compatible: false,
+        code: IncompatibilityCode.PATH_STORAGE_MISMATCH,
+        reason: `Path storage format mismatch: index uses v${storedPathStorageVersion} checkout-absolute paths, but this project requires portable v${expectedPathStorageVersion} paths. Run index_codebase with force=true to rebuild the shared project index once.`,
+        storedMetadata: storedMetadata ?? undefined,
+      };
+    }
 
     if (!storedMetadata) {
       return { compatible: true };
@@ -2961,6 +3073,7 @@ export class Indexer {
     readIssues: readonly IndexReadIssue[];
     compatibility: IndexCompatibility;
   }> {
+    this.refreshBranchInfo();
     let initializedReader = false;
     while (true) {
       if (this.initializationPromise) {
@@ -3106,9 +3219,8 @@ export class Indexer {
       const branchKey = this.getBranchCatalogKey();
       const alreadyIndexed = database.getBranchChunkIds(branchKey).length > 0
         && database.getBranchSymbolIds(branchKey).length > 0;
-      const symbolsCurrent = database.getMetadata(this.getSymbolExtractorVersionMetadataKey())
-        === SYMBOL_EXTRACTOR_VERSION;
-      if (alreadyIndexed && symbolsCurrent && this.getStoredBranchCommit(database) === normalizedCommit) {
+      const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database);
+      if (alreadyIndexed && migrationsCurrent && this.getStoredBranchCommit(database) === normalizedCommit) {
         return { prepared: false };
       }
 
@@ -3236,22 +3348,22 @@ export class Indexer {
       database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
 
     for (const f of files) {
-      const canonicalPath = this.toCanonicalFilePath(f.path);
+      const storedPath = this.toStoredFilePath(f.path);
       const currentHash = hashFile(f.path);
-      currentFileHashes.set(canonicalPath, currentHash);
+      currentFileHashes.set(storedPath, currentHash);
 
-      const cachedHashMatches = this.fileHashCache.get(canonicalPath) === currentHash;
+      const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
       const needsCallGraphRefresh = cachedHashMatches &&
         needsCallGraphResolutionMigration &&
-        database.getChunksByFile(canonicalPath).some((chunk) =>
+        database.getChunksByFile(storedPath).some((chunk) =>
           chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
         );
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles &&
-        path.extname(canonicalPath).toLowerCase() === ".swift";
+        path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles &&
-        path.extname(canonicalPath).toLowerCase() === ".metal";
+        path.extname(storedPath).toLowerCase() === ".metal";
 
       if (
         cachedHashMatches &&
@@ -3260,11 +3372,11 @@ export class Indexer {
         !requiresMetalParserUpgrade &&
         !refreshCachedSymbols
       ) {
-        unchangedFilePaths.add(canonicalPath);
+        unchangedFilePaths.add(storedPath);
         this.logger.recordCacheHit();
       } else {
         const content = await fsPromises.readFile(f.path, "utf-8");
-        changedFiles.push({ path: canonicalPath, content, hash: currentHash });
+        changedFiles.push({ path: storedPath, content, hash: currentHash });
         this.logger.recordCacheMiss();
       }
     }
@@ -3391,8 +3503,9 @@ export class Indexer {
       currentFilePaths.add(parsed.path);
 
       if (parsed.chunks.length === 0) {
-        const relativePath = path.relative(this.projectRoot, parsed.path);
-        stats.parseFailures.push(relativePath);
+        stats.parseFailures.push(path.isAbsolute(parsed.path)
+          ? path.relative(this.projectRoot, parsed.path)
+          : parsed.path);
       }
 
       let chunksToProcess = parsed.chunks;
@@ -4155,6 +4268,74 @@ export class Indexer {
     return intersection / union;
   }
 
+  private getBranchPrefilterState(
+    database: Database,
+    branchChunkIds: Set<string> | null,
+  ): {
+    hasInitializedBranchCatalog: boolean;
+    shouldPrefilterByBranch: boolean;
+  } {
+    const hasInitializedBranchCatalog = branchChunkIds !== null
+      && database.getAllBranches().length > 0;
+    return {
+      hasInitializedBranchCatalog,
+      shouldPrefilterByBranch: branchChunkIds !== null
+        && (this.config.scope === "global" || hasInitializedBranchCatalog),
+    };
+  }
+
+  private searchCandidatesWithBranchPrefilter<T>(
+    initialLimit: number,
+    totalCount: number,
+    branchChunkIds: Set<string> | null,
+    shouldPrefilterByBranch: boolean,
+    search: (limit: number) => T[],
+    getChunkId: (candidate: T) => string,
+  ): T[] {
+    const normalizedLimit = Math.max(0, Math.floor(initialLimit));
+    if (normalizedLimit === 0) return [];
+    if (!shouldPrefilterByBranch || !branchChunkIds) {
+      return search(normalizedLimit);
+    }
+
+    const targetCount = Math.min(normalizedLimit, branchChunkIds.size);
+    if (targetCount === 0 || totalCount === 0) return [];
+
+    let requestedLimit = Math.min(normalizedLimit, totalCount);
+    while (true) {
+      const results = search(requestedLimit);
+      const branchResults = results.filter((candidate) => branchChunkIds.has(getChunkId(candidate)));
+      if (
+        branchResults.length >= targetCount
+        || results.length < requestedLimit
+        || requestedLimit >= totalCount
+      ) {
+        return branchResults;
+      }
+
+      const nextLimit = Math.min(totalCount, Math.max(requestedLimit + 1, requestedLimit * 2));
+      if (nextLimit === requestedLimit) return branchResults;
+      requestedLimit = nextLimit;
+    }
+  }
+
+  private searchSemanticCandidates(
+    store: VectorStore,
+    embedding: number[],
+    initialLimit: number,
+    branchChunkIds: Set<string> | null,
+    shouldPrefilterByBranch: boolean,
+  ): RankedCandidate[] {
+    return this.searchCandidatesWithBranchPrefilter(
+      initialLimit,
+      store.count(),
+      branchChunkIds,
+      shouldPrefilterByBranch,
+      (requestedLimit) => store.search(embedding, requestedLimit),
+      (candidate) => candidate.id,
+    );
+  }
+
   async search(
     query: string,
     limit?: number,
@@ -4226,14 +4407,7 @@ export class Indexer {
     }
     const embeddingMs = performance.now() - embeddingStartTime;
 
-    const vectorStartTime = performance.now();
-    const semanticResults = embedding ? store.search(embedding, maxResults * 4) : [];
-    const vectorMs = performance.now() - vectorStartTime;
-
-    const keywordStartTime = performance.now();
-    const keywordResults = await this.keywordSearch(query, maxResults * 4, store, invertedIndex);
-    const keywordMs = performance.now() - keywordStartTime;
-
+    const prefilterStartTime = performance.now();
     let branchChunkIds: Set<string> | null = null;
     let branchSymbolIds: Set<string> | null = null;
     if (filterByBranch && (this.config.scope === "global" || this.currentBranch !== "default")) {
@@ -4241,45 +4415,42 @@ export class Indexer {
       branchChunkIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchChunkIds(branchKey)));
       branchSymbolIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchSymbolIds(branchKey)));
     }
-
-    const prefilterStartTime = performance.now();
-    const shouldPrefilterByBranch = branchChunkIds !== null && (this.config.scope === "global" || branchChunkIds.size > 0);
-    const allowBranchPrefilterFallback = this.config.scope !== "global";
-    const prefilteredSemantic = shouldPrefilterByBranch && branchChunkIds
-      ? semanticResults.filter((r) => branchChunkIds.has(r.id))
-      : semanticResults;
-    const prefilteredKeyword = shouldPrefilterByBranch && branchChunkIds
-      ? keywordResults.filter((r) => branchChunkIds.has(r.id))
-      : keywordResults;
-
-    const semanticCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0)
-      ? semanticResults
-      : prefilteredSemantic;
-    const keywordCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && keywordResults.length > 0 && prefilteredKeyword.length === 0)
-      ? keywordResults
-      : prefilteredKeyword;
-    const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
-      matchesHardSearchFilters(candidate, options)
-    );
-    const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
-      matchesHardSearchFilters(candidate, options)
-    );
+    const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
+      this.getBranchPrefilterState(database, branchChunkIds);
     const prefilterMs = performance.now() - prefilterStartTime;
 
-    if (this.config.scope !== "global" && branchChunkIds && branchChunkIds.size === 0) {
+    const vectorStartTime = performance.now();
+    const semanticCandidates = embedding
+      ? this.searchSemanticCandidates(
+          store,
+          embedding,
+          maxResults * 4,
+          branchChunkIds,
+          shouldPrefilterByBranch,
+        )
+      : [];
+    const vectorMs = performance.now() - vectorStartTime;
+
+    const keywordStartTime = performance.now();
+    const keywordCandidates = await this.keywordSearch(
+      query,
+      maxResults * 4,
+      store,
+      invertedIndex,
+      branchChunkIds,
+      shouldPrefilterByBranch,
+    );
+    const keywordMs = performance.now() - keywordStartTime;
+
+    const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
+      matchesHardSearchFilters(candidate, options, this.projectRoot)
+    );
+    const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
+      matchesHardSearchFilters(candidate, options, this.projectRoot)
+    );
+
+    if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
-        branch: this.currentBranch,
-      });
-    }
-
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no semantic overlap, using unfiltered semantic candidates", {
-        branch: this.currentBranch,
-      });
-    }
-
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && keywordResults.length > 0 && prefilteredKeyword.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no keyword overlap, using unfiltered keyword candidates", {
         branch: this.currentBranch,
       });
     }
@@ -4343,7 +4514,9 @@ export class Indexer {
     const tiered = mergeTieredResults(primaryLane, rescued, maxResults * 4);
     const hasCodeHints = extractCodeTermHints(query).length > 0 || identifierHints.length > 0;
 
-    const baseFiltered = tiered.filter((r) => matchesSearchFilters(r, options, this.config.search.minScore));
+    const baseFiltered = tiered.filter((r) =>
+      matchesSearchFilters(r, options, this.config.search.minScore, this.projectRoot)
+    );
 
     const implementationOnly = baseFiltered.filter((r) =>
       isLikelyImplementationPath(r.metadata.filePath) &&
@@ -4357,7 +4530,7 @@ export class Indexer {
 
     const identifierFallback = (!options?.definitionIntent && filtered.length === 0 && identifierHints.length > 0)
       ? buildSymbolDefinitionLane(query, database, branchChunkIds, branchSymbolIds, maxResults, union, true)
-        .filter((r) => matchesSearchFilters(r, options, this.config.search.minScore))
+        .filter((r) => matchesSearchFilters(r, options, this.config.search.minScore, this.projectRoot))
         .slice(0, maxResults)
       : [];
 
@@ -4388,11 +4561,12 @@ export class Indexer {
         let content = "";
         let contextStartLine = r.metadata.startLine;
         let contextEndLine = r.metadata.endLine;
+        const resolvedFilePath = this.resolveStoredFilePath(r.metadata.filePath);
 
         if (!metadataOnly && this.config.search.includeContext) {
           try {
             const fileContent = await fsPromises.readFile(
-              r.metadata.filePath,
+              resolvedFilePath,
               "utf-8"
             );
             const lines = fileContent.split("\n");
@@ -4410,7 +4584,7 @@ export class Indexer {
         }
 
         return {
-          filePath: r.metadata.filePath,
+          filePath: resolvedFilePath,
           startLine: contextStartLine,
           endLine: contextEndLine,
           content,
@@ -4428,8 +4602,21 @@ export class Indexer {
     limit: number,
     store: VectorStore,
     invertedIndex: InvertedIndex,
+    branchChunkIds: Set<string> | null = null,
+    shouldPrefilterByBranch = false,
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
-    const scores = invertedIndex.search(query);
+    const normalizedLimit = Math.max(0, Math.floor(limit));
+    if (normalizedLimit === 0) return [];
+
+    const scoreEntries = this.searchCandidatesWithBranchPrefilter(
+      normalizedLimit,
+      invertedIndex.getDocumentCount(),
+      branchChunkIds,
+      shouldPrefilterByBranch,
+      (requestedLimit) => Array.from(invertedIndex.search(query, requestedLimit)),
+      ([chunkId]) => chunkId,
+    );
+    const scores = new Map(scoreEntries);
 
     if (scores.size === 0) {
       return [];
@@ -4449,7 +4636,7 @@ export class Indexer {
     }
 
     results.sort((a, b) => b.score - a.score);
-    return results.slice(0, limit);
+    return results.slice(0, normalizedLimit);
   }
 
   async getStatus(): Promise<StatusResult> {
@@ -4520,7 +4707,7 @@ export class Indexer {
     );
     const currentFileHashes = new Map<string, string>();
     for (const file of files) {
-      currentFileHashes.set(this.toCanonicalFilePath(file.path), hashFile(file.path));
+      currentFileHashes.set(this.toStoredFilePath(file.path), hashFile(file.path));
     }
 
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
@@ -4536,23 +4723,7 @@ export class Indexer {
       }
     }
 
-    const hasSwiftFiles = Array.from(currentFileHashes.keys()).some(
-      (filePath) => path.extname(filePath).toLowerCase() === ".swift",
-    );
-    const hasMetalFiles = Array.from(currentFileHashes.keys()).some(
-      (filePath) => path.extname(filePath).toLowerCase() === ".metal",
-    );
-    const hasCallGraphMigrationFiles = Array.from(currentFileHashes.keys()).some((filePath) => {
-      const extension = path.extname(filePath).toLowerCase();
-      return extension === ".php" || extension === ".c" || extension === ".cc" || extension === ".cpp" || extension === ".cxx";
-    });
-    if (
-      (hasSwiftFiles && database.getMetadata(this.getSwiftParserVersionMetadataKey()) !== SWIFT_PARSER_VERSION)
-      || (hasMetalFiles && database.getMetadata(this.getMetalParserVersionMetadataKey()) !== METAL_PARSER_VERSION)
-      || database.getMetadata(this.getSymbolExtractorVersionMetadataKey()) !== SYMBOL_EXTRACTOR_VERSION
-      || (hasCallGraphMigrationFiles
-        && database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION)
-    ) {
+    if (!this.areBranchMigrationVersionsCurrent(database)) {
       return { readable: true, current: false, reason: "migration-required" };
     }
 
@@ -4630,6 +4801,7 @@ export class Indexer {
         this.saveFailedBatches([]);
 
         database.deleteMetadata("index.version");
+        database.deleteMetadata("index.pathStorageVersion");
         database.deleteMetadata("index.embeddingProvider");
         database.deleteMetadata("index.embeddingModel");
         database.deleteMetadata("index.embeddingDimensions");
@@ -4651,7 +4823,7 @@ export class Indexer {
       return;
     }
 
-    if (!this.isLocalProjectIndexPath()) {
+    if (!this.isProjectOwnedIndexPath()) {
       throw new Error(
         "Project-scoped force rebuild is unsafe while using an inherited worktree index. " +
         "Create a local project config boundary before clearing the index."
@@ -4664,16 +4836,15 @@ export class Indexer {
     invertedIndex.clear();
     this.saveInvertedIndex(invertedIndex);
 
-    // Clear file hash cache so all files are re-parsed
     this.fileHashCache.clear();
-    this.saveFileHashCache();
+    await this.removeProjectRuntimeStateArtifacts();
 
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
-    this.saveFailedBatches([]);
 
     database.deleteMetadata("index.version");
+    database.deleteMetadata("index.pathStorageVersion");
     database.deleteMetadata("index.embeddingProvider");
     database.deleteMetadata("index.embeddingModel");
     database.deleteMetadata("index.embeddingDimensions");
@@ -4708,35 +4879,51 @@ export class Indexer {
       filePathsToChunkKeys.set(metadata.filePath, existing);
     }
 
-    const removedFilePaths: string[] = [];
-    const removedChunkKeys: string[] = [];
+    const missingStoredFilePaths: string[] = [];
+    const missingChunkKeys: string[] = [];
     const chunkKeysByRemovedFile = new Map<string, string[]>();
 
     for (const [filePath, chunkKeys] of filePathsToChunkKeys) {
-      if (!existsSync(filePath)) {
+      if (!existsSync(this.toMaterializedFilePath(filePath))) {
         chunkKeysByRemovedFile.set(filePath, chunkKeys);
         for (const key of chunkKeys) {
-          removedChunkKeys.push(key);
+          missingChunkKeys.push(key);
         }
-        removedFilePaths.push(filePath);
+        missingStoredFilePaths.push(filePath);
       }
     }
+
+    const branchCatalogKeys = this.getBranchCatalogKeys();
+    for (const branchKey of branchCatalogKeys) {
+      database.deleteBranchChunksForBranch(branchKey, missingChunkKeys);
+    }
+    const referencedChunkKeys = new Set(database.getReferencedChunkIds(missingChunkKeys));
+    const removedChunkKeys = missingChunkKeys.filter((key) => !referencedChunkKeys.has(key));
 
     if (removedChunkKeys.length > 0) {
       this.rebuildVectorStoreExcludingChunkIds(store, database, removedChunkKeys);
       for (const key of removedChunkKeys) {
         invertedIndex.removeChunk(key);
       }
+      database.deleteChunksByIds(removedChunkKeys);
     }
 
-    for (const filePath of removedFilePaths) {
-      const fileChunkKeys = chunkKeysByRemovedFile.get(filePath) ?? [];
-      if (fileChunkKeys.length > 0) {
-        database.deleteChunksByIds(fileChunkKeys);
-      }
-      database.deleteCallEdgesByFile(filePath);
-      database.deleteSymbolsByFile(filePath);
+    const missingSymbolIds = Array.from(new Set(
+      missingStoredFilePaths.flatMap((filePath) =>
+        database.getSymbolsByFile(filePath).map((symbol) => symbol.id)
+      )
+    ));
+    for (const branchKey of branchCatalogKeys) {
+      database.deleteBranchSymbolsForBranch(branchKey, missingSymbolIds);
     }
+    const referencedSymbolIds = new Set(database.getReferencedSymbolIds(missingSymbolIds));
+    const removedSymbolIds = missingSymbolIds.filter((symbolId) => !referencedSymbolIds.has(symbolId));
+    database.clearCallEdgeTargetsForSymbols(removedSymbolIds);
+
+    const removedChunkKeySet = new Set(removedChunkKeys);
+    const removedStoredFilePaths = missingStoredFilePaths.filter((filePath) =>
+      (chunkKeysByRemovedFile.get(filePath) ?? []).some((key) => removedChunkKeySet.has(key))
+    );
 
     const removedCount = removedChunkKeys.length;
 
@@ -4779,10 +4966,17 @@ export class Indexer {
       removedStale: removedCount,
       orphanEmbeddings: gcOrphanEmbeddings,
       orphanChunks: gcOrphanChunks,
-      removedFiles: removedFilePaths.length,
+      removedFiles: removedStoredFilePaths.length,
     });
 
-    return { removed: removedCount, filePaths: removedFilePaths, gcOrphanEmbeddings, gcOrphanChunks, gcOrphanSymbols, gcOrphanCallEdges };
+    return {
+      removed: removedCount,
+      filePaths: removedStoredFilePaths.map((filePath) => this.resolveStoredFilePath(filePath)),
+      gcOrphanEmbeddings,
+      gcOrphanChunks,
+      gcOrphanSymbols,
+      gcOrphanCallEdges,
+    };
   }
 
   async retryFailedBatches(): Promise<{ succeeded: number; failed: number; remaining: number }> {
@@ -5015,9 +5209,19 @@ export class Indexer {
   }
 
   refreshBranchInfo(): void {
+    const previousBranch = this.currentBranch;
     if (isGitRepo(this.materializedProjectRoot)) {
       this.currentBranch = this.branchNameOverride ?? getBranchOrDefault(this.materializedProjectRoot);
       this.baseBranch = getBaseBranch(this.materializedProjectRoot);
+    } else {
+      this.currentBranch = "default";
+      this.baseBranch = "default";
+    }
+
+    if (this.currentBranch !== previousBranch) {
+      this.refreshRuntimeArtifactPaths();
+      this.fileHashCache.clear();
+      this.loadFileHashCache();
     }
   }
 
@@ -5060,6 +5264,9 @@ export class Indexer {
     }
 
     const filterByBranch = options?.filterByBranch ?? true;
+    const excludedStoredFile = options?.excludeFile
+      ? this.toStoredFilePath(options.excludeFile)
+      : undefined;
 
     this.logger.search("debug", "Starting find similar", {
       codeLength: code.length,
@@ -5072,36 +5279,29 @@ export class Indexer {
     const embeddingMs = performance.now() - embeddingStartTime;
     this.logger.recordEmbeddingApiCall(tokensUsed);
 
-    const vectorStartTime = performance.now();
-    const semanticResults = store.search(embedding, limit * 2);
-    const vectorMs = performance.now() - vectorStartTime;
-
+    const prefilterStartTime = performance.now();
     let branchChunkIds: Set<string> | null = null;
     if (filterByBranch && (this.config.scope === "global" || this.currentBranch !== "default")) {
       branchChunkIds = new Set(
         this.getBranchCatalogKeys().flatMap((branchKey) => database.getBranchChunkIds(branchKey))
       );
     }
-
-    const prefilterStartTime = performance.now();
-    const shouldPrefilterByBranch = branchChunkIds !== null && (this.config.scope === "global" || branchChunkIds.size > 0);
-    const allowBranchPrefilterFallback = this.config.scope !== "global";
-    const prefilteredSemantic = shouldPrefilterByBranch && branchChunkIds
-      ? semanticResults.filter((r) => branchChunkIds.has(r.id))
-      : semanticResults;
-    const semanticCandidates = (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0)
-      ? semanticResults
-      : prefilteredSemantic;
+    const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
+      this.getBranchPrefilterState(database, branchChunkIds);
     const prefilterMs = performance.now() - prefilterStartTime;
 
-    if (this.config.scope !== "global" && branchChunkIds && branchChunkIds.size === 0) {
-      this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
-        branch: this.currentBranch,
-      });
-    }
+    const vectorStartTime = performance.now();
+    const semanticCandidates = this.searchSemanticCandidates(
+      store,
+      embedding,
+      limit * 2,
+      branchChunkIds,
+      shouldPrefilterByBranch,
+    );
+    const vectorMs = performance.now() - vectorStartTime;
 
-    if (allowBranchPrefilterFallback && shouldPrefilterByBranch && semanticResults.length > 0 && prefilteredSemantic.length === 0) {
-      this.logger.search("warn", "Branch prefilter produced no semantic overlap, using unfiltered semantic candidates", {
+    if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
+      this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
         branch: this.currentBranch,
       });
     }
@@ -5117,26 +5317,11 @@ export class Indexer {
     const filtered = ranked.filter((r) => {
       if (r.score < this.config.search.minScore) return false;
 
-      if (options?.excludeFile) {
-        if (r.metadata.filePath === options.excludeFile) return false;
+      if (excludedStoredFile) {
+        if (r.metadata.filePath === excludedStoredFile) return false;
       }
 
-      if (options?.fileType) {
-        const ext = r.metadata.filePath.split(".").pop()?.toLowerCase();
-        if (ext !== options.fileType.toLowerCase().replace(/^\./, "")) return false;
-      }
-
-      if (options?.directory) {
-        const normalizedDir = options.directory.replace(/^\/|\/$/g, "");
-        if (!r.metadata.filePath.includes(`/${normalizedDir}/`) &&
-          !r.metadata.filePath.includes(`${normalizedDir}/`)) return false;
-      }
-
-      if (options?.chunkType) {
-        if (r.metadata.chunkType !== options.chunkType) return false;
-      }
-
-      return true;
+      return matchesHardSearchFilters(r, options, this.projectRoot);
     }).slice(0, limit);
 
     const totalSearchMs = performance.now() - searchStartTime;
@@ -5158,11 +5343,12 @@ export class Indexer {
     return Promise.all(
       filtered.map(async (r) => {
         let content = "";
+        const resolvedFilePath = this.resolveStoredFilePath(r.metadata.filePath);
 
         if (this.config.search.includeContext) {
           try {
             const fileContent = await fsPromises.readFile(
-              r.metadata.filePath,
+              resolvedFilePath,
               "utf-8"
             );
             const lines = fileContent.split("\n");
@@ -5175,7 +5361,7 @@ export class Indexer {
         }
 
         return {
-          filePath: r.metadata.filePath,
+          filePath: resolvedFilePath,
           startLine: r.metadata.startLine,
           endLine: r.metadata.endLine,
           content,
@@ -5198,7 +5384,7 @@ export class Indexer {
       for (const edge of database.getCallersWithContext(targetName, branchKey, callTypeFilter)) {
         if (!seen.has(edge.id)) {
           seen.add(edge.id);
-          results.push(edge);
+          results.push(this.resolveCallEdgeFilePath(edge));
         }
       }
     }
@@ -5227,7 +5413,7 @@ export class Indexer {
         if ((!matchesResolvedSymbol && !safelyMatchesUnresolvedSymbol) || seen.has(edge.id)) continue;
 
         seen.add(edge.id);
-        results.push(edge);
+        results.push(this.resolveCallEdgeFilePath(edge));
       }
     }
 
@@ -5244,7 +5430,7 @@ export class Indexer {
       for (const edge of database.getCallees(symbolId, branchKey, callTypeFilter)) {
         if (!seen.has(edge.id)) {
           seen.add(edge.id);
-          results.push(edge);
+          results.push(this.resolveCallEdgeFilePath(edge));
         }
       }
     }
@@ -5264,7 +5450,7 @@ export class Indexer {
       }
     }
 
-    return shortest;
+    return shortest.map((hop) => this.resolveFilePathRecord(hop));
   }
 
   async findCallPathBySymbolIds(
@@ -5349,7 +5535,7 @@ export class Indexer {
       }
     }
 
-    return shortest;
+    return shortest.map((hop) => this.resolveFilePathRecord(hop));
   }
 
   async getCallGraphSymbols(): Promise<SymbolData[]> {
@@ -5359,7 +5545,7 @@ export class Indexer {
 
     for (const branchKey of this.getBranchCatalogKeys()) {
       for (const symbol of database.getSymbolsForBranch(branchKey)) {
-        symbols.set(symbol.id, symbol);
+        symbols.set(symbol.id, this.resolveFilePathRecord(symbol));
       }
     }
 
@@ -5370,14 +5556,17 @@ export class Indexer {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
-    return database.getSymbolsForBranch(resolvedBranch);
+    return database.getSymbolsForBranch(resolvedBranch)
+      .map((symbol) => this.resolveFilePathRecord(symbol));
   }
 
   async getSymbolsForFiles(filePaths: string[], branch?: string): Promise<SymbolData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
-    return database.getSymbolsForFiles(filePaths, resolvedBranch);
+    const storedFilePaths = filePaths.map((filePath) => this.toStoredFilePath(filePath));
+    return database.getSymbolsForFiles(storedFilePaths, resolvedBranch)
+      .map((symbol) => this.resolveFilePathRecord(symbol));
   }
 
   async getTransitiveReachability(
@@ -5388,21 +5577,24 @@ export class Indexer {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
     const branch = this.getBranchCatalogKey();
-    return database.getTransitiveReachability(rootSymbolIds, branch, direction, maxDepth);
+    return database.getTransitiveReachability(rootSymbolIds, branch, direction, maxDepth)
+      .map((entry) => this.resolveFilePathRecord(entry));
   }
 
   async detectCommunities(branch?: string, symbolIds?: string[]): Promise<CommunityData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
-    return database.detectCommunities(resolvedBranch, symbolIds);
+    return database.detectCommunities(resolvedBranch, symbolIds)
+      .map((entry) => this.resolveFilePathRecord(entry));
   }
 
   async computeCentrality(branch?: string): Promise<CentralityData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = branch ?? this.getBranchCatalogKey();
-    return database.computeCentrality(resolvedBranch);
+    return database.computeCentrality(resolvedBranch)
+      .map((entry) => this.resolveFilePathRecord(entry));
   }
 
   async getPrImpact(opts: {
@@ -5455,11 +5647,9 @@ export class Indexer {
     const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
     const catalogIdentityMatches = storedCommit === expectedCommit;
 
-    const symbolsCurrent = database.getMetadata(
-      this.getSymbolExtractorVersionMetadataKey(catalogIdentity),
-    ) === SYMBOL_EXTRACTOR_VERSION;
+    const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database, catalogIdentity);
 
-    if (branchSymbols.length === 0 || !catalogIdentityMatches || !symbolsCurrent) {
+    if (branchSymbols.length === 0 || !catalogIdentityMatches || !migrationsCurrent) {
       if (!resolvedBranch || resolvedBranch === "default") {
         throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
       }
@@ -5522,8 +5712,10 @@ export class Indexer {
       }
     }
 
-    const absoluteChangedFiles = changedFiles.map((f) => path.resolve(this.projectRoot, f));
-    const directSymbols = database.getSymbolsForFiles(absoluteChangedFiles, branchKey);
+    const toStoredChangedFiles = (filePaths: readonly string[]): string[] =>
+      filePaths.map((filePath) => this.toStoredFilePath(path.resolve(this.projectRoot, filePath)));
+    const storedChangedFiles = toStoredChangedFiles(changedFiles);
+    const directSymbols = database.getSymbolsForFiles(storedChangedFiles, branchKey);
     const directIds = directSymbols.map((s) => s.id);
 
     const direction = opts.direction ?? "both";
@@ -5571,7 +5763,7 @@ export class Indexer {
         id: c.symbolId,
         name: c.symbolName,
         callerCount: c.callerCount,
-        filePath: c.filePath,
+        filePath: this.resolveStoredFilePath(c.filePath),
       }));
 
     const totalAffected = allAffectedIds.length;
@@ -5618,9 +5810,9 @@ export class Indexer {
               projectRoot: this.projectRoot,
               baseBranch: this.baseBranch,
             });
-            const otherAbsolute = otherChanged.files.map((f) => path.resolve(this.projectRoot, f));
+            const otherStored = toStoredChangedFiles(otherChanged.files);
             const prBranchKey = this.getBranchCatalogKeyFor(otherChanged.catalogIdentity);
-            const otherSymbols = database.getSymbolsForFiles(otherAbsolute, prBranchKey);
+            const otherSymbols = database.getSymbolsForFiles(otherStored, prBranchKey);
             const otherLabels = new Set<string>();
             for (const sym of otherSymbols) {
               const label = symbolToCommunity.get(structuralKey(sym.filePath, sym.name));
@@ -5654,12 +5846,12 @@ export class Indexer {
         id: s.id,
         name: s.name,
         kind: s.kind,
-        filePath: s.filePath,
+        filePath: this.resolveStoredFilePath(s.filePath),
       })),
       transitiveCallers: transitiveCallers.map((c) => ({
         id: c.symbolId,
         name: c.symbolName,
-        filePath: c.filePath,
+        filePath: this.resolveStoredFilePath(c.filePath),
         depth: c.depth,
       })),
       totalAffected,
@@ -5702,7 +5894,7 @@ export class Indexer {
       // Gather symbols from each file
       for (const filePath of filePaths) {
         if (directory) {
-          const absoluteFilePath = path.resolve(filePath);
+          const absoluteFilePath = this.resolveStoredFilePath(filePath);
           const matchesRelative = filePath === directory || filePath.startsWith(directory + "/");
           const matchesProjectRelative = absoluteDirectoryFilter !== undefined && (
             absoluteFilePath === absoluteDirectoryFilter || absoluteFilePath.startsWith(absoluteDirectoryFilter + path.sep)
@@ -5713,7 +5905,7 @@ export class Indexer {
         }
         for (const sym of database.getSymbolsByFile(filePath)) {
           if (symbolIdSet.has(sym.id) && !seenSymbols.has(sym.id)) {
-            seenSymbols.set(sym.id, sym);
+            seenSymbols.set(sym.id, this.resolveFilePathRecord(sym));
           }
         }
       }
@@ -5722,7 +5914,7 @@ export class Indexer {
       for (const symbolId of seenSymbols.keys()) {
         for (const edge of database.getCallees(symbolId, branchKey)) {
           if (!seenEdges.has(edge.id)) {
-            seenEdges.set(edge.id, edge);
+            seenEdges.set(edge.id, this.resolveCallEdgeFilePath(edge));
           }
         }
       }

@@ -115,6 +115,55 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(topPaths).not.toContain(path.join("benchmarks", "run.ts"));
   });
 
+  it("treats relative and absolute directory filters equivalently", async () => {
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config)) - 1];
+    await indexer.index();
+
+    const relativeDirectory = path.join("app", "indexer");
+    const absoluteDirectory = `${path.join(tempDir, relativeDirectory)}${path.sep}`;
+    const source = fs.readFileSync(path.join(tempDir, relativeDirectory, "index.ts"), "utf-8");
+
+    const relativeSearch = await indexer.search("rankHybridResults implementation", 10, {
+      metadataOnly: true,
+      filterByBranch: false,
+      directory: relativeDirectory,
+    });
+    const absoluteSearch = await indexer.search("rankHybridResults implementation", 10, {
+      metadataOnly: true,
+      filterByBranch: false,
+      directory: absoluteDirectory,
+    });
+
+    expect(relativeSearch.length).toBeGreaterThan(0);
+    expect(absoluteSearch.map((result) => result.filePath)).toEqual(
+      relativeSearch.map((result) => result.filePath),
+    );
+
+    const relativeSimilar = await indexer.findSimilar(source, 10, {
+      filterByBranch: false,
+      directory: relativeDirectory,
+    });
+    const absoluteSimilar = await indexer.findSimilar(source, 10, {
+      filterByBranch: false,
+      directory: absoluteDirectory,
+    });
+
+    expect(relativeSimilar.length).toBeGreaterThan(0);
+    expect(absoluteSimilar.map((result) => result.filePath)).toEqual(
+      relativeSimilar.map((result) => result.filePath),
+    );
+  });
+
   it("returns exact symbols whose semantic chunks were omitted by the per-file cap", async () => {
     const largeFile = path.join(tempDir, "app", "indexer", "large.ts");
     const declarations = Array.from({ length: 30 }, (_, index) =>
@@ -162,7 +211,9 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     const status = await indexer.getStatus();
     const database = new Database(path.join(status.indexPath, "codebase.db"));
     try {
-      expect(database.getSymbolsByName("cappedExactDefinition")).toHaveLength(1);
+      expect(database.getSymbolsByName("cappedExactDefinition")).toEqual([
+        expect.objectContaining({ filePath: "app/indexer/large.ts" }),
+      ]);
       expect(database.getChunksByName("cappedExactDefinition")).toHaveLength(0);
     } finally {
       database.close();
@@ -207,7 +258,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     const database = new Database(path.join(status.indexPath, "codebase.db"));
     try {
       expect(database.getSymbolsByName("getStatus")).toEqual([
-        expect.objectContaining({ filePath: classFile, kind: "method_definition" }),
+        expect.objectContaining({ filePath: "app/indexer/service.ts", kind: "method_definition" }),
       ]);
       expect(database.getChunksByName("getStatus")).toHaveLength(0);
     } finally {
@@ -223,6 +274,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
 
   it("reparses symbols for unchanged files with stale symbolExtractorVersion metadata and restores nested class methods", async () => {
     const classFile = path.join(tempDir, "app", "indexer", "service.ts");
+    const storedClassFile = "app/indexer/service.ts";
     fs.writeFileSync(
       classFile,
       `export class Service {
@@ -252,9 +304,9 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     const firstStatus = await firstIndexer.getStatus();
     const initialDb = new Database(path.join(firstStatus.indexPath, "codebase.db"));
     try {
-      const beforeReindex = initialDb.getSymbolsByFile(classFile);
+      const beforeReindex = initialDb.getSymbolsByFile(storedClassFile);
       expect(beforeReindex).toContainEqual(expect.objectContaining({
-        filePath: classFile,
+        filePath: storedClassFile,
         name: "getStatus",
         kind: "method_definition",
       }));
@@ -267,7 +319,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
 
     const staleDb = new Database(path.join(firstStatus.indexPath, "codebase.db"));
     try {
-      staleDb.deleteSymbolsByFile(classFile);
+      staleDb.deleteSymbolsByFile(storedClassFile);
       staleDb.setMetadata(symbolExtractorVersionKey, "stale");
     } finally {
       staleDb.close();
@@ -282,7 +334,7 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     try {
       const restoredSymbols = restoredDb.getSymbolsByName("getStatus");
       expect(restoredSymbols).toContainEqual(expect.objectContaining({
-        filePath: classFile,
+        filePath: storedClassFile,
         name: "getStatus",
         kind: "method_definition",
       }));
@@ -292,6 +344,39 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     }
 
     expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
+  });
+
+  it("keeps global-scope database paths absolute", async () => {
+    const sourceFile = path.join(tempDir, "app", "indexer", "index.ts");
+    const indexPath = path.join(tempDir, "global-index");
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      scope: "global",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode", { indexPath })) - 1];
+    await indexer.index();
+
+    const database = new Database(path.join(indexPath, "codebase.db"));
+    try {
+      expect(database.getSymbolsByName("rankHybridResults")).toContainEqual(
+        expect.objectContaining({ filePath: sourceFile }),
+      );
+    } finally {
+      database.close();
+    }
+
+    const results = await indexer.search("where is rankHybridResults implementation", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+    });
+    expect(results[0]?.filePath).toBe(sourceFile);
   });
 
   it("does not rescue capped symbols from another branch", () => {

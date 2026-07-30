@@ -157,7 +157,7 @@ Only specify values you want to override. See [Configuration](docs/configuration
 
 ## Branch-aware indexing
 
-The index stores reusable content by hash and maintains branch catalogs for chunks and symbols. On a branch switch, unchanged content can be reused while results remain scoped to the active branch. Project indexes are kept separate for linked worktrees, while configuration may fall back to the main repository.
+The index stores reusable content by hash and maintains branch catalogs for chunks and symbols. On a branch switch, unchanged content can be reused while results remain scoped to the active branch. Linked worktrees without a local project config share the main checkout's portable project index; adding a worktree-local config creates an isolated index boundary.
 
 ## Knowledge bases and reranking
 

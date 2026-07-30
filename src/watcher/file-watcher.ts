@@ -1,9 +1,10 @@
+import { existsSync } from "fs";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
 
 import type { HostMode } from "../config/host.js";
 import type { CodebaseIndexConfig } from "../config/schema.js";
-import { resolveProjectConfigPath, resolveWritableProjectConfigPath } from "../config/paths.js";
+import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 
@@ -24,8 +25,8 @@ export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private projectRoot: string;
   private config: CodebaseIndexConfig;
-  private host: HostMode;
   private configPath: string | undefined;
+  private projectConfigPaths: string[];
   private pendingChanges: Map<string, FileChangeType> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
   private debounceMs = 1000;
@@ -38,8 +39,10 @@ export class FileWatcher {
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
     this.config = config;
-    this.host = host;
     this.configPath = options.configPath;
+    this.projectConfigPaths = options.configPath
+      ? [options.configPath]
+      : getProjectConfigCandidatePaths(projectRoot, host);
   }
 
   start(handler: ChangeHandler): void {
@@ -61,7 +64,23 @@ export class FileWatcher {
 
   private createWatcher(usePolling = false): void {
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
-    const watchTargets = this.configPath ? [this.projectRoot, this.configPath] : this.projectRoot;
+    let watchTargets: string | string[] = this.projectRoot;
+    if (this.configPath) {
+      watchTargets = [this.projectRoot, this.configPath];
+    } else {
+      const externalConfigTargets = this.projectConfigPaths
+        .filter((projectConfigPath) => {
+          const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
+          return this.isOutsideProjectPath(relativeConfigPath);
+        })
+        .map((projectConfigPath) => existsSync(projectConfigPath)
+          ? projectConfigPath
+          : this.getNearestExistingDirectory(path.dirname(projectConfigPath)));
+      const uniqueExternalConfigTargets = [...new Set(externalConfigTargets)];
+      if (uniqueExternalConfigTargets.length > 0) {
+        watchTargets = [this.projectRoot, ...uniqueExternalConfigTargets];
+      }
+    }
 
     const watcherOptions = {
       ignored: (filePath: string) => {
@@ -70,6 +89,10 @@ export class FileWatcher {
 
         if (this.isProjectConfigPathOrAncestor(relativePath)) {
           return false;
+        }
+
+        if (this.isOutsideProjectPath(relativePath)) {
+          return true;
         }
 
         if (hasFilteredPathSegment(relativePath, path.sep)) {
@@ -196,15 +219,26 @@ export class FileWatcher {
     );
   }
 
-  private getProjectConfigRelativePaths(): string[] {
-    if (this.configPath) {
-      return [path.normalize(path.relative(this.projectRoot, this.configPath))];
-    }
+  private isOutsideProjectPath(relativePath: string): boolean {
+    return relativePath === ".."
+      || relativePath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePath);
+  }
 
-    return [
-      resolveProjectConfigPath(this.projectRoot, this.host),
-      resolveWritableProjectConfigPath(this.projectRoot, this.host),
-    ].map((configPath) => path.normalize(path.relative(this.projectRoot, configPath)));
+  private getNearestExistingDirectory(directoryPath: string): string {
+    let candidate = directoryPath;
+    while (!existsSync(candidate)) {
+      const parent = path.dirname(candidate);
+      if (parent === candidate) break;
+      candidate = parent;
+    }
+    return candidate;
+  }
+
+  private getProjectConfigRelativePaths(): string[] {
+    return this.projectConfigPaths.map(
+      (configPath) => path.normalize(path.relative(this.projectRoot, configPath)),
+    );
   }
 
   private scheduleFlush(): void {

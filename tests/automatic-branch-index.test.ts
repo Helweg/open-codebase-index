@@ -13,7 +13,7 @@ import {
   isIndexLockContentionError,
   releaseIndexLock,
 } from "../src/indexer/index-lock.js";
-import { Database, hashContent } from "../src/native/index.js";
+import { Database, hashContent, VectorStore } from "../src/native/index.js";
 import { createPullRequestCatalogIdentity } from "../src/tools/changed-files.js";
 
 function git(cwd: string, args: string[]): string {
@@ -34,6 +34,10 @@ function branchCommitMetadataKey(catalogIdentity: string): string {
 
 function symbolExtractorMetadataKey(catalogIdentity: string): string {
   return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
+}
+
+function migrationMetadataKey(prefix: string, catalogIdentity: string): string {
+  return `${prefix}.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
 describe("automatic branch index preparation", () => {
@@ -156,6 +160,10 @@ function changed(): number {
     expect(progressPhases).toContain("complete");
     expect(first.changedFiles).toContain("src/feature.ts");
     expect(first.directSymbols.map((symbol) => symbol.name)).toContain("changed");
+    expect(first.directSymbols).toContainEqual(expect.objectContaining({
+      name: "changed",
+      filePath: path.join(repo, "src", "feature.ts"),
+    }));
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(beforeHead);
     expect(git(repo, ["status", "--porcelain"])).toBe(beforeStatus);
     expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
@@ -163,7 +171,7 @@ function changed(): number {
     const db = await database();
     const featureSymbols = db.getSymbolsForBranch("feature");
     expect(featureSymbols.length).toBeGreaterThan(0);
-    expect(featureSymbols.some((symbol) => symbol.filePath.startsWith(repo + path.sep))).toBe(true);
+    expect(featureSymbols.some((symbol) => symbol.filePath === "src/feature.ts")).toBe(true);
     expect(featureSymbols.some((symbol) => symbol.filePath.includes("codebase-index-branch-"))).toBe(false);
     expect(featureSymbols.some((symbol) => symbol.filePath === fs.realpathSync.native(path.join(knowledgeBase, "external.ts")))).toBe(true);
     expect(db.getMetadata(branchCommitMetadataKey("feature"))).toBe(featureCommit);
@@ -179,6 +187,54 @@ function changed(): number {
     const second = await indexer.getPrImpact({ branch: "feature" });
     expect(second.indexPreparation).toEqual({ prepared: false, branch: "feature" });
     expect(fetchSpy.mock.calls.length).toBe(fetchesAfterPreparation);
+  });
+
+  it("keeps alternate-branch data intact while health check removes stale active-branch data", async () => {
+    git(repo, ["checkout", "feature"]);
+    const featureOnlyPath = path.join(repo, "src", "feature-only.ts");
+    fs.writeFileSync(featureOnlyPath, "export function featureOnly(): number { return 7; }\n");
+    git(repo, ["add", "--", "src/feature-only.ts"]);
+    git(repo, ["commit", "-m", "add feature-only source"]);
+    featureCommit = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", "main"]);
+
+    const mainOnlyPath = path.join(repo, "src", "main-only.ts");
+    fs.writeFileSync(mainOnlyPath, "export function mainOnly(): number { return 3; }\n");
+    await indexer.index();
+    await indexer.getPrImpact({ branch: "feature" });
+
+    const db = await database();
+    const featureOnlyChunkIds = db.getChunksByFile("src/feature-only.ts").map((chunk) => chunk.chunkId);
+    const featureOnlySymbolIds = db.getSymbolsByFile("src/feature-only.ts").map((symbol) => symbol.id);
+    const mainOnlyChunkIds = db.getChunksByFile("src/main-only.ts").map((chunk) => chunk.chunkId);
+    expect(featureOnlyChunkIds.length).toBeGreaterThan(0);
+    expect(featureOnlySymbolIds.length).toBeGreaterThan(0);
+    expect(mainOnlyChunkIds.length).toBeGreaterThan(0);
+    expect(db.getBranchChunkIds("feature")).toEqual(expect.arrayContaining(featureOnlyChunkIds));
+    expect(db.getBranchSymbolIds("feature")).toEqual(expect.arrayContaining(featureOnlySymbolIds));
+
+    fs.rmSync(mainOnlyPath);
+    const result = await indexer.healthCheck();
+
+    expect(result.removed).toBe(mainOnlyChunkIds.length);
+    expect(result.filePaths).toEqual([mainOnlyPath]);
+    expect(featureOnlyChunkIds.every((chunkId) => db.getChunk(chunkId) !== null)).toBe(true);
+    expect(mainOnlyChunkIds.every((chunkId) => db.getChunk(chunkId) === null)).toBe(true);
+    expect(db.getBranchChunkIds("feature")).toEqual(expect.arrayContaining(featureOnlyChunkIds));
+    expect(db.getBranchSymbolIds("feature")).toEqual(expect.arrayContaining(featureOnlySymbolIds));
+
+    for (const branch of db.getAllBranches()) {
+      expect(db.getBranchChunkIds(branch).every((chunkId) => db.getChunk(chunkId) !== null)).toBe(true);
+      const storedSymbolIds = new Set(db.getSymbolsForBranch(branch).map((symbol) => symbol.id));
+      expect(db.getBranchSymbolIds(branch).every((symbolId) => storedSymbolIds.has(symbolId))).toBe(true);
+    }
+
+    const status = await indexer.getStatus();
+    const vectorStore = new VectorStore(path.join(status.indexPath, "vectors"), 8);
+    vectorStore.loadStrict();
+    const vectorChunkIds = new Set(vectorStore.getAllMetadata().map(({ key }) => key));
+    expect(featureOnlyChunkIds.every((chunkId) => vectorChunkIds.has(chunkId))).toBe(true);
+    expect(mainOnlyChunkIds.every((chunkId) => !vectorChunkIds.has(chunkId))).toBe(true);
   });
 
   it("reparses a cached alternate branch when its symbol extractor metadata is stale", async () => {
@@ -206,6 +262,69 @@ function changed(): number {
     const migratedDb = await database();
     expect(migratedDb.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
     expect(migratedDb.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
+  });
+
+  it("reparses only the cached branch whose parser migration marker is stale", async () => {
+    git(repo, ["checkout", "feature"]);
+    fs.writeFileSync(
+      path.join(repo, "src", "feature.swift"),
+      "func featureSwiftMarker() -> Int { return 42 }\n",
+    );
+    git(repo, ["add", "--", "src/feature.swift"]);
+    git(repo, ["commit", "-m", "add feature swift source"]);
+    featureCommit = git(repo, ["rev-parse", "HEAD"]);
+    git(repo, ["checkout", "main"]);
+
+    await indexer.getPrImpact({ branch: "feature" });
+    const status = await indexer.getStatus();
+    await indexer.close();
+
+    const swiftPrefix = "index.parser.swiftVersion";
+    const directDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    expect(
+      directDatabase.getSymbolsByFile("src/feature.swift").some(
+        (symbol) => symbol.name === "featureSwiftMarker",
+      ),
+    ).toBe(true);
+    directDatabase.deleteSymbolsByFile("src/feature.swift");
+    directDatabase.setMetadata(migrationMetadataKey(swiftPrefix, "feature"), "stale");
+    directDatabase.close();
+
+    git(repo, ["checkout", "feature"]);
+    indexer = new Indexer(repo, config);
+    await expect(indexer.getIndexFreshness()).resolves.toEqual({
+      readable: true,
+      current: false,
+      reason: "migration-required",
+    });
+    await indexer.close();
+    git(repo, ["checkout", "main"]);
+
+    indexer = new Indexer(repo, config);
+    const fetchesBeforeMigration = fetchSpy.mock.calls.length;
+    const migrated = await indexer.getPrImpact({ branch: "feature" });
+
+    expect(migrated.indexPreparation).toMatchObject({
+      prepared: true,
+      branch: "feature",
+      commit: featureCommit,
+    });
+    expect(fetchSpy.mock.calls.length).toBe(fetchesBeforeMigration);
+
+    const migratedDb = await database();
+    expect(
+      migratedDb.getSymbolsByFile("src/feature.swift").some(
+        (symbol) => symbol.name === "featureSwiftMarker",
+      ),
+    ).toBe(true);
+    for (const [prefix, version] of [
+      ["index.callGraphResolutionVersion", "4"],
+      [swiftPrefix, "1"],
+      ["index.parser.metalVersion", "1"],
+    ] as const) {
+      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "main"))).toBe(version);
+      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "feature"))).toBe(version);
+    }
   });
 
   it("reindexes a moved branch OID, replaces stale catalog data, and preserves primary data", async () => {
