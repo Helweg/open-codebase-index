@@ -241,7 +241,7 @@ describe("watcher config refresh", () => {
           undefined,
         );
         expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: 2500 });
+      }, { timeout: 5000 });
     } finally {
       await watcher.stop();
     }

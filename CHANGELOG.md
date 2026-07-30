@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Direct index CLI subcommand for MCP binary**: Added `index` command support to the shared MCP CLI entrypoint with `--project`, `--host`, `--config`, `--force`, `--estimate-only`, and `--verbose` flags. The command uses shared indexing execution and lock/callback semantics, prints diagnostics to `stderr`, exits non-zero on usage and runtime errors, and preserves existing MCP/eval/visualize modes.
+
 ## [0.21.0] - 2026-07-30
 
 ### Added

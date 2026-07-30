@@ -177,6 +177,24 @@ open-codebase-index-mcp --host jcode
 
 Use `--host` when you want the corresponding host's configuration and storage paths. Without it, the CLI uses OpenCode-compatible behavior.
 
+The same binary also accepts a dedicated indexing mode:
+
+```bash
+open-codebase-index-mcp index --project /path/to/repo --estimate-only
+open-codebase-index-mcp index --project /path/to/repo --force
+open-codebase-index-mcp index --project /path/to/repo --config /path/to/config.json --host jcode
+opencode-codebase-index-mcp index --project /path/to/repo --estimate-only
+```
+
+When using `index`:
+
+- `--estimate-only` prints the estimate directly and exits.
+- `--force` bypasses stale-index checks.
+- `--verbose` includes detailed final index statistics.
+- `--config` loads and parses that file, then initializes the runtime from it before indexing.
+
+Progress and diagnostics for `index` are written to `stderr`; the final formatted result is written to `stdout`.
+
 ## Local source checkout
 
 ```bash
