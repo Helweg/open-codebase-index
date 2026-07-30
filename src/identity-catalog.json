@@ -1,0 +1,21 @@
+{
+  "product": {
+    "current": {
+      "productName": "opencode-codebase-index",
+      "packageName": "opencode-codebase-index",
+      "repository": "https://github.com/Helweg/opencode-codebase-index",
+      "mcpBinary": "opencode-codebase-index-mcp",
+      "mcpServerName": "opencode-codebase-index"
+    },
+    "future": {
+      "productName": "open-codebase-index",
+      "packageName": "open-codebase-index",
+      "repository": "https://github.com/Helweg/open-codebase-index",
+      "mcpBinary": "open-codebase-index-mcp",
+      "mcpServerName": "open-codebase-index"
+    }
+  },
+  "native": {
+    "binaryName": "codebase-index-native"
+  }
+}

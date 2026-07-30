@@ -4,12 +4,31 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      package_name:
+        description: "Package identity to validate (manual runs never publish)"
+        required: true
+        default: "opencode-codebase-index"
+        type: choice
+        options:
+          - "opencode-codebase-index"
+          - "open-codebase-index"
 
 permissions:
   contents: read
   id-token: write
 
 jobs:
+  package-metadata:
+    runs-on: ubuntu-latest
+    env:
+      PACKAGE_NAME: ${{ inputs.package_name || vars.NPM_PACKAGE_NAME || 'opencode-codebase-index' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Prepare package metadata
+        run: node scripts/prepare-package-metadata.mjs --package-name "${PACKAGE_NAME}" --output-dir "${RUNNER_TEMP}/package-metadata"
+
   build:
     strategy:
       fail-fast: false
@@ -70,9 +89,11 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [package-metadata, build]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
+    env:
+      PACKAGE_NAME: ${{ inputs.package_name || vars.NPM_PACKAGE_NAME || 'opencode-codebase-index' }}
     permissions:
       contents: read
       id-token: write
@@ -100,6 +121,9 @@ jobs:
 
       - name: List native binaries
         run: ls -la native/*.node
+
+      - name: Prepare package metadata
+        run: node scripts/prepare-package-metadata.mjs --package-name "${PACKAGE_NAME}"
 
       - name: Publish to npm
         run: npm publish --access public

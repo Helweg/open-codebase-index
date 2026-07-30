@@ -17,6 +17,7 @@ import {
   initializeTools,
   searchCodebaseWithEffectiveness,
 } from "../src/tools/operations.js";
+import { MCP_SERVER_CURRENT_NAME } from "../src/identity-catalog.js";
 import { MCP_TOOL_NAMES } from "../src/tools/tool-names.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
@@ -411,6 +412,10 @@ describe("MCP server tools and prompts", () => {
     const expectedToolNames = [...MCP_TOOL_NAMES];
 
     expect(toolNames).toEqual(expectedToolNames);
+  });
+
+  it("should preserve the current MCP server identity", () => {
+    expect(client.getServerVersion()?.name).toBe(MCP_SERVER_CURRENT_NAME);
   });
 
   it("should expose self-routing descriptions even when the client ignores server instructions", async () => {
