@@ -1,16 +1,32 @@
 # Installation and host setup
 
-`opencode-codebase-index` requires Node.js 20 or newer. The published package includes the MCP server dependencies and native binaries for supported platforms.
+`open-codebase-index` requires Node.js 20 or newer and is the preferred package identity. `opencode-codebase-index` remains a supported legacy package alias, and `open-codebase-index-mcp` is the preferred binary alias.
+
+The published package includes the MCP server dependencies and native binaries for supported platforms.
 
 ## OpenCode
 
 Install the package:
 
 ```bash
+npm install open-codebase-index
+```
+
+Legacy install:
+
+```bash
 npm install opencode-codebase-index
 ```
 
 Add it to `opencode.json`:
+
+```json
+{
+  "plugin": ["open-codebase-index"]
+}
+```
+
+Legacy OpenCode alias:
 
 ```json
 {
@@ -39,8 +55,8 @@ Jcode starts non-shared MCP servers in each session's working directory. Configu
       "args": [
         "-y",
         "--package",
-        "opencode-codebase-index@latest",
-        "opencode-codebase-index-mcp",
+        "open-codebase-index@latest",
+        "open-codebase-index-mcp",
         "--host",
         "jcode"
       ],
@@ -60,13 +76,13 @@ Restart Jcode after changing the MCP configuration. Jcode uses `.codebase-index/
 Install the Pi package:
 
 ```bash
-pi install npm:opencode-codebase-index
+pi install npm:open-codebase-index
 ```
 
 For local development:
 
 ```bash
-pi install ./path/to/opencode-codebase-index
+pi install ./path/to/open-codebase-index
 ```
 
 The package provides native tools and the `codebase-search` skill. Pi uses `.codebase-index/` project storage.
@@ -114,6 +130,12 @@ Claude uses:
 Run the published MCP server with `npx`:
 
 ```bash
+npx -y --package open-codebase-index open-codebase-index-mcp --project /path/to/repo
+```
+
+Legacy command:
+
+```bash
 npx -y --package opencode-codebase-index opencode-codebase-index-mcp --project /path/to/repo
 ```
 
@@ -127,8 +149,8 @@ Example MCP configuration:
       "args": [
         "-y",
         "--package",
-        "opencode-codebase-index",
-        "opencode-codebase-index-mcp",
+        "open-codebase-index",
+        "open-codebase-index-mcp",
         "--project",
         "/path/to/repo"
       ]
@@ -148,9 +170,9 @@ Example MCP configuration:
 Examples:
 
 ```bash
-opencode-codebase-index-mcp --project /path/to/repo
-opencode-codebase-index-mcp --config /path/to/config.json
-opencode-codebase-index-mcp --host jcode
+open-codebase-index-mcp --project /path/to/repo
+open-codebase-index-mcp --config /path/to/config.json
+open-codebase-index-mcp --host jcode
 ```
 
 Use `--host` when you want the corresponding host's configuration and storage paths. Without it, the CLI uses OpenCode-compatible behavior.

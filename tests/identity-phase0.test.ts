@@ -24,6 +24,10 @@ function readJson<T>(filePath: string): T {
   return JSON.parse(readFileSync(filePath, "utf-8")) as T;
 }
 
+function readText(filePath: string): string {
+  return readFileSync(filePath, "utf-8");
+}
+
 function prepareMetadata(packageName: string, outputDir: string): void {
   execFileSync(process.execPath, [
     path.join(process.cwd(), "scripts", "prepare-package-metadata.mjs"),
@@ -36,7 +40,7 @@ function prepareMetadata(packageName: string, outputDir: string): void {
   ]);
 }
 
-describe("Phase 0 product identity compatibility", () => {
+describe("Phase 1 product identity compatibility", () => {
   it("keeps the checked-in legacy package and host manifests unchanged", () => {
     const current = IDENTITY_CATALOG.product.current;
     const packageJson = readJson<PackageMetadata>("package.json");
@@ -98,8 +102,12 @@ describe("Phase 0 product identity compatibility", () => {
       expect(packageLock.name).toBe(IDENTITY_CATALOG.product.current.packageName);
       expect(packageLock.packages[""]?.bin).toEqual(expectedBin);
 
-      expect(readFileSync(path.join(tempDir, "package.json"), "utf-8")).toBe(readFileSync("package.json", "utf-8"));
-      expect(readFileSync(path.join(tempDir, "package-lock.json"), "utf-8")).toBe(readFileSync("package-lock.json", "utf-8"));
+      expect(readText(path.join(tempDir, "package.json"))).toBe(readText("package.json"));
+      expect(readText(path.join(tempDir, "package-lock.json"))).toBe(readText("package-lock.json"));
+      expect(readText(path.join(tempDir, ".mcp.json"))).toBe(readText(".mcp.json"));
+      expect(readText(path.join(tempDir, ".claude-plugin", "plugin.json"))).toBe(
+        readText(".claude-plugin/plugin.json"),
+      );
       expect(packageJson).toEqual(checkedInPackageJson);
       expect(packageLock).toEqual(checkedInPackageLock);
     } finally {
@@ -113,16 +121,45 @@ describe("Phase 0 product identity compatibility", () => {
       prepareMetadata(IDENTITY_CATALOG.product.future.packageName, tempDir);
       const packageJson = readJson<PackageMetadata>(path.join(tempDir, "package.json"));
       const packageLock = readJson<PackageLockMetadata>(path.join(tempDir, "package-lock.json"));
+      const stagedMcpManifest = readJson<{
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      }>(path.join(tempDir, ".mcp.json"));
+      const stagedClaudeManifest = readJson<{
+        homepage: string;
+        repository: string;
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      }>(path.join(tempDir, ".claude-plugin", "plugin.json"));
       const expectedBin = {
         [IDENTITY_CATALOG.product.future.mcpBinary]: "dist/cli.js",
         [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js",
       };
+      const expectedMcpArgs = [
+        "-y",
+        "--package",
+        IDENTITY_CATALOG.product.future.packageName,
+        IDENTITY_CATALOG.product.future.mcpBinary,
+        "--host",
+        "codex",
+      ];
+      const expectedClaudeArgs = [
+        "-y",
+        "--package",
+        IDENTITY_CATALOG.product.future.packageName,
+        IDENTITY_CATALOG.product.future.mcpBinary,
+        "--host",
+        "claude",
+      ];
 
       expect(packageJson.name).toBe(IDENTITY_CATALOG.product.future.packageName);
       expect(packageJson.bin).toEqual(expectedBin);
+      expect(packageJson.repository.url).toBe(IDENTITY_CATALOG.product.current.repository);
       expect(packageLock.name).toBe(IDENTITY_CATALOG.product.future.packageName);
       expect(packageLock.packages[""]?.name).toBe(IDENTITY_CATALOG.product.future.packageName);
       expect(packageLock.packages[""]?.bin).toEqual(expectedBin);
+      expect(stagedMcpManifest.mcpServers["codebase-index"]).toEqual({ command: "npx", args: expectedMcpArgs });
+      expect(stagedClaudeManifest.mcpServers["codebase-index"]).toEqual({ command: "npx", args: expectedClaudeArgs });
+      expect(stagedClaudeManifest.homepage).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedClaudeManifest.repository).toBe(IDENTITY_CATALOG.product.current.repository);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -157,9 +194,16 @@ describe("Phase 0 product identity compatibility", () => {
 
   it("keeps publication release-gated while accepting an explicit known package identity", () => {
     const workflow = readFileSync(".github/workflows/build.yml", "utf-8");
-    expect(workflow).toContain("package_name:");
-    expect(workflow).toContain("inputs.package_name || vars.NPM_PACKAGE_NAME || 'opencode-codebase-index'");
+    expect(workflow).not.toContain("inputs:");
+    expect(workflow).toContain("for packageName in open-codebase-index opencode-codebase-index;");
     expect(workflow).toContain("if: github.event_name == 'release'");
-    expect(workflow).toContain("node scripts/prepare-package-metadata.mjs --package-name");
+    expect(workflow).toContain("npm publish --ignore-scripts --access public");
+    expect(workflow).toContain("npm view \"${packageName}@${PACKAGE_VERSION}\" --json");
+    expect(workflow).toContain("stagingDir=\"${RUNNER_TEMP}/package-metadata/${packageName}\"");
+
+    const openFirst = workflow.indexOf("open-codebase-index");
+    const legacyAfter = workflow.indexOf("opencode-codebase-index", openFirst + 1);
+    expect(openFirst).toBeGreaterThan(-1);
+    expect(legacyAfter).toBeGreaterThan(openFirst);
   });
 });

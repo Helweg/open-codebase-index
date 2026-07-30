@@ -1,14 +1,16 @@
-# opencode-codebase-index
+# open-codebase-index
 
-[![npm version](https://img.shields.io/npm/v/opencode-codebase-index.svg)](https://www.npmjs.com/package/opencode-codebase-index)
+[![npm version](https://img.shields.io/npm/v/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Downloads](https://img.shields.io/npm/dm/opencode-codebase-index.svg)](https://www.npmjs.com/package/opencode-codebase-index)
+[![Downloads](https://img.shields.io/npm/dm/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/opencode-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/opencode-codebase-index/actions)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 
 > Search a codebase by meaning, then follow the result into definitions, callers, and dependency paths.
 
-`opencode-codebase-index` is a local semantic code index for OpenCode, Jcode, Pi, Codex, Claude Code, and other MCP clients. It combines embeddings, BM25 keyword search, branch-aware filtering, symbol lookup, and a call graph behind agent-friendly tools.
+`open-codebase-index` is a local semantic code index for OpenCode, Jcode, Pi, Codex, Claude Code, and other MCP clients. It combines embeddings, BM25 keyword search, branch-aware filtering, symbol lookup, and a call graph behind agent-friendly tools.
+
+New installs should use `open-codebase-index` and `open-codebase-index-mcp`. The legacy package `opencode-codebase-index` and `opencode-codebase-index-mcp` remain supported aliases.
 
 ## Highlights
 
@@ -27,10 +29,24 @@ Requires Node.js 20 or newer.
 1. Install the package:
 
    ```bash
+   npm install open-codebase-index
+   ```
+
+   Legacy installs continue to work with:
+
+   ```bash
    npm install opencode-codebase-index
    ```
 
 2. Add it to `opencode.json`:
+
+   ```json
+   {
+     "plugin": ["open-codebase-index"]
+   }
+   ```
+
+   Legacy alias:
 
    ```json
    {
@@ -54,7 +70,7 @@ The first index creates embeddings. Later runs reuse unchanged content and proce
 | Pi | Pi package | `.codebase-index/` |
 | Codex | Marketplace plugin with MCP and skill guidance | `.codebase-index/` |
 | Claude Code | Marketplace plugin with MCP and skill guidance | `.claude/` |
-| Cursor, Windsurf, other MCP clients | `opencode-codebase-index-mcp` | Selected by `--host`; default is OpenCode-compatible |
+| Cursor, Windsurf, other MCP clients | `open-codebase-index-mcp` (legacy alias: `opencode-codebase-index-mcp`) | Selected by `--host`; default is OpenCode-compatible |
 
 See [Installation and host setup](docs/installation.md) for complete instructions.
 

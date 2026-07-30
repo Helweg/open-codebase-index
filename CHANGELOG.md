@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Portable project indexes across Git worktrees**: Project-owned paths are now persisted relative to the project root. Worktrees that inherit project configuration share the main checkout's index and reuse unchanged chunks and embeddings, while an explicit worktree-local project config keeps its index isolated. Existing project indexes with absolute stored paths require a one-time force rebuild.
+- **Phase 1 rename preparation**: Added dual-identity package metadata staging, including `open-codebase-index` support with both MCP binary aliases, while keeping the checked-in legacy identity and native/tool/storage naming stable.
 
 ## [0.20.1] - 2026-07-29
 

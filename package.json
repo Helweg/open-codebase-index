@@ -1,7 +1,7 @@
 {
   "name": "opencode-codebase-index",
   "version": "0.20.1",
-  "description": "Semantic codebase indexing and search for OpenCode - find code by meaning, not just keywords",
+  "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.js",
@@ -22,13 +22,13 @@
     "url": "https://github.com/Helweg/opencode-codebase-index"
   },
   "keywords": [
-    "opencode",
     "semantic-search",
     "codebase-indexing",
     "vector-search",
     "embeddings",
     "tree-sitter",
     "ai-coding",
+    "agent-extensions",
     "pi-package",
     "pi"
   ],

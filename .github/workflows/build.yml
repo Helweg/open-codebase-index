@@ -4,15 +4,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      package_name:
-        description: "Package identity to validate (manual runs never publish)"
-        required: true
-        default: "opencode-codebase-index"
-        type: choice
-        options:
-          - "opencode-codebase-index"
-          - "open-codebase-index"
 
 permissions:
   contents: read
@@ -21,13 +12,17 @@ permissions:
 jobs:
   package-metadata:
     runs-on: ubuntu-latest
-    env:
-      PACKAGE_NAME: ${{ inputs.package_name || vars.NPM_PACKAGE_NAME || 'opencode-codebase-index' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Prepare package metadata
-        run: node scripts/prepare-package-metadata.mjs --package-name "${PACKAGE_NAME}" --output-dir "${RUNNER_TEMP}/package-metadata"
+        run: |
+          for packageName in open-codebase-index opencode-codebase-index; do
+            node scripts/prepare-package-metadata.mjs \
+              --package-name "${packageName}" \
+              --project-root "${GITHUB_WORKSPACE}" \
+              --output-dir "${RUNNER_TEMP}/package-metadata/${packageName}"
+          done
 
   build:
     strategy:
@@ -92,8 +87,6 @@ jobs:
     needs: [package-metadata, build]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
-    env:
-      PACKAGE_NAME: ${{ inputs.package_name || vars.NPM_PACKAGE_NAME || 'opencode-codebase-index' }}
     permissions:
       contents: read
       id-token: write
@@ -119,11 +112,34 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
+      - name: Read package version
+        id: package-version
+        run: |
+          packageVersion=$(node -p "require('./package.json').version")
+          echo "version=${packageVersion}" >> "$GITHUB_OUTPUT"
+
       - name: List native binaries
         run: ls -la native/*.node
 
-      - name: Prepare package metadata
-        run: node scripts/prepare-package-metadata.mjs --package-name "${PACKAGE_NAME}"
-
       - name: Publish to npm
-        run: npm publish --access public
+        env:
+          PACKAGE_VERSION: ${{ steps.package-version.outputs.version }}
+        run: |
+          for packageName in open-codebase-index opencode-codebase-index; do
+            stagingDir="${RUNNER_TEMP}/package-metadata/${packageName}"
+            node scripts/prepare-package-metadata.mjs \
+              --package-name "${packageName}" \
+              --project-root "${GITHUB_WORKSPACE}" \
+              --output-dir "${stagingDir}"
+
+            if npm view "${packageName}@${PACKAGE_VERSION}" --json >/dev/null 2>&1; then
+              echo "Skipping ${packageName} because version already exists."
+              continue
+            fi
+
+            cd "${stagingDir}"
+            # Artifacts were built before staging, which intentionally excludes
+            # development dependencies and cannot rerun prepublishOnly.
+            npm publish --ignore-scripts --access public
+            cd "${GITHUB_WORKSPACE}"
+          done
