@@ -9,6 +9,7 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
     projectRoot: string;
     config: Record<string, unknown>;
     getStatus: ReturnType<typeof vi.fn>;
+    forceIndex: ReturnType<typeof vi.fn>;
     healthCheck: ReturnType<typeof vi.fn>;
   }> = [];
 
@@ -28,7 +29,13 @@ const { indexerInstances, MockIndexer } = vi.hoisted(() => {
     public constructor(projectRoot: string, config: Record<string, unknown>) {
       this.projectRoot = projectRoot;
       this.config = config;
-      indexerInstances.push({ projectRoot, config, getStatus: this.getStatus, healthCheck: this.healthCheck });
+      indexerInstances.push({
+        projectRoot,
+        config,
+        getStatus: this.getStatus,
+        forceIndex: this.forceIndex,
+        healthCheck: this.healthCheck,
+      });
     }
 
     public estimateCost = vi.fn().mockResolvedValue({
@@ -443,6 +450,9 @@ describe("knowledge base tool config refresh", () => {
 
     expect(indexerInstances[0]?.getStatus).not.toHaveBeenCalled();
     expect(indexerInstances).toHaveLength(1);
+    expect(indexerInstances[0]?.forceIndex).toHaveBeenCalledOnce();
+    expect(indexerInstances[0]?.projectRoot).toBe(worktreeDir);
+    expect(indexerInstances[0]?.config.knowledgeBases).toEqual(["docs/reference"]);
     expect(fs.existsSync(path.join(worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
 
     fs.writeFileSync(
