@@ -1,164 +1,229 @@
 # AGENTS.md - AI Agent Guidelines for opencode-codebase-index
 
-**Generated:** 2026-05-31 | **Commit:** 317a76b | **Branch:** main
+**Updated:** 2026-07-30 | **Commit:** 022af30 | **Branch:** main | **Version:** 0.21.0
 
-Semantic codebase indexing plugin for OpenCode. Hybrid TypeScript/Rust architecture:
-- **TypeScript** (`src/`): Plugin logic, embedding providers, OpenCode tools
-- **Rust** (`native/`): Tree-sitter parsing, usearch vectors, SQLite storage, BM25 inverted index, call graph extraction
+Semantic codebase indexing for OpenCode, MCP hosts, Pi, Claude, Codex, and Jcode. The repository uses a hybrid TypeScript/Rust architecture:
 
-## Build/Test/Lint
+- **TypeScript** (`src/`): host adapters, tool orchestration, indexing, retrieval, embedding providers, configuration, evaluation, and watchers
+- **Rust** (`native/`): tree-sitter parsing, semantic chunking, usearch vectors, SQLite persistence, BM25, call graphs, and graph analytics
+
+## Build, Test, and Lint
 
 ```bash
-npm run build          # Build TS + Rust native module
-npm run build:ts       # TypeScript only (tsup)
-npm run build:native   # Rust only (cargo + napi)
+npm run build          # Build TypeScript and the Rust native module
+npm run build:ts       # TypeScript bundle plus built-CLI smoke test
+npm run build:native   # Rust/NAPI module for the current platform
 
-npm run test:run       # All tests once
-npm test               # Watch mode
+npm run test:run       # Full Vitest suite once; pretest rebuilds native code
+npm test               # Vitest watch mode
+npm run test:coverage  # Coverage run; pretest rebuilds native code
 
-npm run lint           # ESLint
+npm run lint           # ESLint over src/
 npm run typecheck      # tsc --noEmit
 ```
 
-### Single Test
+### Run a Single Test
+
 ```bash
 npx vitest run tests/files.test.ts
 npx vitest run -t "parseFile"
 ```
 
-### Native Module (requires Rust)
+When Rust code changes, rebuild the native module before running targeted tests that bypass `npm run test:run`:
+
 ```bash
+npm run build:native
+# Equivalent low-level command:
 cd native && cargo build --release && napi build --release --platform
 ```
 
-## File Structure
+The full PR validation gate is:
 
+```bash
+npm run build && npm run typecheck && npm run lint && npm run test:run
 ```
+
+## Architecture and File Structure
+
+```text
 src/
-├── index.ts              # Plugin entry: exports tools + slash commands
-├── mcp-server.ts         # MCP server: wraps Indexer for Cursor/Claude Code/Windsurf
-├── cli.ts                # CLI entry point for MCP stdio transport
-├── config/               # Config schema (Zod) + parsing
-├── embeddings/           # Provider detection (auto/github/openai/google/ollama)
-├── indexer/              # Core: Indexer class, delta tracking
-├── git/                  # Branch detection from .git/HEAD
-├── tools/                # OpenCode tool definitions (codebase_search, index_*)
-├── utils/                # File collection, cost estimation, Logger
-├── native/               # TS wrapper for Rust bindings
-└── watcher/              # Chokidar file + git branch watcher
+├── index.ts                    # Thin OpenCode facade; re-exports adapters/opencode
+├── mcp-server.ts               # Thin MCP facade; re-exports createMcpServer
+├── cli.ts                      # CLI facade for MCP, eval, and visualization commands
+├── adapters/
+│   ├── opencode.ts             # OpenCode plugin composition and hooks
+│   ├── opencode/               # OpenCode tool and PR-impact adapters
+│   ├── mcp/                    # MCP CLI, server, tools, prompts, and shared schemas
+│   └── pi/                     # Pi extension and call-graph adapters
+├── tools/
+│   ├── operations.ts           # Shared host-neutral tool operations
+│   ├── operation-runtime.ts    # Shared operation runtime/context
+│   ├── contracts.ts            # Shared request/result contracts
+│   ├── execute-common.ts       # Common execution helpers
+│   ├── context*.ts             # Context routing, retrieval, and evidence packing
+│   └── tool-names.ts           # Canonical and host-specific public tool names
+├── indexer/
+│   ├── index.ts                # Indexer orchestration
+│   ├── search-ranking.ts       # Hybrid fusion, filtering, diversity, assembly
+│   ├── definition-ranking.ts   # Definition-oriented evidence ranking
+│   ├── embedding-batches.ts    # Embedding batching, retry state, vector pooling
+│   └── call-graph-constants.ts # Shared declaration chunk-type rules
+├── native/                     # Focused TypeScript wrappers over the NAPI binding
+├── config/                     # Host-aware config schema, merging, paths, and validation
+├── embeddings/                 # Provider detection and implementations
+├── git/                        # Branch resolution and branch-index materialization
+├── watcher/                    # File and Git branch watchers
+├── eval/                       # Retrieval evaluation CLI, datasets, metrics, and reports
+├── rerank/                     # Optional external reranking
+├── utils/                      # Files, paths, logging, metrics, power state, and helpers
+├── identity-catalog.json       # Current/future product and package identities
+└── package-metadata.ts         # Runtime package metadata helpers
 
 native/src/
-├── lib.rs                # NAPI exports: parse_file, VectorStore, Database, InvertedIndex
-├── parser.rs             # Tree-sitter parsing (19 languages: TS, JS, Python, Rust, Go, Java, C#, Ruby, PHP, Apex, Bash, C, C++, JSON, TOML, YAML, Zig, GDScript, MATLAB)
-├── chunker.rs            # Semantic chunking with overlap
-├── store.rs              # usearch vector store (F16 quantization)
-├── db.rs                 # SQLite: embeddings, chunks, branch catalog, symbols, call edges
-├── call_extractor.rs     # Tree-sitter query-based call extraction (TS/JS, Python, Go, Rust, PHP, Zig, Apex, GDScript, MATLAB)
-├── inverted_index.rs     # BM25 keyword search
-├── hasher.rs             # xxhash content hashing
-└── types.rs              # Shared types (Language enum with from_string)
+├── lib.rs                      # NAPI facade and exports
+├── bindings/
+│   └── database.rs             # NAPI Database wrapper methods
+├── db.rs                       # Core SQLite database implementation
+├── db/call_graph.rs            # Call-graph persistence and query operations
+├── parser.rs                   # Tree-sitter parsing
+├── chunker.rs                  # Semantic chunking with overlap
+├── call_extractor.rs           # Query-based call extraction
+├── community.rs                # Community detection and centrality algorithms
+├── store.rs                    # usearch vector storage
+├── inverted_index.rs           # BM25 keyword index
+├── hasher.rs                   # xxhash content hashing
+└── types.rs                    # Shared native types and language mapping
 
-tests/                    # Vitest tests (30s timeout for native ops)
-commands/                 # Slash command definitions (/search, /find, /index)
-skill/                    # OpenCode skill guidance
+native/queries/                 # Tree-sitter call queries by language
+tests/                          # Vitest integration and unit tests
+benchmarks/                     # Native and retrieval benchmarks/evaluation fixtures
+commands/                       # OpenCode slash command definitions
+skill/                          # OpenCode skill guidance
+docs/                           # Installation, configuration, tools, migration docs
 ```
 
-## WHERE TO LOOK
+See `ARCHITECTURE.md` for data flow and design details.
 
-| Task | Location |
-|------|----------|
-| Add embedding provider | `src/embeddings/detector.ts` + `provider.ts` |
-| Modify indexing logic | `src/indexer/index.ts` (Indexer class) |
-| Add OpenCode tool | `src/tools/index.ts` |
-| Change parsing behavior | `native/src/parser.rs` |
-| Modify vector storage | `native/src/store.rs` |
-| Add database operation | `native/src/db.rs` + expose in `lib.rs` |
-| Add slash command | `commands/` + register in `src/index.ts` config() |
+## Where to Look
 
-| Add/modify MCP tool | `src/mcp-server.ts` (createMcpServer) |
-| Modify call graph extraction | `native/src/call_extractor.rs` + query files in `native/queries/` |
-| Add call graph language | `native/queries/<lang>-calls.scm` + update `call_extractor.rs` |
-## CODE MAP
+| Task | Primary location |
+|---|---|
+| Add or change an OpenCode integration | `src/adapters/opencode.ts`, `src/adapters/opencode/` |
+| Add or change an MCP tool/prompt | `src/adapters/mcp/register-tools.ts`, `register-prompts.ts` |
+| Add or change a Pi integration | `src/adapters/pi/` |
+| Change shared tool behavior | `src/tools/operations.ts`, `operation-runtime.ts`, `contracts.ts` |
+| Add or rename a public tool | `src/tools/tool-names.ts`, then update each host adapter |
+| Change context routing/evidence packs | `src/tools/context.ts`, `context-search.ts`, `context-pack.ts` |
+| Modify indexing orchestration | `src/indexer/index.ts` |
+| Modify generic search ranking | `src/indexer/search-ranking.ts` |
+| Modify definition-first ranking | `src/indexer/definition-ranking.ts` |
+| Modify embedding batching/retries | `src/indexer/embedding-batches.ts` |
+| Add an embedding provider | `src/embeddings/detector.ts`, `provider.ts`, `provider-types.ts` |
+| Change host config or storage paths | `src/config/host.ts`, `src/config/paths.ts` |
+| Change branch resolution/materialization | `src/git/branch-resolution.ts`, `branch-materialization.ts` |
+| Change TypeScript native wrappers | `src/native/` |
+| Change parsing/chunking | `native/src/parser.rs`, `chunker.rs` |
+| Add parser language support | `native/src/types.rs`, `parser.rs`; see `docs/adding-language-support.md` |
+| Modify call extraction | `native/src/call_extractor.rs`, `native/queries/*-calls.scm` |
+| Modify SQLite operations | `native/src/db.rs`, `native/src/db/`, `native/src/bindings/database.rs` |
+| Modify graph communities/centrality | `native/src/community.rs` and database bindings |
+| Modify vector or BM25 storage | `native/src/store.rs`, `inverted_index.rs` |
+| Add a slash command | `commands/`, then register it in the OpenCode adapter config callback |
+| Change product/package identity | `src/identity-catalog.json`, `scripts/prepare-package-metadata.mjs` |
+| Change release packaging | `.github/workflows/build.yml` |
 
-### TypeScript Exports (`src/index.ts`)
-| Symbol | Type | Purpose |
-|--------|------|---------|
-| `default` | Plugin | Main entry: returns tools + config callback |
-| `codebase_search` | Tool | Semantic search by meaning (returns full code content) |
-| `codebase_peek` | Tool | Semantic search returning metadata only (file, line, name) - saves tokens |
-| `find_similar` | Tool | Find code similar to a given snippet (duplicate detection, pattern discovery) |
-| `index_codebase` | Tool | Trigger indexing (force/estimate/verbose) |
-| `index_status` | Tool | Check index health |
-| `index_health_check` | Tool | GC orphaned embeddings/chunks |
-| `index_metrics` | Tool | Get performance metrics (requires debug.enabled + debug.metrics) |
-| `index_logs` | Tool | Get debug logs (requires debug.enabled) |
-| `call_graph` | Tool | Query call graph for callers/callees of functions |
+## Host Adapter Boundary
 
+Shared behavior belongs below `src/adapters/`. Host adapters should translate host schemas and lifecycle events into shared operations rather than reimplement indexing or search.
 
-### MCP Server Exports (`src/mcp-server.ts`)
-| Symbol | Type | Purpose |
-|--------|------|---------|
-| `createMcpServer` | fn | Creates MCP Server with 9 tools + 4 prompts, lazy Indexer init |
+- **OpenCode:** `src/index.ts` re-exports `src/adapters/opencode.ts`.
+- **MCP:** `src/mcp-server.ts` re-exports `src/adapters/mcp/server.ts`; `src/adapters/mcp/cli.ts` owns stdio transport.
+- **Pi:** public compatibility facades `src/pi-extension.ts` and `src/pi-call-graph.ts` delegate to `src/adapters/pi/`.
+- **Shared tools:** use `src/tools/contracts.ts`, `operations.ts`, `operation-runtime.ts`, and `execute-common.ts`.
 
-### CLI Entry (`src/cli.ts`)
-| Symbol | Type | Purpose |
-|--------|------|---------|
-| `main` | fn | Parses --project/--config args, starts stdio transport, handles shutdown |
-### Rust NAPI Exports (`native/src/lib.rs`)
-| Symbol | Type | Purpose |
-|--------|------|---------|
-| `parse_file` | fn | Parse single file → CodeChunk[] |
-| `parse_files` | fn | Parallel multi-file parsing |
-| `hash_content` | fn | xxhash string |
-| `hash_file` | fn | xxhash file contents |
-| `VectorStore` | class | usearch wrapper (add/addBatch/search/save/load) |
-| `Database` | class | SQLite: embeddings, chunks, branches, metadata (includes batch methods) |
-| `InvertedIndex` | class | BM25 keyword search |
+When adding a portable tool, update the shared operation and contract first, add its canonical name to `src/tools/tool-names.ts`, then wire each supported host adapter. Preserve host-specific schemas, registration order, and output formats.
 
-### Database Batch Methods
-The `Database` class exposes batch operations for high-performance bulk inserts:
-| Method | Purpose | Speedup |
-|--------|---------|---------|
-| `upsertEmbeddingsBatch` | Batch insert embeddings in single transaction | ~1.3x |
-| `upsertChunksBatch` | Batch insert chunks in single transaction | ~12x |
-| `addChunksToBranchBatch` | Batch add chunks to branch in single transaction | ~18x |
+## Public Tool Families
 
-These are used by the Indexer for all bulk operations. Prefer batch methods over sequential calls.
+Canonical tool names live in `src/tools/tool-names.ts`.
 
-## CONVENTIONS
+- Retrieval: `codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`
+- Index lifecycle: `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`
+- Graph analysis: `call_graph`, `call_graph_path`, `pr_impact`
+- OpenCode-only additions: knowledge-base management and `index_visualize`
+- Pi knowledge-base aliases: `knowledge_base_add`, `knowledge_base_list`, `knowledge_base_remove`
 
-### Import Rules (CRITICAL - causes runtime errors if wrong)
+Do not silently rename tools or change request/result contracts. They are compatibility surfaces across hosts.
+
+## Native Boundary
+
+`src/native/binding.ts` is the only low-level loader for platform-specific `.node` files. Focused wrappers expose native capabilities:
+
+- `parsing.ts`: parsing, hashing, and call extraction
+- `database.ts`: SQLite database API
+- `embedding.ts`: embedding-related types/helpers
+- `vector-store.ts`: vector index wrapper
+- `inverted-index.ts`: BM25 wrapper
+- `types.ts`: TypeScript types for native values
+- `index.ts`: native facade exports
+
+Rust implementation details should remain behind the NAPI facade in `native/src/lib.rs` and `native/src/bindings/`. Keep JavaScript-facing names and value shapes stable unless the TypeScript wrappers and tests are updated together.
+
+Prefer existing batch database methods for bulk indexing. Do not replace them with sequential calls.
+
+## Package Identity and Compatibility
+
+The checked-in package remains `opencode-codebase-index@0.21.0`, while the release workflow publishes both:
+
+- `open-codebase-index`: preferred host-neutral package; exports `open-codebase-index-mcp` and the legacy binary alias
+- `opencode-codebase-index`: synchronized compatibility package
+
+Identity constants live in `src/identity-catalog.json`. `scripts/prepare-package-metadata.mjs` stages package-specific manifests without rewriting checked-in metadata. Native binary names, tool names, config paths, and persisted index formats remain stable during the rename.
+
+Do not broadly replace `opencode-codebase-index` strings. First classify each occurrence as current compatibility contract, future public identity, historical documentation, or test fixture. Follow `docs/rename-to-open-codebase-index.md`.
+
+## TypeScript Conventions
+
+### Imports
+
+This is an ESM project. Relative TypeScript imports must use `.js` extensions:
+
 ```typescript
-// CORRECT: .js extension required for ESM
+// Correct
 import { Indexer } from "./indexer/index.js";
 
-// WRONG: runtime error
+// Wrong at runtime
 import { Indexer } from "./indexer/index";
-
-// Node.js built-ins: namespace imports
-import * as path from "path";
-import * as os from "os";
 ```
 
-### Import Order
-1. Type-only imports (`import type { ... }`)
-2. External packages + Node.js built-ins
-3. Internal modules (with .js extension)
+Import order:
 
-### Naming
+1. Type-only imports
+2. External packages and Node.js built-ins
+3. Internal modules with `.js` extensions
+
+Use namespace imports for Node.js built-ins when consistent with surrounding code:
+
+```typescript
+import * as os from "node:os";
+import * as path from "node:path";
+```
+
+### Naming and Types
+
 | Element | Convention | Example |
-|---------|------------|---------|
-| Files/Dirs | kebab-case | `codebase-index.json` |
-| Functions/Vars | camelCase | `loadJsonFile` |
-| Classes/Types | PascalCase | `Indexer`, `ChunkType` |
-| OpenCode tools | snake_case | `codebase_search` |
-| Constants | UPPER_SNAKE_CASE | `MAX_BATCH_TOKENS` |
+|---|---|---|
+| Files/directories | kebab-case | `search-ranking.ts` |
+| Functions/variables | camelCase | `resolveProjectIndexPath` |
+| Classes/types | PascalCase | `Indexer`, `SearchResult` |
+| Public tools | snake_case | `codebase_context` |
+| Constants | UPPER_SNAKE_CASE | `PORTABLE_TOOL_NAMES` |
 
-### Type Patterns
-- Explicit return types on exported functions
-- `strict: true` enabled
-- Prefix unused params with `_` (ESLint enforced)
-- Error handling: use `unknown`, then narrow
+- Keep `strict: true` compatibility.
+- Use explicit return types on exported functions.
+- Prefix intentionally unused parameters with `_`.
+- Catch errors as `unknown` and narrow them.
+- Avoid `as any`, `@ts-ignore`, and empty catch blocks.
 
 ```typescript
 function getErrorMessage(error: unknown): string {
@@ -167,10 +232,14 @@ function getErrorMessage(error: unknown): string {
 }
 ```
 
-### OpenCode Tool Definitions
+### Tool Schemas
+
+OpenCode schemas use `tool.schema` from `@opencode-ai/plugin`, not a direct Zod import:
+
 ```typescript
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
-const z = tool.schema;  // Use this, not direct zod import
+
+const z = tool.schema;
 
 export const my_tool: ToolDefinition = tool({
   description: "Clear description",
@@ -184,100 +253,131 @@ export const my_tool: ToolDefinition = tool({
 });
 ```
 
-## ANTI-PATTERNS
+Shared behavior should normally be added to tool operations/contracts, not embedded directly in this adapter definition.
 
-| Forbidden | Why |
-|-----------|-----|
-| Missing `.js` in imports | Runtime ESM resolution failure |
-| Direct zod import for tools | Use `tool.schema` from plugin package |
-| `as any`, `@ts-ignore` | Strict mode violations |
-| Empty catch blocks | Hide errors; use `catch { /* ignore */ }` with comment |
-| Forgetting `npm run build:native` | Native module won't reflect Rust changes |
+## Rust Conventions
 
-## TESTING
+- Rebuild with `npm run build:native` after Rust changes.
+- Keep NAPI-facing conversions in `native/src/bindings/` or `native/src/lib.rs`.
+- Keep core SQLite logic in `native/src/db.rs` and focused `native/src/db/` modules.
+- Add call-query files under `native/queries/` and update `call_extractor.rs` when adding call-graph support.
+- Update `native/src/types.rs`, parser mapping, Cargo dependencies, and tests together when adding a language.
+- Preserve deterministic ordering for graph, search, and batch results exposed to TypeScript.
 
-- **Framework**: Vitest with globals enabled
-- **Timeout**: 30s (native ops can be slow)
-- **Location**: `tests/*.test.ts`
+## Testing
 
-### Temp Directory Pattern
+- **Framework:** Vitest with globals enabled
+- **Default timeout:** 30 seconds because native operations can be slow
+- **Tests:** `tests/*.test.ts`
+
+Use isolated temporary directories and always clean them:
+
 ```typescript
 let tempDir: string;
-beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-")); });
-afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
+
+beforeEach(() => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-"));
+});
+
+afterEach(() => {
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
 ```
 
-### Test Categories
-| File | Tests |
-|------|-------|
-| `native.test.ts` | Rust bindings: parsing, vectors, hashing |
-| `database.test.ts` | SQLite: CRUD, branches, GC, batch operations |
-| `inverted-index.test.ts` | BM25 keyword search |
-| `files.test.ts` | File collection, .gitignore |
-| `cost.test.ts` | Token estimation |
-| `watcher.test.ts` | File/git branch watching |
-| `auto-gc.test.ts` | Automatic garbage collection |
-| `git.test.ts` | Git branch detection |
-| `commands.test.ts` | Slash command loader, frontmatter parsing |
-| `logger.test.ts` | Logger utility, metrics collection |
+Important coverage areas include:
 
-| `mcp-server.test.ts` | MCP server: tool/prompt registration, execution via InMemoryTransport |
-| `call-graph.test.ts` | Call extraction, storage, resolution, branch awareness, integration |
-### Benchmarks
-```bash
-npx tsx benchmarks/run.ts   # Performance testing for native operations
-```
+| Area | Representative tests |
+|---|---|
+| Native parsing, vectors, hashing | `native.test.ts`, `inverted-index.test.ts` |
+| Database, batches, GC | `database.test.ts`, `embedding-batches.test.ts`, `auto-gc.test.ts` |
+| Search and ranking | `search-integration.test.ts`, `retrieval-ranking.test.ts`, `definition-ranking.test.ts` |
+| Call graph and PR impact | `call-graph.test.ts`, `pr-impact.test.ts` |
+| MCP and host adapters | `mcp-server.test.ts`, `plugin-hooks.test.ts`, `pi-package.test.ts` |
+| Identity and package compatibility | `identity-phase0.test.ts`, `host-mode-paths.test.ts`, `claude-plugin.test.ts` |
+| Watchers and branch behavior | `watcher.test.ts`, `watcher-config-refresh.test.ts`, `automatic-branch-index.test.ts` |
+| Multi-process safety | `multiprocess-indexing.test.ts`, `index-lock.test.ts` |
+| Retrieval quality | `retrieval-benchmark.test.ts`, evaluation datasets under `benchmarks/golden/` |
 
-Tests batch vs sequential performance for VectorStore and SQLite operations.
-
-## CONFIGURATION
-
-Config loaded from `.opencode/codebase-index.json` or `~/.config/opencode/codebase-index.json`.
-
-Key options:
-- `embeddingProvider`: `auto` | `github-copilot` | `openai` | `google` | `ollama`
-- `indexing.watchFiles`: Auto-reindex on file changes
-- `indexing.semanticOnly`: Skip generic blocks, only index functions/classes
-- `indexing.requireProjectMarker`: Require `.git`/`package.json` etc. to enable watching (prevents hanging in home dir)
-- `search.hybridWeight`: 0.0 (semantic) to 1.0 (keyword)
-- `debug.enabled`: Enable debug logging and metrics collection
-- `debug.metrics`: Enable performance metrics (use with `index_metrics` tool)
-
-## PR CHECKLIST
+For native performance checks:
 
 ```bash
-npm run build && npm run typecheck && npm run lint && npm run test:run
+npx tsx benchmarks/run.ts
 ```
 
-## RELEASE CHECKLIST
+For retrieval-quality gates, use the `eval:*` scripts in `package.json`. Do not update evaluation baselines merely to make a regression pass.
 
-When creating a new release:
+## Configuration and Storage
 
-1. **Update `CHANGELOG.md`** - Add new version section with Added/Changed/Fixed entries
-2. **Reconcile the full previous-tag delta** - Compare `git log --oneline <previous-tag>..HEAD` with the Release Drafter draft so `CHANGELOG.md` and release notes reflect everything shipped since the last release, not only the current `Unreleased` bullets
-3. **Bump version in `package.json`** - Follow semver (patch for fixes, minor for features)
-4. **Commit changes** - `git commit -m "chore: bump version to X.Y.Z"`
-5. **Push the release branch** - `git push -u origin release/vX.Y.Z`
-6. **Open and merge a PR into `main`**
-7. **Create git tag** - `git tag vX.Y.Z`
-8. **Push tag** - `git push origin vX.Y.Z`
-9. **Create GitHub release** - `gh release create vX.Y.Z --title "vX.Y.Z - Title" --notes "..."`
+Configuration and index paths are host-aware:
 
-Follow the repository workflow: prepare the release on a `release/vX.Y.Z` branch, open a PR into `main`, merge the PR, then tag and publish from the merged commit.
+| Host | Project config | Project index | Global config |
+|---|---|---|---|
+| OpenCode | `.opencode/codebase-index.json` | `.opencode/index/` | `~/.config/opencode/codebase-index.json` |
+| Claude | `.claude/codebase-index.json` | `.claude/index/` | `~/.claude/codebase-index.json` |
+| Codex, Pi, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` |
 
-Example:
-```bash
-# After updating CHANGELOG.md, package.json, and package-lock.json on release/v0.8.0
-git checkout -b release/v0.8.0
-git add CHANGELOG.md package.json package-lock.json
-git commit -m "chore: prepare v0.8.0 release metadata"
-git push -u origin release/v0.8.0
-# Open and merge the PR into main, then tag the merged commit on main
-git tag v0.8.0
-git push origin v0.8.0
-gh release create v0.8.0 --title "v0.8.0 - Apex semantic parsing" --notes "$(cat <<'EOF'
-## What's New
-...
-EOF
-)"
-```
+Non-OpenCode hosts retain fallbacks to existing OpenCode paths for compatibility. Worktrees may resolve configuration and indexes from the main repository. Change path precedence only with explicit compatibility tests.
+
+Key configuration groups in `src/config/schema.ts` include:
+
+- embedding provider/model and custom provider settings
+- `indexing`: watching, semantic-only mode, project markers, battery behavior, batching
+- `search`: hybrid fusion, limits, ranking, and related options
+- `reranker`: optional external reranking
+- `debug`: logging and metrics
+- effectiveness metrics and knowledge-base settings
+
+Never move or delete existing user indexes as part of branding or path cleanup without a separate migration design and rollback path.
+
+## Anti-Patterns
+
+| Avoid | Reason |
+|---|---|
+| Missing `.js` on relative imports | ESM runtime failure |
+| Host-specific search/index logic duplicated in adapters | Shared operations will diverge |
+| Public tool names duplicated as string literals | `tool-names.ts` is the compatibility catalog |
+| Direct Zod imports for OpenCode tools | Use `tool.schema` |
+| `as any` or `@ts-ignore` | Hides strict-mode contract failures |
+| Empty catch blocks | Hides operational failures |
+| Sequential database writes in bulk paths | Existing batch methods are substantially faster |
+| Rust changes without rebuilding native code | Tests may exercise stale `.node` binaries |
+| Renaming package/native/storage identities together | Breaks installs and persisted indexes |
+| External reranking before local scope filters | Can leak out-of-scope source and waste requests |
+| Updating retrieval baselines without investigating deltas | Masks quality regressions |
+
+## Pull Request Checklist
+
+1. Keep host adapters thin and shared behavior centralized.
+2. Add or update tests for every affected host contract.
+3. Rebuild native code when Rust changes.
+4. Run:
+
+   ```bash
+   npm run build && npm run typecheck && npm run lint && npm run test:run
+   ```
+
+5. For retrieval changes, run the relevant evaluation command and inspect per-query deltas.
+6. For identity, config-path, or storage changes, test both current and legacy compatibility paths.
+7. Update `CHANGELOG.md` for user-visible changes.
+
+## Release Checklist
+
+Releases are prepared on `release/vX.Y.Z`, merged into `main`, then tagged and published from the merged commit.
+
+1. Reconcile the full delta since the previous tag, not only current `Unreleased` bullets.
+2. Update `CHANGELOG.md` with Added/Changed/Fixed entries.
+3. Bump `package.json` and `package-lock.json` together.
+4. Run the full PR validation gate.
+5. Commit release metadata and push `release/vX.Y.Z`.
+6. Open and merge the release PR into `main`.
+7. Tag the merged commit and push the tag.
+8. Create the GitHub release from that tag.
+9. Verify the `Build and Publish` workflow:
+   - builds all five native targets
+   - stages both package identities
+   - publishes `open-codebase-index` and `opencode-codebase-index` through npm trusted publishing
+10. Smoke-test clean installs, both MCP binary names, ESM/CJS loading, MCP initialization, and native loading.
+
+Supported release targets are macOS ARM64/x64, Linux ARM64/x64 GNU, and Windows x64 MSVC.
+
+Do not manually publish a release version that the workflow is expected to publish. Do not reuse or overwrite an existing npm version.
