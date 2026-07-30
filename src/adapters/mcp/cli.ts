@@ -1,3 +1,5 @@
+import type { SharedIndexCodebaseArgs } from "../../tools/contracts.js";
+
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { realpathSync, writeFileSync } from "fs";
 import * as os from "os";
@@ -11,6 +13,8 @@ import { Indexer } from "../../indexer/index.js";
 import { createMcpServer } from "../../mcp-server.js";
 import { loadConfigFile, loadMergedConfig } from "../../config/merger.js";
 import { getIndexerForProject } from "../../tools/operations.js";
+import { initializeTools } from "../../tools/operation-runtime.js";
+import { executeIndexCodebase } from "../../tools/execute-common.js";
 import { hasProjectMarker } from "../../utils/files.js";
 import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
 import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
@@ -21,6 +25,15 @@ export interface CliArgs {
   project: string;
   config?: string;
   host: HostMode;
+}
+
+export interface CliIndexArgs {
+  project: string;
+  host: HostMode;
+  config?: string;
+  force: boolean;
+  estimateOnly: boolean;
+  verbose: boolean;
 }
 
 interface VisualizeArgs {
@@ -50,8 +63,98 @@ export function parseArgs(argv: string[]): CliArgs {
   return { project, config, host };
 }
 
+export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
+  let project = cwd;
+  let host: HostMode = "opencode";
+  let config: string | undefined;
+  let force = false;
+  let estimateOnly = false;
+  let verbose = false;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    const next = argv[i + 1];
+
+    if (arg === "--project" || arg.startsWith("--project=")) {
+      const value = arg.startsWith("--project=") ? arg.slice("--project=".length) : next;
+      if (!value || (!arg.includes("=") && value.startsWith("--"))) {
+        throw new Error("--project requires a value.");
+      }
+      if (!arg.startsWith("--project=")) {
+        i += 1;
+      }
+      project = path.resolve(cwd, value);
+      continue;
+    }
+
+    if (arg === "--config" || arg.startsWith("--config=")) {
+      const value = arg.startsWith("--config=") ? arg.slice("--config=".length) : next;
+      if (!value || (!arg.includes("=") && value.startsWith("--"))) {
+        throw new Error("--config requires a value.");
+      }
+      if (!arg.startsWith("--config=")) {
+        i += 1;
+      }
+      config = path.resolve(cwd, value);
+      continue;
+    }
+
+    if (arg === "--host" || arg.startsWith("--host=")) {
+      const value = arg.startsWith("--host=") ? arg.slice("--host=".length) : next;
+      if (!value || (!arg.includes("=") && value.startsWith("--"))) {
+        throw new Error("--host requires a value.");
+      }
+      if (!arg.startsWith("--host=")) {
+        i += 1;
+      }
+      host = parseHostMode(value);
+      continue;
+    }
+
+    if (arg === "--force" || arg === "--estimate-only" || arg === "--verbose") {
+      if (arg === "--force") {
+        force = true;
+      }
+      if (arg === "--estimate-only") {
+        estimateOnly = true;
+      }
+      if (arg === "--verbose") {
+        verbose = true;
+      }
+      continue;
+    }
+
+    if (arg === "--help" || arg === "-h") {
+      throw new Error("help-requested");
+    }
+
+    throw new Error(`Unknown index option: ${arg}`);
+  }
+
+  return { project, host, config, force, estimateOnly, verbose };
+}
+
 export function loadCliRawConfig(args: CliArgs): unknown {
   return args.config ? loadConfigFile(args.config) : loadMergedConfig(args.project, args.host);
+}
+
+export function printUsage(output: (text: string) => void = (text) => console.error(text)): void {
+  output(`
+Usage:
+  ${process.argv[1]} index [options]
+
+Options:
+  --project <path>       Project root (default: cwd)
+  --host <mode>          opencode, codex, claude, pi, or jcode
+  --config <path>        Explicit JSON config path
+  --force                Rebuild index even if already up to date
+  --estimate-only        Estimate indexing cost only
+  --verbose              Include detailed final index statistics
+  --help                 Show this message
+
+Run '${process.argv[1]} eval' and '${process.argv[1]} visualize' for existing behavior.
+Progress and diagnostics are written to stderr. Final index output is written to stdout.`
+  );
 }
 
 export function isCliEntrypoint(moduleUrl: string, argvPath: string | undefined): boolean {
@@ -127,6 +230,10 @@ async function handleVisualizeCommand(argv: string[], cwd: string): Promise<numb
 }
 
 export async function runMcpCli(argv: string[]): Promise<void> {
+  if (argv[2] === "index") {
+    const exitCode = await handleIndexCommand(argv.slice(3), process.cwd());
+    process.exit(exitCode);
+  }
   if (argv[2] === "eval") {
     const exitCode = await handleEvalCommand(argv.slice(3), process.cwd());
     process.exit(exitCode);
@@ -178,6 +285,94 @@ export async function runMcpCli(argv: string[]): Promise<void> {
   process.on("SIGTERM", () => { void shutdown(); });
 }
 
+interface CliIndexCommandDeps {
+  runIndex?: (
+    projectRoot: string | undefined,
+    host: HostMode,
+    args: SharedIndexCodebaseArgs,
+    onProgress?: (title: string, metadata: Record<string, unknown>) => void,
+  ) => Promise<{ text: string; isError?: boolean }>;
+  initializeRuntimeForConfig?: (projectRoot: string, parsedConfig: ReturnType<typeof parseConfig>, host: HostMode) => void;
+  readCliConfigFile?: (filePath: string) => unknown;
+  printStdout?: (text: string) => void;
+  printStderr?: (text: string) => void;
+}
+
+function printIndexProgress(onProgress: (text: string) => void, title: string, metadata: Record<string, unknown>): void {
+  const details = Object.entries(metadata)
+    .filter(([, value]) => value !== undefined && value !== null)
+    .map(([key, value]) => `${key}=${isSensitiveKey(key) ? "[REDACTED]" : String(value)}`)
+    .join(" ");
+  onProgress(details.length === 0 ? title : `${title} ${details}`);
+}
+
+function isSensitiveKey(key: string): boolean {
+  return /(?:api[-_]?key|token|password|secret|authorization)/i.test(key);
+}
+
+function redactSensitiveText(text: string): string {
+  return text.replace(
+    /((?:api[-_]?key|token|password|secret|authorization)\s*[=:]\s*)([^\s,;]+)/gi,
+    "$1[REDACTED]",
+  );
+}
+
+export async function handleIndexCommand(
+  argv: string[],
+  cwd: string,
+  deps: CliIndexCommandDeps = {},
+): Promise<number> {
+  const runIndex = deps.runIndex ?? executeIndexCodebase;
+  const initializeRuntimeForConfig = deps.initializeRuntimeForConfig ?? initializeTools;
+  const readCliConfigFile = deps.readCliConfigFile ?? loadConfigFile;
+  const printStdout = deps.printStdout ?? ((text) => console.log(text));
+  const printStderr = deps.printStderr ?? ((text) => console.error(redactSensitiveText(text)));
+
+  let parsedArgs: CliIndexArgs;
+  try {
+    parsedArgs = parseIndexArgs(argv, cwd);
+  } catch (error) {
+    if (error instanceof Error && error.message === "help-requested") {
+      printUsage(printStderr);
+      return 0;
+    }
+    printStderr(error instanceof Error ? error.message : String(error));
+    printUsage(printStderr);
+    return 1;
+  }
+
+  try {
+    if (parsedArgs.config !== undefined) {
+      const rawConfig = readCliConfigFile(parsedArgs.config);
+      if (rawConfig === null) {
+        throw new Error(`Config file not found: ${parsedArgs.config}`);
+      }
+      initializeRuntimeForConfig(parsedArgs.project, parseConfig(rawConfig), parsedArgs.host);
+    }
+
+    const indexArgs: SharedIndexCodebaseArgs = {
+      force: parsedArgs.force,
+      estimateOnly: parsedArgs.estimateOnly,
+      verbose: parsedArgs.verbose,
+    };
+
+    const result = await runIndex(parsedArgs.project, parsedArgs.host, indexArgs, (title, metadata) => {
+      printIndexProgress(printStderr, title, metadata);
+    });
+
+    if (result.isError) {
+      printStderr(result.text);
+      return 1;
+    }
+
+    printStdout(result.text);
+    return 0;
+  } catch (error) {
+    printStderr(error instanceof Error ? error.message : String(error));
+    return 1;
+  }
+}
+
 export function handleMainError(error: unknown): never {
   if (error instanceof Error && error.message.startsWith("Invalid host mode")) {
     console.error(`Invalid host mode. Allowed values: ${HOST_MODES.join(", ")}.`);
@@ -192,4 +387,3 @@ export function handleMainError(error: unknown): never {
   console.error("Fatal: failed to start MCP server");
   process.exit(1);
 }
-
