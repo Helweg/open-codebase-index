@@ -1,5 +1,6 @@
 import * as path from "path";
 
+import { MCP_BINARY_CURRENT_NAME } from "../identity-catalog.js";
 import type { EvalRunOptions, SweepDefinition } from "./types.js";
 
 export interface ParsedArgs {
@@ -27,9 +28,9 @@ export interface EvalSubcommandOptions {
 export function printUsage(): void {
   console.log(`
 Usage:
-  opencode-codebase-index-mcp eval run [options]
-  opencode-codebase-index-mcp eval compare --against <summary.json> [options]
-  opencode-codebase-index-mcp eval diff --current <summary.json> --against <summary.json> [options]
+  ${MCP_BINARY_CURRENT_NAME} eval run [options]
+  ${MCP_BINARY_CURRENT_NAME} eval compare --against <summary.json> [options]
+  ${MCP_BINARY_CURRENT_NAME} eval diff --current <summary.json> --against <summary.json> [options]
 
 Options:
   --project <path>                 Project root (default: cwd)

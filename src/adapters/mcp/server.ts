@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ParsedCodebaseIndexConfig } from "../../config/schema.js";
 import type { HostMode } from "../../config/host.js";
+import { MCP_SERVER_CURRENT_NAME } from "../../identity-catalog.js";
 import { getPackageVersion } from "../../package-metadata.js";
 import { registerMcpPrompts } from "./register-prompts.js";
 import { registerMcpTools } from "./register-tools.js";
@@ -19,7 +20,7 @@ export function createMcpServer(
   host: HostMode,
 ): McpServer {
   const server = new McpServer({
-    name: "opencode-codebase-index",
+    name: MCP_SERVER_CURRENT_NAME,
     version: getPackageVersion(),
   }, {
     instructions: getServerInstructions(host),
