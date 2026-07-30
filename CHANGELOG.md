@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-07-30
+
+### Added
+
+- **Host-neutral package identity**: Published `open-codebase-index` as the preferred package with both `open-codebase-index-mcp` and `opencode-codebase-index-mcp` binaries. The existing `opencode-codebase-index` package remains fully supported and is published from the same implementation.
+- **Safe rename roadmap**: Documented the staged package, repository, compatibility, deprecation, storage, native-artifact, validation, and rollback plan for the transition to `open-codebase-index`.
+
 ### Changed
 
+- **Host-neutral adapter architecture**: Isolated OpenCode, MCP, and Pi registration behind dedicated adapters, moved MCP CLI runtime behind its adapter, centralized portable tool-name contracts, and require explicit host context wherever runtime paths or behavior differ. Tool names, schemas, outputs, and host-specific aliases remain unchanged.
 - **Portable project indexes across Git worktrees**: Project-owned paths are now persisted relative to the project root. Worktrees that inherit project configuration share the main checkout's index and reuse unchanged chunks and embeddings, while an explicit worktree-local project config keeps its index isolated. Existing project indexes with absolute stored paths require a one-time force rebuild.
-- **Phase 1 rename preparation**: Added dual-identity package metadata staging, including `open-codebase-index` support with both MCP binary aliases, while keeping the checked-in legacy identity and native/tool/storage naming stable.
+- **Compatibility-aware release pipeline**: Package metadata and host manifests are staged per package identity, native artifacts remain stable, new installation examples prefer `open-codebase-index`, and release retries skip package versions already published.
 
 ## [0.20.1] - 2026-07-29
 

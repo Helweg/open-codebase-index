@@ -1,6 +1,6 @@
 {
   "name": "codebase-index",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "description": "Semantic code search and codebase graph tools for Claude Code",
   "displayName": "Codebase Index",
   "author": {
