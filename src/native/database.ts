@@ -52,6 +52,21 @@ export class Database {
     this.closed = true;
   }
 
+  beginWriteTransaction(): void {
+    this.throwIfClosed();
+    this.inner.beginWriteTransaction();
+  }
+
+  commitWriteTransaction(): void {
+    this.throwIfClosed();
+    this.inner.commitWriteTransaction();
+  }
+
+  rollbackWriteTransaction(): void {
+    this.throwIfClosed();
+    this.inner.rollbackWriteTransaction();
+  }
+
   embeddingExists(contentHash: string): boolean {
     this.throwIfClosed();
     return this.inner.embeddingExists(contentHash);

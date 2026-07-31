@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { Database, ChunkData, SymbolData } from "../src/native/index.js";
+import { Database, CallEdgeData, ChunkData, SymbolData } from "../src/native/index.js";
 
 describe("Database", () => {
   let tempDir: string;
@@ -112,6 +112,98 @@ describe("Database", () => {
       } finally {
         reader.close();
       }
+    });
+  });
+
+  describe("write transactions", () => {
+    const chunk: ChunkData = {
+      chunkId: "transaction-chunk",
+      contentHash: "transaction-hash",
+      filePath: "/transaction.ts",
+      startLine: 1,
+      endLine: 3,
+      nodeType: "function",
+      name: "transactionFunction",
+      language: "typescript",
+    };
+    const symbol: SymbolData = {
+      id: "transaction-symbol",
+      filePath: "/transaction.ts",
+      name: "transactionFunction",
+      kind: "function",
+      startLine: 1,
+      startCol: 0,
+      endLine: 3,
+      endCol: 1,
+      language: "typescript",
+    };
+    const edge: CallEdgeData = {
+      id: "transaction-edge",
+      fromSymbolId: symbol.id,
+      targetName: "dependency",
+      callType: "call",
+      confidence: "high",
+      line: 2,
+      col: 2,
+      isResolved: false,
+    };
+
+    function writeBatchRows(database: Database): void {
+      database.upsertChunksBatch([chunk]);
+      database.addChunksToBranchBatch("main", [chunk.chunkId]);
+      database.upsertSymbolsBatch([symbol]);
+      database.addSymbolsToBranchBatch("main", [symbol.id]);
+      database.upsertCallEdgesBatch([edge]);
+    }
+
+    it("keeps batch writes private until commit", () => {
+      const reader = Database.openReadOnly(path.join(tempDir, "test.db"));
+
+      try {
+        db.beginWriteTransaction();
+        writeBatchRows(db);
+
+        expect(db.getStats()).toMatchObject({ chunkCount: 1, symbolCount: 1, callEdgeCount: 1 });
+        expect(db.getBranchChunkIds("main")).toEqual([chunk.chunkId]);
+        expect(db.getBranchSymbolIds("main")).toEqual([symbol.id]);
+        expect(reader.getStats()).toMatchObject({ chunkCount: 0, symbolCount: 0, callEdgeCount: 0 });
+        expect(reader.getBranchChunkIds("main")).toEqual([]);
+        expect(reader.getBranchSymbolIds("main")).toEqual([]);
+
+        db.commitWriteTransaction();
+
+        expect(reader.getStats()).toMatchObject({ chunkCount: 1, symbolCount: 1, callEdgeCount: 1 });
+        expect(reader.getBranchChunkIds("main")).toEqual([chunk.chunkId]);
+        expect(reader.getBranchSymbolIds("main")).toEqual([symbol.id]);
+      } finally {
+        reader.close();
+      }
+    });
+
+    it("rolls back all batch writes", () => {
+      const reader = Database.openReadOnly(path.join(tempDir, "test.db"));
+
+      try {
+        db.beginWriteTransaction();
+        writeBatchRows(db);
+        db.rollbackWriteTransaction();
+
+        expect(db.getStats()).toMatchObject({ chunkCount: 0, symbolCount: 0, callEdgeCount: 0 });
+        expect(reader.getStats()).toMatchObject({ chunkCount: 0, symbolCount: 0, callEdgeCount: 0 });
+        expect(db.getBranchChunkIds("main")).toEqual([]);
+        expect(db.getBranchSymbolIds("main")).toEqual([]);
+      } finally {
+        reader.close();
+      }
+    });
+
+    it("rejects invalid transaction state transitions", () => {
+      expect(() => db.commitWriteTransaction()).toThrow(/no active transaction/i);
+      expect(() => db.rollbackWriteTransaction()).toThrow(/no active transaction/i);
+
+      db.beginWriteTransaction();
+      expect(() => db.beginWriteTransaction()).toThrow(/already active/i);
+      db.rollbackWriteTransaction();
     });
   });
 

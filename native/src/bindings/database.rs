@@ -109,6 +109,27 @@ impl Database {
     }
 
     #[napi]
+    pub fn begin_write_transaction(&self) -> Result<()> {
+        self.with_conn_mut(|conn| {
+            db::begin_write_transaction(conn).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
+    pub fn commit_write_transaction(&self) -> Result<()> {
+        self.with_conn_mut(|conn| {
+            db::commit_write_transaction(conn).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
+    pub fn rollback_write_transaction(&self) -> Result<()> {
+        self.with_conn_mut(|conn| {
+            db::rollback_write_transaction(conn).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
     pub fn close(&self) -> Result<()> {
         // Best-effort, idempotent shutdown: once the connection is taken, all
         // future calls fail fast with `Database is closed` and repeated close()

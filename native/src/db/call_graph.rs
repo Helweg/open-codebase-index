@@ -74,9 +74,8 @@ pub fn upsert_symbols_batch(conn: &mut Connection, symbols: &[SymbolRow]) -> DbR
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
+    super::run_batch_with_write_transaction(conn, |conn| {
+        let mut stmt = conn.prepare(
             r#"
             INSERT OR REPLACE INTO symbols (id, file_path, name, kind, start_line, start_col, end_line, end_col, language)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -96,9 +95,8 @@ pub fn upsert_symbols_batch(conn: &mut Connection, symbols: &[SymbolRow]) -> DbR
                 symbol.language
             ])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Get all symbols in a file
@@ -347,9 +345,8 @@ pub fn upsert_call_edges_batch(conn: &mut Connection, edges: &[CallEdgeRow]) -> 
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
+    super::run_batch_with_write_transaction(conn, |conn| {
+        let mut stmt = conn.prepare(
             r#"
             INSERT OR REPLACE INTO call_edges (id, from_symbol_id, target_name, to_symbol_id, call_type, confidence, line, col, is_resolved)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -369,9 +366,8 @@ pub fn upsert_call_edges_batch(conn: &mut Connection, edges: &[CallEdgeRow]) -> 
                 edge.is_resolved as i32
             ])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+        Ok(())
+    })
 }
 
 fn is_case_insensitive_language(language: &str) -> bool {
@@ -974,17 +970,15 @@ pub fn add_symbols_to_branch_batch(
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
+    super::run_batch_with_write_transaction(conn, |conn| {
         let mut stmt =
-            tx.prepare("INSERT OR IGNORE INTO branch_symbols (branch, symbol_id) VALUES (?, ?)")?;
+            conn.prepare("INSERT OR IGNORE INTO branch_symbols (branch, symbol_id) VALUES (?, ?)")?;
 
         for symbol_id in symbol_ids {
             stmt.execute(params![branch, symbol_id])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Get all symbol IDs for a branch

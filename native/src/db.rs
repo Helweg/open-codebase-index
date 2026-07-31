@@ -13,6 +13,8 @@ pub enum DbError {
     Io(#[from] std::io::Error),
     #[error("Read-only database schema error: {0}")]
     ReadOnlySchema(String),
+    #[error("Invalid transaction state: {0}")]
+    TransactionState(String),
 }
 
 pub type DbResult<T> = Result<T, DbError>;
@@ -23,6 +25,56 @@ const SCHEMA_VERSION: i32 = 7;
 /// Maximum number of SQL bind parameters per query.
 /// SQLite defaults to 999 (SQLITE_MAX_VARIABLE_NUMBER). We use 900 to stay safely under.
 const SQL_BIND_PARAM_BATCH_SIZE: usize = 900;
+
+pub(crate) fn run_batch_with_write_transaction<T, F>(
+    conn: &mut Connection,
+    operation: F,
+) -> DbResult<T>
+where
+    F: FnOnce(&Connection) -> DbResult<T>,
+{
+    if conn.is_autocommit() {
+        let tx = conn.transaction()?;
+        let result = operation(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    } else {
+        operation(conn)
+    }
+}
+
+pub fn begin_write_transaction(conn: &mut Connection) -> DbResult<()> {
+    if !conn.is_autocommit() {
+        return Err(DbError::TransactionState(String::from(
+            "Cannot begin write transaction: transaction already active",
+        )));
+    }
+
+    conn.execute_batch("BEGIN IMMEDIATE;")?;
+    Ok(())
+}
+
+pub fn commit_write_transaction(conn: &mut Connection) -> DbResult<()> {
+    if conn.is_autocommit() {
+        return Err(DbError::TransactionState(String::from(
+            "Cannot commit write transaction: no active transaction",
+        )));
+    }
+
+    conn.execute_batch("COMMIT;")?;
+    Ok(())
+}
+
+pub fn rollback_write_transaction(conn: &mut Connection) -> DbResult<()> {
+    if conn.is_autocommit() {
+        return Err(DbError::TransactionState(String::from(
+            "Cannot rollback write transaction: no active transaction",
+        )));
+    }
+
+    conn.execute_batch("ROLLBACK;")?;
+    Ok(())
+}
 
 /// Initialize the database with the required schema
 pub fn init_db(db_path: &Path) -> DbResult<Connection> {
@@ -378,9 +430,8 @@ pub fn upsert_embeddings_batch(
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
+    run_batch_with_write_transaction(conn, |conn| {
+        let mut stmt = conn.prepare(
             r#"
             INSERT INTO embeddings (content_hash, embedding, chunk_text, model, created_at)
             VALUES (?, ?, ?, ?, strftime('%s', 'now'))
@@ -393,9 +444,8 @@ pub fn upsert_embeddings_batch(
         for (content_hash, embedding, chunk_text, model) in embeddings {
             stmt.execute(params![content_hash, embedding, chunk_text, model])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Get multiple embeddings by content hashes
@@ -530,9 +580,8 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
-        let mut stmt = tx.prepare(
+    run_batch_with_write_transaction(conn, |conn| {
+        let mut stmt = conn.prepare(
             r#"
             INSERT INTO chunks (chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -569,9 +618,9 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
                 chunk.blame_summary
             ])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+
+        Ok(())
+    })
 }
 
 /// Get chunk by ID
@@ -776,17 +825,16 @@ pub fn add_chunks_to_branch_batch(
         return Ok(());
     }
 
-    let tx = conn.transaction()?;
-    {
+    run_batch_with_write_transaction(conn, |conn| {
         let mut stmt =
-            tx.prepare("INSERT OR IGNORE INTO branch_chunks (branch, chunk_id) VALUES (?, ?)")?;
+            conn.prepare("INSERT OR IGNORE INTO branch_chunks (branch, chunk_id) VALUES (?, ?)")?;
 
         for chunk_id in chunk_ids {
             stmt.execute(params![branch, chunk_id])?;
         }
-    }
-    tx.commit()?;
-    Ok(())
+
+        Ok(())
+    })
 }
 
 /// Remove all chunks from a branch (for re-indexing)
