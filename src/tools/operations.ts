@@ -6,6 +6,7 @@ import type { HostMode } from "../config/host.js";
 import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
+import { buildCodeCommunitiesResult } from "./format-communities.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
@@ -486,6 +487,27 @@ export async function getPrImpact(
     hubThreshold: params.hubThreshold,
     checkConflicts: params.checkConflicts,
     direction: params.direction,
+  });
+}
+
+export async function getCodeCommunities(
+  projectRoot: string | undefined,
+  host: HostMode,
+  params: {
+    branch?: string;
+    minSize?: number;
+    limit?: number;
+    hubThreshold?: number;
+  },
+): Promise<import("./format-communities.js").CodeCommunitiesResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  const indexer = getIndexerForProject(projectRoot, host);
+  const communities = await indexer.detectCommunities(params.branch);
+  const centrality = await indexer.computeCentrality(params.branch);
+  return buildCodeCommunitiesResult(communities, centrality, {
+    minSize: params.minSize,
+    limit: params.limit,
+    hubThreshold: params.hubThreshold,
   });
 }
 

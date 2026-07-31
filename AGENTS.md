@@ -149,7 +149,7 @@ Canonical tool names live in `src/tools/tool-names.ts`.
 
 - Retrieval: `codebase_context` `codebase_search` `codebase_peek` `find_similar` `implementation_lookup`
 - Index lifecycle: `index_codebase` `index_status` `index_health_check` `index_metrics` `index_logs`
-- Graph analysis: `call_graph` `call_graph_path` `pr_impact`
+- Graph analysis: `call_graph` `call_graph_path` `pr_impact` `code_communities`
 - OpenCode-only additions: knowledge-base management `index_visualize`
 - Pi knowledge-base aliases: `knowledge_base_add` `knowledge_base_list` `knowledge_base_remove`
 

@@ -3,6 +3,7 @@ import { Type } from "typebox";
 
 import { formatCostEstimate } from "../../utils/cost.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
+import { formatCodeCommunities } from "../../tools/format-communities.js";
 import {
   addKnowledgeBase,
   findSimilarCode,
@@ -10,6 +11,7 @@ import {
   getIndexMetrics,
   getIndexStatus,
   getPrImpact,
+  getCodeCommunities,
   implementationLookup,
   listKnowledgeBases,
   removeKnowledgeBase,
@@ -287,6 +289,22 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await getPrImpact(projectRoot(ctx), HOST, params);
       return text(formatPrImpact(result), result);
+    },
+  });
+
+  pi.registerTool({
+    name: TOOL_NAME.CODE_COMMUNITIES,
+    label: "Code Communities",
+    description: "Discover natural module boundaries and hub symbols using graph community detection. Clusters symbols by call-graph connectivity to reveal architecture.",
+    parameters: Type.Object({
+      branch: Type.Optional(Type.String()),
+      minSize: Type.Optional(Type.Number({ default: 1 })),
+      limit: Type.Optional(Type.Number({ default: 20 })),
+      hubThreshold: Type.Optional(Type.Number({ default: 5 })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await getCodeCommunities(projectRoot(ctx), HOST, params);
+      return text(formatCodeCommunities(result), result);
     },
   });
 

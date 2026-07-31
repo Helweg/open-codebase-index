@@ -84,3 +84,10 @@ export interface SharedCallGraphPathArgs {
   toFilePath?: string;
   maxDepth?: number;
 }
+
+export interface SharedCodeCommunitiesArgs {
+  branch?: string;
+  minSize?: number;
+  limit?: number;
+  hubThreshold?: number;
+}

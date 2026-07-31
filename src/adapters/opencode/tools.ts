@@ -32,6 +32,7 @@ import {
   executeCallGraph,
   executeCallGraphPath,
   executeCodebaseContext,
+  executeCodeCommunities,
   executeIndexCodebase,
   executeIndexHealthCheck,
   executeIndexLogs,
@@ -323,6 +324,22 @@ export const remove_knowledge_base: ToolDefinition = tool({
 });
 
 export { pr_impact };
+
+export const code_communities: ToolDefinition = tool({
+  description:
+    "Discover natural module boundaries and hub symbols in the codebase using graph community detection. " +
+    "Clusters symbols by call-graph connectivity, reports community memberships, and identifies hub nodes " +
+    "with cross-community connections. Use to understand architectural coupling and module structure.",
+  args: {
+    branch: z.string().optional().describe("Branch name to analyze (defaults to current branch)"),
+    minSize: z.number().optional().default(1).describe("Minimum community size to include (default: 1)"),
+    limit: z.number().optional().default(20).describe("Maximum number of communities and hub nodes to return (default: 20)"),
+    hubThreshold: z.number().optional().default(5).describe("Minimum cross-community connections to flag a hub node (default: 5)"),
+  },
+  async execute(args, context) {
+    return (await executeCodeCommunities(context?.worktree, DEFAULT_HOST, args)).text;
+  },
+});
 
 export const index_visualize: ToolDefinition = tool({
   description:

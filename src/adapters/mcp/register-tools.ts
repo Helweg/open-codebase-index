@@ -25,6 +25,7 @@ import {
   executeCallGraph,
   executeCallGraphPath,
   executeCodebaseContext,
+  executeCodeCommunities,
   executeIndexCodebase,
   executeIndexHealthCheck,
   executeIndexLogs,
@@ -312,6 +313,23 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         const message = error instanceof Error ? error.message : String(error);
         return { content: [{ type: "text", text: `Error analyzing PR impact: ${message}` }] };
       }
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.CODE_COMMUNITIES,
+    "Discover natural module boundaries and hub symbols using graph community detection. " +
+    "Clusters symbols by call-graph connectivity, reports community memberships, and identifies " +
+    "hub nodes with cross-community connections. Use to understand architectural coupling.",
+    {
+      branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
+      minSize: allowNullAsUndefined(z.number().int().min(1).optional().default(1)).describe("Minimum community size to include (default: 1)"),
+      limit: allowNullAsUndefined(z.number().int().min(1).max(100).optional().default(20)).describe("Maximum number of communities and hub nodes to return (default: 20)"),
+      hubThreshold: allowNullAsUndefined(z.number().int().min(0).optional().default(5)).describe("Minimum cross-community connections to flag a hub node (default: 5)"),
+    },
+    async (args) => {
+      const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 }
