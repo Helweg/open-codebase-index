@@ -2,9 +2,9 @@
 
 **Updated:** 2026-07-30 | **Commit:** 022af30 | **Branch:** main | **Version:** 0.21.0
 
-Semantic codebase indexing for OpenCode, MCP hosts, Pi, Claude, Codex, and Jcode. The repository uses a hybrid TypeScript/Rust architecture:
+Semantic codebase indexing for OpenCode, MCP hosts, Pi, Claude, Codex, and Jcode. repo uses hybrid TypeScript/Rust architecture:
 
-- **TypeScript** (`src/`): host adapters, tool orchestration, indexing, retrieval, embedding providers, configuration, evaluation, and watchers
+- **TypeScript** (`src/`): host adapters, tool orchestration, indexing, retrieval, embedding providers, config, evaluation, and watchers
 - **Rust** (`native/`): tree-sitter parsing, semantic chunking, usearch vectors, SQLite persistence, BM25, call graphs, and graph analytics
 
 ## Build, Test, and Lint
@@ -29,7 +29,7 @@ npx vitest run tests/files.test.ts
 npx vitest run -t "parseFile"
 ```
 
-When Rust code changes, rebuild the native module before running targeted tests that bypass `npm run test:run`:
+When Rust code changes, rebuild native module before running targeted tests that bypass `npm run test:run`
 
 ```bash
 npm run build:native
@@ -37,7 +37,7 @@ npm run build:native
 cd native && cargo build --release && napi build --release --platform
 ```
 
-The full PR validation gate is:
+ full PR validation gate is:
 
 ```bash
 npm run build && npm run typecheck && npm run lint && npm run test:run
@@ -137,56 +137,56 @@ See `ARCHITECTURE.md` for data flow and design details.
 Shared behavior belongs below `src/adapters/`. Host adapters should translate host schemas and lifecycle events into shared operations rather than reimplement indexing or search.
 
 - **OpenCode:** `src/index.ts` re-exports `src/adapters/opencode.ts`.
-- **MCP:** `src/mcp-server.ts` re-exports `src/adapters/mcp/server.ts`; `src/adapters/mcp/cli.ts` owns stdio transport.
-- **Pi:** public compatibility facades `src/pi-extension.ts` and `src/pi-call-graph.ts` delegate to `src/adapters/pi/`.
-- **Shared tools:** use `src/tools/contracts.ts`, `operations.ts`, `operation-runtime.ts`, and `execute-common.ts`.
+- **MCP:** `src/mcp-server.ts` re-exports `src/adapters/mcp/server.ts` `src/adapters/mcp/cli.ts` owns stdio transport.
+- **Pi:** public compatibility facades `src/pi-extension.ts`  `src/pi-call-graph.ts` delegate to `src/adapters/pi/`.
+- **Shared tools:** use `src/tools/contracts.ts` `operations.ts` `operation-runtime.ts` `execute-common.ts`.
 
-When adding a portable tool, update the shared operation and contract first, add its canonical name to `src/tools/tool-names.ts`, then wire each supported host adapter. Preserve host-specific schemas, registration order, and output formats.
+When adding portable tool, update shared operation and contract first, add its canonical name to `src/tools/tool-names.ts`then wire each supported host adapter. Preserve host-specific schemas, registration order, and output formats.
 
 ## Public Tool Families
 
 Canonical tool names live in `src/tools/tool-names.ts`.
 
-- Retrieval: `codebase_context`, `codebase_search`, `codebase_peek`, `find_similar`, `implementation_lookup`
-- Index lifecycle: `index_codebase`, `index_status`, `index_health_check`, `index_metrics`, `index_logs`
-- Graph analysis: `call_graph`, `call_graph_path`, `pr_impact`
-- OpenCode-only additions: knowledge-base management and `index_visualize`
-- Pi knowledge-base aliases: `knowledge_base_add`, `knowledge_base_list`, `knowledge_base_remove`
+- Retrieval: `codebase_context` `codebase_search` `codebase_peek` `find_similar` `implementation_lookup`
+- Index lifecycle: `index_codebase` `index_status` `index_health_check` `index_metrics` `index_logs`
+- Graph analysis: `call_graph` `call_graph_path` `pr_impact`
+- OpenCode-only additions: knowledge-base management `index_visualize`
+- Pi knowledge-base aliases: `knowledge_base_add` `knowledge_base_list` `knowledge_base_remove`
 
 Do not silently rename tools or change request/result contracts. They are compatibility surfaces across hosts.
 
 ## Native Boundary
 
-`src/native/binding.ts` is the only low-level loader for platform-specific `.node` files. Focused wrappers expose native capabilities:
+`src/native/binding.ts` is only low-level loader for platform-specific `.node` files. Focused wrappers expose native capabilities:
 
-- `parsing.ts`: parsing, hashing, and call extraction
-- `database.ts`: SQLite database API
-- `embedding.ts`: embedding-related types/helpers
-- `vector-store.ts`: vector index wrapper
-- `inverted-index.ts`: BM25 wrapper
-- `types.ts`: TypeScript types for native values
-- `index.ts`: native facade exports
+- `parsing.ts`parsing, hashing, and call extraction
+- `database.ts`SQLite database API
+- `embedding.ts`embedding-related types/helpers
+- `vector-store.ts`vector index wrapper
+- `inverted-index.ts`BM25 wrapper
+- `types.ts`TypeScript types for native values
+- `index.ts`native facade exports
 
-Rust implementation details should remain behind the NAPI facade in `native/src/lib.rs` and `native/src/bindings/`. Keep JavaScript-facing names and value shapes stable unless the TypeScript wrappers and tests are updated together.
+Rust implementation details should remain behind NAPI facade in `native/src/lib.rs`  `native/src/bindings/`. Keep JavaScript-facing names and value shapes stable unless TypeScript wrappers and tests are updated together.
 
-Prefer existing batch database methods for bulk indexing. Do not replace them with sequential calls.
+Prefer existing batch database methods for bulk indexing. Do not replace them w/ sequential calls.
 
 ## Package Identity and Compatibility
 
-The checked-in package remains `opencode-codebase-index@0.21.0`, while the release workflow publishes both:
+ checked-in package remains `opencode-codebase-index@0.21.0`while release workflow publishes both:
 
-- `open-codebase-index`: preferred host-neutral package; exports `open-codebase-index-mcp` and the legacy binary alias
-- `opencode-codebase-index`: synchronized compatibility package
+- `open-codebase-index`preferred host-neutral package; exports `open-codebase-index-mcp` and legacy binary alias
+- `opencode-codebase-index`synchronized compatibility package
 
-Identity constants live in `src/identity-catalog.json`. `scripts/prepare-package-metadata.mjs` stages package-specific manifests without rewriting checked-in metadata. Native binary names, tool names, config paths, and persisted index formats remain stable during the rename.
+Identity constants live in `src/identity-catalog.json`. `scripts/prepare-package-metadata.mjs` stages package-specific manifests w/o rewriting checked-in metadata. Native binary names, tool names, config paths, and persisted index formats remain stable during rename.
 
-Do not broadly replace `opencode-codebase-index` strings. First classify each occurrence as current compatibility contract, future public identity, historical documentation, or test fixture. Follow `docs/rename-to-open-codebase-index.md`.
+Do not broadly replace `opencode-codebase-index` strings. First classify each occurrence as current compatibility contract, future public identity, historical docs, or test fixture. Follow `docs/rename-to-open-codebase-index.md`.
 
 ## TypeScript Conventions
 
 ### Imports
 
-This is an ESM project. Relative TypeScript imports must use `.js` extensions:
+This is ESM project. Relative TypeScript imports must use `.js` extensions:
 
 ```typescript
 // Correct
@@ -200,9 +200,9 @@ Import order:
 
 1. Type-only imports
 2. External packages and Node.js built-ins
-3. Internal modules with `.js` extensions
+3. Internal modules w/ `.js` extensions
 
-Use namespace imports for Node.js built-ins when consistent with surrounding code:
+Use namespace imports for Node.js built-ins when consistent w/ surrounding code:
 
 ```typescript
 import * as os from "node:os";
@@ -221,9 +221,9 @@ import * as path from "node:path";
 
 - Keep `strict: true` compatibility.
 - Use explicit return types on exported functions.
-- Prefix intentionally unused parameters with `_`.
+- Prefix intentionally unused parameters w/ `_`.
 - Catch errors as `unknown` and narrow them.
-- Avoid `as any`, `@ts-ignore`, and empty catch blocks.
+- Avoid `as any` `@ts-ignore`and empty catch blocks.
 
 ```typescript
 function getErrorMessage(error: unknown): string {
@@ -234,7 +234,7 @@ function getErrorMessage(error: unknown): string {
 
 ### Tool Schemas
 
-OpenCode schemas use `tool.schema` from `@opencode-ai/plugin`, not a direct Zod import:
+OpenCode schemas use `tool.schema` from `@opencode-ai/plugin`not direct Zod import:
 
 ```typescript
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
@@ -257,17 +257,17 @@ Shared behavior should normally be added to tool operations/contracts, not embed
 
 ## Rust Conventions
 
-- Rebuild with `npm run build:native` after Rust changes.
-- Keep NAPI-facing conversions in `native/src/bindings/` or `native/src/lib.rs`.
+- Rebuild w/ `npm run build:native` after Rust changes.
+- Keep NAPI-facing conversions in `native/src/bindings/`  `native/src/lib.rs`.
 - Keep core SQLite logic in `native/src/db.rs` and focused `native/src/db/` modules.
 - Add call-query files under `native/queries/` and update `call_extractor.rs` when adding call-graph support.
-- Update `native/src/types.rs`, parser mapping, Cargo dependencies, and tests together when adding a language.
+- Update `native/src/types.rs`parser mapping, Cargo dependencies, and tests together when adding language.
 - Preserve deterministic ordering for graph, search, and batch results exposed to TypeScript.
 
 ## Testing
 
-- **Framework:** Vitest with globals enabled
-- **Default timeout:** 30 seconds because native operations can be slow
+- **Framework:** Vitest w/ globals enabled
+- **Default timeout:** 30 seconds b/c native operations can be slow
 - **Tests:** `tests/*.test.ts`
 
 Use isolated temporary directories and always clean them:
@@ -304,11 +304,11 @@ For native performance checks:
 npx tsx benchmarks/run.ts
 ```
 
-For retrieval-quality gates, use the `eval:*` scripts in `package.json`. Do not update evaluation baselines merely to make a regression pass.
+For retrieval-quality gates, use `eval:*` scripts in `package.json`. Do not update evaluation baselines merely to make regression pass.
 
 ## Configuration and Storage
 
-Configuration and index paths are host-aware:
+config and index paths are host-aware:
 
 | Host | Project config | Project index | Global config |
 |---|---|---|---|
@@ -316,18 +316,18 @@ Configuration and index paths are host-aware:
 | Claude | `.claude/codebase-index.json` | `.claude/index/` | `~/.claude/codebase-index.json` |
 | Codex, Pi, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` |
 
-Non-OpenCode hosts retain fallbacks to existing OpenCode paths for compatibility. Worktrees may resolve configuration and indexes from the main repository. Change path precedence only with explicit compatibility tests.
+Non-OpenCode hosts retain fallbacks to existing OpenCode paths for compatibility. Worktrees may resolve config and indexes from main repo. Change path precedence only w/ explicit compatibility tests.
 
-Key configuration groups in `src/config/schema.ts` include:
+Key config groups in `src/config/schema.ts` include:
 
 - embedding provider/model and custom provider settings
-- `indexing`: watching, semantic-only mode, project markers, battery behavior, batching
-- `search`: hybrid fusion, limits, ranking, and related options
-- `reranker`: optional external reranking
-- `debug`: logging and metrics
+- `indexing`watching, semantic-only mode, project markers, battery behavior, batching
+- `search`hybrid fusion, limits, ranking, and related options
+- `reranker`optional external reranking
+- `debug`logging and metrics
 - effectiveness metrics and knowledge-base settings
 
-Never move or delete existing user indexes as part of branding or path cleanup without a separate migration design and rollback path.
+Never move or delete existing user indexes as part of branding or path cleanup w/o separate migration design and rollback path.
 
 ## Anti-Patterns
 
@@ -356,28 +356,29 @@ Never move or delete existing user indexes as part of branding or path cleanup w
    npm run build && npm run typecheck && npm run lint && npm run test:run
    ```
 
-5. For retrieval changes, run the relevant evaluation command and inspect per-query deltas.
+5. For retrieval changes, run relevant evaluation command and inspect per-query deltas.
 6. For identity, config-path, or storage changes, test both current and legacy compatibility paths.
 7. Update `CHANGELOG.md` for user-visible changes.
 
 ## Release Checklist
 
-Releases are prepared on `release/vX.Y.Z`, merged into `main`, then tagged and published from the merged commit.
+Releases are prepared on `release/vX.Y.Z`merged into `main`then tagged and published from merged commit.
 
-1. Reconcile the full delta since the previous tag, not only current `Unreleased` bullets.
-2. Update `CHANGELOG.md` with Added/Changed/Fixed entries.
-3. Bump `package.json` and `package-lock.json` together.
-4. Run the full PR validation gate.
+1. Reconcile full delta since previous tag, not only current `Unreleased` bullets.
+2. Update `CHANGELOG.md` w/ Added/Changed/Fixed entries.
+3. Bump `package.json`  `package-lock.json` together.
+4. Run full PR validation gate.
 5. Commit release metadata and push `release/vX.Y.Z`.
-6. Open and merge the release PR into `main`.
-7. Tag the merged commit and push the tag.
-8. Create the GitHub release from that tag.
-9. Verify the `Build and Publish` workflow:
+6. Open and merge release PR into `main`.
+7. Tag merged commit and push tag.
+8. Create GitHub release from that tag.
+9. Verify `Build and Publish` workflow:
    - builds all five native targets
    - stages both package identities
-   - publishes `open-codebase-index` and `opencode-codebase-index` through npm trusted publishing
+   - publishes `open-codebase-index`  `opencode-codebase-index` through npm trusted publishing
 10. Smoke-test clean installs, both MCP binary names, ESM/CJS loading, MCP initialization, and native loading.
 
 Supported release targets are macOS ARM64/x64, Linux ARM64/x64 GNU, and Windows x64 MSVC.
 
-Do not manually publish a release version that the workflow is expected to publish. Do not reuse or overwrite an existing npm version.
+Do not manually publish release version that workflow is expected to publish. Do not reuse or overwrite existing npm version.
+
