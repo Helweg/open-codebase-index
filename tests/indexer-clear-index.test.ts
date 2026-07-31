@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { loadMergedConfig } from "../src/config/merger.js";
 import { parseConfig } from "../src/config/schema.js";
+import { readFailedBatchRecords } from "../src/indexer/failed-state-persistence.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database, InvertedIndex, VectorStore } from "../src/native/index.js";
 import { hashContent } from "../src/native/index.js";
@@ -1669,7 +1670,9 @@ describe("indexer clearIndex force rebuild", () => {
     const fileHashCache = JSON.parse(fs.readFileSync(fileHashCachePath, "utf-8")) as Record<string, string>;
     expect(fileHashCache[projectBFile]).toBe("foreign-hash");
 
-    const failedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{ chunks: Array<{ metadata: { filePath: string } }> }>;
+    const failedBatches = Array.from(
+      readFailedBatchRecords<{ metadata: { filePath: string } }>(failedBatchesPath),
+    );
     expect(failedBatches.some((batch) => batch.chunks.some((chunk) => chunk.metadata.filePath === projectBFile))).toBe(true);
   });
 

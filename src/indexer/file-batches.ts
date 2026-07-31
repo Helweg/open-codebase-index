@@ -9,7 +9,7 @@ export const INDEX_FILE_BATCH_LIMITS: Readonly<FileBatchLimits> = Object.freeze(
 });
 
 export function* iterateOrderedFileBatches<T>(
-  items: readonly T[],
+  items: Iterable<T>,
   getBytes: (item: T) => number,
   limits: FileBatchLimits = INDEX_FILE_BATCH_LIMITS,
 ): Generator<T[]> {

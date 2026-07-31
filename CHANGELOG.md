@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Direct index CLI subcommand for MCP binary**: Added `index` command support to the shared MCP CLI entrypoint with `--project`, `--host`, `--config`, `--force`, `--estimate-only`, and `--verbose` flags. The command uses shared indexing execution and lock/callback semantics, prints diagnostics to `stderr`, exits non-zero on usage and runtime errors, and preserves existing MCP/eval/visualize modes.
 
+### Changed
+
+- **Bounded file-level indexing batches** (#224): Changed-file scans now retain only path, hash, and byte-size descriptors, then parse, chunk, extract call-graph data, and admit embeddings in fixed internal file batches with queue backpressure. Failed embedding state is incrementally written as versioned JSONL and retried as a bounded stream while preserving legacy JSON-array reads, branch catalogs, Git blame, duplicate embedding reuse, and prior-generation SQLite visibility after interrupted runs.
+
 ## [0.21.0] - 2026-07-30
 
 ### Added

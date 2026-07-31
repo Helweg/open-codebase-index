@@ -102,4 +102,61 @@ describe("indexing database transaction", () => {
       after.close();
     }
   });
+
+  it("keeps the previous SQLite and branch catalog generation after a late file-batch interruption", async () => {
+    fs.writeFileSync(
+      path.join(projectDir, "src", "stable.ts"),
+      "export function stable() { return 'stable'; }\n",
+      "utf8",
+    );
+    await indexer.index();
+
+    const databasePath = path.join(indexDir, "codebase.db");
+    const fileHashesPath = path.join(indexDir, "file-hashes.json");
+    const failedBatchesPath = path.join(indexDir, "failed-batches.json");
+    const previousFileHashes = fs.readFileSync(fileHashesPath, "utf-8");
+    const before = Database.openReadOnly(databasePath);
+    const beforeStats = before.getStats();
+    const beforeBranches = before.getAllBranches().map((branch) => ({
+      branch,
+      chunks: before.getBranchChunkIds(branch),
+      symbols: before.getBranchSymbolIds(branch),
+    }));
+    before.close();
+
+    for (let fileIndex = 0; fileIndex < 65; fileIndex++) {
+      fs.writeFileSync(
+        path.join(projectDir, "src", `late-${fileIndex.toString().padStart(2, "0")}.ts`),
+        `export function late${fileIndex}() { return ${fileIndex}; }\n// ${"x".repeat(100 + fileIndex)}\n`,
+        "utf8",
+      );
+    }
+
+    await expect(indexer.index((progress) => {
+      if (progress.phase === "parsing" && progress.totalFiles === 66 && progress.filesProcessed === 66) {
+        throw new Error("simulated interruption in the final file batch");
+      }
+    })).rejects.toThrow("simulated interruption in the final file batch");
+
+    const after = Database.openReadOnly(databasePath);
+    try {
+      expect(after.getStats()).toEqual(beforeStats);
+      expect(after.getChunksByFile("src/late-00.ts")).toEqual([]);
+      expect(after.getChunksByFile("src/late-64.ts")).toEqual([]);
+      expect(after.getSymbolsByFile("src/late-00.ts")).toEqual([]);
+      expect(after.getSymbolsByFile("src/late-64.ts")).toEqual([]);
+      expect(after.getAllBranches().map((branch) => ({
+        branch,
+        chunks: after.getBranchChunkIds(branch),
+        symbols: after.getBranchSymbolIds(branch),
+      }))).toEqual(beforeBranches);
+      expect(fs.readFileSync(fileHashesPath, "utf-8")).toBe(previousFileHashes);
+      expect(fs.existsSync(failedBatchesPath)).toBe(false);
+      expect(fs.readdirSync(indexDir).some((entry) => (
+        entry.startsWith(".failed-batches.json.") && entry.endsWith(".tmp")
+      ))).toBe(false);
+    } finally {
+      after.close();
+    }
+  });
 });

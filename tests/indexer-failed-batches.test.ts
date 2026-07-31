@@ -5,12 +5,64 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../src/config/schema.js";
+import { readFailedBatchRecords } from "../src/indexer/failed-state-persistence.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database, VectorStore, hashContent } from "../src/native/index.js";
 import { formatStatus } from "../src/tools/utils.js";
 
 function projectIdentityHash(projectRoot: string): string {
   return hashContent(fs.realpathSync.native(projectRoot)).slice(0, 16);
+}
+
+function readLogicalFailedBatches(filePath: string): unknown {
+  // Preserve the legacy tests' logical batch assertions. Raw JSONL shape is
+  // covered separately by failed-state persistence and file-batching tests.
+  const latestById = new Map<string, {
+    chunk: unknown;
+    error: string;
+    attemptCount: number;
+    lastAttempt: string;
+  }>();
+  let anonymousId = 0;
+
+  for (const record of readFailedBatchRecords<unknown>(filePath)) {
+    for (const chunk of record.chunks) {
+      const id = chunk && typeof chunk === "object" && typeof (chunk as { id?: unknown }).id === "string"
+        ? (chunk as { id: string }).id
+        : `anonymous-${anonymousId++}`;
+      const existing = latestById.get(id);
+      if (!existing || record.attemptCount >= existing.attemptCount) {
+        latestById.set(id, {
+          chunk,
+          error: record.error,
+          attemptCount: record.attemptCount,
+          lastAttempt: record.lastAttempt,
+        });
+      }
+    }
+  }
+
+  const grouped = new Map<string, {
+    chunks: unknown[];
+    error: string;
+    attemptCount: number;
+    lastAttempt: string;
+  }>();
+  for (const latest of latestById.values()) {
+    const key = `${latest.attemptCount}:${latest.lastAttempt}:${latest.error}`;
+    const existing = grouped.get(key);
+    if (existing) {
+      existing.chunks.push(latest.chunk);
+    } else {
+      grouped.set(key, {
+        chunks: [latest.chunk],
+        error: latest.error,
+        attemptCount: latest.attemptCount,
+        lastAttempt: latest.lastAttempt,
+      });
+    }
+  }
+  return Array.from(grouped.values());
 }
 
 describe("indexer failed batch recovery", () => {
@@ -802,7 +854,7 @@ describe("indexer failed batch recovery", () => {
     expect(embedPrompts.every((prompt) => prompt.includes("Part "))).toBe(true);
 
     const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
-    const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+    const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
       chunks: Array<{ id: string }>;
       attemptCount: number;
       error: string;
@@ -827,7 +879,7 @@ describe("indexer failed batch recovery", () => {
       expect(failedStats.indexedChunks).toBe(0);
 
       const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
-      const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+      const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
         chunks: Array<{ id: string }>;
         error: string;
         attemptCount: number;
@@ -902,7 +954,7 @@ describe("indexer failed batch recovery", () => {
       expect(retry.remaining).toBe(1);
 
       const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
-      const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+      const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
         chunks: Array<{ id: string }>;
         error: string;
         attemptCount: number;
@@ -968,7 +1020,7 @@ describe("indexer failed batch recovery", () => {
       expect(retry.failed).toBe(1);
       expect(retry.remaining).toBe(1);
 
-      const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+      const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
         chunks: Array<{ id: string }>;
         error: string;
         attemptCount: number;
@@ -1032,7 +1084,7 @@ describe("indexer failed batch recovery", () => {
     expect(failedStats.indexedChunks).toBe(0);
 
     const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
-    const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+    const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
       chunks: Array<{ id: string }>;
       error: string;
       attemptCount: number;
@@ -1120,7 +1172,7 @@ describe("indexer failed batch recovery", () => {
 
     const retry = await indexer.retryFailedBatches();
     const status = await indexer.getStatus();
-    const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+    const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
       chunks: Array<{ id: string }>;
       error: string;
       attemptCount: number;
@@ -1195,7 +1247,7 @@ describe("indexer failed batch recovery", () => {
     const stats = await indexer.index();
     expect(stats.failedChunks).toBe(0);
 
-    const persistedBatches = JSON.parse(fs.readFileSync(globalFailedBatchesPath, "utf-8")) as Array<{
+    const persistedBatches = readLogicalFailedBatches(globalFailedBatchesPath) as Array<{
       chunks: Array<{ metadata: { filePath: string }; text?: string; texts?: unknown[] }>;
     }>;
     const foreignChunk = persistedBatches
@@ -1286,7 +1338,7 @@ describe("indexer failed batch recovery", () => {
     expect(retry.failed).toBe(1);
     expect(retry.remaining).toBe(1);
 
-    const persistedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+    const persistedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
       attemptCount: number;
       error: string;
     }>;
@@ -1453,7 +1505,7 @@ describe("indexer failed batch recovery", () => {
     // Step 5: Assert the failed batch persists AND the branch catalog still contains that chunk id
     expect(retryStats.failedChunks).toBeGreaterThan(0);
 
-    const failedBatchesAfter = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+    const failedBatchesAfter = readLogicalFailedBatches(failedBatchesPath) as Array<{
       chunks: Array<{ id: string }>;
       error: string;
     }>;
@@ -1535,7 +1587,7 @@ describe("indexer failed batch recovery", () => {
 
       const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
       if (fs.existsSync(failedBatchesPath)) {
-        const failedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+        const failedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
           error: string;
         }>;
         expect(failedBatches.length).toBeGreaterThan(0);
@@ -1594,7 +1646,7 @@ describe("indexer failed batch recovery", () => {
 
       const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
       if (fs.existsSync(failedBatchesPath)) {
-        const failedBatches = JSON.parse(fs.readFileSync(failedBatchesPath, "utf-8")) as Array<{
+        const failedBatches = readLogicalFailedBatches(failedBatchesPath) as Array<{
           error: string;
         }>;
         expect(failedBatches.length).toBeGreaterThan(0);

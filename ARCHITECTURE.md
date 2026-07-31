@@ -68,6 +68,11 @@ Source Files → Parse → Chunk → Embed → Store
    └─ Compare file hashes (xxhash) against stored hashes
    └─ Only process new/modified files
 
+2a. BATCH: Bound changed-file working state
+   └─ Retain path, hash, and byte-size descriptors during discovery
+   └─ Process in discovery order, up to 64 files or 8 MiB of source per batch
+   └─ A single file larger than 8 MiB is processed alone
+
 3. PARSE: Tree-sitter language-aware parsing
    └─ native/src/parser.rs: parse_file()
    └─ Extracts: functions, classes, methods, interfaces
@@ -87,6 +92,10 @@ Source Files → Parse → Chunk → Embed → Store
    └─ usearch: vector index for similarity search
    └─ BM25: inverted index for keyword search
 ```
+
+Changed-file source, parse results, pending embedding text, and queued requests are released between file batches. Embedding requests still use provider-aware dynamic batches and queue backpressure. Failed embedding records are written incrementally as versioned JSONL and streamed during retry, while legacy JSON-array state remains readable.
+
+SQLite mutations participate in one coordinated write transaction, so an interrupted run does not expose partially indexed rows to other connections. Vector, BM25, file-hash, and branch-catalog publication remains at the existing final boundary. These separate artifacts are not claimed to form one cross-storage atomic transaction.
 
 ### Search Flow
 
@@ -139,6 +148,8 @@ Focused helpers keep ranking and batch mechanics out of the orchestrator:
 - `search-ranking.ts` handles generic fusion, filtering, diversity, and result assembly.
 - `definition-ranking.ts` handles definition-query normalization and evidence ranking.
 - `embedding-batches.ts` handles pending embedding batches, retry state, and vector pooling.
+- `file-batches.ts` defines deterministic file-count and source-byte batch limits.
+- `failed-state-persistence.ts` streams versioned JSONL failure state and legacy reads.
 - `call-graph-constants.ts` owns the shared declaration chunk-type allowlist.
 
 Key public methods include:
