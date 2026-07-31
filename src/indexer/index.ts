@@ -3608,9 +3608,13 @@ export class Indexer {
       }
     }
 
-    if (chunkDataBatch.length > 0) {
-      database.upsertChunksBatch(chunkDataBatch);
-    }
+    database.beginWriteTransaction();
+    let writeTransactionActive = true;
+
+    try {
+      if (chunkDataBatch.length > 0) {
+        database.upsertChunksBatch(chunkDataBatch);
+      }
 
     const allSymbolIds = new Set<string>();
     const symbolsByFile = new Map<string, SymbolData[]>();
@@ -3792,6 +3796,8 @@ export class Indexer {
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
+      database.commitWriteTransaction();
+      writeTransactionActive = false;
       stats.durationMs = Date.now() - startTime;
       onProgress?.({
         phase: "complete",
@@ -3830,6 +3836,8 @@ export class Indexer {
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
       this.indexCompatibility = { compatible: true };
+      database.commitWriteTransaction();
+      writeTransactionActive = false;
       stats.durationMs = Date.now() - startTime;
       onProgress?.({
         phase: "complete",
@@ -4123,6 +4131,9 @@ export class Indexer {
       this.saveFileHashCache();
     }
 
+    database.commitWriteTransaction();
+    writeTransactionActive = false;
+
     if (this.config.indexing.autoGc && stats.removedChunks > 0) {
       const gcReset = await this.maybeRunOrphanGc();
       if (gcReset) {
@@ -4181,6 +4192,18 @@ export class Indexer {
     });
 
     return stats;
+    } catch (error) {
+      if (writeTransactionActive) {
+        try {
+          database.rollbackWriteTransaction();
+        } catch (rollbackError) {
+          this.logger.error("Failed to roll back indexing database transaction", {
+            error: getErrorMessage(rollbackError),
+          });
+        }
+      }
+      throw error;
+    }
   }
 
   private async getQueryEmbedding(query: string, provider: EmbeddingProviderInterface): Promise<number[]> {
