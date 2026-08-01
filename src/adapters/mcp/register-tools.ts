@@ -20,6 +20,10 @@ import {
   INDEX_LOG_CATEGORIES,
   INDEX_LOG_LEVELS,
   RELATIONSHIP_TYPES,
+  CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
+  CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MIN_SIZE,
 } from "../../tools/contracts.js";
 import {
   executeCallGraph,
@@ -323,9 +327,9 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     "hub nodes with cross-community connections. Use to understand architectural coupling.",
     {
       branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
-      minSize: allowNullAsUndefined(z.number().int().min(1).optional().default(1)).describe("Minimum community size to include (default: 1)"),
-      limit: allowNullAsUndefined(z.number().int().min(1).max(100).optional().default(20)).describe("Maximum number of communities and hub nodes to return (default: 20)"),
-      hubThreshold: allowNullAsUndefined(z.number().int().min(0).optional().default(5)).describe("Minimum cross-community connections to flag a hub node (default: 5)"),
+      minSize: allowNullAsUndefined(z.number().int().min(CODE_COMMUNITIES_MIN_SIZE).optional().default(CODE_COMMUNITIES_MIN_SIZE)).describe("Minimum community size to include (default: 1)"),
+      limit: allowNullAsUndefined(z.number().int().min(1).max(CODE_COMMUNITIES_MAX_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_LIMIT)).describe("Maximum number of communities and hub nodes to return (default: 20)"),
+      hubThreshold: allowNullAsUndefined(z.number().int().min(0).optional().default(CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD)).describe("Minimum distinct cross-community neighbors to flag a hub node (default: 5)"),
     },
     async (args) => {
       const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args);

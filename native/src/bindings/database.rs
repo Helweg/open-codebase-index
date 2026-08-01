@@ -1018,6 +1018,7 @@ impl Database {
                     file_path: r.file_path,
                     community_id: r.community_id,
                     community_label: r.community_label,
+                    cross_community_connections: r.cross_community_connections,
                 })
                 .collect())
         })

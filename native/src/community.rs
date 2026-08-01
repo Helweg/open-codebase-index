@@ -18,6 +18,7 @@ pub struct CommunityAssignment {
     pub file_path: String,
     pub community_id: u32,
     pub community_label: String,
+    pub cross_community_connections: u32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -425,7 +426,10 @@ pub fn detect_communities(
         let mut best_deg: usize = 0;
         for m in &members {
             let deg = degrees.get(m).unwrap_or(&0);
-            if best_member.is_none() || *deg > best_deg {
+            if best_member.is_none()
+                || *deg > best_deg
+                || (*deg == best_deg && m < best_member.unwrap())
+            {
                 best_deg = *deg;
                 best_member = Some(m);
             }
@@ -437,12 +441,26 @@ pub fn detect_communities(
 
         for m in &members {
             if let Some(sym) = symbol_map.get(m) {
+                let member_label = labels.get(m).unwrap_or(m);
+                let cross_community_connections = adjacency
+                    .get(m)
+                    .map(|neighbors| {
+                        neighbors
+                            .iter()
+                            .filter(|neighbor| {
+                                active_ids.contains(*neighbor)
+                                    && labels.get(*neighbor).unwrap_or(*neighbor) != member_label
+                            })
+                            .count() as u32
+                    })
+                    .unwrap_or(0);
                 results.push(CommunityAssignment {
                     symbol_id: sym.id.clone(),
                     symbol_name: sym.name.clone(),
                     file_path: sym.file_path.clone(),
                     community_id,
                     community_label: community_label.clone(),
+                    cross_community_connections,
                 });
             }
         }
@@ -553,6 +571,7 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
 mod tests {
     use super::*;
     use crate::db::CallEdgeRow;
+    use std::time::{Duration, Instant};
     use tempfile::TempDir;
 
     fn setup_test_db() -> (TempDir, Connection) {
@@ -875,6 +894,10 @@ mod tests {
             .unwrap()
             .community_id;
         assert_eq!(a_comm, b_comm);
+        assert!(results
+            .iter()
+            .filter(|result| matches!(result.symbol_id.as_str(), "s_a" | "s_b"))
+            .all(|result| result.community_label == "A"));
 
         let c_comm = results
             .iter()
@@ -888,6 +911,10 @@ mod tests {
             .community_id;
         assert_eq!(c_comm, d_comm);
         assert_ne!(a_comm, c_comm);
+        assert!(results
+            .iter()
+            .filter(|result| matches!(result.symbol_id.as_str(), "s_c" | "s_d"))
+            .all(|result| result.community_label == "C"));
     }
 
     #[test]
@@ -974,6 +1001,161 @@ mod tests {
             .unwrap()
             .community_id;
         assert_eq!(comm_a, comm_b);
+    }
+
+    #[test]
+    fn test_communities_count_distinct_cross_community_neighbors() {
+        let (_temp, mut conn) = setup_test_db();
+        let mut symbols = Vec::new();
+        for group in ["a", "b"] {
+            for index in 0..5 {
+                let id = format!("s_{group}_{index}");
+                symbols.push(make_symbol(&id, &id, &format!("src/{group}/{index}.ts")));
+            }
+            let bridge_id = format!("s_{group}_bridge");
+            symbols.push(make_symbol(
+                &bridge_id,
+                &bridge_id,
+                &format!("src/{group}/bridge.ts"),
+            ));
+        }
+        db::upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let mut edges = Vec::new();
+        for group in ["a", "b"] {
+            for left in 0..5 {
+                for right in (left + 1)..5 {
+                    let from = format!("s_{group}_{left}");
+                    let to = format!("s_{group}_{right}");
+                    edges.push(make_edge(
+                        &format!("e_{group}_{left}_{right}"),
+                        &from,
+                        &to,
+                        Some(&to),
+                    ));
+                }
+            }
+            edges.push(make_edge(
+                &format!("e_{group}_bridge"),
+                &format!("s_{group}_0"),
+                &format!("s_{group}_bridge"),
+                Some(&format!("s_{group}_bridge")),
+            ));
+        }
+        edges.push(make_edge(
+            "bridge",
+            "s_a_bridge",
+            "s_b_bridge",
+            Some("s_b_bridge"),
+        ));
+        edges.push(make_edge(
+            "bridge_duplicate",
+            "s_a_bridge",
+            "s_b_bridge",
+            Some("s_b_bridge"),
+        ));
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let results = detect_communities(&conn, "main", None).unwrap();
+        let community_count = results
+            .iter()
+            .map(|result| result.community_id)
+            .collect::<HashSet<_>>()
+            .len();
+        assert_eq!(community_count, 2);
+        let communities_by_symbol = results
+            .iter()
+            .map(|result| (result.symbol_id.as_str(), result.community_id))
+            .collect::<HashMap<_, _>>();
+        let mut expected_neighbors: HashMap<&str, HashSet<&str>> = HashMap::new();
+        for edge in &edges {
+            let Some(to_symbol_id) = edge.to_symbol_id.as_deref() else {
+                continue;
+            };
+            if communities_by_symbol.get(edge.from_symbol_id.as_str())
+                != communities_by_symbol.get(to_symbol_id)
+            {
+                expected_neighbors
+                    .entry(edge.from_symbol_id.as_str())
+                    .or_default()
+                    .insert(to_symbol_id);
+                expected_neighbors
+                    .entry(to_symbol_id)
+                    .or_default()
+                    .insert(edge.from_symbol_id.as_str());
+            }
+        }
+        assert!(!expected_neighbors.is_empty());
+        for result in &results {
+            assert_eq!(
+                result.cross_community_connections,
+                expected_neighbors
+                    .get(result.symbol_id.as_str())
+                    .map(|neighbors| neighbors.len() as u32)
+                    .unwrap_or(0),
+                "unexpected cross-community count for {}",
+                result.symbol_id
+            );
+        }
+    }
+
+    #[test]
+    fn test_communities_10k_nodes_complete_under_one_second() {
+        const NODE_COUNT: usize = 10_000;
+        const COMMUNITY_SIZE: usize = 100;
+
+        let (_temp, mut conn) = setup_test_db();
+        let symbols = (0..NODE_COUNT)
+            .map(|index| {
+                make_symbol(
+                    &format!("s_{index}"),
+                    &format!("symbol_{index}"),
+                    &format!("src/{}/{}.ts", index / COMMUNITY_SIZE, index),
+                )
+            })
+            .collect::<Vec<_>>();
+        db::upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "main",
+            &symbols
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let edges = (0..NODE_COUNT)
+            .filter(|index| index % COMMUNITY_SIZE != COMMUNITY_SIZE - 1)
+            .map(|index| {
+                make_edge(
+                    &format!("e_{index}"),
+                    &format!("s_{index}"),
+                    &format!("symbol_{}", index + 1),
+                    Some(&format!("s_{}", index + 1)),
+                )
+            })
+            .collect::<Vec<_>>();
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let started = Instant::now();
+        let results = detect_communities(&conn, "main", None).unwrap();
+        let elapsed = started.elapsed();
+
+        assert_eq!(results.len(), NODE_COUNT);
+        assert!(
+            elapsed < Duration::from_secs(1),
+            "10k-node community detection took {elapsed:?}"
+        );
     }
 
     #[test]

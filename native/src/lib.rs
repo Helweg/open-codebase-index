@@ -298,6 +298,7 @@ pub struct CommunityData {
     pub file_path: String,
     pub community_id: u32,
     pub community_label: String,
+    pub cross_community_connections: u32,
 }
 
 #[napi(object)]

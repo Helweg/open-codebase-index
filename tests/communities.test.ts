@@ -6,6 +6,7 @@ import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { code_communities, initializeTools } from "../src/tools/index.js";
 import type { Database } from "../src/native/index.js";
+import { buildCodeCommunitiesResult, formatCodeCommunities } from "../src/tools/format-communities.js";
 
 vi.mock("child_process", () => ({
   execFile: vi.fn(),
@@ -150,13 +151,78 @@ describe("code_communities tool", () => {
   });
 
   it("reports hub symbols with cross-community connections", async () => {
+    const result = formatCodeCommunities(buildCodeCommunitiesResult([
+      {
+        symbolId: "hub",
+        symbolName: "Logger",
+        filePath: "src/logger.ts",
+        communityId: 0,
+        communityLabel: "Core",
+        crossCommunityConnections: 2,
+      },
+      {
+        symbolId: "adapter",
+        symbolName: "Adapter",
+        filePath: "src/adapter.ts",
+        communityId: 1,
+        communityLabel: "Adapters",
+        crossCommunityConnections: 1,
+      },
+    ], [
+      {
+        symbolId: "hub",
+        symbolName: "Logger",
+        filePath: "src/logger.ts",
+        callerCount: 4,
+        calleeCount: 2,
+        totalConnections: 6,
+      },
+      {
+        symbolId: "adapter",
+        symbolName: "Adapter",
+        filePath: "src/adapter.ts",
+        callerCount: 1,
+        calleeCount: 1,
+        totalConnections: 2,
+      },
+    ], { hubThreshold: 2 }));
+    expect(result).toContain("Hub nodes (1 shown");
+    expect(result).toContain("Logger (2 cross-community");
+    expect(result).not.toContain("Adapter (1 cross-community");
+  });
+
+  it("returns deterministic output across repeated calls", async () => {
     const indexer = await createIndexer();
     await setupTwoCommunityGraph(indexer);
 
-    const result = await code_communities.execute({ branch: "main", hubThreshold: 1 }, { worktree: tempDir });
-    expect(result).toContain("Hub nodes:");
-    // Logger should appear as a hub node since it has cross-community connections
-    expect(result).toContain("Logger");
+    const first = await code_communities.execute({ branch: "main" }, { worktree: tempDir });
+    const second = await code_communities.execute({ branch: "main" }, { worktree: tempDir });
+
+    expect(second).toBe(first);
+  });
+
+  it("normalizes explicit branch names for global-scope indexes", async () => {
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      scope: "global",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-model",
+        dimensions: 8,
+      },
+      indexing: { watchFiles: false },
+    });
+    const indexer = new Indexer(tempDir, config, "opencode", {
+      indexPath: path.join(tempDir, "global-index"),
+    });
+    _indexers.push(indexer);
+    await indexer.index();
+
+    const defaultCommunities = await indexer.detectCommunities();
+    const explicitCommunities = await indexer.detectCommunities("main");
+
+    expect(explicitCommunities).toEqual(defaultCommunities);
+    expect(explicitCommunities.length).toBeGreaterThan(0);
   });
 
   it("respects minSize filter", async () => {

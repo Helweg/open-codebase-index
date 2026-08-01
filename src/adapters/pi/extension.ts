@@ -40,6 +40,12 @@ import {
 import { registerPiCallGraphTools } from "./call-graph.js";
 import { stopAutoIndex } from "../../utils/auto-index.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
+import {
+  CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
+  CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MIN_SIZE,
+} from "../../tools/contracts.js";
 
 const HOST = "pi" as const;
 
@@ -298,9 +304,9 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     description: "Discover natural module boundaries and hub symbols using graph community detection. Clusters symbols by call-graph connectivity to reveal architecture.",
     parameters: Type.Object({
       branch: Type.Optional(Type.String()),
-      minSize: Type.Optional(Type.Number({ default: 1 })),
-      limit: Type.Optional(Type.Number({ default: 20 })),
-      hubThreshold: Type.Optional(Type.Number({ default: 5 })),
+      minSize: Type.Optional(Type.Integer({ minimum: CODE_COMMUNITIES_MIN_SIZE, default: CODE_COMMUNITIES_MIN_SIZE })),
+      limit: Type.Optional(Type.Integer({ minimum: 1, maximum: CODE_COMMUNITIES_MAX_LIMIT, default: CODE_COMMUNITIES_DEFAULT_LIMIT })),
+      hubThreshold: Type.Optional(Type.Integer({ minimum: 0, default: CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await getCodeCommunities(projectRoot(ctx), HOST, params);

@@ -24,54 +24,8 @@ export interface CodeCommunitiesResult {
   totalCommunities: number;
 }
 
-/**
- * Compute cross-community connections for each symbol.
- * A cross-community connection is a call edge between two symbols in different communities.
- */
-function computeCrossCommunityConnections(
-  communities: CommunityData[],
-  centrality: CentralityData[],
-): Map<string, number> {
-  // Map symbolId -> communityId
-  const symbolToCommunity = new Map<string, number>();
-  for (const c of communities) {
-    symbolToCommunity.set(c.symbolId, c.communityId);
-  }
-
-  // For each symbol, count how many of its connected symbols are in a different community.
-  // We approximate this using caller_count + callee_count as the total edge set,
-  // then subtract edges within the same community using the community membership.
-  // Since we don't have the raw edges here, we use centrality data: a hub connecting
-  // multiple communities has high total_connections relative to its own community size.
-  //
-  // A simpler and more useful metric: count how many distinct communities a symbol's
-  // neighbors belong to. We can derive this from the community assignments and
-  // centrality degree, but without the edge list we use a proxy:
-  // crossCommunityConnections = total_connections - (community_size - 1)
-  // (in-community connections are at most community_size - 1 for a single node).
-  // This is a lower bound, which is fine for ranking hub nodes.
-
-  const communitySizes = new Map<number, number>();
-  for (const c of communities) {
-    communitySizes.set(c.communityId, (communitySizes.get(c.communityId) ?? 0) + 1);
-  }
-
-  const result = new Map<string, number>();
-  for (const cent of centrality) {
-    const commId = symbolToCommunity.get(cent.symbolId);
-    if (commId === undefined) {
-      result.set(cent.symbolId, cent.totalConnections);
-      continue;
-    }
-    const ownCommunitySize = communitySizes.get(commId) ?? 1;
-    // In-community connections are at most (ownCommunitySize - 1) in each direction,
-    // so at most 2 * (ownCommunitySize - 1) total (caller + callee).
-    const maxInCommunity = 2 * (ownCommunitySize - 1);
-    const crossCommunity = Math.max(0, cent.totalConnections - maxInCommunity);
-    result.set(cent.symbolId, crossCommunity);
-  }
-
-  return result;
+function compareText(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 export function buildCodeCommunitiesResult(
@@ -106,14 +60,13 @@ export function buildCodeCommunitiesResult(
           symbolName: m.symbolName,
           filePath: m.filePath,
         }))
-        .sort((a, b) => a.symbolName.localeCompare(b.symbolName) || a.symbolId.localeCompare(b.symbolId)),
+        .sort((a, b) => compareText(a.symbolName, b.symbolName) || compareText(a.symbolId, b.symbolId)),
     }))
     .filter((c) => c.symbolCount >= minSize)
-    .sort((a, b) => b.symbolCount - a.symbolCount || a.label.localeCompare(b.label))
+    .sort((a, b) => b.symbolCount - a.symbolCount || compareText(a.label, b.label) || a.id - b.id)
     .slice(0, limit);
 
-  // Compute cross-community connections for hub detection
-  const crossCommunityMap = computeCrossCommunityConnections(communities, centrality);
+  const communityBySymbol = new Map(communities.map((community) => [community.symbolId, community]));
 
   // Hub nodes: symbols with cross-community connections >= hubThreshold
   const hubNodes = centrality
@@ -124,13 +77,13 @@ export function buildCodeCommunitiesResult(
       callerCount: c.callerCount,
       calleeCount: c.calleeCount,
       totalConnections: c.totalConnections,
-      crossCommunityConnections: crossCommunityMap.get(c.symbolId) ?? 0,
+      crossCommunityConnections: communityBySymbol.get(c.symbolId)?.crossCommunityConnections ?? 0,
     }))
     .filter((h) => h.crossCommunityConnections >= hubThreshold)
     .sort((a, b) =>
       b.crossCommunityConnections - a.crossCommunityConnections
       || b.totalConnections - a.totalConnections
-      || a.symbolId.localeCompare(b.symbolId)
+      || compareText(a.symbolId, b.symbolId)
     )
     .slice(0, limit);
 

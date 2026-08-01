@@ -91,3 +91,8 @@ export interface SharedCodeCommunitiesArgs {
   limit?: number;
   hubThreshold?: number;
 }
+
+export const CODE_COMMUNITIES_MIN_SIZE = 1;
+export const CODE_COMMUNITIES_DEFAULT_LIMIT = 20;
+export const CODE_COMMUNITIES_MAX_LIMIT = 100;
+export const CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD = 5;

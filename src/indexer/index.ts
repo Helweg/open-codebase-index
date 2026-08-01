@@ -1385,6 +1385,12 @@ export class Indexer {
     return `${this.projectIdentityHash}:${branchName}`;
   }
 
+  private resolveBranchCatalogKey(branchName?: string): string {
+    return branchName === undefined
+      ? this.getBranchCatalogKey()
+      : this.getBranchCatalogKeyFor(branchName);
+  }
+
   private getBranchCommitMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
     const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
     return `index.branchCommit.${hashContent(branchKey).slice(0, 24)}`;
@@ -5669,7 +5675,7 @@ export class Indexer {
   async getSymbolsForBranch(branch?: string): Promise<SymbolData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
-    const resolvedBranch = branch ?? this.getBranchCatalogKey();
+    const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.getSymbolsForBranch(resolvedBranch)
       .map((symbol) => this.resolveFilePathRecord(symbol));
   }
@@ -5677,7 +5683,7 @@ export class Indexer {
   async getSymbolsForFiles(filePaths: string[], branch?: string): Promise<SymbolData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
-    const resolvedBranch = branch ?? this.getBranchCatalogKey();
+    const resolvedBranch = this.resolveBranchCatalogKey(branch);
     const storedFilePaths = filePaths.map((filePath) => this.toStoredFilePath(filePath));
     return database.getSymbolsForFiles(storedFilePaths, resolvedBranch)
       .map((symbol) => this.resolveFilePathRecord(symbol));
@@ -5698,7 +5704,7 @@ export class Indexer {
   async detectCommunities(branch?: string, symbolIds?: string[]): Promise<CommunityData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
-    const resolvedBranch = branch ?? this.getBranchCatalogKey();
+    const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.detectCommunities(resolvedBranch, symbolIds)
       .map((entry) => this.resolveFilePathRecord(entry));
   }
@@ -5706,7 +5712,7 @@ export class Indexer {
   async computeCentrality(branch?: string): Promise<CentralityData[]> {
     const { database, readIssues } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "database");
-    const resolvedBranch = branch ?? this.getBranchCatalogKey();
+    const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.computeCentrality(resolvedBranch)
       .map((entry) => this.resolveFilePathRecord(entry));
   }

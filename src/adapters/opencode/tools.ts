@@ -9,6 +9,10 @@ import {
   INDEX_LOG_LEVELS,
   INDEX_LOG_CATEGORIES,
   RELATIONSHIP_TYPES,
+  CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
+  CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MIN_SIZE,
 } from "../../tools/contracts.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
@@ -332,9 +336,9 @@ export const code_communities: ToolDefinition = tool({
     "with cross-community connections. Use to understand architectural coupling and module structure.",
   args: {
     branch: z.string().optional().describe("Branch name to analyze (defaults to current branch)"),
-    minSize: z.number().optional().default(1).describe("Minimum community size to include (default: 1)"),
-    limit: z.number().optional().default(20).describe("Maximum number of communities and hub nodes to return (default: 20)"),
-    hubThreshold: z.number().optional().default(5).describe("Minimum cross-community connections to flag a hub node (default: 5)"),
+    minSize: z.number().int().min(CODE_COMMUNITIES_MIN_SIZE).optional().default(CODE_COMMUNITIES_MIN_SIZE).describe("Minimum community size to include (default: 1)"),
+    limit: z.number().int().min(1).max(CODE_COMMUNITIES_MAX_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_LIMIT).describe("Maximum number of communities and hub nodes to return (default: 20)"),
+    hubThreshold: z.number().int().min(0).optional().default(CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD).describe("Minimum distinct cross-community neighbors to flag a hub node (default: 5)"),
   },
   async execute(args, context) {
     return (await executeCodeCommunities(context?.worktree, DEFAULT_HOST, args)).text;
