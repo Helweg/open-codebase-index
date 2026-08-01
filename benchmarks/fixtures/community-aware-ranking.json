@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "name": "community-aware-ranking",
+  "methodology": {
+    "baseline": "Candidates are sorted only by their supplied retrieval score and id.",
+    "candidatePools": "Hand-labeled fixed candidate pools isolate post-retrieval ordering.",
+    "metrics": "Mean reciprocal rank over one relevant same-community candidate per query.",
+    "limitations": "This does not measure embedding recall, community detection quality, indexing latency, or end-to-end agent success."
+  },
+  "boost": 0.25,
+  "queries": [
+    {
+      "id": "promotes-related-candidate",
+      "relevantId": "auth-helper",
+      "sameCommunityIds": ["auth-helper"],
+      "candidates": [
+        { "id": "generic-helper", "score": 0.9 },
+        { "id": "auth-helper", "score": 0.8 }
+      ]
+    },
+    {
+      "id": "preserves-already-correct-order",
+      "relevantId": "session-loader",
+      "sameCommunityIds": ["session-loader"],
+      "candidates": [
+        { "id": "session-loader", "score": 0.95 },
+        { "id": "unrelated-loader", "score": 0.8 }
+      ]
+    },
+    {
+      "id": "no-context-guardrail",
+      "relevantId": "query-builder",
+      "sameCommunityIds": [],
+      "candidates": [
+        { "id": "query-builder", "score": 0.92 },
+        { "id": "other", "score": 0.7 }
+      ]
+    }
+  ]
+}
