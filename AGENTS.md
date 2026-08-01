@@ -173,7 +173,7 @@ Prefer existing batch database methods for bulk indexing. Do not replace them w/
 
 ## Package Identity and Compatibility
 
- checked-in package remains `opencode-codebase-index@0.21.0`while release workflow publishes both:
+ checked-in package remains `opencode-codebase-index@0.22.0`while release workflow publishes both:
 
 - `open-codebase-index`preferred host-neutral package; exports `open-codebase-index-mcp` and legacy binary alias
 - `opencode-codebase-index`synchronized compatibility package
