@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Evaluation quality gate**: Replaced the retired GitHub Models fallback with a pinned local Ollama provider, refreshed stale smoke-dataset paths after the adapter and ranking refactors, explicitly scoped scheduled runs to the smoke dataset, and fail fast when CI reindexing produces no searchable vectors instead of reporting a misleading zero-quality score.
+
 ## [0.22.0] - 2026-08-01
 
 ### Added

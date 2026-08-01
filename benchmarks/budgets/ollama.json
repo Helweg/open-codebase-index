@@ -1,5 +1,5 @@
 {
-  "name": "github-models-eval-budget",
+  "name": "ollama-eval-budget",
   "failOnMissingBaseline": false,
   "thresholds": {
     "minHitAt5": 0.75,

@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  models: read
 
 jobs:
   eval-quality:
@@ -48,14 +47,10 @@ jobs:
           EVAL_EMBED_API_KEY: ${{ secrets.EVAL_EMBED_API_KEY }}
           EVAL_EMBED_MODEL: ${{ secrets.EVAL_EMBED_MODEL }}
           EVAL_EMBED_DIMENSIONS: ${{ secrets.EVAL_EMBED_DIMENSIONS }}
-          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          MODEL="${EVAL_EMBED_MODEL:-text-embedding-3-small}"
-          DIMS="${EVAL_EMBED_DIMENSIONS:-1536}"
-
           if [ -n "$EVAL_EMBED_BASE_URL" ] || [ -n "$EVAL_EMBED_API_KEY" ]; then
             if [ -z "$EVAL_EMBED_BASE_URL" ] || [ -z "$EVAL_EMBED_API_KEY" ]; then
-              echo "If overriding the default GitHub Models provider, both EVAL_EMBED_BASE_URL and EVAL_EMBED_API_KEY must be set."
+              echo "If overriding the default Ollama provider, both EVAL_EMBED_BASE_URL and EVAL_EMBED_API_KEY must be set."
               exit 1
             fi
 
@@ -64,22 +59,39 @@ jobs:
             echo "against_path=benchmarks/baselines/eval-baseline-summary.json" >> "$GITHUB_OUTPUT"
             echo "base_url=$EVAL_EMBED_BASE_URL" >> "$GITHUB_OUTPUT"
             echo "api_key=$EVAL_EMBED_API_KEY" >> "$GITHUB_OUTPUT"
+            echo "model=${EVAL_EMBED_MODEL:-text-embedding-3-small}" >> "$GITHUB_OUTPUT"
+            echo "dimensions=${EVAL_EMBED_DIMENSIONS:-1536}" >> "$GITHUB_OUTPUT"
           else
-            if [ -z "$GITHUB_TOKEN" ]; then
-              echo "Missing GitHub Actions token for GitHub Models fallback."
-              exit 1
-            fi
-
-            echo "provider_source=github-models" >> "$GITHUB_OUTPUT"
-            echo "budget_path=benchmarks/budgets/github-models.json" >> "$GITHUB_OUTPUT"
+            echo "provider_source=ollama" >> "$GITHUB_OUTPUT"
+            echo "budget_path=benchmarks/budgets/ollama.json" >> "$GITHUB_OUTPUT"
             echo "against_path=" >> "$GITHUB_OUTPUT"
-            echo "base_url=https://models.inference.ai.azure.com" >> "$GITHUB_OUTPUT"
-            echo "api_key=$GITHUB_TOKEN" >> "$GITHUB_OUTPUT"
-            echo "::notice title=Eval quality gate provider::Using GitHub Models via GITHUB_TOKEN with the GitHub Models CI budget."
+            echo "model=nomic-embed-text" >> "$GITHUB_OUTPUT"
+            echo "dimensions=768" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Eval quality gate provider::Using local Ollama because no custom embedding provider secrets are configured."
           fi
 
-          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
-          echo "dimensions=$DIMS" >> "$GITHUB_OUTPUT"
+      - name: Start local Ollama evaluation provider
+        if: steps.eval-provider.outputs.provider_source == 'ollama'
+        run: |
+          OLLAMA_VERSION=0.32.5
+          INSTALLER="$RUNNER_TEMP/ollama-install.sh"
+          curl --fail --show-error --silent --location \
+            "https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/install.sh" \
+            --output "$INSTALLER"
+          echo "25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f  $INSTALLER" | sha256sum --check
+          OLLAMA_VERSION="$OLLAMA_VERSION" sh "$INSTALLER"
+          ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:11434/api/tags >/dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              cat "$RUNNER_TEMP/ollama.log"
+              exit 1
+            fi
+            sleep 2
+          done
+          ollama pull "${{ steps.eval-provider.outputs.model }}"
 
       - name: Ensure baseline exists for baseline-driven budget
         if: steps.eval-provider.outputs.against_path != ''
@@ -89,21 +101,16 @@ jobs:
             exit 1
           fi
 
-      - name: Create eval quality config from secrets
+      - name: Create eval quality config
         run: |
-          if [ "${{ steps.eval-provider.outputs.provider_source }}" = "github-models" ]; then
-            EMBED_CONCURRENCY=1
-            EMBED_REQUEST_INTERVAL_MS=5000
-            EMBED_RETRIES=5
-            EMBED_RETRY_DELAY_MS=15000
+          if [ "${{ steps.eval-provider.outputs.provider_source }}" = "ollama" ]; then
+            cp .github/eval-ollama-config.json .github/eval-quality-config.json
           else
             EMBED_CONCURRENCY=3
             EMBED_REQUEST_INTERVAL_MS=1000
             EMBED_RETRIES=3
             EMBED_RETRY_DELAY_MS=1000
-          fi
-
-          cat > .github/eval-quality-config.json <<EOF
+            cat > .github/eval-quality-config.json <<EOF
           {
             "embeddingProvider": "custom",
             "customProvider": {
@@ -140,10 +147,11 @@ jobs:
             }
           }
           EOF
+          fi
 
       - name: Run eval quality gate (real provider config required)
         run: |
-          ARGS=(eval run --config .github/eval-quality-config.json --output eval-results --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
+          ARGS=(eval run --dataset benchmarks/golden/small.json --config .github/eval-quality-config.json --output eval-results --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
           if [ -n "${{ steps.eval-provider.outputs.against_path }}" ]; then
             ARGS+=(--against "${{ steps.eval-provider.outputs.against_path }}")
           fi
