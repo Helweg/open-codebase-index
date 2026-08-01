@@ -122,6 +122,11 @@ jobs:
               "concurrency": $EMBED_CONCURRENCY,
               "requestIntervalMs": $EMBED_REQUEST_INTERVAL_MS
             },
+            "include": [
+              "src/indexer/*.ts",
+              "src/adapters/opencode/*.ts",
+              "src/config/*.ts"
+            ],
             "indexing": {
               "autoIndex": false,
               "watchFiles": false,

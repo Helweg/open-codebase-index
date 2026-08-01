@@ -1,8 +1,10 @@
 import { readFileSync } from "fs";
+import * as path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
 import { evaluateBudgetGate } from "../src/eval/budget.js";
+import { collectFiles } from "../src/utils/files.js";
 import type { EvalBudget, EvalSummary } from "../src/eval/types.js";
 
 function summary(hitAt5: number, mrrAt10: number): EvalSummary {
@@ -77,5 +79,31 @@ describe("effectiveness quality CI", () => {
     expect(workflow).toContain("if-no-files-found: warn");
     expect(workflow).toContain("retention-days: 14");
     expect(workflow).not.toContain(".codebase-index");
+  });
+
+  it("keeps the smoke evaluation corpus focused while covering every expected file", async () => {
+    const config = JSON.parse(
+      readFileSync(".github/eval-ollama-config.json", "utf8"),
+    ) as { include: string[] };
+    const dataset = JSON.parse(
+      readFileSync("benchmarks/golden/small.json", "utf8"),
+    ) as {
+      queries: Array<{
+        expected: { filePath?: string; acceptableFiles?: string[] };
+      }>;
+    };
+    const collected = await collectFiles(process.cwd(), config.include, [], 1_048_576);
+    const relativeFiles = new Set(
+      collected.files.map((file) => path.relative(process.cwd(), file.path)),
+    );
+
+    expect(relativeFiles.size).toBeGreaterThan(10);
+    expect(relativeFiles.size).toBeLessThanOrEqual(40);
+    for (const query of dataset.queries) {
+      const expectedFiles = query.expected.filePath
+        ? [query.expected.filePath]
+        : query.expected.acceptableFiles ?? [];
+      expect(expectedFiles.some((file) => relativeFiles.has(file))).toBe(true);
+    }
   });
 });
