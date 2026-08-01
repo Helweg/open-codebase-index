@@ -95,6 +95,18 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
   try {
     await indexer.index();
 
+    if (options.ciMode) {
+      const indexStatus = await indexer.getStatus();
+      if (!indexStatus.indexed || indexStatus.vectorCount === 0) {
+        const failedBatchDetails = indexStatus.failedBatchesCount > 0
+          ? ` ${indexStatus.failedBatchesCount} embedding batch(es) failed; diagnostics: ${indexStatus.failedBatchesPath ?? "unavailable"}.`
+          : "";
+        throw new Error(
+          `Evaluation reindex produced no searchable vectors.${failedBatchDetails} Check the embedding provider and indexing diagnostics before evaluating retrieval quality.`
+        );
+      }
+    }
+
     const perQuery: PerQueryEvalResult[] = [];
 
     for (const query of dataset.queries) {

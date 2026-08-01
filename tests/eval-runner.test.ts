@@ -149,6 +149,72 @@ describe("eval runner", () => {
     expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
   });
 
+  it("fails fast when reindexing produces no searchable vectors", async () => {
+    fetchSpy.mockResolvedValue(new Response(
+      JSON.stringify({ data: [], usage: { total_tokens: 0 } }),
+      { status: 200 },
+    ));
+
+    const configPath = path.join(tempDir, ".opencode", "codebase-index.json");
+    const config = JSON.parse(readFileSync(configPath, "utf-8")) as Record<string, unknown>;
+    config.indexing = {
+      watchFiles: false,
+      retries: 0,
+      retryDelayMs: 0,
+    };
+    writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
+    writeFileSync(
+      path.join(tempDir, "benchmarks", "budgets", "empty-index.json"),
+      JSON.stringify({
+        name: "empty-index",
+        failOnMissingBaseline: false,
+        thresholds: {},
+      }),
+      "utf-8",
+    );
+
+    await expect(runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      ciMode: true,
+      reindex: true,
+      budgetPath: "benchmarks/budgets/empty-index.json",
+    })).rejects.toThrow(/Evaluation reindex produced no searchable vectors/);
+  });
+
+  it("fails fast in sweep mode when reindexing produces no searchable vectors", async () => {
+    fetchSpy.mockResolvedValue(new Response(
+      JSON.stringify({ data: [], usage: { total_tokens: 0 } }),
+      { status: 200 },
+    ));
+
+    const configPath = path.join(tempDir, "benchmarks", "budgets", "empty-index-sweep.json");
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        name: "empty-index-sweep",
+        failOnMissingBaseline: false,
+        thresholds: {},
+      }, null, 2),
+      "utf-8",
+    );
+
+    await expect(runSweep(
+      {
+        projectRoot: tempDir,
+        datasetPath: "benchmarks/golden/small.json",
+        outputRoot: "benchmarks/results",
+        ciMode: true,
+        budgetPath: "benchmarks/budgets/empty-index-sweep.json",
+        reindex: true,
+      },
+      {
+        fusionStrategy: ["rrf", "weighted"],
+      }
+    )).rejects.toThrow(/Evaluation reindex produced no searchable vectors/);
+  });
+
   it("applies query args as search filters in search mode", async () => {
     const datasetPath = path.join(tempDir, "benchmarks", "golden", "args-search.json");
     writeFileSync(

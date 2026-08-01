@@ -8,7 +8,7 @@
       "query": "where is rankHybridResults implementation",
       "queryType": "definition",
       "expected": {
-        "filePath": "src/indexer/index.ts",
+        "filePath": "src/indexer/search-ranking.ts",
         "symbol": "rankHybridResults"
       }
     },
@@ -17,7 +17,7 @@
       "query": "find implementation of codebase_search tool",
       "queryType": "implementation-intent",
       "expected": {
-        "filePath": "src/tools/index.ts",
+        "filePath": "src/adapters/opencode/tools.ts",
         "symbol": "codebase_search"
       }
     },
@@ -26,7 +26,7 @@
       "query": "find similar code feature and duplicates",
       "queryType": "similarity",
       "expected": {
-        "filePath": "src/tools/index.ts",
+        "filePath": "src/adapters/opencode/tools.ts",
         "symbol": "find_similar"
       }
     },
@@ -37,7 +37,8 @@
       "expected": {
         "acceptableFiles": [
           "src/config/schema.ts",
-          "src/indexer/index.ts"
+          "src/indexer/index.ts",
+          "src/indexer/search-ranking.ts"
         ]
       }
     }

@@ -143,15 +143,15 @@ If the referenced baseline summary file contains malformed JSON, compare mode no
 npm run eval:ci
 ```
 
-The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its GitHub Models budget rejects Hit@5 below 0.75 or MRR@10 below 0.65, which catches sustained quality step-downs while leaving room for provider variance. The workflow also writes the latest summary to the GitHub Actions job summary. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
+The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its default Ollama budget rejects Hit@5 below 0.75 or MRR@10 below 0.65. The workflow also writes the latest summary to the GitHub Actions job summary. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
 
-Default script:
+Default script (explicitly scoped to the smoke dataset):
 
 ```bash
-npx tsx src/cli.ts eval run --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json
+npx tsx src/cli.ts eval run --dataset benchmarks/golden/small.json --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json
 ```
 
-CI mode fails when configured thresholds regress beyond tolerance.
+CI mode fails fast when a reindex run produces no searchable vectors, and the command exits non-zero when configured thresholds regress beyond tolerance.
 
 ### CI integration in GitHub Actions
 
@@ -161,27 +161,24 @@ There are two CI levels:
    - Purpose: verify eval harness integrity (CLI, schema validation, artifact writing, report generation) without external dependencies.
    - This is **not** a retrieval-quality signal.
 
-2. **Quality gate workflow (`eval-quality.yml`)** runs `npm run eval:ci` with your real provider config/authentication context.
+2. **Quality gate workflow (`eval-quality.yml`)** runs the real retrieval evaluation with a local Ollama provider or explicit provider secrets.
    - Purpose: enforce actual quality/latency regressions against baselines/budgets.
    - Triggered on schedule (`cron`) and manually (`workflow_dispatch`).
-   - By default, it uses GitHub Models embeddings with the workflow `GITHUB_TOKEN` and `models: read` permission.
-   - GitHub Models runs use `benchmarks/budgets/github-models.json`, which enforces stable absolute quality floors (`minHitAt5`, `minMrrAt10`, `p95LatencyMaxAbsoluteMs`) instead of comparing to the provider-specific regression baseline.
-   - If `EVAL_EMBED_BASE_URL` and `EVAL_EMBED_API_KEY` are both set, those explicit provider credentials override the GitHub Models default and the workflow switches back to the stricter baseline-driven budget in `benchmarks/budgets/default.json`.
+   - By default, it installs Ollama on the runner, pulls `nomic-embed-text`, and uses `benchmarks/budgets/ollama.json` with stable absolute quality floors.
+   - If `EVAL_EMBED_BASE_URL` and `EVAL_EMBED_API_KEY` are both set, those explicit provider credentials override Ollama and the workflow switches back to the stricter baseline-driven budget in `benchmarks/budgets/default.json`.
 
 This split keeps regular CI stable while preserving meaningful retrieval-quality gating.
 
 ### Authentication for `eval-quality.yml`
 
-Default path (no extra API key required):
+Default path (no API key required):
 
-- The workflow uses `GITHUB_TOKEN` with `models: read`
-- Base URL: `https://models.inference.ai.azure.com`
-- Default model: `text-embedding-3-small`
-- Default dimensions: `1536`
+- The workflow installs and starts Ollama on the GitHub-hosted runner.
+- Model: `nomic-embed-text`
+- Dimensions: `768`
+- Budget: `benchmarks/budgets/ollama.json`
 
-This uses GitHub Models from GitHub Actions. It is separate from your local OpenCode/Copilot OAuth session, but it avoids provisioning a separate OpenAI key for the scheduled/manual gate.
-
-Because GitHub Models in Actions has higher latency/ranking variance than a dedicated provider setup, the default GitHub Models path uses an absolute-floor CI budget instead of relative baseline regression checks.
+GitHub Models was retired on July 30, 2026. The local Ollama path replaces that retired service and keeps the scheduled gate independent of external embedding credentials. It uses an absolute-floor budget instead of a provider-specific relative baseline.
 
 Optional override for another OpenAI-compatible provider:
 
@@ -194,19 +191,18 @@ Configure these GitHub repository secrets:
 
 If you set one of `EVAL_EMBED_BASE_URL` or `EVAL_EMBED_API_KEY`, you must set both. Partial override configuration fails fast.
 
-The workflow generates `.github/eval-quality-config.json` from secrets and runs:
+The workflow materializes `.github/eval-quality-config.json` for the selected provider and runs:
 
 ```bash
-npx tsx src/cli.ts eval run --config .github/eval-quality-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json
+npx tsx src/cli.ts eval run --dataset benchmarks/golden/small.json --config .github/eval-quality-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json
 ```
 
 #### Example values
 
-- GitHub Models in Actions (default):
-  - `baseUrl=https://models.inference.ai.azure.com`
-  - `apiKey=${{ github.token }}`
-  - requires workflow permission `models: read`
-  - uses `benchmarks/budgets/github-models.json`
+- Ollama in Actions (default):
+  - installed and started by the workflow
+  - model `nomic-embed-text`
+  - uses `benchmarks/budgets/ollama.json`
 
 - OpenAI direct:
   - `EVAL_EMBED_BASE_URL=https://api.openai.com/v1`
@@ -222,7 +218,7 @@ npx tsx src/cli.ts eval run --config .github/eval-quality-config.json --reindex 
 
 If dimensions do not match returned vectors, eval fails fast with a clear mismatch error.
 
-### Ollama quality gate (manual/local, not CI)
+### Ollama quality gate (manual/local)
 
 If you do not have OpenAI API access, run the quality gate locally with Ollama:
 
