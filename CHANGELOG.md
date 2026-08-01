@@ -7,16 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-01
+
 ### Added
 
-- **Direct index CLI subcommand for MCP binary**: Added `index` command support to the shared MCP CLI entrypoint with `--project`, `--host`, `--config`, `--force`, `--estimate-only`, and `--verbose` flags. The command uses shared indexing execution and lock/callback semantics, prints diagnostics to `stderr`, exits non-zero on usage and runtime errors, and preserves existing MCP/eval/visualize modes.
-- **Portable `code_communities` tool**: Added a new graph analysis tool that exposes community detection and hub node analysis across OpenCode, MCP, and Pi. Clusters symbols by call-graph connectivity using label propagation, reports deterministic community summaries with member listings, and identifies hub symbols from exact distinct cross-community neighbors. Supports `branch`, `minSize`, `limit`, and `hubThreshold` parameters. Recomputes on-demand from current branch data for freshness without persisted state, with a checked-in 10k-node sub-second performance regression.
-- **Community coupling options for `code_communities`**: Added parity support for `minCoupling` and `couplingLimit` across OpenCode, MCP, and Pi, including representative coupling formatting and expanded host-parity executable tests.
-- **Opt-in community-aware retrieval ranking**: Exact, unambiguous symbol queries can optionally boost already in-scope candidates from the same call-graph community. The feature is disabled by default, deterministic, branch-aware, and falls back to existing ranking when graph context is unavailable.
+- **Direct index CLI subcommand for MCP binary**: Added an `index` command to the shared MCP CLI entrypoint with `--project`, `--host`, `--config`, `--force`, `--estimate-only`, and `--verbose` options. The command shares indexing execution and lock handling with existing flows, writes diagnostics to `stderr`, fails on usage and runtime errors, and keeps MCP/eval/visualize modes intact.
+- **Portable `code_communities` tool**: Added a graph-analysis tool across OpenCode, MCP, and Pi to expose call-graph communities and hub symbols. It performs label-propagation clustering, reports deterministic member summaries, and identifies hubs using distinct cross-community neighbors. It supports `branch`, `minSize`, `limit`, and `hubThreshold` and recomputes on demand from branch-local data.
+- **Community coupling options for `code_communities`**: Added parity support for `minCoupling` and `couplingLimit` across OpenCode, MCP, and Pi, including representative coupling rendering and expanded host-parity test coverage.
+- **Community-aware retrieval ranking**: Added deterministic, opt-in ranking that boosts exact symbol matches within the same in-scope call-graph community. The feature is branch-aware, disabled by default, and falls back to existing ranking when graph context is unavailable.
 
 ### Changed
 
-- **Bounded file-level indexing batches** (#224): Changed-file scans now retain only path, hash, and byte-size descriptors, then parse, chunk, extract call-graph data, and admit embeddings in fixed internal file batches with queue backpressure. Failed embedding state is incrementally written as versioned JSONL and retried as a bounded stream while preserving legacy JSON-array reads, branch catalogs, Git blame, duplicate embedding reuse, and prior-generation SQLite visibility after interrupted runs.
+- **Bounded file-level indexing batches** (#224): Changed-file scans now store only path, hash, and byte size before parsing and chunking. Embedding, call-graph extraction, and storage are processed in bounded batches with queue backpressure. Failed embeddings are persisted as versioned JSONL and retried from a bounded stream while preserving legacy JSON-array reads, branch catalogs, Git blame, duplicate-embedding reuse, and index visibility after interrupted runs.
 
 ## [0.21.0] - 2026-07-30
 
@@ -571,7 +573,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.1...HEAD
+[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.0...v0.20.1
 [0.20.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.1...v0.20.0
 [0.19.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.0...v0.19.1
