@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-08-01
+
 ### Added
 
 - **Two-tier retrieval quality gates**: Added a daily focused Ollama smoke evaluation and a weekly full-repository representative evaluation spanning TypeScript, Rust, Swift, and PHP, with manual tier selection, separate artifacts, and dataset-specific absolute budgets.
