@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "name": "representative-retrieval",
   "description": "Hand-labeled retrieval kernel covering exact and nested definitions, conceptual source discovery, language and path filters, scoped recovery, graded multi-file evidence, similarity, keywords, and a negative filtered search.",
   "queries": [
@@ -15,7 +15,7 @@
         "expectedRoute": "definition",
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "src/indexer/index.ts", "symbol": "fuseResultsRrf", "relevance": 3 }
+          { "path": "src/indexer/search-ranking.ts", "symbol": "fuseResultsRrf", "relevance": 3 }
         ]
       }
     },
@@ -48,7 +48,8 @@
         "expectedRoute": "search",
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "native/src/call_extractor.rs", "symbol": "extract_calls", "relevance": 3 }
+          { "path": "native/src/lib.rs", "symbol": "extract_calls", "relevance": 3 },
+          { "path": "native/src/call_extractor.rs", "relevance": 2 }
         ]
       }
     },
@@ -83,7 +84,7 @@
         "expectedRoute": "search",
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "src/indexer/index-lock.ts", "symbol": "acquireIndexLock", "relevance": 3 }
+          { "path": "src/indexer/index-lock.ts", "relevance": 3 }
         ]
       }
     },
@@ -99,8 +100,8 @@
         "expectedRoute": "search",
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "src/mcp-server/register-tools.ts", "symbol": "registerMcpTools", "relevance": 3 },
-          { "path": "src/mcp-server.ts", "symbol": "createMcpServer", "relevance": 2 }
+          { "path": "src/adapters/mcp/register-tools.ts", "symbol": "registerMcpTools", "relevance": 3 },
+          { "path": "src/adapters/mcp/server.ts", "symbol": "createMcpServer", "relevance": 2 }
         ]
       }
     },
@@ -215,8 +216,8 @@
       "expected": {
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "src/indexer/index.ts", "symbol": "fuseResultsRrf", "relevance": 3 },
-          { "path": "src/indexer/index.ts", "symbol": "rankHybridResults", "relevance": 2 }
+          { "path": "src/indexer/search-ranking.ts", "symbol": "fuseResultsRrf", "relevance": 3 },
+          { "path": "src/indexer/search-ranking.ts", "symbol": "rankHybridResults", "relevance": 2 }
         ]
       }
     },
@@ -232,7 +233,7 @@
         "expectedOutcome": "results",
         "gradedEvidence": [
           { "path": "src/config/schema.ts", "relevance": 3 },
-          { "path": "src/indexer/index.ts", "relevance": 2 },
+          { "path": "src/indexer/search-ranking.ts", "relevance": 2 },
           { "path": "src/eval/runner-config.ts", "symbol": "resolveSearchConfig", "relevance": 2 },
           { "path": "src/eval/runner.ts", "symbol": "runSweep", "relevance": 1 },
           { "path": "src/eval/cli-parser.ts", "symbol": "hasSweepOptions", "relevance": 1 }

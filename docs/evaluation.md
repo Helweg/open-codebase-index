@@ -143,7 +143,7 @@ If the referenced baseline summary file contains malformed JSON, compare mode no
 npm run eval:ci
 ```
 
-The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its default Ollama budget rejects Hit@5 below 0.75 or MRR@10 below 0.65. The workflow also writes the latest summary to the GitHub Actions job summary. To keep CPU-only Ollama runs bounded, this four-query smoke gate indexes the relevant `src/indexer`, `src/adapters/opencode`, and `src/config` TypeScript source areas rather than the entire repository. A contract test ensures every expected result remains inside that corpus. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
+The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. The daily smoke tier rejects Hit@5 below 0.75 or MRR@10 below 0.65. To keep CPU-only Ollama runs bounded, it indexes the relevant `src/indexer`, `src/adapters/opencode`, and `src/config` TypeScript source areas for four queries. A weekly full tier indexes the entire repository and runs the 14-query representative dataset across TypeScript, Rust, Swift, and PHP. Its separate measured budget keeps the same 0.75 Hit@5 floor and uses a 0.55 MRR@10 floor for the harder query mix. Contract tests ensure the smoke corpus covers its expectations and every representative evidence path and symbol remains current. The workflow also writes the latest summary to the GitHub Actions job summary. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
 
 Default script (explicitly scoped to the smoke dataset):
 
@@ -163,9 +163,11 @@ There are two CI levels:
 
 2. **Quality gate workflow (`eval-quality.yml`)** runs the real retrieval evaluation with a local Ollama provider or explicit provider secrets.
    - Purpose: enforce actual quality/latency regressions against baselines/budgets.
-   - Triggered on schedule (`cron`) and manually (`workflow_dispatch`).
-   - By default, it installs Ollama on the runner, pulls `nomic-embed-text`, and uses `benchmarks/budgets/ollama.json` with stable absolute quality floors.
-   - If `EVAL_EMBED_BASE_URL` and `EVAL_EMBED_API_KEY` are both set, those explicit provider credentials override Ollama and the workflow switches back to the stricter baseline-driven budget in `benchmarks/budgets/default.json`.
+   - The focused smoke tier runs daily at 03:00 UTC.
+   - The full-repository representative tier runs Sundays at 04:00 UTC.
+   - Manual runs expose a required `smoke` or `full` tier selector.
+   - By default, both tiers install Ollama on the runner and pull `nomic-embed-text`. Smoke uses `benchmarks/budgets/ollama.json`; full uses `benchmarks/budgets/representative.json`.
+   - If `EVAL_EMBED_BASE_URL` and `EVAL_EMBED_API_KEY` are both set, those explicit provider credentials override Ollama. Smoke uses the stricter baseline-driven budget in `benchmarks/budgets/default.json`; full retains its representative absolute budget because the checked-in baseline targets the smoke dataset.
 
 This split keeps regular CI stable while preserving meaningful retrieval-quality gating.
 
@@ -176,7 +178,7 @@ Default path (no API key required):
 - The workflow installs and starts Ollama on the GitHub-hosted runner.
 - Model: `nomic-embed-text`
 - Dimensions: `768`
-- Budget: `benchmarks/budgets/ollama.json`
+- Budgets: `benchmarks/budgets/ollama.json` for smoke and `benchmarks/budgets/representative.json` for full
 
 GitHub Models was retired on July 30, 2026. The local Ollama path replaces that retired service and keeps the scheduled gate independent of external embedding credentials. It uses an absolute-floor budget instead of a provider-specific relative baseline.
 

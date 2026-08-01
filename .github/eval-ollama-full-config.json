@@ -1,0 +1,25 @@
+{
+  "embeddingProvider": "ollama",
+  "embeddingModel": "nomic-embed-text",
+  "indexing": {
+    "autoIndex": false,
+    "watchFiles": false,
+    "respectGitignore": true,
+    "semanticOnly": false,
+    "requireProjectMarker": false
+  },
+  "search": {
+    "maxResults": 10,
+    "minScore": 0,
+    "hybridWeight": 0.4,
+    "fusionStrategy": "rrf",
+    "rrfK": 60,
+    "rerankTopN": 20,
+    "enableCrossLanguage": true
+  },
+  "debug": {
+    "enabled": false,
+    "logLevel": "info",
+    "metrics": true
+  }
+}
