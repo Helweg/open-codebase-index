@@ -1,0 +1,11 @@
+{
+  "fixtureVersion": "1.0.0",
+  "queryCount": 3,
+  "baselineMrr": 0.833333,
+  "communityAwareMrr": 1,
+  "perQuery": [
+    { "id": "promotes-related-candidate", "baselineReciprocalRank": 0.5, "communityAwareReciprocalRank": 1 },
+    { "id": "preserves-already-correct-order", "baselineReciprocalRank": 1, "communityAwareReciprocalRank": 1 },
+    { "id": "no-context-guardrail", "baselineReciprocalRank": 1, "communityAwareReciprocalRank": 1 }
+  ]
+}

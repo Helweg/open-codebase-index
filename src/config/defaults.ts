@@ -42,6 +42,7 @@ export function getDefaultSearchConfig(): SearchConfig {
     routingHints: true,
     routingGraphHandoffHints: false,
     routingHintRole: "system",
+    communityBoost: 0,
   };
 }
 

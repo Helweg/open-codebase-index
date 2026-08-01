@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Direct index CLI subcommand for MCP binary**: Added `index` command support to the shared MCP CLI entrypoint with `--project`, `--host`, `--config`, `--force`, `--estimate-only`, and `--verbose` flags. The command uses shared indexing execution and lock/callback semantics, prints diagnostics to `stderr`, exits non-zero on usage and runtime errors, and preserves existing MCP/eval/visualize modes.
 - **Portable `code_communities` tool**: Added a new graph analysis tool that exposes community detection and hub node analysis across OpenCode, MCP, and Pi. Clusters symbols by call-graph connectivity using label propagation, reports deterministic community summaries with member listings, and identifies hub symbols from exact distinct cross-community neighbors. Supports `branch`, `minSize`, `limit`, and `hubThreshold` parameters. Recomputes on-demand from current branch data for freshness without persisted state, with a checked-in 10k-node sub-second performance regression.
+- **Opt-in community-aware retrieval ranking**: Exact, unambiguous symbol queries can optionally boost already in-scope candidates from the same call-graph community. The feature is disabled by default, deterministic, branch-aware, and falls back to existing ranking when graph context is unavailable.
 
 ### Changed
 
