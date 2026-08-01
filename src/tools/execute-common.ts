@@ -3,6 +3,7 @@ import type {
   SharedCallGraphArgs,
   SharedCallGraphPathArgs,
   SharedCodebaseContextArgs,
+  SharedCodeCommunitiesArgs,
   SharedIndexCodebaseArgs,
   SharedIndexLogsArgs,
   SharedIndexMetricsArgs,
@@ -11,6 +12,7 @@ import type {
 import {
   getCallGraphData,
   getCallGraphPath,
+  getCodeCommunities,
   getIndexLogs,
   getIndexMetrics,
   getIndexStatus,
@@ -28,6 +30,7 @@ import {
   formatIndexStats,
   formatStatus,
 } from "./utils.js";
+import { formatCodeCommunities } from "./format-communities.js";
 
 export interface ExecutionResult {
   text: string;
@@ -131,4 +134,13 @@ export async function executeCallGraphPath(
     args.toFilePath,
   );
   return { text: formatCallGraphPathResult(path) };
+}
+
+export async function executeCodeCommunities(
+  projectRoot: string | undefined,
+  host: HostMode,
+  args: SharedCodeCommunitiesArgs,
+): Promise<ExecutionResult> {
+  const result = await getCodeCommunities(projectRoot, host, args);
+  return { text: formatCodeCommunities(result) };
 }

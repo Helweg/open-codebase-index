@@ -106,6 +106,7 @@ export interface CommunityData {
   filePath: string;
   communityId: number;
   communityLabel: string;
+  crossCommunityConnections: number;
 }
 
 export interface CentralityData {

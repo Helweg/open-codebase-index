@@ -6,6 +6,13 @@ import type { HostMode } from "../config/host.js";
 import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
+import { buildCodeCommunitiesResult } from "./format-communities.js";
+import {
+  CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
+  CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MIN_SIZE,
+} from "./contracts.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
@@ -486,6 +493,33 @@ export async function getPrImpact(
     hubThreshold: params.hubThreshold,
     checkConflicts: params.checkConflicts,
     direction: params.direction,
+  });
+}
+
+export async function getCodeCommunities(
+  projectRoot: string | undefined,
+  host: HostMode,
+  params: {
+    branch?: string;
+    minSize?: number;
+    limit?: number;
+    hubThreshold?: number;
+  },
+): Promise<import("./format-communities.js").CodeCommunitiesResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  const indexer = getIndexerForProject(projectRoot, host);
+  const communities = await indexer.detectCommunities(params.branch);
+  const centrality = await indexer.computeCentrality(params.branch);
+  return buildCodeCommunitiesResult(communities, centrality, {
+    minSize: Math.max(CODE_COMMUNITIES_MIN_SIZE, Math.floor(params.minSize ?? CODE_COMMUNITIES_MIN_SIZE)),
+    limit: Math.min(
+      CODE_COMMUNITIES_MAX_LIMIT,
+      Math.max(1, Math.floor(params.limit ?? CODE_COMMUNITIES_DEFAULT_LIMIT)),
+    ),
+    hubThreshold: Math.max(
+      0,
+      Math.floor(params.hubThreshold ?? CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD),
+    ),
   });
 }
 

@@ -17,6 +17,7 @@ import {
   find_similar,
   call_graph,
   call_graph_path,
+  code_communities,
   implementation_lookup,
   add_knowledge_base,
   list_knowledge_bases,
@@ -151,6 +152,7 @@ const plugin: Plugin = async ({ directory, worktree }) => {
         [TOOL_NAME.LIST_KNOWLEDGE_BASES]: list_knowledge_bases,
         [TOOL_NAME.REMOVE_KNOWLEDGE_BASE]: remove_knowledge_base,
         [TOOL_NAME.PR_IMPACT]: pr_impact,
+        [TOOL_NAME.CODE_COMMUNITIES]: code_communities,
         [TOOL_NAME.INDEX_VISUALIZE]: index_visualize,
       },
 

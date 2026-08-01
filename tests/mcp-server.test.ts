@@ -317,6 +317,42 @@ vi.mock("../src/indexer/index.js", () => {
       riskReason: "Small impact: 1 affected symbols, no hub nodes touched.",
       conflictingPRs: undefined,
     });
+    detectCommunities = vi.fn().mockResolvedValue([
+      {
+        symbolId: "sym_1",
+        symbolName: "funcA",
+        filePath: "src/a.ts",
+        communityId: 0,
+        communityLabel: "Core",
+        crossCommunityConnections: 1,
+      },
+      {
+        symbolId: "sym_2",
+        symbolName: "funcB",
+        filePath: "src/b.ts",
+        communityId: 1,
+        communityLabel: "Adapters",
+        crossCommunityConnections: 1,
+      },
+    ]);
+    computeCentrality = vi.fn().mockResolvedValue([
+      {
+        symbolId: "sym_1",
+        symbolName: "funcA",
+        filePath: "src/a.ts",
+        callerCount: 2,
+        calleeCount: 1,
+        totalConnections: 3,
+      },
+      {
+        symbolId: "sym_2",
+        symbolName: "funcB",
+        filePath: "src/b.ts",
+        callerCount: 1,
+        calleeCount: 2,
+        totalConnections: 3,
+      },
+    ]);
   }
   return { Indexer: MockIndexer };
 });
@@ -403,7 +439,7 @@ describe("MCP server tools and prompts", () => {
     fs.rmSync(testMainRepo, { recursive: true, force: true });
   });
 
-  it("should register all 13 tools", async () => {
+  it("should register all 14 tools", async () => {
     const tools = await client.listTools();
 
     expect(tools.tools).toHaveLength(MCP_TOOL_NAMES.length);
@@ -416,6 +452,19 @@ describe("MCP server tools and prompts", () => {
 
   it("should preserve the current MCP server identity", () => {
     expect(client.getServerVersion()?.name).toBe(MCP_SERVER_CURRENT_NAME);
+  });
+
+  it("should execute code_communities through the portable MCP contract", async () => {
+    const result = await client.callTool({
+      name: "code_communities",
+      arguments: { minSize: 1, limit: 10, hubThreshold: 1 },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(result.isError).not.toBe(true);
+    expect(content[0].text).toContain("Communities: 2");
+    expect(content[0].text).toContain("funcA");
+    expect(content[0].text).toContain("1 cross-community");
   });
 
   it("should expose self-routing descriptions even when the client ignores server instructions", async () => {
