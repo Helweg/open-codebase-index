@@ -3,6 +3,22 @@ import { analyzeQueryIntent, rankIntentAwareCandidates } from "./intent-aware-ra
 
 export type RankedCandidate = { id: string; score: number; metadata: ChunkMetadata };
 
+export function applyCommunityBoost(
+  candidates: RankedCandidate[],
+  sameCommunityCandidateIds: ReadonlySet<string>,
+  boost: number,
+): RankedCandidate[] {
+  if (boost <= 0 || sameCommunityCandidateIds.size === 0 || candidates.length <= 1) {
+    return candidates;
+  }
+
+  return candidates
+    .map((candidate) => sameCommunityCandidateIds.has(candidate.id)
+      ? { ...candidate, score: candidate.score * (1 + boost) }
+      : candidate)
+    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+}
+
 interface HybridRankOptions {
   fusionStrategy: "weighted" | "rrf";
   rrfK: number;

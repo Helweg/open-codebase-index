@@ -43,6 +43,7 @@ import type { PrImpactResult } from "./pr-impact-types.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
 import { analyzeQueryIntent } from "./intent-aware-ranking.js";
 import {
+  applyCommunityBoost,
   classifyQueryIntentRaw,
   diversifyCandidatesByFile,
   rankHybridResults,
@@ -50,12 +51,14 @@ import {
   type RankedCandidate,
 } from "./search-ranking.js";
 export {
+  applyCommunityBoost,
   fuseResultsRrf,
   fuseResultsWeighted,
   rankHybridResults,
   rankSemanticOnlyResults,
   rerankResults,
 } from "./search-ranking.js";
+import { inferExactSymbolFromQuery } from "../tools/symbol-inference.js";
 import { CALL_GRAPH_SYMBOL_CHUNK_TYPES } from "./call-graph-constants.js";
 export { CALL_GRAPH_SYMBOL_CHUNK_TYPES } from "./call-graph-constants.js";
 import {
@@ -113,6 +116,66 @@ export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", 
 // the same normalization when looking up symbols by name. Keep this set in
 // sync with the matching branch in native/src/call_extractor.rs.
 export const CASE_INSENSITIVE_LANGUAGES = new Set(["apex", "php"]);
+
+function candidateOverlapsSymbol(candidate: RankedCandidate, symbol: SymbolData): boolean {
+  return candidate.metadata.filePath === symbol.filePath &&
+    candidate.metadata.startLine <= symbol.endLine &&
+    candidate.metadata.endLine >= symbol.startLine;
+}
+
+function resolveSameCommunityCandidateIds(
+  query: string,
+  candidates: RankedCandidate[],
+  database: Database,
+  branchCatalogKeys: string[],
+): Set<string> {
+  const anchorName = inferExactSymbolFromQuery(query);
+  if (!anchorName || candidates.length === 0) {
+    return new Set();
+  }
+
+  const catalogs = branchCatalogKeys.map((branchKey) => ({
+    branchKey,
+    symbols: database.getSymbolsForBranch(branchKey),
+  }));
+  const exactAnchors = catalogs.flatMap(({ branchKey, symbols }) => symbols
+    .filter((symbol) => symbol.name === anchorName)
+    .map((symbol) => ({ branchKey, symbol })));
+  const anchors = exactAnchors.length > 0
+    ? exactAnchors
+    : catalogs.flatMap(({ branchKey, symbols }) => symbols
+      .filter((symbol) => symbol.name.toLowerCase() === anchorName.toLowerCase())
+      .map((symbol) => ({ branchKey, symbol })));
+
+  const uniqueAnchors = new Map(anchors.map((anchor) => [anchor.symbol.id, anchor]));
+  if (uniqueAnchors.size !== 1) {
+    return new Set();
+  }
+
+  const anchor = uniqueAnchors.values().next().value as { branchKey: string; symbol: SymbolData };
+  const branchSymbols = catalogs.find((catalog) => catalog.branchKey === anchor.branchKey)?.symbols ?? [];
+  const candidateSymbols = branchSymbols.filter((symbol) =>
+    candidates.some((candidate) => candidateOverlapsSymbol(candidate, symbol))
+  );
+  const assignments = database.detectCommunities(
+    anchor.branchKey,
+    [anchor.symbol.id, ...candidateSymbols.map((symbol) => symbol.id)],
+  );
+  const anchorCommunity = assignments.find((assignment) => assignment.symbolId === anchor.symbol.id)?.communityId;
+  if (anchorCommunity === undefined) {
+    return new Set();
+  }
+
+  const sameCommunitySymbolIds = new Set(assignments
+    .filter((assignment) => assignment.communityId === anchorCommunity)
+    .map((assignment) => assignment.symbolId));
+
+  return new Set(candidates
+    .filter((candidate) => candidateSymbols.some((symbol) =>
+      sameCommunitySymbolIds.has(symbol.id) && candidateOverlapsSymbol(candidate, symbol)
+    ))
+    .map((candidate) => candidate.id));
+}
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "4";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
@@ -4749,14 +4812,36 @@ export class Indexer {
       matchesSearchFilters(r, options, this.config.search.minScore, this.projectRoot)
     );
 
-    const implementationOnly = baseFiltered.filter((r) =>
+    let communityRanked = baseFiltered;
+    if (this.config.search.communityBoost > 0) {
+      try {
+        const sameCommunityCandidateIds = resolveSameCommunityCandidateIds(
+          query,
+          baseFiltered,
+          database,
+          this.getBranchCatalogKeys(),
+        );
+        communityRanked = applyCommunityBoost(
+          baseFiltered,
+          sameCommunityCandidateIds,
+          this.config.search.communityBoost,
+        );
+      } catch (error) {
+        this.logger.search("debug", "Community-aware ranking unavailable; using existing ranking", {
+          query,
+          error: getErrorMessage(error),
+        });
+      }
+    }
+
+    const implementationOnly = communityRanked.filter((r) =>
       isLikelyImplementationPath(r.metadata.filePath) &&
       isImplementationChunkType(r.metadata.chunkType)
     );
 
     const filtered = (sourceIntent && hasCodeHints && implementationOnly.length > 0
       ? implementationOnly
-      : baseFiltered
+      : communityRanked
     ).slice(0, maxResults);
 
     const identifierFallback = (!options?.definitionIntent && filtered.length === 0 && identifierHints.length > 0)

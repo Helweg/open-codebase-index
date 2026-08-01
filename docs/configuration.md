@@ -171,6 +171,9 @@ Example:
 | `routingHints` | `true` | Inject host routing guidance |
 | `routingGraphHandoffHints` | `false` | Include graph handoff guidance |
 | `routingHintRole` | `system` | `system` or `developer` |
+| `communityBoost` | `0` | Opt-in multiplicative boost (`0` to `1`) for candidates in an exact query symbol's call-graph community |
+
+`communityBoost` is experimental and disabled by default. It activates only when the query contains one unambiguous exact symbol already present in the active branch catalog. Existing branch, directory, file-type, chunk-type, blame, and score filters run first, so community context can reorder only candidates that already passed normal search scope. Missing or ambiguous symbols and unavailable graph data fall back to the existing ranking.
 
 ## Include and exclude patterns
 
@@ -280,7 +283,8 @@ Debug defaults:
     "fusionStrategy": "rrf",
     "rrfK": 60,
     "rerankTopN": 20,
-    "contextLines": 0
+    "contextLines": 0,
+    "communityBoost": 0
   },
   "knowledgeBases": [],
   "debug": {

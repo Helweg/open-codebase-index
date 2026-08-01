@@ -88,6 +88,14 @@ describe("config schema", () => {
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
+      expect(config.search.communityBoost).toBe(0);
+    });
+
+    it("parses and clamps the opt-in community ranking boost", () => {
+      expect(parseConfig({ search: { communityBoost: 0.25 } }).search.communityBoost).toBe(0.25);
+      expect(parseConfig({ search: { communityBoost: -1 } }).search.communityBoost).toBe(0);
+      expect(parseConfig({ search: { communityBoost: 2 } }).search.communityBoost).toBe(1);
+      expect(parseConfig({ search: { communityBoost: "0.25" } }).search.communityBoost).toBe(0);
     });
 
     it("should return defaults for null input", () => {

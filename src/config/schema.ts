@@ -82,6 +82,8 @@ export interface SearchConfig {
   routingHints: boolean;
   routingGraphHandoffHints: boolean;
   routingHintRole: "system" | "developer";
+  /** Multiplicative boost for candidates in an exact query symbol's call-graph community. Default: 0 (disabled). */
+  communityBoost: number;
 }
 
 export type RerankerProvider = "cohere" | "jina" | "custom";
@@ -238,6 +240,9 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     routingHintRole: rawSearch.routingHintRole === "developer" || rawSearch.routingHintRole === "system"
       ? rawSearch.routingHintRole
       : defaultSearch.routingHintRole,
+    communityBoost: typeof rawSearch.communityBoost === "number" && Number.isFinite(rawSearch.communityBoost)
+      ? Math.min(1, Math.max(0, rawSearch.communityBoost))
+      : defaultSearch.communityBoost,
   };
 
   const rawDebug = (input.debug && typeof input.debug === "object" ? input.debug : {}) as Record<string, unknown>;
