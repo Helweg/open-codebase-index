@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Faster real-provider evaluation**: Scoped the four-query scheduled Ollama smoke gate to the relevant indexer, OpenCode adapter, and configuration source areas, retaining real semantic competition and all expected files while avoiding full-repository embedding on CPU-only GitHub runners.
+
 ### Fixed
 
 - **Evaluation quality gate**: Replaced the retired GitHub Models fallback with a pinned local Ollama provider, refreshed stale smoke-dataset paths after the adapter and ranking refactors, explicitly scoped scheduled runs to the smoke dataset, and fail fast when CI reindexing produces no searchable vectors instead of reporting a misleading zero-quality score.

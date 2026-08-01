@@ -143,7 +143,7 @@ If the referenced baseline summary file contains malformed JSON, compare mode no
 npm run eval:ci
 ```
 
-The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its default Ollama budget rejects Hit@5 below 0.75 or MRR@10 below 0.65. The workflow also writes the latest summary to the GitHub Actions job summary. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
+The scheduled/manual `Eval Quality Gate` uses real embeddings and uploads the generated `summary.json`, `summary.md`, and `per-query.json` diagnostics for 14 days even when a budget fails. Its default Ollama budget rejects Hit@5 below 0.75 or MRR@10 below 0.65. The workflow also writes the latest summary to the GitHub Actions job summary. To keep CPU-only Ollama runs bounded, this four-query smoke gate indexes the relevant `src/indexer`, `src/adapters/opencode`, and `src/config` TypeScript source areas rather than the entire repository. A contract test ensures every expected result remains inside that corpus. These artifacts contain the repository's checked-in evaluation dataset and result paths, not runtime effectiveness telemetry or user repository data.
 
 Default script (explicitly scoped to the smoke dataset):
 

@@ -1,6 +1,11 @@
 {
   "embeddingProvider": "ollama",
   "embeddingModel": "nomic-embed-text",
+  "include": [
+    "src/indexer/*.ts",
+    "src/adapters/opencode/*.ts",
+    "src/config/*.ts"
+  ],
   "indexing": {
     "autoIndex": false,
     "watchFiles": false,
