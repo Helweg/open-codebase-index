@@ -22,6 +22,24 @@ pub struct CommunityAssignment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct CommunityCouplingRelationship {
+    pub from_symbol_id: String,
+    pub from_symbol_name: String,
+    pub from_file_path: String,
+    pub to_symbol_id: String,
+    pub to_symbol_name: String,
+    pub to_file_path: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CommunityCoupling {
+    pub community_a: u32,
+    pub community_b: u32,
+    pub count: u32,
+    pub representative_relationships: Vec<CommunityCouplingRelationship>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct CentralityScore {
     pub symbol_id: String,
     pub symbol_name: String,
@@ -29,6 +47,47 @@ pub struct CentralityScore {
     pub caller_count: u32,
     pub callee_count: u32,
     pub total_connections: u32,
+}
+
+fn resolve_target_symbol(
+    to_symbol_id: &Option<String>,
+    target_name: &str,
+    symbol_map: &HashMap<String, SymbolRow>,
+    name_map: &HashMap<String, Vec<String>>,
+) -> Option<String> {
+    if let Some(tid) = to_symbol_id {
+        if symbol_map.contains_key(tid) {
+            return Some(tid.clone());
+        }
+
+        return None;
+    }
+
+    let candidates = name_map.get(&target_name.to_lowercase());
+    if let Some(cands) = candidates {
+        if cands.len() == 1 {
+            return Some(cands[0].clone());
+        }
+    }
+
+    None
+}
+
+fn build_symbol_maps(
+    symbols: &[SymbolRow],
+) -> (HashMap<String, SymbolRow>, HashMap<String, Vec<String>>) {
+    let symbol_map: HashMap<String, SymbolRow> =
+        symbols.iter().map(|s| (s.id.clone(), s.clone())).collect();
+
+    let mut name_map: HashMap<String, Vec<String>> = HashMap::new();
+    for s in symbols {
+        name_map
+            .entry(s.name.to_lowercase())
+            .or_default()
+            .push(s.id.clone());
+    }
+
+    (symbol_map, name_map)
 }
 
 pub fn get_transitive_reachability(
@@ -256,15 +315,7 @@ pub fn detect_communities(
         return Ok(vec![]);
     }
 
-    let symbol_map: HashMap<String, SymbolRow> =
-        symbols.iter().map(|s| (s.id.clone(), s.clone())).collect();
-    let mut name_map: HashMap<String, Vec<String>> = HashMap::new();
-    for s in &symbols {
-        name_map
-            .entry(s.name.to_lowercase())
-            .or_default()
-            .push(s.id.clone());
-    }
+    let (symbol_map, name_map) = build_symbol_maps(&symbols);
 
     // Build adjacency list from branch-scoped edges
     let mut adjacency: HashMap<String, HashSet<String>> = HashMap::new();
@@ -292,24 +343,7 @@ pub fn detect_communities(
         .collect();
 
     for (from_id, target_name, to_symbol_id) in edge_rows {
-        let resolved = if let Some(ref tid) = to_symbol_id {
-            if symbol_map.contains_key(tid) {
-                Some(tid.clone())
-            } else {
-                None
-            }
-        } else {
-            let candidates = name_map.get(&target_name.to_lowercase());
-            if let Some(cands) = candidates {
-                if cands.len() == 1 {
-                    Some(cands[0].clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
+        let resolved = resolve_target_symbol(&to_symbol_id, &target_name, &symbol_map, &name_map);
 
         if let Some(to_id) = resolved {
             if to_id != from_id {
@@ -477,15 +511,7 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
         return Ok(vec![]);
     }
 
-    let symbol_map: HashMap<String, SymbolRow> =
-        symbols.iter().map(|s| (s.id.clone(), s.clone())).collect();
-    let mut name_map: HashMap<String, Vec<String>> = HashMap::new();
-    for s in &symbols {
-        name_map
-            .entry(s.name.to_lowercase())
-            .or_default()
-            .push(s.id.clone());
-    }
+    let (symbol_map, name_map) = build_symbol_maps(&symbols);
 
     let mut caller_counts: HashMap<String, u32> = HashMap::new();
     let mut callee_counts: HashMap<String, u32> = HashMap::new();
@@ -517,24 +543,7 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
     for (from_id, target_name, to_symbol_id) in edge_rows {
         *callee_counts.entry(from_id.clone()).or_insert(0) += 1;
 
-        let resolved = if let Some(ref tid) = to_symbol_id {
-            if symbol_map.contains_key(tid) {
-                Some(tid.clone())
-            } else {
-                None
-            }
-        } else {
-            let candidates = name_map.get(&target_name.to_lowercase());
-            if let Some(cands) = candidates {
-                if cands.len() == 1 {
-                    Some(cands[0].clone())
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
+        let resolved = resolve_target_symbol(&to_symbol_id, &target_name, &symbol_map, &name_map);
 
         if let Some(to_id) = resolved {
             *caller_counts.entry(to_id).or_insert(0) += 1;
@@ -565,6 +574,145 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
     });
 
     Ok(results)
+}
+
+pub fn detect_community_couplings(
+    conn: &Connection,
+    branch: &str,
+) -> DbResult<Vec<CommunityCoupling>> {
+    let symbols = db::get_symbols_for_branch(conn, branch)?;
+    if symbols.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let (symbol_map, _) = build_symbol_maps(&symbols);
+    let assignments = detect_communities(conn, branch, None)?;
+    let symbol_to_community: HashMap<String, u32> = assignments
+        .into_iter()
+        .map(|assignment| (assignment.symbol_id, assignment.community_id))
+        .collect();
+
+    let mut edges_stmt = conn.prepare(
+        r#"
+        SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
+        FROM call_edges ce
+        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        "#,
+    )?;
+
+    let edge_rows: Vec<(String, String, Option<String>)> = edges_stmt
+        .query_map(params![branch], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(aggregate_community_couplings(
+        &symbol_map,
+        &symbol_to_community,
+        edge_rows,
+    ))
+}
+
+fn aggregate_community_couplings(
+    symbol_map: &HashMap<String, SymbolRow>,
+    symbol_to_community: &HashMap<String, u32>,
+    edge_rows: Vec<(String, String, Option<String>)>,
+) -> Vec<CommunityCoupling> {
+    let mut couplings: HashMap<(u32, u32), (u32, Vec<CommunityCouplingRelationship>)> =
+        HashMap::new();
+    let mut seen_directed_edges: HashSet<(String, String)> = HashSet::new();
+
+    for (from_id, _target_name, to_symbol_id) in edge_rows {
+        // Coupling diagnostics intentionally use only persisted resolved edges.
+        // Name inference is useful for community detection, but including it here
+        // would report relationships that the call graph has not actually resolved.
+        if let Some(to_id) = to_symbol_id.filter(|id| symbol_map.contains_key(id)) {
+            if from_id == to_id {
+                continue;
+            }
+
+            let Some(from_community) = symbol_to_community.get(&from_id) else {
+                continue;
+            };
+            let Some(to_community) = symbol_to_community.get(&to_id) else {
+                continue;
+            };
+            if from_community == to_community {
+                continue;
+            }
+
+            let directed = (from_id.clone(), to_id.clone());
+            if !seen_directed_edges.insert(directed) {
+                continue;
+            }
+
+            let (community_a, community_b) = if from_community <= to_community {
+                (*from_community, *to_community)
+            } else {
+                (*to_community, *from_community)
+            };
+
+            let from_symbol = symbol_map
+                .get(&from_id)
+                .expect("from symbol id should exist");
+            let to_symbol = symbol_map.get(&to_id).expect("to symbol id should exist");
+
+            let coupling = couplings
+                .entry((community_a, community_b))
+                .or_insert((0_u32, Vec::new()));
+            coupling.0 += 1;
+            coupling.1.push(CommunityCouplingRelationship {
+                from_symbol_id: from_symbol.id.clone(),
+                from_symbol_name: from_symbol.name.clone(),
+                from_file_path: from_symbol.file_path.clone(),
+                to_symbol_id: to_symbol.id.clone(),
+                to_symbol_name: to_symbol.name.clone(),
+                to_file_path: to_symbol.file_path.clone(),
+            });
+        }
+    }
+
+    let mut results: Vec<CommunityCoupling> = couplings
+        .into_iter()
+        .map(
+            |((community_a, community_b), (count, mut representative_relationships))| {
+                representative_relationships.sort_by(|left, right| {
+                    left.from_symbol_name
+                        .cmp(&right.from_symbol_name)
+                        .then_with(|| left.from_symbol_id.cmp(&right.from_symbol_id))
+                        .then_with(|| left.to_symbol_name.cmp(&right.to_symbol_name))
+                        .then_with(|| left.to_symbol_id.cmp(&right.to_symbol_id))
+                        .then_with(|| left.from_file_path.cmp(&right.from_file_path))
+                        .then_with(|| left.to_file_path.cmp(&right.to_file_path))
+                });
+
+                if representative_relationships.len() > 5 {
+                    representative_relationships.truncate(5);
+                }
+
+                CommunityCoupling {
+                    community_a,
+                    community_b,
+                    count,
+                    representative_relationships,
+                }
+            },
+        )
+        .collect();
+
+    results.sort_by(|left, right| {
+        left.community_a
+            .cmp(&right.community_a)
+            .then_with(|| left.community_b.cmp(&right.community_b))
+            .then_with(|| right.count.cmp(&left.count))
+    });
+
+    results
 }
 
 #[cfg(test)]
@@ -607,6 +755,33 @@ mod tests {
             col: 0,
             is_resolved: to.is_some(),
         }
+    }
+
+    fn aggregate_test_couplings(
+        symbols: &[SymbolRow],
+        assignments: &[(&str, u32)],
+        edges: &[CallEdgeRow],
+    ) -> Vec<CommunityCoupling> {
+        let symbol_map = symbols
+            .iter()
+            .map(|symbol| (symbol.id.clone(), symbol.clone()))
+            .collect();
+        let symbol_to_community = assignments
+            .iter()
+            .map(|(symbol_id, community_id)| ((*symbol_id).to_string(), *community_id))
+            .collect();
+        let edge_rows = edges
+            .iter()
+            .map(|edge| {
+                (
+                    edge.from_symbol_id.clone(),
+                    edge.target_name.clone(),
+                    edge.to_symbol_id.clone(),
+                )
+            })
+            .collect();
+
+        aggregate_community_couplings(&symbol_map, &symbol_to_community, edge_rows)
     }
 
     #[test]
@@ -1109,6 +1284,187 @@ mod tests {
     }
 
     #[test]
+    fn test_community_couplings_deduplicates_directed_pairs() {
+        let (_temp, mut conn) = setup_test_db();
+        let syms = vec![
+            make_symbol("s_a", "A", "src/a.ts"),
+            make_symbol("s_b", "B", "src/b.ts"),
+            make_symbol("s_c", "C", "src/c.ts"),
+            make_symbol("s_d", "D", "src/d.ts"),
+        ];
+        db::upsert_symbols_batch(&mut conn, &syms).unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "main",
+            &[
+                "s_a".to_string(),
+                "s_b".to_string(),
+                "s_c".to_string(),
+                "s_d".to_string(),
+            ],
+        )
+        .unwrap();
+
+        let edges = vec![
+            make_edge("e_a_b", "s_a", "B", Some("s_b")),
+            make_edge("e_c_d", "s_c", "D", Some("s_d")),
+            make_edge("e_cross_1", "s_a", "C", Some("s_c")),
+            make_edge("e_cross_2", "s_a", "C", Some("s_c")),
+        ];
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let results = aggregate_test_couplings(
+            &syms,
+            &[("s_a", 0), ("s_b", 0), ("s_c", 1), ("s_d", 1)],
+            &edges,
+        );
+        assert_eq!(results.len(), 1);
+        assert!(results[0].community_a < results[0].community_b);
+        assert_eq!(results[0].count, 1);
+        assert_eq!(results[0].representative_relationships.len(), 1);
+        assert_eq!(
+            results[0].representative_relationships[0].from_symbol_id,
+            "s_a".to_string()
+        );
+        assert_eq!(
+            results[0].representative_relationships[0].to_symbol_id,
+            "s_c".to_string()
+        );
+    }
+
+    #[test]
+    fn test_community_couplings_normalizes_reverse_directions() {
+        let (_temp, mut conn) = setup_test_db();
+        let syms = vec![
+            make_symbol("s_a", "A", "src/a.ts"),
+            make_symbol("s_b", "B", "src/b.ts"),
+        ];
+        db::upsert_symbols_batch(&mut conn, &syms).unwrap();
+        db::add_symbols_to_branch(&conn, "main", &["s_a".to_string(), "s_b".to_string()]).unwrap();
+
+        let edges = vec![
+            make_edge("e_ab", "s_a", "B", Some("s_b")),
+            make_edge("e_ba", "s_b", "A", Some("s_a")),
+        ];
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let results = aggregate_test_couplings(&syms, &[("s_a", 0), ("s_b", 1)], &edges);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].count, 2);
+        let relations = &results[0].representative_relationships;
+        assert_eq!(relations.len(), 2);
+        assert_eq!(relations[0].from_symbol_id, "s_a");
+        assert_eq!(relations[0].to_symbol_id, "s_b");
+        assert_eq!(relations[1].from_symbol_id, "s_b");
+        assert_eq!(relations[1].to_symbol_id, "s_a");
+    }
+
+    #[test]
+    fn test_community_couplings_ignores_unresolved_self_and_intra_community_edges() {
+        let (_temp, mut conn) = setup_test_db();
+        let syms = vec![
+            make_symbol("s_a", "A", "src/a.ts"),
+            make_symbol("s_b", "B", "src/b.ts"),
+            make_symbol("s_c", "C", "src/c.ts"),
+        ];
+        db::upsert_symbols_batch(&mut conn, &syms).unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "main",
+            &["s_a".to_string(), "s_b".to_string(), "s_c".to_string()],
+        )
+        .unwrap();
+
+        let edges = vec![
+            make_edge("e_a_b", "s_a", "B", Some("s_b")),
+            make_edge("e_self", "s_a", "A", Some("s_a")),
+            make_edge("e_unresolved", "s_a", "C", None),
+            make_edge("e_cross", "s_a", "C", Some("s_c")),
+        ];
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let results =
+            aggregate_test_couplings(&syms, &[("s_a", 0), ("s_b", 0), ("s_c", 1)], &edges);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].count, 1);
+        let relation = &results[0].representative_relationships[0];
+        assert_eq!(relation.from_symbol_id, "s_a");
+        assert_eq!(relation.to_symbol_id, "s_c");
+    }
+
+    #[test]
+    fn test_community_couplings_representatives_are_deterministic() {
+        let (_temp, mut conn) = setup_test_db();
+        let syms = vec![
+            make_symbol("s_a0", "A0", "src/a0.ts"),
+            make_symbol("s_a1", "A1", "src/a1.ts"),
+            make_symbol("s_b0", "B0", "src/b0.ts"),
+            make_symbol("s_b1", "B1", "src/b1.ts"),
+            make_symbol("s_b2", "B2", "src/b2.ts"),
+        ];
+        db::upsert_symbols_batch(&mut conn, &syms).unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "main",
+            &syms
+                .iter()
+                .map(|symbol| symbol.id.clone())
+                .collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        let edges = vec![
+            make_edge("intra_a", "s_a0", "A1", Some("s_a1")),
+            make_edge("intra_b", "s_b0", "B1", Some("s_b1")),
+            make_edge("intra_b_2", "s_b1", "B2", Some("s_b2")),
+            make_edge("a0_b0", "s_a0", "B0", Some("s_b0")),
+            make_edge("a0_b1", "s_a0", "B1", Some("s_b1")),
+            make_edge("a0_b2", "s_a0", "B2", Some("s_b2")),
+            make_edge("a1_b0", "s_a1", "B0", Some("s_b0")),
+            make_edge("a1_b1", "s_a1", "B1", Some("s_b1")),
+            make_edge("a1_b2", "s_a1", "B2", Some("s_b2")),
+        ];
+        db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
+
+        let results = aggregate_test_couplings(
+            &syms,
+            &[
+                ("s_a0", 0),
+                ("s_a1", 0),
+                ("s_b0", 1),
+                ("s_b1", 1),
+                ("s_b2", 1),
+            ],
+            &edges,
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].count, 6);
+        assert_eq!(results[0].representative_relationships.len(), 5);
+
+        let relation_names: Vec<(String, String)> = results[0]
+            .representative_relationships
+            .iter()
+            .map(|relation| {
+                (
+                    relation.from_symbol_name.clone(),
+                    relation.to_symbol_name.clone(),
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            relation_names,
+            vec![
+                ("A0".to_string(), "B0".to_string()),
+                ("A0".to_string(), "B1".to_string()),
+                ("A0".to_string(), "B2".to_string()),
+                ("A1".to_string(), "B0".to_string()),
+                ("A1".to_string(), "B1".to_string()),
+            ]
+        );
+    }
+
+    #[test]
     fn test_communities_10k_nodes_complete_under_one_second() {
         const NODE_COUNT: usize = 10_000;
         const COMMUNITY_SIZE: usize = 100;
@@ -1148,13 +1504,15 @@ mod tests {
         db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
 
         let started = Instant::now();
-        let results = detect_communities(&conn, "main", None).unwrap();
+        let communities = detect_communities(&conn, "main", None).unwrap();
+        let couplings = detect_community_couplings(&conn, "main").unwrap();
         let elapsed = started.elapsed();
 
-        assert_eq!(results.len(), NODE_COUNT);
+        assert_eq!(communities.len(), NODE_COUNT);
+        assert_eq!(couplings.len(), 0);
         assert!(
             elapsed < Duration::from_secs(1),
-            "10k-node community detection took {elapsed:?}"
+            "10k-node detection and coupling took {elapsed:?}"
         );
     }
 

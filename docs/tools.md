@@ -123,6 +123,21 @@ Finds direct callers or callees for a function or method. File-path disambiguati
 
 Finds the shortest known call path between two named symbols.
 
+### `code_communities`
+
+Discover call-graph communities and hub symbols, and summarize coupling between communities.
+
+Options:
+
+- `branch`: optional branch name to analyze.
+- `minSize` (default 1): minimum number of symbols in a community.
+- `limit` (default 20): maximum number of communities and hub nodes returned.
+- `hubThreshold` (default 5): minimum distinct cross-community neighbors for a symbol to appear as a hub node.
+- `minCoupling` (default 1): minimum distinct cross-community connection count required for a coupling entry.
+- `couplingLimit` (default 20): maximum number of couplings included in results.
+
+Output includes community summaries, hub node rows, and `Community couplings` entries with representative symbol-to-symbol relationships.
+
 ### `pr_impact`
 
 Analyzes changed files, affected symbols, transitive dependencies, graph communities, hub nodes, conflicts, and merge risk for a branch or pull request.

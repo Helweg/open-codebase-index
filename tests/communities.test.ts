@@ -185,10 +185,189 @@ describe("code_communities tool", () => {
         calleeCount: 1,
         totalConnections: 2,
       },
-    ], { hubThreshold: 2 }));
+    ], [
+      {
+        communityA: 0,
+        communityB: 1,
+        count: 4,
+        representativeRelationships: [
+          {
+            fromSymbolId: "hub",
+            fromSymbolName: "Logger",
+            fromFilePath: "src/logger.ts",
+            toSymbolId: "adapter",
+            toSymbolName: "Adapter",
+            toFilePath: "src/adapter.ts",
+          },
+        ],
+      },
+      {
+        communityA: 0,
+        communityB: 1,
+        count: 1,
+        representativeRelationships: [
+          {
+            fromSymbolId: "adapter",
+            fromSymbolName: "Adapter",
+            fromFilePath: "src/adapter.ts",
+            toSymbolId: "hub",
+            toSymbolName: "Logger",
+            toFilePath: "src/logger.ts",
+          },
+        ],
+      },
+    ], { hubThreshold: 2, minCoupling: 2, couplingLimit: 1 }));
     expect(result).toContain("Hub nodes (1 shown");
     expect(result).toContain("Logger (2 cross-community");
     expect(result).not.toContain("Adapter (1 cross-community");
+  });
+
+  it("filters, sorts, and formats coupling output with representative relationships", () => {
+    const result = formatCodeCommunities(buildCodeCommunitiesResult([
+      {
+        symbolId: "alpha",
+        symbolName: "Alpha",
+        filePath: "src/alpha.ts",
+        communityId: 0,
+        communityLabel: "Core",
+        crossCommunityConnections: 1,
+      },
+      {
+        symbolId: "beta",
+        symbolName: "Beta",
+        filePath: "src/beta.ts",
+        communityId: 1,
+        communityLabel: "Database",
+        crossCommunityConnections: 2,
+      },
+      {
+        symbolId: "gamma",
+        symbolName: "Gamma",
+        filePath: "src/gamma.ts",
+        communityId: 2,
+        communityLabel: "Infrastructure",
+        crossCommunityConnections: 3,
+      },
+    ], [
+      {
+        symbolId: "alpha",
+        symbolName: "Alpha",
+        filePath: "src/alpha.ts",
+        callerCount: 4,
+        calleeCount: 1,
+        totalConnections: 5,
+      },
+      {
+        symbolId: "beta",
+        symbolName: "Beta",
+        filePath: "src/beta.ts",
+        callerCount: 2,
+        calleeCount: 2,
+        totalConnections: 4,
+      },
+      {
+        symbolId: "gamma",
+        symbolName: "Gamma",
+        filePath: "src/gamma.ts",
+        callerCount: 1,
+        calleeCount: 3,
+        totalConnections: 4,
+      },
+    ], [
+      {
+        communityA: 0,
+        communityB: 1,
+        count: 1,
+        representativeRelationships: [
+          {
+            fromSymbolId: "beta",
+            fromSymbolName: "Beta",
+            fromFilePath: "src/beta.ts",
+            toSymbolId: "alpha",
+            toSymbolName: "Alpha",
+            toFilePath: "src/alpha.ts",
+          },
+          {
+            fromSymbolId: "alpha",
+            fromSymbolName: "Alpha",
+            fromFilePath: "src/alpha.ts",
+            toSymbolId: "beta",
+            toSymbolName: "Beta",
+            toFilePath: "src/beta.ts",
+          },
+        ],
+      },
+      {
+        communityA: 2,
+        communityB: 1,
+        count: 9,
+        representativeRelationships: [
+          {
+            fromSymbolId: "gamma",
+            fromSymbolName: "Gamma",
+            fromFilePath: "src/gamma.ts",
+            toSymbolId: "beta",
+            toSymbolName: "Beta",
+            toFilePath: "src/beta.ts",
+          },
+          {
+            fromSymbolId: "delta",
+            fromSymbolName: "Delta",
+            fromFilePath: "src/delta.ts",
+            toSymbolId: "infra",
+            toSymbolName: "Infrastructure",
+            toFilePath: "src/infra.ts",
+          },
+          {
+            fromSymbolId: "omega",
+            fromSymbolName: "Omega",
+            fromFilePath: "src/omega.ts",
+            toSymbolId: "beta",
+            toSymbolName: "Beta",
+            toFilePath: "src/beta.ts",
+          },
+        ],
+      },
+      {
+        communityA: 0,
+        communityB: 2,
+        count: 4,
+        representativeRelationships: [
+          {
+            fromSymbolId: "alpha",
+            fromSymbolName: "Alpha",
+            fromFilePath: "src/alpha.ts",
+            toSymbolId: "gamma",
+            toSymbolName: "Gamma",
+            toFilePath: "src/gamma.ts",
+          },
+          {
+            fromSymbolId: "zeta",
+            fromSymbolName: "Zeta",
+            fromFilePath: "src/zeta.ts",
+            toSymbolId: "alpha",
+            toSymbolName: "Alpha",
+            toFilePath: "src/alpha.ts",
+          },
+        ],
+      },
+    ], {
+      minCoupling: 3,
+      couplingLimit: 2,
+      hubThreshold: 0,
+    }));
+
+    expect(result).toContain("Community couplings: 2 shown");
+    const couplingLines = result.split("\n").filter((line) => line.startsWith("  - ") && line.includes("distinct connections"));
+    expect(couplingLines[0]).toContain("Database ↔ Infrastructure: 9 distinct connections");
+    expect(couplingLines[1]).toContain("Core ↔ Infrastructure: 4 distinct connections");
+    expect(couplingLines).toHaveLength(2);
+
+    const firstSectionLineIndex = result.split("\n").findIndex((line) => line.includes("Core ↔ Infrastructure: 4 distinct connections"));
+    const firstRelationshipLine = result.split("\n")[firstSectionLineIndex + 1];
+    const secondRelationshipLine = result.split("\n")[firstSectionLineIndex + 2];
+    expect(firstRelationshipLine).toContain("Alpha (src/alpha.ts) -> Gamma (src/gamma.ts)");
+    expect(secondRelationshipLine).toContain("Zeta (src/zeta.ts) -> Alpha (src/alpha.ts)");
   });
 
   it("returns deterministic output across repeated calls", async () => {
