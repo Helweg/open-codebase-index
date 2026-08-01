@@ -12,11 +12,25 @@ export function applyCommunityBoost(
     return candidates;
   }
 
-  return candidates
-    .map((candidate) => sameCommunityCandidateIds.has(candidate.id)
-      ? { ...candidate, score: candidate.score * (1 + boost) }
-      : candidate)
-    .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  const result = candidates.map((candidate) => sameCommunityCandidateIds.has(candidate.id)
+    ? { ...candidate, score: candidate.score * (1 + boost) }
+    : candidate);
+
+  for (let index = 1; index < result.length; index += 1) {
+    const candidate = result[index];
+    const previous = result[index - 1];
+    if (
+      candidate && previous &&
+      sameCommunityCandidateIds.has(candidate.id) &&
+      !sameCommunityCandidateIds.has(previous.id) &&
+      candidate.score > previous.score
+    ) {
+      result[index - 1] = candidate;
+      result[index] = previous;
+    }
+  }
+
+  return result;
 }
 
 interface HybridRankOptions {

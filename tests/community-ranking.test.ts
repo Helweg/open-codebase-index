@@ -48,6 +48,29 @@ describe("community-aware local ranking", () => {
     expect(applyCommunityBoost(candidates, new Set(), 0.5)).toBe(candidates);
   });
 
+  it("preserves the existing relative order of unaffected tiered candidates", () => {
+    const candidates = [
+      candidate("definition-lane", 0.4),
+      candidate("high-score-unaffected", 0.95),
+      candidate("related", 0.8),
+      candidate("low-score-unaffected", 0.3),
+    ];
+
+    const ranked = applyCommunityBoost(candidates, new Set(["related"]), 0.25);
+
+    expect(ranked.map((entry) => entry.id)).toEqual([
+      "definition-lane",
+      "related",
+      "high-score-unaffected",
+      "low-score-unaffected",
+    ]);
+    expect(ranked.filter((entry) => entry.id !== "related").map((entry) => entry.id)).toEqual([
+      "definition-lane",
+      "high-score-unaffected",
+      "low-score-unaffected",
+    ]);
+  });
+
   it("improves reciprocal rank on a transparent fixed candidate pool", () => {
     const candidates = [candidate("unrelated", 0.9), candidate("same-community", 0.8)];
     const baseline = candidates.map((entry) => entry.id);
