@@ -66,6 +66,7 @@ const indexerMockState = vi.hoisted(() => ({
     getCallersForSymbol: ReturnType<typeof vi.fn>;
     getCallees: ReturnType<typeof vi.fn>;
     findCallPathBySymbolIds: ReturnType<typeof vi.fn>;
+    detectCommunityCouplings: ReturnType<typeof vi.fn>;
     clearIndex: ReturnType<typeof vi.fn>;
     forceIndex: ReturnType<typeof vi.fn>;
   }>,
@@ -152,6 +153,7 @@ vi.mock("../src/indexer/index.js", () => {
         getCallersForSymbol: this.getCallersForSymbol,
         getCallees: this.getCallees,
         findCallPathBySymbolIds: this.findCallPathBySymbolIds,
+        detectCommunityCouplings: this.detectCommunityCouplings,
         clearIndex: this.clearIndex,
         forceIndex: this.forceIndex,
       });
@@ -353,6 +355,25 @@ vi.mock("../src/indexer/index.js", () => {
         totalConnections: 3,
       },
     ]);
+    detectCommunityCouplings = vi.fn().mockResolvedValue([
+      {
+        communityA: 0,
+        communityB: 1,
+        count: 4,
+        communityAName: "Core",
+        communityBName: "Adapters",
+        representativeRelationships: [
+          {
+            fromSymbolId: "sym_1",
+            fromSymbolName: "funcA",
+            fromFilePath: "src/a.ts",
+            toSymbolId: "sym_2",
+            toSymbolName: "funcB",
+            toFilePath: "src/b.ts",
+          },
+        ],
+      },
+    ]);
   }
   return { Indexer: MockIndexer };
 });
@@ -457,7 +478,7 @@ describe("MCP server tools and prompts", () => {
   it("should execute code_communities through the portable MCP contract", async () => {
     const result = await client.callTool({
       name: "code_communities",
-      arguments: { minSize: 1, limit: 10, hubThreshold: 1 },
+      arguments: { minSize: 1, limit: 10, hubThreshold: 1, minCoupling: 2, couplingLimit: 3 },
     });
 
     const content = result.content as Array<{ type: string; text?: string }>;
@@ -465,6 +486,9 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Communities: 2");
     expect(content[0].text).toContain("funcA");
     expect(content[0].text).toContain("1 cross-community");
+    expect(content[0].text).toContain("Community couplings: 1 shown");
+    expect(content[0].text).toContain("Core ↔ Adapters: 4 distinct connections");
+    expect(content[0].text).toContain("funcA (src/a.ts) -> funcB (src/b.ts)");
   });
 
   it("should expose self-routing descriptions even when the client ignores server instructions", async () => {

@@ -1,6 +1,6 @@
 use crate::{
-    community, db, CallEdgeData, CentralityData, CommunityData, PathHopData, ReachabilityData,
-    SymbolData,
+    community, db, CallEdgeData, CentralityData, CommunityCouplingData, CommunityData,
+    CommunityRelationshipData, PathHopData, ReachabilityData, SymbolData,
 };
 use napi::bindgen_prelude::{Buffer, Error, Result};
 use napi_derive::napi;
@@ -1019,6 +1019,34 @@ impl Database {
                     community_id: r.community_id,
                     community_label: r.community_label,
                     cross_community_connections: r.cross_community_connections,
+                })
+                .collect())
+        })
+    }
+
+    #[napi]
+    pub fn detect_community_couplings(&self, branch: String) -> Result<Vec<CommunityCouplingData>> {
+        self.with_conn(|conn| {
+            let rows = community::detect_community_couplings(conn, &branch)
+                .map_err(|e| Error::from_reason(e.to_string()))?;
+            Ok(rows
+                .into_iter()
+                .map(|r| CommunityCouplingData {
+                    community_a: r.community_a,
+                    community_b: r.community_b,
+                    count: r.count,
+                    representative_relationships: r
+                        .representative_relationships
+                        .into_iter()
+                        .map(|relation| CommunityRelationshipData {
+                            from_symbol_id: relation.from_symbol_id,
+                            from_symbol_name: relation.from_symbol_name,
+                            from_file_path: relation.from_file_path,
+                            to_symbol_id: relation.to_symbol_id,
+                            to_symbol_name: relation.to_symbol_name,
+                            to_file_path: relation.to_file_path,
+                        })
+                        .collect(),
                 })
                 .collect())
         })

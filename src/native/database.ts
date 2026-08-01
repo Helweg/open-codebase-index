@@ -3,6 +3,7 @@ import type {
   CallEdgeData,
   CentralityData,
   ChunkData,
+  CommunityCouplingData,
   CommunityData,
   DatabaseStats,
   PathHopData,
@@ -412,5 +413,13 @@ export class Database {
   computeCentrality(branch: string): CentralityData[] {
     this.throwIfClosed();
     return this.inner.computeCentrality(branch);
+  }
+
+  detectCommunityCouplings(branch: string): CommunityCouplingData[] {
+    this.throwIfClosed();
+    return this.inner.detectCommunityCouplings(branch).map((entry: CommunityCouplingData) => ({
+      ...entry,
+      relationships: entry.representativeRelationships ?? [],
+    }));
   }
 }

@@ -8,11 +8,15 @@ import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { buildCodeCommunitiesResult } from "./format-communities.js";
 import {
+  CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
   CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
   CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MIN_COUPLING,
   CODE_COMMUNITIES_MIN_SIZE,
 } from "./contracts.js";
+import type { SharedCodeCommunitiesArgs } from "./contracts.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
@@ -499,18 +503,16 @@ export async function getPrImpact(
 export async function getCodeCommunities(
   projectRoot: string | undefined,
   host: HostMode,
-  params: {
-    branch?: string;
-    minSize?: number;
-    limit?: number;
-    hubThreshold?: number;
-  },
+  params: SharedCodeCommunitiesArgs,
 ): Promise<import("./format-communities.js").CodeCommunitiesResult> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
-  const communities = await indexer.detectCommunities(params.branch);
-  const centrality = await indexer.computeCentrality(params.branch);
-  return buildCodeCommunitiesResult(communities, centrality, {
+  const [communities, centrality, couplings] = await Promise.all([
+    indexer.detectCommunities(params.branch),
+    indexer.computeCentrality(params.branch),
+    indexer.detectCommunityCouplings(params.branch),
+  ]);
+  return buildCodeCommunitiesResult(communities, centrality, couplings, {
     minSize: Math.max(CODE_COMMUNITIES_MIN_SIZE, Math.floor(params.minSize ?? CODE_COMMUNITIES_MIN_SIZE)),
     limit: Math.min(
       CODE_COMMUNITIES_MAX_LIMIT,
@@ -519,6 +521,14 @@ export async function getCodeCommunities(
     hubThreshold: Math.max(
       0,
       Math.floor(params.hubThreshold ?? CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD),
+    ),
+    minCoupling: Math.max(
+      CODE_COMMUNITIES_MIN_COUPLING,
+      Math.floor(params.minCoupling ?? CODE_COMMUNITIES_MIN_COUPLING),
+    ),
+    couplingLimit: Math.min(
+      CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
+      Math.max(1, Math.floor(params.couplingLimit ?? CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT)),
     ),
   });
 }

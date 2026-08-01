@@ -24,6 +24,9 @@ import {
   CODE_COMMUNITIES_DEFAULT_LIMIT,
   CODE_COMMUNITIES_MAX_LIMIT,
   CODE_COMMUNITIES_MIN_SIZE,
+  CODE_COMMUNITIES_MIN_COUPLING,
+  CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
+  CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
 } from "../../tools/contracts.js";
 import {
   executeCallGraph,
@@ -323,13 +326,15 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   server.tool(
     TOOL_NAME.CODE_COMMUNITIES,
     "Discover natural module boundaries and hub symbols using graph community detection. " +
-    "Clusters symbols by call-graph connectivity, reports community memberships, and identifies " +
-    "hub nodes with cross-community connections. Use to understand architectural coupling.",
+    "Clusters symbols by call-graph connectivity, reports community memberships, identifies " +
+    "hub nodes with cross-community connections, and summarizes coupling relationships between communities.",
     {
       branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
       minSize: allowNullAsUndefined(z.number().int().min(CODE_COMMUNITIES_MIN_SIZE).optional().default(CODE_COMMUNITIES_MIN_SIZE)).describe("Minimum community size to include (default: 1)"),
       limit: allowNullAsUndefined(z.number().int().min(1).max(CODE_COMMUNITIES_MAX_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_LIMIT)).describe("Maximum number of communities and hub nodes to return (default: 20)"),
       hubThreshold: allowNullAsUndefined(z.number().int().min(0).optional().default(CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD)).describe("Minimum distinct cross-community neighbors to flag a hub node (default: 5)"),
+      minCoupling: allowNullAsUndefined(z.number().int().min(CODE_COMMUNITIES_MIN_COUPLING).optional().default(CODE_COMMUNITIES_MIN_COUPLING)).describe("Minimum distinct cross-community connection count to report a coupling (default: 1)"),
+      couplingLimit: allowNullAsUndefined(z.number().int().min(1).max(CODE_COMMUNITIES_MAX_COUPLING_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT)).describe("Maximum number of couplings to return (default: 20)"),
     },
     async (args) => {
       const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args);

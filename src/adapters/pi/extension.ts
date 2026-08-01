@@ -43,8 +43,11 @@ import { TOOL_NAME } from "../../tools/tool-names.js";
 import {
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
   CODE_COMMUNITIES_DEFAULT_LIMIT,
+  CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_MAX_LIMIT,
+  CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
   CODE_COMMUNITIES_MIN_SIZE,
+  CODE_COMMUNITIES_MIN_COUPLING,
 } from "../../tools/contracts.js";
 
 const HOST = "pi" as const;
@@ -307,6 +310,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       minSize: Type.Optional(Type.Integer({ minimum: CODE_COMMUNITIES_MIN_SIZE, default: CODE_COMMUNITIES_MIN_SIZE })),
       limit: Type.Optional(Type.Integer({ minimum: 1, maximum: CODE_COMMUNITIES_MAX_LIMIT, default: CODE_COMMUNITIES_DEFAULT_LIMIT })),
       hubThreshold: Type.Optional(Type.Integer({ minimum: 0, default: CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD })),
+      minCoupling: Type.Optional(Type.Integer({ minimum: CODE_COMMUNITIES_MIN_COUPLING, default: CODE_COMMUNITIES_MIN_COUPLING })),
+      couplingLimit: Type.Optional(
+        Type.Integer({ minimum: 1, maximum: CODE_COMMUNITIES_MAX_COUPLING_LIMIT, default: CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT }),
+      ),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await getCodeCommunities(projectRoot(ctx), HOST, params);

@@ -90,9 +90,14 @@ export interface SharedCodeCommunitiesArgs {
   minSize?: number;
   limit?: number;
   hubThreshold?: number;
+  minCoupling?: number;
+  couplingLimit?: number;
 }
 
 export const CODE_COMMUNITIES_MIN_SIZE = 1;
 export const CODE_COMMUNITIES_DEFAULT_LIMIT = 20;
 export const CODE_COMMUNITIES_MAX_LIMIT = 100;
 export const CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD = 5;
+export const CODE_COMMUNITIES_MIN_COUPLING = 1;
+export const CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT = 20;
+export const CODE_COMMUNITIES_MAX_COUPLING_LIMIT = 100;

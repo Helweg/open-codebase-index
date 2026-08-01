@@ -126,6 +126,9 @@ function createMockNativeBinding() {
       detectCommunities() {
         throw error;
       }
+      detectCommunityCouplings() {
+        throw error;
+      }
       computeCentrality() {
         throw error;
       }

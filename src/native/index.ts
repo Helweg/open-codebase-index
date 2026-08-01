@@ -7,6 +7,8 @@ export type {
   ChunkMetadata,
   CodeChunk,
   CommunityData,
+  CommunityCouplingData,
+  CommunityRelationshipData,
   DatabaseStats,
   DynamicBatchOptions,
   FileInput,

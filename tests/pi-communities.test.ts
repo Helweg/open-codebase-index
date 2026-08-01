@@ -28,7 +28,26 @@ const getCodeCommunities = vi.hoisted(() => vi.fn().mockResolvedValue({
       crossCommunityConnections: 2,
     },
   ],
-  totalSymbols: 1,
+  couplings: [
+    {
+      communityA: 0,
+      communityB: 1,
+      communityAName: "Core",
+      communityBName: "Adapters",
+      distinctConnections: 3,
+      representativeRelationships: [
+        {
+          fromSymbolId: "sym_core",
+          fromSymbolName: "CoreService",
+          fromFilePath: "src/core.ts",
+          toSymbolId: "sym_adapter",
+          toSymbolName: "AdapterService",
+          toFilePath: "src/adapter.ts",
+        },
+      ],
+    },
+  ],
+  totalSymbols: 2,
   totalCommunities: 1,
 }));
 
@@ -41,7 +60,14 @@ interface RegisteredTool {
   name: string;
   execute: (
     toolCallId: string,
-    params: { branch?: string; minSize?: number; limit?: number; hubThreshold?: number },
+    params: {
+      branch?: string;
+      minSize?: number;
+      limit?: number;
+      hubThreshold?: number;
+      minCoupling?: number;
+      couplingLimit?: number;
+    },
     signal: AbortSignal,
     onUpdate: () => void,
     context: { cwd?: string },
@@ -65,7 +91,7 @@ describe("Pi code_communities contract", () => {
 
     const result = await tool!.execute(
       "call-1",
-      { branch: "main", minSize: 2, limit: 5, hubThreshold: 1 },
+      { branch: "main", minSize: 2, limit: 5, hubThreshold: 1, minCoupling: 2, couplingLimit: 4 },
       new AbortController().signal,
       () => {},
       { cwd: "/tmp/project" },
@@ -76,9 +102,14 @@ describe("Pi code_communities contract", () => {
       minSize: 2,
       limit: 5,
       hubThreshold: 1,
+      minCoupling: 2,
+      couplingLimit: 4,
     });
     expect(result.content[0].text).toContain("CoreService");
     expect(result.content[0].text).toContain("2 cross-community");
+    expect(result.content[0].text).toContain("Community couplings: 1 shown");
+    expect(result.content[0].text).toContain("Core ↔ Adapters: 3 distinct connections");
+    expect(result.content[0].text).toContain("CoreService (src/core.ts) -> AdapterService (src/adapter.ts)");
     expect(result.details).toEqual(expect.objectContaining({ totalCommunities: 1 }));
   });
 });

@@ -109,6 +109,23 @@ export interface CommunityData {
   crossCommunityConnections: number;
 }
 
+export interface CommunityRelationshipData {
+  fromSymbolId: string;
+  fromSymbolName: string;
+  fromFilePath: string;
+  toSymbolId: string;
+  toSymbolName: string;
+  toFilePath: string;
+}
+
+export interface CommunityCouplingData {
+  communityA: number;
+  communityB: number;
+  count: number;
+  relationships?: CommunityRelationshipData[];
+  representativeRelationships?: CommunityRelationshipData[];
+}
+
 export interface CentralityData {
   symbolId: string;
   symbolName: string;

@@ -33,7 +33,7 @@ import {
   parseFileAsText,
   estimateTokens,
 } from "../native/index.js";
-import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CentralityData } from "../native/index.js";
+import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CommunityCouplingData, CentralityData } from "../native/index.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
@@ -5792,6 +5792,20 @@ export class Indexer {
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.detectCommunities(resolvedBranch, symbolIds)
       .map((entry) => this.resolveFilePathRecord(entry));
+  }
+
+  async detectCommunityCouplings(branch?: string): Promise<CommunityCouplingData[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    const resolvedBranch = this.resolveBranchCatalogKey(branch);
+    return database.detectCommunityCouplings(resolvedBranch).map((entry) => ({
+      ...entry,
+      relationships: (entry.relationships ?? entry.representativeRelationships ?? []).map((relationship) => ({
+        ...relationship,
+        fromFilePath: this.resolveStoredFilePath(relationship.fromFilePath),
+        toFilePath: this.resolveStoredFilePath(relationship.toFilePath),
+      })),
+    }));
   }
 
   async computeCentrality(branch?: string): Promise<CentralityData[]> {

@@ -302,6 +302,24 @@ pub struct CommunityData {
 }
 
 #[napi(object)]
+pub struct CommunityRelationshipData {
+    pub from_symbol_id: String,
+    pub from_symbol_name: String,
+    pub from_file_path: String,
+    pub to_symbol_id: String,
+    pub to_symbol_name: String,
+    pub to_file_path: String,
+}
+
+#[napi(object)]
+pub struct CommunityCouplingData {
+    pub community_a: u32,
+    pub community_b: u32,
+    pub count: u32,
+    pub representative_relationships: Vec<CommunityRelationshipData>,
+}
+
+#[napi(object)]
 pub struct CentralityData {
     pub symbol_id: String,
     pub symbol_name: String,
