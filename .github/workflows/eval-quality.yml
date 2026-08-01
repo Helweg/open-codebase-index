@@ -2,15 +2,25 @@ name: Eval Quality Gate
 
 on:
   workflow_dispatch:
+    inputs:
+      tier:
+        description: Evaluation tier to run
+        required: true
+        default: smoke
+        type: choice
+        options:
+          - smoke
+          - full
   schedule:
     - cron: "0 3 * * *"
+    - cron: "0 4 * * 0"
 
 permissions:
   contents: read
 
 jobs:
   eval-quality:
-    timeout-minutes: 45
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,6 +50,24 @@ jobs:
           cargo build --release
           npx napi build --release --platform
 
+      - name: Resolve evaluation tier
+        id: eval-tier
+        env:
+          DISPATCH_TIER: ${{ inputs.tier }}
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          if [ "$DISPATCH_TIER" = "full" ] || [ "$SCHEDULE" = "0 4 * * 0" ]; then
+            echo "name=full" >> "$GITHUB_OUTPUT"
+            echo "dataset_path=benchmarks/golden/representative.json" >> "$GITHUB_OUTPUT"
+            echo "ollama_config=.github/eval-ollama-full-config.json" >> "$GITHUB_OUTPUT"
+            echo "absolute_budget=benchmarks/budgets/representative.json" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=smoke" >> "$GITHUB_OUTPUT"
+            echo "dataset_path=benchmarks/golden/small.json" >> "$GITHUB_OUTPUT"
+            echo "ollama_config=.github/eval-ollama-config.json" >> "$GITHUB_OUTPUT"
+            echo "absolute_budget=benchmarks/budgets/ollama.json" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Resolve eval provider config
         id: eval-provider
         env:
@@ -47,6 +75,7 @@ jobs:
           EVAL_EMBED_API_KEY: ${{ secrets.EVAL_EMBED_API_KEY }}
           EVAL_EMBED_MODEL: ${{ secrets.EVAL_EMBED_MODEL }}
           EVAL_EMBED_DIMENSIONS: ${{ secrets.EVAL_EMBED_DIMENSIONS }}
+          EVAL_TIER: ${{ steps.eval-tier.outputs.name }}
         run: |
           if [ -n "$EVAL_EMBED_BASE_URL" ] || [ -n "$EVAL_EMBED_API_KEY" ]; then
             if [ -z "$EVAL_EMBED_BASE_URL" ] || [ -z "$EVAL_EMBED_API_KEY" ]; then
@@ -55,15 +84,20 @@ jobs:
             fi
 
             echo "provider_source=custom-secrets" >> "$GITHUB_OUTPUT"
-            echo "budget_path=benchmarks/budgets/default.json" >> "$GITHUB_OUTPUT"
-            echo "against_path=benchmarks/baselines/eval-baseline-summary.json" >> "$GITHUB_OUTPUT"
+            if [ "$EVAL_TIER" = "full" ]; then
+              echo "budget_path=${{ steps.eval-tier.outputs.absolute_budget }}" >> "$GITHUB_OUTPUT"
+              echo "against_path=" >> "$GITHUB_OUTPUT"
+            else
+              echo "budget_path=benchmarks/budgets/default.json" >> "$GITHUB_OUTPUT"
+              echo "against_path=benchmarks/baselines/eval-baseline-summary.json" >> "$GITHUB_OUTPUT"
+            fi
             echo "base_url=$EVAL_EMBED_BASE_URL" >> "$GITHUB_OUTPUT"
             echo "api_key=$EVAL_EMBED_API_KEY" >> "$GITHUB_OUTPUT"
             echo "model=${EVAL_EMBED_MODEL:-text-embedding-3-small}" >> "$GITHUB_OUTPUT"
             echo "dimensions=${EVAL_EMBED_DIMENSIONS:-1536}" >> "$GITHUB_OUTPUT"
           else
             echo "provider_source=ollama" >> "$GITHUB_OUTPUT"
-            echo "budget_path=benchmarks/budgets/ollama.json" >> "$GITHUB_OUTPUT"
+            echo "budget_path=${{ steps.eval-tier.outputs.absolute_budget }}" >> "$GITHUB_OUTPUT"
             echo "against_path=" >> "$GITHUB_OUTPUT"
             echo "model=nomic-embed-text" >> "$GITHUB_OUTPUT"
             echo "dimensions=768" >> "$GITHUB_OUTPUT"
@@ -104,7 +138,7 @@ jobs:
       - name: Create eval quality config
         run: |
           if [ "${{ steps.eval-provider.outputs.provider_source }}" = "ollama" ]; then
-            cp .github/eval-ollama-config.json .github/eval-quality-config.json
+            cp "${{ steps.eval-tier.outputs.ollama_config }}" .github/eval-quality-config.json
           else
             EMBED_CONCURRENCY=3
             EMBED_REQUEST_INTERVAL_MS=1000
@@ -122,11 +156,6 @@ jobs:
               "concurrency": $EMBED_CONCURRENCY,
               "requestIntervalMs": $EMBED_REQUEST_INTERVAL_MS
             },
-            "include": [
-              "src/indexer/*.ts",
-              "src/adapters/opencode/*.ts",
-              "src/config/*.ts"
-            ],
             "indexing": {
               "autoIndex": false,
               "watchFiles": false,
@@ -152,11 +181,16 @@ jobs:
             }
           }
           EOF
+            if [ "${{ steps.eval-tier.outputs.name }}" = "smoke" ]; then
+              jq '.include = ["src/indexer/*.ts", "src/adapters/opencode/*.ts", "src/config/*.ts"]' \
+                .github/eval-quality-config.json > .github/eval-quality-config.tmp.json
+              mv .github/eval-quality-config.tmp.json .github/eval-quality-config.json
+            fi
           fi
 
       - name: Run eval quality gate (real provider config required)
         run: |
-          ARGS=(eval run --dataset benchmarks/golden/small.json --config .github/eval-quality-config.json --output eval-results --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
+          ARGS=(eval run --dataset "${{ steps.eval-tier.outputs.dataset_path }}" --config .github/eval-quality-config.json --output "eval-results/${{ steps.eval-tier.outputs.name }}" --reindex --ci --budget "${{ steps.eval-provider.outputs.budget_path }}")
           if [ -n "${{ steps.eval-provider.outputs.against_path }}" ]; then
             ARGS+=(--against "${{ steps.eval-provider.outputs.against_path }}")
           fi
@@ -176,7 +210,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: eval-quality-${{ github.run_id }}
+          name: eval-quality-${{ steps.eval-tier.outputs.name }}-${{ github.run_id }}
           path: eval-results
           if-no-files-found: warn
           retention-days: 14

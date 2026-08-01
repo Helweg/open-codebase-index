@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Two-tier retrieval quality gates**: Added a daily focused Ollama smoke evaluation and a weekly full-repository representative evaluation spanning TypeScript, Rust, Swift, and PHP, with manual tier selection, separate artifacts, and dataset-specific absolute budgets.
+
 ### Changed
 
 - **Faster real-provider evaluation**: Scoped the four-query scheduled Ollama smoke gate to the relevant indexer, OpenCode adapter, and configuration source areas, retaining real semantic competition and all expected files while avoiding full-repository embedding on CPU-only GitHub runners.
