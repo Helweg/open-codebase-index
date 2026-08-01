@@ -52,7 +52,7 @@ function summary(hitAt5: number, mrrAt10: number): EvalSummary {
 
 describe("effectiveness quality CI", () => {
   const budget = JSON.parse(
-    readFileSync("benchmarks/budgets/github-models.json", "utf8"),
+    readFileSync("benchmarks/budgets/ollama.json", "utf8"),
   ) as EvalBudget;
 
   it("rejects the observed retrieval step-down and accepts the healthy result", () => {
