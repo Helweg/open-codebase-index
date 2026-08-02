@@ -6,10 +6,10 @@
   "author": {
     "name": "Kenneth",
     "email": "kenneth@example.com",
-    "url": "https://github.com/Helweg/opencode-codebase-index"
+    "url": "https://github.com/Helweg/open-codebase-index"
   },
-  "homepage": "https://github.com/Helweg/opencode-codebase-index",
-  "repository": "https://github.com/Helweg/opencode-codebase-index",
+  "homepage": "https://github.com/Helweg/open-codebase-index",
+  "repository": "https://github.com/Helweg/open-codebase-index",
   "license": "MIT",
   "keywords": [
     "codebase-index",

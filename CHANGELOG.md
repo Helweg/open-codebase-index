@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Repository rename preparation**: Added validated repository URL overrides for staged package and host metadata, including package, Claude, and Codex repository fields, and made release metadata follow `GITHUB_REPOSITORY` before and after the planned GitHub rename.
+- **Canonical repository identity**: Renamed the GitHub repository to `Helweg/open-codebase-index` and updated package metadata, host manifests, badges, installation commands, security links, troubleshooting links, and changelog comparisons while preserving legacy package, binary, storage, and tool compatibility.
 
 ## [0.22.1] - 2026-08-01
 
@@ -591,46 +592,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/opencode-codebase-index/compare/v0.22.0...HEAD
-[0.22.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.21.0...v0.22.0
-[0.21.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.1...v0.21.0
-[0.20.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.20.0...v0.20.1
-[0.20.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.1...v0.20.0
-[0.19.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.19.0...v0.19.1
-[0.19.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.1...v0.19.0
-[0.18.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.18.0...v0.18.1
-[0.18.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.1...v0.18.0
-[0.17.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.17.0...v0.17.1
-[0.17.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.16.0...v0.17.0
-[0.16.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.15.0...v0.16.0
-[0.15.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.14.0...v0.15.0
-[0.14.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.2...v0.14.0
-[0.13.2]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.1...v0.13.2
-[0.13.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.13.0...v0.13.1
-[0.13.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.12.0...v0.13.0
-[0.12.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.11.0...v0.12.0
-[0.11.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.10.0...v0.11.0
-[0.10.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.8.1...v0.9.0
-[0.8.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.8.0...v0.8.1
-[0.8.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.6.1...v0.7.0
-[0.6.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.5.2...v0.6.0
-[0.5.2]: https://github.com/Helweg/opencode-codebase-index/compare/v0.5.1...v0.5.2
-[0.5.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.4.1...v0.5.0
-[0.4.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.3.2...v0.4.0
-[0.3.2]: https://github.com/Helweg/opencode-codebase-index/compare/v0.3.1...v0.3.2
-[0.3.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.3.0...v0.3.1
-[0.3.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.11...v0.2.0
-[0.1.11]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.10...v0.1.11
-[0.1.10]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.9...v0.1.10
-[0.1.9]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.8...v0.1.9
-[0.1.8]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.3...v0.1.8
-[0.1.3]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.1...v0.1.3
-[0.1.1]: https://github.com/Helweg/opencode-codebase-index/compare/v0.1.0...v0.1.1
-[0.1.0]: https://github.com/Helweg/opencode-codebase-index/releases/tag/v0.1.0
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/Helweg/open-codebase-index/compare/v0.21.0...v0.22.0
+[0.21.0]: https://github.com/Helweg/open-codebase-index/compare/v0.20.1...v0.21.0
+[0.20.1]: https://github.com/Helweg/open-codebase-index/compare/v0.20.0...v0.20.1
+[0.20.0]: https://github.com/Helweg/open-codebase-index/compare/v0.19.1...v0.20.0
+[0.19.1]: https://github.com/Helweg/open-codebase-index/compare/v0.19.0...v0.19.1
+[0.19.0]: https://github.com/Helweg/open-codebase-index/compare/v0.18.1...v0.19.0
+[0.18.1]: https://github.com/Helweg/open-codebase-index/compare/v0.18.0...v0.18.1
+[0.18.0]: https://github.com/Helweg/open-codebase-index/compare/v0.17.1...v0.18.0
+[0.17.1]: https://github.com/Helweg/open-codebase-index/compare/v0.17.0...v0.17.1
+[0.17.0]: https://github.com/Helweg/open-codebase-index/compare/v0.16.0...v0.17.0
+[0.16.0]: https://github.com/Helweg/open-codebase-index/compare/v0.15.0...v0.16.0
+[0.15.0]: https://github.com/Helweg/open-codebase-index/compare/v0.14.0...v0.15.0
+[0.14.0]: https://github.com/Helweg/open-codebase-index/compare/v0.13.2...v0.14.0
+[0.13.2]: https://github.com/Helweg/open-codebase-index/compare/v0.13.1...v0.13.2
+[0.13.1]: https://github.com/Helweg/open-codebase-index/compare/v0.13.0...v0.13.1
+[0.13.0]: https://github.com/Helweg/open-codebase-index/compare/v0.12.0...v0.13.0
+[0.12.0]: https://github.com/Helweg/open-codebase-index/compare/v0.11.0...v0.12.0
+[0.11.0]: https://github.com/Helweg/open-codebase-index/compare/v0.10.0...v0.11.0
+[0.10.0]: https://github.com/Helweg/open-codebase-index/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/Helweg/open-codebase-index/compare/v0.8.1...v0.9.0
+[0.8.1]: https://github.com/Helweg/open-codebase-index/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/Helweg/open-codebase-index/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/Helweg/open-codebase-index/compare/v0.6.1...v0.7.0
+[0.6.1]: https://github.com/Helweg/open-codebase-index/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/Helweg/open-codebase-index/compare/v0.5.2...v0.6.0
+[0.5.2]: https://github.com/Helweg/open-codebase-index/compare/v0.5.1...v0.5.2
+[0.5.1]: https://github.com/Helweg/open-codebase-index/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/Helweg/open-codebase-index/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/Helweg/open-codebase-index/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/Helweg/open-codebase-index/compare/v0.3.2...v0.4.0
+[0.3.2]: https://github.com/Helweg/open-codebase-index/compare/v0.3.1...v0.3.2
+[0.3.1]: https://github.com/Helweg/open-codebase-index/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/Helweg/open-codebase-index/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/Helweg/open-codebase-index/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/Helweg/open-codebase-index/compare/v0.1.11...v0.2.0
+[0.1.11]: https://github.com/Helweg/open-codebase-index/compare/v0.1.10...v0.1.11
+[0.1.10]: https://github.com/Helweg/open-codebase-index/compare/v0.1.9...v0.1.10
+[0.1.9]: https://github.com/Helweg/open-codebase-index/compare/v0.1.8...v0.1.9
+[0.1.8]: https://github.com/Helweg/open-codebase-index/compare/v0.1.3...v0.1.8
+[0.1.3]: https://github.com/Helweg/open-codebase-index/compare/v0.1.1...v0.1.3
+[0.1.1]: https://github.com/Helweg/open-codebase-index/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/Helweg/open-codebase-index/releases/tag/v0.1.0

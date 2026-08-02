@@ -1,8 +1,8 @@
 # Migration plan: `open-codebase-index`
 
-This document describes how to evolve the project from `opencode-codebase-index` to the host-neutral name `open-codebase-index` without breaking existing installations or losing indexes.
+This document describes the compatibility plan used to evolve the project from `opencode-codebase-index` to the host-neutral name `open-codebase-index` without breaking existing installations or losing indexes.
 
-It is a plan, not an active rename. Repository renames, npm publication, tags, releases, storage migrations, and removal of compatibility aliases require separate approval.
+The GitHub repository and preferred npm package now use `open-codebase-index`. Legacy package, binary, configuration, storage, and tool contracts remain supported as documented below.
 
 ## Why the rename is now feasible
 
@@ -39,7 +39,7 @@ The rename touches several independently versioned identities. Treat each as a s
 
 | Surface | Current identity | Proposed identity | Initial compatibility action |
 |---|---|---|---|
-| GitHub repository | `Helweg/opencode-codebase-index` | `Helweg/open-codebase-index` | Rename only after docs and automation accept both URLs; rely on GitHub redirect temporarily |
+| GitHub repository | `Helweg/opencode-codebase-index` | `Helweg/open-codebase-index` | Renamed; GitHub redirects the legacy URL |
 | npm package | `opencode-codebase-index` | `open-codebase-index` | Publish a new package; keep the old package as a compatibility wrapper or deprecation bridge |
 | MCP binary | `opencode-codebase-index-mcp` | `open-codebase-index-mcp` | Ship both bin names from the new package during the transition |
 | MCP server name | `opencode-codebase-index` | `open-codebase-index` | Change only after client snapshots and integration tests accept the new display identity |
@@ -97,19 +97,18 @@ The old package can initially remain a synchronized publication of the same code
   - explicit override updates package, Claude, and Codex staged metadata.
 - [x] Ensure invalid or unknown repository URLs fail fast with clear errors.
 - [x] Keep checked-in links on the live repository until the rename is approved. The release workflow is already rename-safe because it derives staged metadata from `GITHUB_REPOSITORY`.
-- [ ] Rename the GitHub repository only after explicit maintainer approval.
-- [ ] Immediately after the rename, update checked-in public links and verify redirects, provenance, and marketplace installation.
+- [x] Rename the GitHub repository only after explicit maintainer approval.
+- [x] Immediately after the rename, update checked-in public links and verify redirects, provenance, and marketplace installation.
 
-Intentional pre-rename references to `Helweg/opencode-codebase-index` are classified as follows:
+Legacy references to `Helweg/opencode-codebase-index` are now limited to migration history and compatibility documentation:
 
 | Location | Why it remains | When to update |
 |---|---|---|
-| `package.json`, `src/identity-catalog.json` current identity, and checked-in host manifests | Describe the currently live repository and legacy compatibility identity | Immediately after the GitHub rename; retain the catalog's current identity as the documented compatibility value |
-| `README.md`, `SECURITY.md`, `TROUBLESHOOTING.md`, and `docs/installation.md` | Must resolve before the new repository URL exists | In the rename commit or immediately after the rename |
-| Historical `CHANGELOG.md` comparison links | Release history currently resolves through the live repository | After the rename, relying on GitHub redirects for old external links |
-| This migration document | Explicitly documents both old and future identities | Keep both identities for historical and operational context |
+| Checked-in package and host metadata | Uses the canonical `Helweg/open-codebase-index` repository | Complete |
+| Public documentation and changelog comparison links | Uses the canonical repository directly | Complete |
+| This migration document | Explicitly records the old identity and redirect contract | Retain for historical and operational context |
 
-Phase 2 rename changes require explicit maintainer approval and are not to be executed during this repository-rename preparation pass.
+Phase 2 was completed after explicit maintainer approval. Storage locations, native artifacts, legacy package and binary names, and public tool contracts were intentionally unchanged.
 
 **Exit criteria:** fresh clones, pull requests, release automation, package provenance, source links, and documentation links resolve through the new repository identity.
 

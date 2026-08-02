@@ -68,6 +68,34 @@ function prepareMetadata(packageName: string, outputDir: string, repositoryUrl?:
 }
 
 describe("Phase 1 product identity compatibility", () => {
+  it("uses the canonical repository in public metadata while retaining migration history", () => {
+    const canonicalRepository = IDENTITY_CATALOG.product.future.repository;
+    const legacyRepository = "https://github.com/Helweg/opencode-codebase-index";
+    const publicUrlFiles = [
+      "package.json",
+      "README.md",
+      "SECURITY.md",
+      "TROUBLESHOOTING.md",
+      "CHANGELOG.md",
+      ".claude-plugin/plugin.json",
+      ".claude-plugin/marketplace.json",
+      ".codex-plugin/plugin.json",
+    ];
+
+    expect(IDENTITY_CATALOG.product.current.repository).toBe(canonicalRepository);
+    for (const filePath of publicUrlFiles) {
+      const contents = readText(filePath);
+      expect(contents, filePath).toContain(canonicalRepository);
+      expect(contents, filePath).not.toContain(legacyRepository);
+    }
+
+    const installation = readText("docs/installation.md");
+    expect(installation).toContain("Helweg/open-codebase-index");
+    expect(installation).not.toContain("Helweg/opencode-codebase-index");
+
+    expect(readText("docs/rename-to-open-codebase-index.md")).toContain("Helweg/opencode-codebase-index");
+  });
+
   it("keeps the checked-in legacy package and host manifests unchanged", () => {
     const current = IDENTITY_CATALOG.product.current;
     const packageJson = readJson<PackageMetadata>("package.json");
