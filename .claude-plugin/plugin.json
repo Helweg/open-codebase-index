@@ -1,6 +1,6 @@
 {
   "name": "codebase-index",
-  "version": "0.22.1",
+  "version": "0.22.2",
   "description": "Semantic code search and codebase graph tools for Claude Code",
   "displayName": "Codebase Index",
   "author": {
@@ -22,7 +22,14 @@
   "mcpServers": {
     "codebase-index": {
       "command": "npx",
-      "args": ["-y", "--package", "opencode-codebase-index", "opencode-codebase-index-mcp", "--host", "claude"]
+      "args": [
+        "-y",
+        "--package",
+        "opencode-codebase-index",
+        "opencode-codebase-index-mcp",
+        "--host",
+        "claude"
+      ]
     }
   }
 }
