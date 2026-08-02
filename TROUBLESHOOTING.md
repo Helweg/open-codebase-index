@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Common issues and solutions for opencode-codebase-index.
+Common issues and solutions for open-codebase-index.
 
 ## 🚑 Quick Triage (fastest path)
 

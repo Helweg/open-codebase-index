@@ -1,6 +1,6 @@
 # Architecture Overview
 
-This document explains the architecture of opencode-codebase-index, including data flow, component interactions, and key design decisions.
+This document explains the architecture of open-codebase-index, including data flow, component interactions, and key design decisions.
 
 ## Table of Contents
 

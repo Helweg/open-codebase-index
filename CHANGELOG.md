@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **CI timing reliability**: Added explicit Git watcher readiness, replaced watcher startup sleeps with readiness synchronization, stopped forcing polling in config-refresh integration tests, retried file writes only when an event was not observed, and changed the 10k-node community performance gate to enforce a sub-second warm median plus a two-second cold/outlier ceiling.
+- **Canonical identity cleanup**: Standardized remaining user-facing defaults and development example copy to prefer `open-codebase-index` in docs and build artifacts (including architecture/contributing/troubleshooting guidance, native crate description, benchmark defaults, and bundle banners) while preserving all legacy compatibility surfaces and keeping checked-in manifests unchanged. Added identity regressions that assert these canonical defaults and banner text so they cannot silently regress.
 
 ## [0.22.2] - 2026-08-02
 
