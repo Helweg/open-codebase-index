@@ -96,6 +96,46 @@ describe("Phase 1 product identity compatibility", () => {
     expect(readText("docs/rename-to-open-codebase-index.md")).toContain("Helweg/opencode-codebase-index");
   });
 
+  it("uses canonical user-facing defaults for docs, tool banners, and benchmark scaffolding", () => {
+    const docsAndArtifacts = {
+      agentGuidance: readText("AGENTS.md"),
+      architecture: readText("ARCHITECTURE.md"),
+      contributing: readText("CONTRIBUTING.md"),
+      troubleshooting: readText("TROUBLESHOOTING.md"),
+      benchmarkRun: readText("benchmarks/run.ts"),
+      benchmarkShell: readText("scripts/benchmark.sh"),
+      nativeManifest: readText("native/Cargo.toml"),
+      tsupConfig: readText("tsup.config.ts"),
+    };
+
+    expect(docsAndArtifacts.agentGuidance).toContain("AI Agent Guidelines for open-codebase-index");
+    expect(docsAndArtifacts.agentGuidance).toContain("opencode-codebase-index@0.22.2");
+    expect(docsAndArtifacts.agentGuidance).not.toContain("AI Agent Guidelines for opencode-codebase-index");
+
+    expect(docsAndArtifacts.architecture).toContain("open-codebase-index");
+    expect(docsAndArtifacts.architecture).not.toContain("opencode-codebase-index");
+
+    expect(docsAndArtifacts.contributing).toContain("Contributing to open-codebase-index");
+    expect(docsAndArtifacts.contributing).not.toContain("Contributing to opencode-codebase-index");
+    expect(docsAndArtifacts.contributing).toContain("github.com/YOUR_USERNAME/open-codebase-index.git");
+
+    expect(docsAndArtifacts.troubleshooting).toContain("open-codebase-index");
+    expect(docsAndArtifacts.troubleshooting).not.toContain("opencode-codebase-index");
+
+    expect(docsAndArtifacts.benchmarkRun).toContain("Synthetic benchmark for open-codebase-index");
+    expect(docsAndArtifacts.benchmarkRun).not.toContain("Synthetic benchmark for opencode-codebase-index");
+
+    expect(docsAndArtifacts.benchmarkShell).toContain("Token Usage Benchmark Script for open-codebase-index");
+    expect(docsAndArtifacts.benchmarkShell).toContain('"plugin": ["open-codebase-index"]');
+    expect(docsAndArtifacts.benchmarkShell).toContain("opencode-codebase-index remains a legacy alias");
+
+    expect(docsAndArtifacts.nativeManifest).toContain("Native Rust core for open-codebase-index");
+    expect(docsAndArtifacts.nativeManifest).not.toContain("Native Rust core for opencode-codebase-index");
+
+    expect(docsAndArtifacts.tsupConfig).toContain("// open-codebase-index - Semantic codebase indexing and search");
+    expect(docsAndArtifacts.tsupConfig).not.toContain("// opencode-codebase-index - Semantic codebase search for OpenCode");
+  });
+
   it("keeps the checked-in legacy package and host manifests unchanged", () => {
     const current = IDENTITY_CATALOG.product.current;
     const packageJson = readJson<PackageMetadata>("package.json");

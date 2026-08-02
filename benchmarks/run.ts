@@ -1,5 +1,5 @@
 /**
- * Synthetic benchmark for opencode-codebase-index
+ * Synthetic benchmark for open-codebase-index
  * 
  * Measures performance of:
  * - File parsing (tree-sitter)

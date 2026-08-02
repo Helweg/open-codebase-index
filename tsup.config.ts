@@ -44,13 +44,13 @@ export default defineConfig({
     if (context.format === "esm") {
       options.banner = {
         js: [
-          "// opencode-codebase-index - Semantic codebase search for OpenCode",
+          "// open-codebase-index - Semantic codebase indexing and search",
           "import { createRequire } from 'module'; const require = createRequire(import.meta.url);",
         ].join("\n"),
       };
     } else {
       options.banner = {
-        js: "// opencode-codebase-index - Semantic codebase search for OpenCode",
+        js: "// open-codebase-index - Semantic codebase indexing and search",
       };
     }
     if (context.format === "cjs") {

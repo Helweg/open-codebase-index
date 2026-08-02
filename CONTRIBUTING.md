@@ -1,4 +1,4 @@
-# Contributing to opencode-codebase-index
+# Contributing to open-codebase-index
 
 Thank you for your interest in contributing! This document provides guidelines and information for contributors.
 
@@ -26,8 +26,8 @@ Use this when you just want the shortest path to a good PR:
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/opencode-codebase-index.git
-   cd opencode-codebase-index
+   git clone https://github.com/YOUR_USERNAME/open-codebase-index.git
+   cd open-codebase-index
    ```
 3. **Install dependencies**:
    ```bash

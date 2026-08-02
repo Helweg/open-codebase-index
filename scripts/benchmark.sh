@@ -1,5 +1,5 @@
 #!/bin/bash
-# Token Usage Benchmark Script for opencode-codebase-index
+# Token Usage Benchmark Script for open-codebase-index
 # Compares token usage with and without the plugin across different codebase sizes
 
 set -e
@@ -43,7 +43,8 @@ run_test() {
     
     # Configure opencode.json based on with_plugin flag
     if [ "$with_plugin" = "true" ]; then
-        echo '{"plugin": ["opencode-codebase-index"]}' > "$repo_path/opencode.json"
+        # Use canonical package name; opencode-codebase-index remains a legacy alias.
+        echo '{"plugin": ["open-codebase-index"]}' > "$repo_path/opencode.json"
         
         # First, index the codebase if not already indexed
         echo "  Indexing codebase..."
