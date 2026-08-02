@@ -84,7 +84,10 @@ export function createWatcherWithIndexer(
     fileWatcher,
     gitWatcher,
     whenReady() {
-      return fileWatcher.waitUntilReady();
+      return Promise.all([
+        fileWatcher.waitUntilReady(),
+        gitWatcher?.waitUntilReady(),
+      ]).then(() => undefined);
     },
     async stop() {
       stopped = true;

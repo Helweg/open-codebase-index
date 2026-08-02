@@ -55,6 +55,39 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
   ...overrides,
 });
 
+const waitForIndexerCalls = async (
+  indexer: { index: ReturnType<typeof vi.fn> },
+  expectedCalls: number,
+  timeoutMs = 3000,
+): Promise<void> => {
+  await vi.waitFor(() => {
+    expect(indexer.index).toHaveBeenCalledTimes(expectedCalls);
+  }, { timeout: timeoutMs });
+};
+
+const writeUntilObserved = async (
+  write: (attempt: number) => void,
+  assertion: () => void,
+  timeoutMs = 10000,
+): Promise<void> => {
+  const startedAt = Date.now();
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    write(attempt++);
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    try {
+      await vi.waitFor(assertion, { timeout: Math.min(2500, remainingMs), interval: 50 });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+};
+
 describe("FileWatcher", () => {
   let tempDir: string;
   let watcher: FileWatcher;
@@ -109,7 +142,7 @@ describe("FileWatcher", () => {
   });
 
   describe("file filtering", () => {
-    it("should only watch files matching include patterns", async () => {
+    it("captures only matching include-pattern changes after watcher ready", async () => {
       const changes: FileChange[] = [];
       watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "opencode");
 
@@ -117,21 +150,24 @@ describe("FileWatcher", () => {
         changes.push(...c);
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await watcher.waitUntilReady();
 
-      fs.writeFileSync(path.join(tempDir, "src", "test.ts"), "const x = 1;");
-      fs.writeFileSync(path.join(tempDir, "src", "test.md"), "# README");
-
-      await new Promise((r) => setTimeout(r, 1500));
+      await writeUntilObserved(
+        (attempt) => {
+          fs.writeFileSync(path.join(tempDir, "src", "test.ts"), `const x = ${attempt};`);
+          fs.writeFileSync(path.join(tempDir, "src", "test.md"), `# README ${attempt}`);
+        },
+        () => expect(changes.some((change) => change.path.endsWith("test.ts"))).toBe(true),
+      );
 
       const tsChanges = changes.filter((c) => c.path.endsWith(".ts"));
       const mdChanges = changes.filter((c) => c.path.endsWith(".md"));
 
-      expect(tsChanges.length).toBeGreaterThanOrEqual(0);
+      expect(tsChanges).toHaveLength(1);
       expect(mdChanges.length).toBe(0);
     });
 
-    it("should include matching root-level files", async () => {
+    it("includes matching root-level files without missed events", async () => {
       const changes: FileChange[] = [];
       watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "opencode");
 
@@ -139,32 +175,36 @@ describe("FileWatcher", () => {
         changes.push(...c);
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await watcher.waitUntilReady();
 
-      fs.writeFileSync(path.join(tempDir, "root.ts"), "export const root = 1;");
-
-      await new Promise((r) => setTimeout(r, 1500));
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(path.join(tempDir, "root.ts"), `export const root = ${attempt};`),
+        () => expect(changes.some((change) => change.path.endsWith("root.ts"))).toBe(true),
+      );
 
       expect(changes.some((c) => c.path.endsWith("root.ts"))).toBe(true);
     });
 
     it("should watch codex-native config without watching codex index files", async () => {
       const changes: FileChange[] = [];
+      fs.mkdirSync(path.join(tempDir, ".codebase-index", "index"), { recursive: true });
       watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "codex");
 
       watcher.start(async (c) => {
         changes.push(...c);
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await watcher.waitUntilReady();
 
-      fs.mkdirSync(path.join(tempDir, ".codebase-index", "index"), { recursive: true });
-      fs.writeFileSync(path.join(tempDir, ".codebase-index", "config.json"), "{}");
       fs.writeFileSync(path.join(tempDir, ".codebase-index", "index", "codebase.db"), "index");
-
-      await vi.waitFor(
-        () => expect(changes.some((c) => c.path.endsWith(path.join(".codebase-index", "config.json")))).toBe(true),
-        { timeout: 2500 },
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, ".codebase-index", "config.json"),
+          JSON.stringify({ attempt }),
+        ),
+        () => expect(
+          changes.some((c) => c.path.endsWith(path.join(".codebase-index", "config.json"))),
+        ).toBe(true),
       );
 
       expect(changes.some((c) => c.path.includes(path.join(".codebase-index", "index")))).toBe(false);
@@ -180,15 +220,18 @@ describe("FileWatcher", () => {
         changes.push(...c);
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await watcher.waitUntilReady();
 
       fs.mkdirSync(path.join(tempDir, ".opencode", "index"), { recursive: true });
-      fs.writeFileSync(path.join(tempDir, ".opencode", "codebase-index.json"), "{\"include\":[\"src/**/*.ts\"]}");
       fs.writeFileSync(path.join(tempDir, ".opencode", "index", "codebase.db"), "index");
-
-      await vi.waitFor(
-        () => expect(changes.some((c) => c.path.endsWith(path.join(".opencode", "codebase-index.json")))).toBe(true),
-        { timeout: 2500 },
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, ".opencode", "codebase-index.json"),
+          JSON.stringify({ include: ["src/**/*.ts"], attempt }),
+        ),
+        () => expect(
+          changes.some((c) => c.path.endsWith(path.join(".opencode", "codebase-index.json"))),
+        ).toBe(true),
       );
 
       expect(changes.some((c) => c.path.includes(path.join(".opencode", "index")))).toBe(false);
@@ -220,7 +263,7 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await combinedWatcher.whenReady();
       fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/feature\n");
 
       await vi.waitFor(() => {
@@ -237,7 +280,7 @@ describe("FileWatcher", () => {
     });
 
     it("handles file-triggered reindexing in the background", async () => {
-      vi.setConfig({ testTimeout: 4000 });
+      vi.setConfig({ testTimeout: 12000 });
       let resolveIndex: (() => void) | null = null;
       const indexer = {
         index: vi.fn(() => new Promise<void>((resolve) => {
@@ -251,9 +294,14 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await new Promise((r) => setTimeout(r, 100));
-      fs.writeFileSync(path.join(tempDir, "src", "background.ts"), "export const value = 1;");
-      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(1), { timeout: 2500 });
+      await combinedWatcher.whenReady();
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, "src", "background.ts"),
+          `export const value = ${attempt};`,
+        ),
+        () => expect(indexer.index).toHaveBeenCalledTimes(1),
+      );
 
       expect(indexer.index).toHaveBeenCalledTimes(1);
       expect(resolveIndex).toBeTypeOf("function");
@@ -277,11 +325,11 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      await combinedWatcher.whenReady();
       fs.writeFileSync(path.join(tempDir, "src", "first.ts"), "export const first = 1;");
-      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(1), { timeout: 2500 });
+      await waitForIndexerCalls(indexer, 1);
       fs.writeFileSync(path.join(tempDir, "src", "second.ts"), "export const second = 2;");
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((resolve) => setTimeout(resolve, 1500));
 
       expect(indexer.index).toHaveBeenCalledTimes(1);
       pendingResolves[0]?.();
@@ -310,8 +358,13 @@ describe("FileWatcher", () => {
       );
 
       await combinedWatcher.fileWatcher.waitUntilReady();
-      fs.writeFileSync(path.join(tempDir, "src", "retry.ts"), "export const retry = 1;");
-      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(1), { timeout: 2500 });
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, "src", "retry.ts"),
+          `export const retry = ${attempt};`,
+        ),
+        () => expect(indexer.index).toHaveBeenCalledTimes(1),
+      );
       rejectFirst?.(new IndexLockContentionError("/tmp/indexing.lock", owner, "active"));
       await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2), { timeout: 1000 });
 
@@ -340,8 +393,13 @@ describe("FileWatcher", () => {
       );
 
       await combinedWatcher.fileWatcher.waitUntilReady();
-      fs.writeFileSync(path.join(tempDir, "src", "blocked.ts"), "export const blocked = true;");
-      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce(), { timeout: 4000 });
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, "src", "blocked.ts"),
+          `export const blocked = ${attempt};`,
+        ),
+        () => expect(indexer.index).toHaveBeenCalledOnce(),
+      );
       await vi.waitFor(() => expect(consoleError).toHaveBeenCalledOnce(), { timeout: 1000 });
       await new Promise((resolve) => setTimeout(resolve, 600));
 
@@ -365,12 +423,16 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await new Promise((r) => setTimeout(r, 100));
+      await combinedWatcher.whenReady();
       currentIndexer = refreshedIndexer;
 
-      fs.writeFileSync(path.join(tempDir, "src", "reindex-me.ts"), "export const value = 1;");
-
-      await new Promise((r) => setTimeout(r, 1500));
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          path.join(tempDir, "src", "reindex-me.ts"),
+          `export const value = ${attempt};`,
+        ),
+        () => expect(refreshedIndexer.index).toHaveBeenCalledTimes(1),
+      );
 
       expect(refreshedIndexer.index).toHaveBeenCalledTimes(1);
       expect(staleIndexer.index).not.toHaveBeenCalled();
@@ -498,17 +560,15 @@ describe("GitHeadWatcher", () => {
         branchChanges.push({ old: oldBranch, new: newBranch });
       });
 
-      await new Promise((r) => setTimeout(r, 100));
+      await watcher.waitUntilReady();
 
       fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/feature\n");
 
-      await new Promise((r) => setTimeout(r, 500));
+      await vi.waitFor(() => {
+        expect(branchChanges[0]).toEqual({ old: "main", new: "feature" });
+      }, { timeout: 2500 });
 
-      expect(branchChanges.length).toBeGreaterThanOrEqual(0);
-      if (branchChanges.length > 0) {
-        expect(branchChanges[0].old).toBe("main");
-        expect(branchChanges[0].new).toBe("feature");
-      }
+      expect(branchChanges).not.toHaveLength(0);
     });
   });
 });

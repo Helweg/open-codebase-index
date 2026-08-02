@@ -16,6 +16,8 @@ export class GitHeadWatcher {
   private onBranchChange: BranchChangeHandler | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
   private debounceMs = 100; // Short debounce for git operations
+  private readyPromise: Promise<void> = Promise.resolve();
+  private resolveReady: (() => void) | null = null;
 
   constructor(projectRoot: string) {
     this.projectRoot = projectRoot;
@@ -27,8 +29,13 @@ export class GitHeadWatcher {
     }
 
     if (!isGitRepo(this.projectRoot)) {
+      this.readyPromise = Promise.resolve();
       return; // Not a git repo, nothing to watch
     }
+
+    this.readyPromise = new Promise<void>((resolve) => {
+      this.resolveReady = resolve;
+    });
 
     this.onBranchChange = handler;
     this.currentBranch = getCurrentBranch(this.projectRoot);
@@ -49,6 +56,10 @@ export class GitHeadWatcher {
 
     this.watcher.on("change", () => this.handleHeadChange());
     this.watcher.on("add", () => this.handleHeadChange());
+    this.watcher.once("ready", () => {
+      this.resolveReady?.();
+      this.resolveReady = null;
+    });
   }
 
   private handleHeadChange(): void {
@@ -95,9 +106,16 @@ export class GitHeadWatcher {
     }
 
     this.onBranchChange = null;
+    this.resolveReady?.();
+    this.resolveReady = null;
+    this.readyPromise = Promise.resolve();
   }
 
   isRunning(): boolean {
     return this.watcher !== null;
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await this.readyPromise;
   }
 }
