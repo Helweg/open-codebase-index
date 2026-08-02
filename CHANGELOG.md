@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-08-02
+
 ### Changed
 
 - **Repository rename preparation**: Added validated repository URL overrides for staged package and host metadata, including package, Claude, and Codex repository fields, and made release metadata follow `GITHUB_REPOSITORY` before and after the planned GitHub rename.
@@ -592,7 +594,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.22.2...HEAD
+[0.22.2]: https://github.com/Helweg/open-codebase-index/compare/v0.22.1...v0.22.2
+[0.22.1]: https://github.com/Helweg/open-codebase-index/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/Helweg/open-codebase-index/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Helweg/open-codebase-index/compare/v0.20.1...v0.21.0
 [0.20.1]: https://github.com/Helweg/open-codebase-index/compare/v0.20.0...v0.20.1
