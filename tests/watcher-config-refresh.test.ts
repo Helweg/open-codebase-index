@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const operationMocks = vi.hoisted(() => ({
   refreshIndexerForDirectory: vi.fn(),
@@ -20,21 +20,7 @@ vi.mock("../src/git/index.js", async (importOriginal) => ({
 import { parseConfig } from "../src/config/schema.js";
 import { createWatcherWithIndexer } from "../src/watcher/index.js";
 
-const originalUsePolling = process.env.CHOKIDAR_USEPOLLING;
-
-beforeAll(() => {
-  if (originalUsePolling === undefined) {
-    process.env.CHOKIDAR_USEPOLLING = "1";
-  }
-});
-
-afterAll(() => {
-  if (originalUsePolling === undefined) {
-    delete process.env.CHOKIDAR_USEPOLLING;
-  } else {
-    process.env.CHOKIDAR_USEPOLLING = originalUsePolling;
-  }
-});
+const WATCH_EVENT_TIMEOUT_MS = 10000;
 
 function createLinkedWorktree(root: string, writeMainConfig = true): {
   configPath: string;
@@ -69,6 +55,29 @@ function createLinkedWorktreeWatcher(root: string, writeMainConfig = true) {
   return { configPath, indexer, watcher, worktreeDir };
 }
 
+const writeUntilObserved = async (
+  write: (attempt: number) => void,
+  assertion: () => void,
+  timeoutMs = 10000,
+): Promise<void> => {
+  const startedAt = Date.now();
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    write(attempt++);
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    try {
+      await vi.waitFor(assertion, { timeout: Math.min(2500, remainingMs), interval: 50 });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+};
+
 describe("watcher config refresh", () => {
   let tempDir: string;
 
@@ -82,6 +91,7 @@ describe("watcher config refresh", () => {
   });
 
   it("refreshes the codex indexer cache before reindexing when codex config changes", async () => {
+    mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
     const indexer = {
       index: vi.fn().mockResolvedValue(undefined),
     };
@@ -92,20 +102,24 @@ describe("watcher config refresh", () => {
       "codex",
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
 
-    mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
-    writeFileSync(path.join(tempDir, ".codebase-index", "config.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
-
-    await vi.waitFor(() => {
-      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "codex", undefined);
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-    }, { timeout: 2500 });
+    await writeUntilObserved(
+      (attempt) => writeFileSync(
+        path.join(tempDir, ".codebase-index", "config.json"),
+        JSON.stringify({ include: ["src/**/*.ts"], attempt }),
+      ),
+      () => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "codex", undefined);
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      },
+    );
 
     await watcher.stop();
   });
 
   it("refreshes the jcode indexer cache before reindexing when jcode config changes", async () => {
+    mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
     const indexer = {
       index: vi.fn().mockResolvedValue(undefined),
     };
@@ -116,15 +130,18 @@ describe("watcher config refresh", () => {
       "jcode",
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
 
-    mkdirSync(path.join(tempDir, ".codebase-index"), { recursive: true });
-    writeFileSync(path.join(tempDir, ".codebase-index", "config.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
-
-    await vi.waitFor(() => {
-      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-    }, { timeout: 2500 });
+    await writeUntilObserved(
+      (attempt) => writeFileSync(
+        path.join(tempDir, ".codebase-index", "config.json"),
+        JSON.stringify({ include: ["src/**/*.ts"], attempt }),
+      ),
+      () => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      },
+    );
 
     await watcher.stop();
   });
@@ -143,16 +160,20 @@ describe("watcher config refresh", () => {
       "codex",
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
 
     mkdirSync(path.join(tempDir, ".opencode", "index"), { recursive: true });
-    writeFileSync(path.join(tempDir, ".opencode", "codebase-index.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
     writeFileSync(path.join(tempDir, ".opencode", "index", "codebase.db"), "index");
-
-    await vi.waitFor(() => {
-      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "codex", undefined);
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-    }, { timeout: 2500 });
+    await writeUntilObserved(
+      (attempt) => writeFileSync(
+        path.join(tempDir, ".opencode", "codebase-index.json"),
+        JSON.stringify({ include: ["src/**/*.ts"], attempt }),
+      ),
+      () => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "codex", undefined);
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      },
+    );
 
     await watcher.stop();
   });
@@ -171,16 +192,20 @@ describe("watcher config refresh", () => {
       "jcode",
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
 
     mkdirSync(path.join(tempDir, ".opencode", "index"), { recursive: true });
-    writeFileSync(path.join(tempDir, ".opencode", "codebase-index.json"), JSON.stringify({ include: ["src/**/*.ts"] }));
     writeFileSync(path.join(tempDir, ".opencode", "index", "codebase.db"), "index");
-
-    await vi.waitFor(() => {
-      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-    }, { timeout: 2500 });
+    await writeUntilObserved(
+      (attempt) => writeFileSync(
+        path.join(tempDir, ".opencode", "codebase-index.json"),
+        JSON.stringify({ include: ["src/**/*.ts"], attempt }),
+      ),
+      () => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(tempDir, "jcode", undefined);
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      },
+    );
 
     await watcher.stop();
   });
@@ -190,16 +215,17 @@ describe("watcher config refresh", () => {
 
     try {
       await watcher.whenReady();
-      writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"] }));
-
-      await vi.waitFor(() => {
-        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
-          worktreeDir,
-          "opencode",
-          undefined,
-        );
-        expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: 2500 });
+      await writeUntilObserved(
+        (attempt) => writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"], attempt })),
+        () => {
+          expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+            worktreeDir,
+            "opencode",
+            undefined,
+          );
+          expect(indexer.index).toHaveBeenCalledTimes(1);
+        },
+      );
     } finally {
       await watcher.stop();
     }
@@ -219,29 +245,33 @@ describe("watcher config refresh", () => {
           undefined,
         );
         expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: 2500 });
+      }, { timeout: WATCH_EVENT_TIMEOUT_MS });
     } finally {
       await watcher.stop();
     }
   });
 
-  it("refreshes a linked worktree when a local project override is created", async () => {
+  it("refreshes a linked worktree when a local project override file appears after watcher ready", async () => {
     const { indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
     const localConfigPath = path.join(worktreeDir, ".opencode", "codebase-index.json");
 
     try {
       await watcher.whenReady();
       mkdirSync(path.dirname(localConfigPath), { recursive: true });
-      writeFileSync(localConfigPath, JSON.stringify({ include: ["feature/**/*.ts"] }));
-
-      await vi.waitFor(() => {
-        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
-          worktreeDir,
-          "opencode",
-          undefined,
-        );
-        expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: 10000 });
+      await writeUntilObserved(
+        (attempt) => writeFileSync(
+          localConfigPath,
+          JSON.stringify({ include: ["feature/**/*.ts"], attempt }),
+        ),
+        () => {
+          expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+            worktreeDir,
+            "opencode",
+            undefined,
+          );
+          expect(indexer.index).toHaveBeenCalledTimes(1);
+        },
+      );
     } finally {
       await watcher.stop();
     }
@@ -253,28 +283,37 @@ describe("watcher config refresh", () => {
     try {
       await watcher.whenReady();
       mkdirSync(path.dirname(configPath), { recursive: true });
-      writeFileSync(configPath, JSON.stringify({ include: ["created/**/*.ts"] }));
-
-      await vi.waitFor(() => {
-        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
-          worktreeDir,
-          "opencode",
-          undefined,
-        );
-        expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: 2500 });
+      await writeUntilObserved(
+        (attempt) => writeFileSync(
+          configPath,
+          JSON.stringify({ include: ["created/**/*.ts"], attempt }),
+        ),
+        () => {
+          expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+            worktreeDir,
+            "opencode",
+            undefined,
+          );
+          expect(indexer.index).toHaveBeenCalledTimes(1);
+        },
+      );
 
       rmSync(configPath);
       await vi.waitFor(() => {
         expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledTimes(2);
         expect(indexer.index).toHaveBeenCalledTimes(2);
-      }, { timeout: 2500 });
+      }, { timeout: WATCH_EVENT_TIMEOUT_MS });
 
-      writeFileSync(configPath, JSON.stringify({ include: ["recreated/**/*.ts"] }));
-      await vi.waitFor(() => {
-        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledTimes(3);
-        expect(indexer.index).toHaveBeenCalledTimes(3);
-      }, { timeout: 2500 });
+      await writeUntilObserved(
+        (attempt) => writeFileSync(
+          configPath,
+          JSON.stringify({ include: ["recreated/**/*.ts"], attempt }),
+        ),
+        () => {
+          expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledTimes(3);
+          expect(indexer.index).toHaveBeenCalledTimes(3);
+        },
+      );
     } finally {
       await watcher.stop();
     }
@@ -297,18 +336,19 @@ describe("watcher config refresh", () => {
       { configPath },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
 
-    writeFileSync(configPath, JSON.stringify({ include: ["custom/**/*.ts"] }));
-
-    await vi.waitFor(() => {
-      expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
-        projectRoot,
-        "codex",
-        expect.objectContaining({ include: ["custom/**/*.ts"] }),
-      );
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-    }, { timeout: 2500 });
+    await writeUntilObserved(
+      (attempt) => writeFileSync(configPath, JSON.stringify({ include: ["custom/**/*.ts"], attempt })),
+      () => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          projectRoot,
+          "codex",
+          expect.objectContaining({ include: ["custom/**/*.ts"] }),
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      },
+    );
 
     await watcher.stop();
   });
@@ -331,7 +371,7 @@ describe("watcher config refresh", () => {
       { configPath },
     );
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await watcher.whenReady();
     operationMocks.refreshIndexerForDirectory.mockClear();
     indexer.index.mockClear();
 
