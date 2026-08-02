@@ -1,6 +1,6 @@
 # AGENTS.md - AI Agent Guidelines for open-codebase-index
 
-**Updated:** 2026-08-02 | **Commit:** c33c88b | **Branch:** main | **Version:** 0.22.2
+**Updated:** 2026-08-02 | **Commit:** 32160f8 | **Branch:** main | **Version:** 0.22.3
 
 Semantic codebase indexing for OpenCode, MCP hosts, Pi, Claude, Codex, and Jcode. repo uses hybrid TypeScript/Rust architecture:
 
@@ -173,7 +173,7 @@ Prefer existing batch database methods for bulk indexing. Do not replace them w/
 
 ## Package Identity and Compatibility
 
- checked-in package remains `opencode-codebase-index@0.22.2`while release workflow publishes both:
+ checked-in package remains `opencode-codebase-index@0.22.3`while release workflow publishes both:
 
 - `open-codebase-index`preferred host-neutral package; exports `open-codebase-index-mcp` and legacy binary alias
 - `opencode-codebase-index`synchronized compatibility package

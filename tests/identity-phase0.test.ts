@@ -109,7 +109,7 @@ describe("Phase 1 product identity compatibility", () => {
     };
 
     expect(docsAndArtifacts.agentGuidance).toContain("AI Agent Guidelines for open-codebase-index");
-    expect(docsAndArtifacts.agentGuidance).toContain("opencode-codebase-index@0.22.2");
+    expect(docsAndArtifacts.agentGuidance).toContain("opencode-codebase-index@0.22.3");
     expect(docsAndArtifacts.agentGuidance).not.toContain("AI Agent Guidelines for opencode-codebase-index");
 
     expect(docsAndArtifacts.architecture).toContain("open-codebase-index");
