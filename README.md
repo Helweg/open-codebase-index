@@ -3,7 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/npm/dm/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/opencode-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/opencode-codebase-index/actions)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/open-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/open-codebase-index/actions)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](https://nodejs.org/)
 
 > Search a codebase by meaning, then follow the result into definitions, callers, and dependency paths.

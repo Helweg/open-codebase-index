@@ -13,7 +13,7 @@ If you discover a security vulnerability, please report it responsibly:
 
 1. **Do not** open a public issue
 2. Use GitHub's private vulnerability reporting for this repository:
-   - https://github.com/Helweg/opencode-codebase-index/security/advisories/new
+   - https://github.com/Helweg/open-codebase-index/security/advisories/new
 3. Include:
    - Description of the vulnerability
    - Steps to reproduce

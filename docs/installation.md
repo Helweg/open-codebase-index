@@ -92,7 +92,7 @@ The package provides native tools and the `codebase-search` skill. Pi uses `.cod
 Add the marketplace and install the plugin:
 
 ```text
-codex plugin marketplace add Helweg/opencode-codebase-index
+codex plugin marketplace add Helweg/open-codebase-index
 codex plugin add codebase-index@helweg-plugins
 ```
 
@@ -112,7 +112,7 @@ Codex uses `.codebase-index/` project storage.
 From Claude Code, add the marketplace and install the plugin:
 
 ```text
-/plugin marketplace add Helweg/opencode-codebase-index
+/plugin marketplace add Helweg/open-codebase-index
 /plugin install codebase-index@helweg-plugins
 ```
 

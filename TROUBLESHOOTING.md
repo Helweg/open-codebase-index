@@ -452,7 +452,7 @@ If none of these solutions work:
 
 1. **Check logs:** Look for error messages in the OpenCode output
 2. **Verbose indexing:** Run with verbose mode to see detailed progress
-3. **GitHub Issues:** [Open an issue](https://github.com/Helweg/opencode-codebase-index/issues) with:
+3. **GitHub Issues:** [Open an issue](https://github.com/Helweg/open-codebase-index/issues) with:
    - Error message
    - OS and Node.js version
    - Provider being used
