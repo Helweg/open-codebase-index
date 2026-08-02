@@ -89,6 +89,28 @@ The old package can initially remain a synchronized publication of the same code
 4. Keep explicit tests for old GitHub URLs only where compatibility documentation intentionally mentions the redirect.
 5. Announce that storage locations and tool names are intentionally unchanged.
 
+### Phase 2 readiness checklist
+
+- [x] Publish and CI use the workflow repository URL override from `GITHUB_REPOSITORY` so metadata stages follow the active host URL.
+- [x] Add targeted identity test coverage for:
+  - checked-in defaults remain unchanged without overrides,
+  - explicit override updates package, Claude, and Codex staged metadata.
+- [x] Ensure invalid or unknown repository URLs fail fast with clear errors.
+- [x] Keep checked-in links on the live repository until the rename is approved. The release workflow is already rename-safe because it derives staged metadata from `GITHUB_REPOSITORY`.
+- [ ] Rename the GitHub repository only after explicit maintainer approval.
+- [ ] Immediately after the rename, update checked-in public links and verify redirects, provenance, and marketplace installation.
+
+Intentional pre-rename references to `Helweg/opencode-codebase-index` are classified as follows:
+
+| Location | Why it remains | When to update |
+|---|---|---|
+| `package.json`, `src/identity-catalog.json` current identity, and checked-in host manifests | Describe the currently live repository and legacy compatibility identity | Immediately after the GitHub rename; retain the catalog's current identity as the documented compatibility value |
+| `README.md`, `SECURITY.md`, `TROUBLESHOOTING.md`, and `docs/installation.md` | Must resolve before the new repository URL exists | In the rename commit or immediately after the rename |
+| Historical `CHANGELOG.md` comparison links | Release history currently resolves through the live repository | After the rename, relying on GitHub redirects for old external links |
+| This migration document | Explicitly documents both old and future identities | Keep both identities for historical and operational context |
+
+Phase 2 rename changes require explicit maintainer approval and are not to be executed during this repository-rename preparation pass.
+
 **Exit criteria:** fresh clones, pull requests, release automation, package provenance, source links, and documentation links resolve through the new repository identity.
 
 ### Phase 3: deprecate legacy entrypoints

@@ -21,7 +21,8 @@ jobs:
             node scripts/prepare-package-metadata.mjs \
               --package-name "${packageName}" \
               --project-root "${GITHUB_WORKSPACE}" \
-              --output-dir "${RUNNER_TEMP}/package-metadata/${packageName}"
+              --output-dir "${RUNNER_TEMP}/package-metadata/${packageName}" \
+              --repository-url "https://github.com/${GITHUB_REPOSITORY}"
           done
 
   build:
@@ -130,7 +131,8 @@ jobs:
             node scripts/prepare-package-metadata.mjs \
               --package-name "${packageName}" \
               --project-root "${GITHUB_WORKSPACE}" \
-              --output-dir "${stagingDir}"
+              --output-dir "${stagingDir}" \
+              --repository-url "https://github.com/${GITHUB_REPOSITORY}"
 
             if npm view "${packageName}@${PACKAGE_VERSION}" --json >/dev/null 2>&1; then
               echo "Skipping ${packageName} because version already exists."

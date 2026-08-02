@@ -15,6 +15,29 @@ interface PackageMetadata {
   napi: { binaryName: string };
 }
 
+interface CodexManifestMetadata {
+  author?: { url?: string };
+  homepage: string;
+  repository: string;
+  interface: {
+    websiteURL: string;
+    privacyPolicyURL: string;
+    termsOfServiceURL: string;
+  };
+}
+
+interface ClaudeManifestMetadata {
+  homepage: string;
+  repository: string;
+  author?: { url?: string };
+}
+
+interface ClaudeMarketplaceMetadata {
+  owner: {
+    url: string;
+  };
+}
+
 interface PackageLockMetadata {
   name: string;
   packages: Record<string, { name?: string; bin?: Record<string, string> }>;
@@ -28,16 +51,20 @@ function readText(filePath: string): string {
   return readFileSync(filePath, "utf-8");
 }
 
-function prepareMetadata(packageName: string, outputDir: string): void {
-  execFileSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "prepare-package-metadata.mjs"),
+function prepareMetadata(packageName: string, outputDir: string, repositoryUrl?: string): void {
+  const args = [
     "--package-name",
     packageName,
     "--project-root",
     process.cwd(),
     "--output-dir",
     outputDir,
-  ]);
+  ];
+  if (repositoryUrl) {
+    args.push("--repository-url", repositoryUrl);
+  }
+
+  execFileSync(process.execPath, [path.join(process.cwd(), "scripts", "prepare-package-metadata.mjs"), ...args]);
 }
 
 describe("Phase 1 product identity compatibility", () => {
@@ -48,18 +75,11 @@ describe("Phase 1 product identity compatibility", () => {
     const mcpManifest = readJson<{
       mcpServers: Record<string, { command: string; args: string[] }>;
     }>(".mcp.json");
-    const claudeManifest = readJson<{
-      homepage: string;
-      repository: string;
+    const claudeManifest = readJson<ClaudeManifestMetadata & {
       mcpServers: Record<string, { command: string; args: string[] }>;
     }>(".claude-plugin/plugin.json");
     const claudeMarketplace = readJson<{ owner: { url: string } }>(".claude-plugin/marketplace.json");
-    const codexManifest = readJson<{
-      homepage: string;
-      repository: string;
-      mcpServers: string;
-      interface: { websiteURL: string };
-    }>(".codex-plugin/plugin.json");
+    const codexManifest = readJson<CodexManifestMetadata>(".codex-plugin/plugin.json");
 
     const expectedBin = { [current.mcpBinary]: "dist/cli.js" };
     expect(packageJson.name).toBe(current.packageName);
@@ -81,10 +101,12 @@ describe("Phase 1 product identity compatibility", () => {
     expect(claudeManifest.mcpServers["codebase-index"]).toEqual({ command: "npx", args: expectedClaudeArgs });
     expect(claudeManifest.homepage).toBe(current.repository);
     expect(claudeManifest.repository).toBe(current.repository);
+    expect(claudeManifest.author?.url).toBe(current.repository);
     expect(claudeMarketplace.owner.url).toBe(current.repository);
     expect(codexManifest.homepage).toBe(current.repository);
     expect(codexManifest.repository).toBe(current.repository);
     expect(codexManifest.interface.websiteURL).toBe(current.repository);
+    expect(codexManifest.author?.url).toBe(current.repository);
   });
 
   it("stages current metadata with only the legacy binary", () => {
@@ -124,11 +146,15 @@ describe("Phase 1 product identity compatibility", () => {
       const stagedMcpManifest = readJson<{
         mcpServers: Record<string, { command: string; args: string[] }>;
       }>(path.join(tempDir, ".mcp.json"));
-      const stagedClaudeManifest = readJson<{
-        homepage: string;
-        repository: string;
+      const stagedClaudeManifest = readJson<ClaudeManifestMetadata & {
         mcpServers: Record<string, { command: string; args: string[] }>;
       }>(path.join(tempDir, ".claude-plugin", "plugin.json"));
+      const stagedCodexManifest = readJson<CodexManifestMetadata>(
+        path.join(tempDir, ".codex-plugin", "plugin.json"),
+      );
+      const stagedClaudeMarketplace = readJson<ClaudeMarketplaceMetadata>(
+        path.join(tempDir, ".claude-plugin", "marketplace.json"),
+      );
       const expectedBin = {
         [IDENTITY_CATALOG.product.future.mcpBinary]: "dist/cli.js",
         [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js",
@@ -160,6 +186,53 @@ describe("Phase 1 product identity compatibility", () => {
       expect(stagedClaudeManifest.mcpServers["codebase-index"]).toEqual({ command: "npx", args: expectedClaudeArgs });
       expect(stagedClaudeManifest.homepage).toBe(IDENTITY_CATALOG.product.current.repository);
       expect(stagedClaudeManifest.repository).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedClaudeManifest.author?.url).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedCodexManifest.homepage).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedCodexManifest.repository).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedCodexManifest.author?.url).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedCodexManifest.interface.websiteURL).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(stagedClaudeMarketplace.owner.url).toBe(IDENTITY_CATALOG.product.current.repository);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("stages metadata with an explicit repository override", () => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-repo-override-metadata-"));
+    const repositoryUrl = "https://github.com/Helweg/open-codebase-index";
+    try {
+      prepareMetadata(IDENTITY_CATALOG.product.future.packageName, tempDir, repositoryUrl);
+      const packageJson = readJson<PackageMetadata>(path.join(tempDir, "package.json"));
+      const packageLock = readJson<PackageLockMetadata>(path.join(tempDir, "package-lock.json"));
+      const stagedMcpManifest = readJson<{
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      }>(path.join(tempDir, ".mcp.json"));
+      const stagedClaudeManifest = readJson<ClaudeManifestMetadata & {
+        mcpServers: Record<string, { command: string; args: string[] }>;
+      }>(path.join(tempDir, ".claude-plugin", "plugin.json"));
+      const stagedCodexManifest = readJson<CodexManifestMetadata>(
+        path.join(tempDir, ".codex-plugin", "plugin.json"),
+      );
+      const stagedClaudeMarketplace = readJson<ClaudeMarketplaceMetadata>(
+        path.join(tempDir, ".claude-plugin", "marketplace.json"),
+      );
+
+      expect(packageJson.name).toBe(IDENTITY_CATALOG.product.future.packageName);
+      expect(packageJson.repository.url).toBe(repositoryUrl);
+      expect(packageLock.name).toBe(IDENTITY_CATALOG.product.future.packageName);
+      expect(packageJson.bin[IDENTITY_CATALOG.product.future.mcpBinary]).toBe("dist/cli.js");
+      expect(packageJson.bin[IDENTITY_CATALOG.product.current.mcpBinary]).toBe("dist/cli.js");
+      expect(stagedClaudeManifest.homepage).toBe(repositoryUrl);
+      expect(stagedClaudeManifest.repository).toBe(repositoryUrl);
+      expect(stagedClaudeManifest.author?.url).toBe(repositoryUrl);
+      expect(stagedCodexManifest.homepage).toBe(repositoryUrl);
+      expect(stagedCodexManifest.repository).toBe(repositoryUrl);
+      expect(stagedCodexManifest.author?.url).toBe(repositoryUrl);
+      expect(stagedCodexManifest.interface.websiteURL).toBe(repositoryUrl);
+      expect(stagedCodexManifest.interface.privacyPolicyURL).toBe(`${repositoryUrl}/blob/main/SECURITY.md`);
+      expect(stagedCodexManifest.interface.termsOfServiceURL).toBe(`${repositoryUrl}/blob/main/LICENSE`);
+      expect(stagedClaudeMarketplace.owner.url).toBe(repositoryUrl);
+      expect(stagedMcpManifest.mcpServers["codebase-index"].args[2]).toBe(IDENTITY_CATALOG.product.future.packageName);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -169,6 +242,14 @@ describe("Phase 1 product identity compatibility", () => {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-invalid-metadata-"));
     try {
       expect(() => prepareMetadata("unknown-codebase-index", tempDir)).toThrow();
+      expect(() =>
+        prepareMetadata(
+          IDENTITY_CATALOG.product.current.packageName,
+          tempDir,
+          "https://invalid.example.com/opencode-codebase-index",
+        ),
+      ).toThrow();
+      expect(() => prepareMetadata(IDENTITY_CATALOG.product.current.packageName, tempDir, "not-a-url")).toThrow();
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -200,6 +281,7 @@ describe("Phase 1 product identity compatibility", () => {
     expect(workflow).toContain("npm publish --ignore-scripts --access public");
     expect(workflow).toContain("npm view \"${packageName}@${PACKAGE_VERSION}\" --json");
     expect(workflow).toContain("stagingDir=\"${RUNNER_TEMP}/package-metadata/${packageName}\"");
+    expect(workflow).toContain("--repository-url \"https://github.com/${GITHUB_REPOSITORY}\"");
 
     const openFirst = workflow.indexOf("open-codebase-index");
     const legacyAfter = workflow.indexOf("opencode-codebase-index", openFirst + 1);

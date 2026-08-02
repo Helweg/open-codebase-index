@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Repository rename preparation**: Added validated repository URL overrides for staged package and host metadata, including package, Claude, and Codex repository fields, and made release metadata follow `GITHUB_REPOSITORY` before and after the planned GitHub rename.
+
 ## [0.22.1] - 2026-08-01
 
 ### Added
