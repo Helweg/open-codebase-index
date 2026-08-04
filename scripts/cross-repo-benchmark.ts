@@ -63,6 +63,8 @@ const EXCLUDED_DIRS = new Set([
   "temp",
 ]);
 
+const CODEGRAPH_UNSUPPORTED_DEFINITION_PATHS = [".github/workflows/"];
+
 export const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_PARSE_FILES = 2500;
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@1.5.0";
@@ -573,6 +575,14 @@ function getCanonicalChunkType(chunkType: string): CanonicalChunkType {
   return undefined;
 }
 
+function isCodeGraphUnsupportedDefinitionPath(filePath: string): boolean {
+  const normalizedPath = normalizePathForMatch(filePath).toLowerCase();
+  return CODEGRAPH_UNSUPPORTED_DEFINITION_PATHS.some((unsupportedPrefix) =>
+    normalizedPath === unsupportedPrefix.slice(0, -1)
+    || normalizedPath.startsWith(unsupportedPrefix)
+  );
+}
+
 function isFunctionOrClass(chunk: CodeChunk): chunk is CodeChunk & { name: string } {
   if (!chunk.name) return false;
   return getCanonicalChunkType(chunk.chunkType) !== undefined;
@@ -730,10 +740,15 @@ export function buildGoldenDataset(repoName: string, repoPath: string, parsedFil
     throw new Error(`No function/class candidates discovered in ${repoName}`);
   }
 
-  const definitions = pickDistinctFiles(candidates, 3);
+  const definitionCandidates = candidates.filter((candidate) => !isCodeGraphUnsupportedDefinitionPath(candidate.filePath));
+  if (definitionCandidates.length === 0) {
+    throw new Error(`No definition candidates outside unsupported CodeGraph source paths in ${repoName}`);
+  }
+
   const implementation = pickDistinctFiles(candidates.slice(3).length > 0 ? candidates.slice(3) : candidates, 3);
   const similarities = pickDistinctFiles(candidates.slice(6).length > 0 ? candidates.slice(6) : candidates, 2);
   const keywordHeavy = pickDistinctFiles(candidates.slice(8).length > 0 ? candidates.slice(8) : candidates, 2);
+  const definitions = pickDistinctFiles(definitionCandidates, 3);
 
   const queries: GoldenQuery[] = [];
   let counter = 1;

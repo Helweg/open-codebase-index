@@ -122,6 +122,81 @@ describe("cross-repo CodeGraph comparator", () => {
     }
   });
 
+  it("prefers definition candidates from non-workflow paths", () => {
+    const repoPath = "/repo";
+    const sourceFile = (name: string): ParsedFile => {
+      const symbol = path.basename(name).replace(/\.[^.]+$/, "").replace(/[^a-z]/gi, "");
+      return {
+        path: path.join(repoPath, name),
+        hash: name,
+        symbols: [],
+        chunks: [{
+          content: `export function ${symbol}() { return 1; }`,
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: symbol,
+          language: "typescript",
+        }],
+      };
+    };
+
+    const parsedFiles = [
+      sourceFile(".github/workflows/release.sh"),
+      sourceFile("src/alpha.ts"),
+      sourceFile("src/beta.ts"),
+      sourceFile("src/gamma.ts"),
+      sourceFile("src/delta.ts"),
+      sourceFile("src/epsilon.ts"),
+      sourceFile("src/zeta.ts"),
+      sourceFile("src/eta.ts"),
+      sourceFile("src/theta.ts"),
+      sourceFile("src/iota.ts"),
+    ];
+
+    const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
+    const definitionQueries = dataset.queries.filter((query) => query.queryType === "definition");
+
+    expect(definitionQueries).toHaveLength(3);
+    expect(definitionQueries.every((query) => !query.expected.filePath.startsWith(".github/workflows/"))).toBe(true);
+  });
+
+  it("fails when all definition candidates are in unsupported workflow paths", () => {
+    const repoPath = "/repo";
+    const parsedFiles = [
+      {
+        path: path.join(repoPath, ".github/workflows/release.sh"),
+        hash: "release.sh",
+        symbols: [],
+        chunks: [{
+          content: "export function workflowonly() { return 1; }",
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: "workflowonly",
+          language: "typescript",
+        }],
+      },
+      {
+        path: path.join(repoPath, ".github/workflows/check.sh"),
+        hash: "check.sh",
+        symbols: [],
+        chunks: [{
+          content: "export function workflowsubonly() { return 1; }",
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: "workflowsubonly",
+          language: "typescript",
+        }],
+      },
+    ];
+
+    expect(() => buildGoldenDataset("fixture", repoPath, parsedFiles)).toThrow(
+      "No definition candidates outside unsupported CodeGraph source paths in fixture"
+    );
+  });
+
   it("uses a fresh isolated repo per repeat, exact pinned commands, strict scoped metrics, and raw artifacts", async () => {
     const repoPath = tempDir("cross-repo-cg-source-");
     const artifactRoot = tempDir("cross-repo-cg-artifacts-");
