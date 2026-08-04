@@ -74,4 +74,3 @@ Do not state global winners from single metrics. Compare families and constraint
 - [Public Benchmark Matrix](public-benchmark-matrix.md)
 - [Evaluation harness](evaluation.md)
 - [Installation and host setup](installation.md)
-
