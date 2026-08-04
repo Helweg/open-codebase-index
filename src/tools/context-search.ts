@@ -378,6 +378,7 @@ export async function resolveSearchContext(
           tokenBudget,
           maxResults: limit,
           heading,
+          preserveInputOrder: true,
         }),
       );
     }
@@ -394,12 +395,13 @@ export async function resolveSearchContext(
           return toResult(
             "definition",
             definitionSymbol,
-            buildContextPack(unscopedDefinitionResults, {
-              tokenBudget,
-              maxResults: limit,
-              heading,
-            }),
-          );
+          buildContextPack(unscopedDefinitionResults, {
+            tokenBudget,
+            maxResults: limit,
+            heading,
+            preserveInputOrder: true,
+          }),
+        );
         }
       }
 

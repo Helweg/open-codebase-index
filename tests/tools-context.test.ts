@@ -361,6 +361,62 @@ describe("native OpenCode codebase_context", () => {
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
 
+  it("preserves lookup order for definition evidence so the exact-symbol result stays first", async () => {
+    const lookup = vi.fn().mockResolvedValue([
+      {
+        filePath: "src/exact-result.ts",
+        startLine: 10,
+        endLine: 12,
+        name: "exactMatch",
+        chunkType: "function",
+        content: "exact",
+        score: 0.10,
+      },
+      {
+        filePath: "src/other-source.ts",
+        startLine: 1,
+        endLine: 4,
+        name: "otherMatch",
+        chunkType: "function",
+        content: "high score",
+        score: 0.99,
+      },
+      {
+        filePath: "README.md",
+        startLine: 1,
+        endLine: 8,
+        name: "overlap",
+        chunkType: "other",
+        content: "docs",
+        score: 0.98,
+      },
+    ]);
+
+    const result = await resolveSearchContext(
+      {
+        query: "find exactMatch",
+        symbol: "exactMatch",
+        limit: 10,
+        tokenBudget: 2048,
+        fileType: undefined,
+        directory: undefined,
+      },
+      {
+        lookup,
+        search: vi.fn(),
+      },
+    );
+
+    expect(result.details?.route).toBe("definition");
+    expect(result.details?.results?.[0]).toMatchObject({
+      filePath: "src/exact-result.ts",
+      startLine: 10,
+      endLine: 12,
+      score: 0.10,
+    });
+    expect(result.text.indexOf("src/exact-result.ts:10-12")).toBeLessThan(result.text.indexOf("src/other-source.ts:1-4"));
+  });
+
   it("routes dependency endpoints through bounded call-path output", async () => {
     operationMocks.getCallGraphPath.mockResolvedValue({
       from: { status: "resolved", name: "start", symbolId: "start-id", filePath: "src/start.ts", startLine: 1, kind: "function", matchedBy: "name" },

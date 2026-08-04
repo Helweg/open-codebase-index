@@ -20,6 +20,7 @@ export interface ContextPackOptions {
   maxResults?: number;
   includeExactSearchHandoff?: boolean;
   preferImplementationPaths?: boolean;
+  preserveInputOrder?: boolean;
 }
 
 export interface ContextPackResult {
@@ -227,13 +228,12 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const maxResults = Math.max(0, Math.floor(options.maxResults ?? results.length));
   const includeExactSearchHandoff = options.includeExactSearchHandoff ?? false;
   const candidateCount = results.length;
-  const deduplicated = deduplicateContextCandidates(
-    rankContextCandidates(
-      results,
-      options.preferImplementationPaths ?? false,
-    ),
-  );
-  const diversified = diversifyContextCandidates(deduplicated);
+  const preserveInputOrder = options.preserveInputOrder ?? false;
+  const ranked = preserveInputOrder
+    ? results.map((result, originalIndex) => ({ result, originalIndex }))
+    : rankContextCandidates(results, options.preferImplementationPaths ?? false);
+  const deduplicated = deduplicateContextCandidates(ranked);
+  const diversified = preserveInputOrder ? deduplicated : diversifyContextCandidates(deduplicated);
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
   const limitOmittedCount = deduplicated.length - selectable.length;
