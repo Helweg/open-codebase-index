@@ -4,6 +4,9 @@ This document defines a reproducible, public-facing comparison plan for
 `open-codebase-index` against retrieval alternatives for code location and context
 retrieval quality tasks.
 
+For this comparison framing and prioritized near-term priorities, see
+[CodeGraph Comparison Leadership Roadmap](codegraph-comparison-leadership-roadmap.md).
+
 Do not use this document to claim unmeasured performance.
 All comparisons must be grounded in the artifacts and scripts in this repository.
 

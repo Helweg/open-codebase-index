@@ -20,6 +20,7 @@ Metrics reported per repo and aggregated:
 - Built project dependencies (`npm install`)
 - `rg` installed
 - `sg` installed (`brew install ast-grep` on macOS)
+- `npx` (for `codegraph` execution)
 
 ## Configure repositories (required)
 
@@ -75,6 +76,9 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 
 # Skip ast-grep baseline
 npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --skip-sg
+
+# Enable CodeGraph baseline (scoped to queries with expected.symbol)
+npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --codegraph
 ```
 
 Ast-grep baseline scope:
@@ -91,6 +95,8 @@ Each run writes to:
 - `benchmarks/results/cross-repo/<timestamp>/report.json`
 - `benchmarks/results/cross-repo/<timestamp>/repos/<repo>.json`
 - `benchmarks/results/cross-repo/<timestamp>/datasets/<repo>.json`
+- `benchmarks/results/cross-repo/<timestamp>/codegraph/<repo>/<repeat>/summary.json`
+- `benchmarks/results/cross-repo/<timestamp>/codegraph/<repo>/<repeat>/per-query.json`
 
 When `--persist-datasets` is set, auto-generated dataset files are also written to:
 
