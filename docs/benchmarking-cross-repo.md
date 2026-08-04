@@ -97,7 +97,7 @@ npx tsx scripts/cross-repo-benchmark.ts \
   --reindex --repeats 3 --codegraph
 ```
 
-The runner uses `@colbymchenry/codegraph@1.5.0` in a fresh temporary copy for every repeat. It excludes existing `.codegraph`, `.codebase-index`, build outputs, dependencies, and benchmark results. It initializes CodeGraph in that copy, then runs only generated queries that include `expected.symbol`. Exact-definition candidates from known unsupported paths, currently `.github/workflows/`, are excluded. If no supported definition candidates remain, the runner fails instead of publishing an invalid comparison.
+The runner uses `@colbymchenry/codegraph@1.5.0` in a fresh temporary copy for every repeat. It excludes existing `.codegraph`, `.codebase-index`, build outputs, dependencies, and benchmark results. It initializes CodeGraph in that copy, then runs only generated queries that include `expected.symbol`. Exact-definition candidates from known unsupported paths, currently `.github/workflows/`, and test or fixture paths are excluded because the comparison uses the plugin's source-intent definition route. If no supported definition candidates remain, the runner fails instead of publishing an invalid comparison.
 
 The report places this result in a standalone **Fair CodeGraph Comparator** section. Plugin metrics are recomputed from exactly the same query IDs. A failed CodeGraph initialization, query, or strict-output parse disqualifies that repeat and prevents it from being presented as a comparable result. Raw commands, per-query results, scope IDs, and errors are written under `<run>/codegraph/<repo>/repeat-*.json`.
 
