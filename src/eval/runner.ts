@@ -3,8 +3,16 @@ import { existsSync } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 
-import { Indexer } from "../indexer/index.js";
+import { Indexer, type SearchResult } from "../indexer/index.js";
+import type { CallEdgeData, SymbolData } from "../native/index.js";
+import { DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT } from "../tools/contracts.js";
 import { resolveSearchContext } from "../tools/context.js";
+import { resolveCodebaseEditContextWithDependencies } from "../tools/edit-context.js";
+import {
+  getCallGraphDataForIndexer,
+  type CallGraphDataResult,
+  type CallGraphSymbolResolution,
+} from "../tools/operations.js";
 import { DEFAULT_CONTEXT_PACK_TOKEN_BUDGET } from "../tools/utils.js";
 
 import { evaluateBudgetGate } from "./budget.js";
@@ -31,7 +39,9 @@ import type {
   EvalComparison,
   EvalGateResult,
   EvalRunOptions,
+  EvalSearchResult,
   GoldenDataset,
+  GoldenQuery,
   EvalSummary,
   PerQueryEvalResult,
   SweepAggregateReport,
@@ -62,6 +72,167 @@ function normalizeForFingerprint(value: unknown): unknown {
 function buildDatasetFingerprint(dataset: GoldenDataset): string {
   const canonical = JSON.stringify(normalizeForFingerprint(dataset));
   return crypto.createHash("sha256").update(canonical).digest("hex");
+}
+
+function normalizedPath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\//, "");
+}
+
+function pathsMatch(left: string, right: string): boolean {
+  const normalizedLeft = normalizedPath(left);
+  const normalizedRight = normalizedPath(right);
+  return normalizedLeft === normalizedRight
+    || normalizedLeft.endsWith(`/${normalizedRight}`)
+    || normalizedRight.endsWith(`/${normalizedLeft}`);
+}
+
+function toEvalSearchResult(result: SearchResult): EvalSearchResult {
+  return {
+    filePath: result.filePath,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    score: result.score,
+    chunkType: result.chunkType,
+    name: result.name,
+  };
+}
+
+function selectResolvedTarget(
+  definitions: SearchResult[],
+  resolution: CallGraphSymbolResolution | undefined,
+): SearchResult | undefined {
+  if (resolution?.status !== "resolved") return definitions[0];
+  return definitions.find((result) => pathsMatch(result.filePath, resolution.filePath)
+    && result.startLine <= resolution.startLine
+    && result.endLine >= resolution.startLine)
+    ?? definitions.find((result) => pathsMatch(result.filePath, resolution.filePath)
+      && result.name === resolution.name)
+    ?? definitions[0];
+}
+
+function callerResult(edge: CallEdgeData): EvalSearchResult | undefined {
+  if (!edge.fromSymbolFilePath) return undefined;
+  return {
+    filePath: edge.fromSymbolFilePath,
+    startLine: edge.line,
+    endLine: edge.line,
+    score: 0,
+    chunkType: "graph-caller",
+    name: edge.fromSymbolName,
+    graphDirection: "caller",
+  };
+}
+
+function calleeResult(edge: CallEdgeData, symbols: SymbolData[]): EvalSearchResult | undefined {
+  const symbol = edge.toSymbolId
+    ? symbols.find((candidate) => candidate.id === edge.toSymbolId)
+    : symbols.filter((candidate) => candidate.name === edge.targetName).length === 1
+      ? symbols.find((candidate) => candidate.name === edge.targetName)
+      : undefined;
+  if (!symbol) return undefined;
+  return {
+    filePath: symbol.filePath,
+    startLine: symbol.startLine,
+    endLine: symbol.endLine,
+    score: 0,
+    chunkType: "graph-callee",
+    name: symbol.name,
+    graphDirection: "callee",
+  };
+}
+
+async function runEditContextQuery(
+  indexer: Indexer,
+  projectRoot: string,
+  query: GoldenQuery,
+): Promise<{
+  results: EvalSearchResult[];
+  resolvedRoute: "search" | "definition";
+  routedQuery: string;
+  context: {
+    tokenBudget: number;
+    responseTokens: number;
+    candidateCount: number;
+    deduplicatedCount: number;
+    omittedCount: number;
+  };
+}> {
+  let definitions: SearchResult[] = [];
+  let conceptual: SearchResult[] = [];
+  let callers: CallGraphDataResult | undefined;
+  let callees: CallGraphDataResult | undefined;
+
+  const editContext = await resolveCodebaseEditContextWithDependencies({
+    query: query.query,
+    symbol: query.args?.symbol,
+    filePath: query.args?.filePath ?? query.expected.filePath,
+    callerLimit: query.args?.callerLimit,
+    calleeLimit: query.args?.calleeLimit,
+    tokenBudget: query.args?.tokenBudget,
+  }, {
+    searchCodebase: async (searchQuery, options) => {
+      conceptual = await indexer.search(searchQuery, options?.limit, {
+        filterByBranch: !!query.expected.branch,
+      });
+      return conceptual;
+    },
+    implementationLookup: async (symbol, options) => {
+      definitions = await indexer.search(symbol, options?.limit, {
+        filterByBranch: !!query.expected.branch,
+        definitionIntent: true,
+      });
+      return definitions;
+    },
+    getCallGraphData: async (params) => {
+      const result = await getCallGraphDataForIndexer(indexer, projectRoot, params);
+      if (params.direction === "callers") callers = result;
+      else callees = result;
+      return result;
+    },
+  });
+
+  const resolution = callers?.resolution;
+  const target = selectResolvedTarget(definitions, resolution);
+  const targetCandidates = target ? [target] : [...definitions, ...conceptual];
+  const results = targetCandidates
+    .filter((candidate) => (
+      resolution?.status !== "resolved" || editContext.details.sourceIncluded
+    ) && editContext.text.includes(
+      `${candidate.filePath}:${candidate.startLine}-${candidate.endLine}`,
+    ))
+    .map(toEvalSearchResult);
+
+  if (query.expected.graphNeighbor) {
+    const symbols = await indexer.getCallGraphSymbols();
+    const callerLimit = query.args?.callerLimit ?? DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT;
+    const calleeLimit = query.args?.calleeLimit ?? DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT;
+    const publishedCallers = (callers?.callers ?? []).slice(0, callerLimit).filter((edge) =>
+      editContext.text.includes(
+        `${edge.fromSymbolName ?? "<unknown>"} at ${edge.fromSymbolFilePath ?? "<unknown file>"}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`,
+      ));
+    const publishedCallees = (callees?.callees ?? []).slice(0, calleeLimit).filter((edge) =>
+      resolution?.status === "resolved"
+      && editContext.text.includes(
+        `${edge.targetName} from ${resolution.filePath}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`,
+      ));
+    results.push(
+      ...publishedCallers.map(callerResult).filter((item): item is EvalSearchResult => item !== undefined),
+      ...publishedCallees.map((edge) => calleeResult(edge, symbols)).filter((item): item is EvalSearchResult => item !== undefined),
+    );
+  }
+
+  return {
+    results,
+    resolvedRoute: resolution?.status === "resolved" ? "definition" : "search",
+    routedQuery: query.args?.symbol ?? query.query,
+    context: {
+      tokenBudget: editContext.details.tokenBudget,
+      responseTokens: editContext.details.tokenEstimate,
+      candidateCount: results.length,
+      deduplicatedCount: results.length,
+      omittedCount: 0,
+    },
+  };
 }
 
 export interface EvalRunResult {
@@ -117,6 +288,9 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       }
 
       const start = performance.now();
+      const editContextResult = query.retrievalMode === "edit-context"
+        ? await runEditContextQuery(indexer, options.projectRoot, query)
+        : undefined;
       const contextResult = query.retrievalMode === "context"
         ? await resolveSearchContext({
           query: query.query,
@@ -142,15 +316,20 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
           }),
         })
         : undefined;
-      const result = contextResult?.details?.results ?? await indexer.search(query.query, 10, {
-        metadataOnly: true,
-        filterByBranch: !!query.expected.branch,
-        fileType: query.args?.fileType,
-        directory: query.args?.directory,
-      });
+      const result = editContextResult?.results
+        ?? contextResult?.details?.results
+        ?? await indexer.search(query.query, 10, {
+          metadataOnly: true,
+          filterByBranch: !!query.expected.branch,
+          fileType: query.args?.fileType,
+          directory: query.args?.directory,
+        });
       const elapsed = performance.now() - start;
-      const resolvedRoute = contextResult?.details?.route === "definition" ? "definition" : "search";
-      const routedQuery = contextResult?.details?.routedQuery ?? query.query;
+      const resolvedRoute = editContextResult?.resolvedRoute
+        ?? (contextResult?.details?.route === "definition" ? "definition" : "search");
+      const routedQuery = editContextResult?.routedQuery
+        ?? contextResult?.details?.routedQuery
+        ?? query.query;
       const successfulRecoveryAttempt = contextResult?.details?.recovery?.successfulAttemptIndex;
       const recoveryAttempts = contextResult?.details?.recovery?.attempts ?? [];
       const recoveryRelaxed = successfulRecoveryAttempt === undefined
@@ -159,19 +338,23 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       const recoveryUsed = recoveryAttempts.length > 1
         || recoveryAttempts.some((attempt) => attempt.relaxedFields.length > 0);
 
-      const materialized = result.map((item) => ({
-        filePath: item.filePath,
-        startLine: item.startLine,
-        endLine: item.endLine,
-        score: item.score,
-        chunkType: item.chunkType,
-        name: item.name,
-      }));
+      const materialized: EvalSearchResult[] = result.map((item) => {
+        const graphDirection: EvalSearchResult["graphDirection"] = "graphDirection" in item
+          && (item.graphDirection === "caller" || item.graphDirection === "callee")
+          ? item.graphDirection
+          : undefined;
+        return {
+          filePath: item.filePath,
+          startLine: item.startLine,
+          endLine: item.endLine,
+          score: item.score,
+          chunkType: item.chunkType,
+          name: item.name,
+          graphDirection,
+        };
+      });
 
-      perQuery.push(buildPerQueryResult(query, materialized, elapsed, 10, {
-        resolvedRoute,
-        routedQuery,
-      }, contextResult?.details ? {
+      const contextMeasurement = editContextResult?.context ?? (contextResult?.details ? {
         tokenBudget: contextResult.details.tokenBudget,
         responseTokens: contextResult.details.tokenEstimate,
         candidateCount: contextResult.details.candidateCount ?? 0,
@@ -179,7 +362,12 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         omittedCount: contextResult.details.omittedCount ?? 0,
         recoveryUsed,
         recoveryRelaxed,
-      } : undefined));
+      } : undefined);
+
+      perQuery.push(buildPerQueryResult(query, materialized, elapsed, 10, {
+        resolvedRoute,
+        routedQuery,
+      }, contextMeasurement));
     }
 
     const logger = indexer.getLogger();

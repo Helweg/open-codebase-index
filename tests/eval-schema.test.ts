@@ -76,6 +76,77 @@ describe("eval schema", () => {
     expect(dataset.queries[0]?.retrievalMode).toBe("context");
   });
 
+  it("parses edit-context queries with a direct graph-neighbor expectation", () => {
+    const dataset = parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "pre-edit-context",
+        queries: [
+          {
+            id: "q1",
+            query: "change rankHybridResults",
+            queryType: "definition",
+            retrievalMode: "edit-context",
+            args: {
+              symbol: "rankHybridResults",
+              filePath: "src/indexer/index.ts",
+              callerLimit: 2,
+              calleeLimit: 3,
+              tokenBudget: 512,
+            },
+            expected: {
+              filePath: "src/indexer/index.ts",
+              symbol: "rankHybridResults",
+              graphNeighbor: {
+                direction: "caller",
+                filePath: "src/eval/runner.ts",
+                symbol: "runEvaluation",
+              },
+            },
+          },
+        ],
+      },
+      "dataset.json",
+    );
+
+    expect(dataset.queries[0]).toMatchObject({
+      retrievalMode: "edit-context",
+      args: {
+        filePath: "src/indexer/index.ts",
+        callerLimit: 2,
+        calleeLimit: 3,
+        tokenBudget: 512,
+      },
+      expected: {
+        graphNeighbor: {
+          direction: "caller",
+          filePath: "src/eval/runner.ts",
+          symbol: "runEvaluation",
+        },
+      },
+    });
+  });
+
+  it("rejects graph-neighbor expectations without a path or symbol", () => {
+    expect(() => parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "invalid-edit-context",
+        queries: [{
+          id: "q1",
+          query: "change rankHybridResults",
+          queryType: "definition",
+          retrievalMode: "edit-context",
+          expected: {
+            filePath: "src/indexer/index.ts",
+            graphNeighbor: { direction: "caller" },
+          },
+        }],
+      },
+      "dataset.json",
+    )).toThrow(/graphNeighbor.*filePath or symbol/);
+  });
+
   it("rejects unknown retrieval modes", () => {
     expect(() => parseGoldenDataset(
       {
@@ -92,7 +163,7 @@ describe("eval schema", () => {
         ],
       },
       "dataset.json",
-    )).toThrow(/retrievalMode.*search, context/);
+    )).toThrow(/retrievalMode.*search, context, edit-context/);
   });
 
   it("rejects dataset with missing expected path", () => {

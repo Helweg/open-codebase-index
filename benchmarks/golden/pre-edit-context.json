@@ -1,0 +1,44 @@
+{
+  "version": "1.0.0",
+  "name": "pre-edit-context",
+  "description": "Definition-led modification tasks measured through portable codebase_edit_context semantics.",
+  "queries": [
+    {
+      "id": "edit-context-resolver-caller",
+      "query": "change how pre-edit context resolves a target before modification",
+      "queryType": "definition",
+      "retrievalMode": "edit-context",
+      "args": {
+        "symbol": "resolveCodebaseEditContext",
+        "filePath": "src/tools/edit-context.ts",
+        "callerLimit": 5,
+        "calleeLimit": 5,
+        "tokenBudget": 1200
+      },
+      "expected": {
+        "filePath": "src/tools/edit-context.ts",
+        "symbol": "resolveCodebaseEditContext",
+        "graphNeighbor": {
+          "direction": "caller",
+          "filePath": "src/tools/execute-common.ts",
+          "symbol": "executeCodebaseEditContext"
+        }
+      }
+    },
+    {
+      "id": "edit-context-runner-target-only",
+      "query": "review runEvaluation before changing evaluator routing",
+      "queryType": "definition",
+      "retrievalMode": "edit-context",
+      "args": {
+        "symbol": "runEvaluation",
+        "filePath": "src/eval/runner.ts",
+        "tokenBudget": 1200
+      },
+      "expected": {
+        "filePath": "src/eval/runner.ts",
+        "symbol": "runEvaluation"
+      }
+    }
+  ]
+}

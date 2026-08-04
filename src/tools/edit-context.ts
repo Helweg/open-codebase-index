@@ -11,6 +11,7 @@ import {
   getCallGraphData,
   implementationLookup,
   searchCodebase,
+  type CallGraphDataResult,
   type CallGraphSymbolResolution,
 } from "./operations.js";
 import {
@@ -31,6 +32,16 @@ export interface CodebaseEditContextResult {
     callerCount: number;
     calleeCount: number;
   };
+}
+
+export interface CodebaseEditContextDependencies {
+  searchCodebase: (query: string, options?: { limit?: number }) => Promise<SearchResult[]>;
+  implementationLookup: (query: string, options?: { limit?: number }) => Promise<SearchResult[]>;
+  getCallGraphData: (params: {
+    name: string;
+    filePath?: string;
+    direction: "callers" | "callees";
+  }) => Promise<CallGraphDataResult>;
 }
 
 function edgeLimit(value: number | null | undefined): number {
@@ -108,15 +119,14 @@ function formatResolutionRisk(resolution: Exclude<CallGraphSymbolResolution, { s
 }
 
 async function fallbackPack(
-  projectRoot: string | undefined,
-  host: HostMode,
+  dependencies: CodebaseEditContextDependencies,
   query: string,
   risk: string,
   resolution: CodebaseEditContextResult["details"]["resolution"],
   tokenBudget: number | null | undefined,
   candidateSource: SearchResult[] = [],
 ): Promise<CodebaseEditContextResult> {
-  const conceptual = await searchCodebase(projectRoot, host, query, { limit: 5 });
+  const conceptual = await dependencies.searchCodebase(query, { limit: 5 });
   const pack = buildContextPack([...candidateSource, ...conceptual], {
     tokenBudget: tokenBudget ?? undefined,
     heading: "## Conceptual evidence",
@@ -139,16 +149,14 @@ async function fallbackPack(
   };
 }
 
-export async function resolveCodebaseEditContext(
-  projectRoot: string | undefined,
-  host: HostMode,
+export async function resolveCodebaseEditContextWithDependencies(
   input: SharedCodebaseEditContextArgs,
+  dependencies: CodebaseEditContextDependencies,
 ): Promise<CodebaseEditContextResult> {
   const symbol = input.symbol?.trim();
   if (!symbol) {
     return fallbackPack(
-      projectRoot,
-      host,
+      dependencies,
       input.query,
       "Risk: no authoritative symbol was supplied. Review the conceptual evidence before editing.",
       "not_requested",
@@ -158,17 +166,16 @@ export async function resolveCodebaseEditContext(
 
   let callersResult: Awaited<ReturnType<typeof getCallGraphData>>;
   try {
-    callersResult = await getCallGraphData(projectRoot, host, {
+    callersResult = await dependencies.getCallGraphData({
       name: symbol,
       filePath: input.filePath ?? undefined,
       direction: "callers",
     });
   } catch (error) {
-    const candidates = await implementationLookup(projectRoot, host, symbol, { limit: 5 });
+    const candidates = await dependencies.implementationLookup(symbol, { limit: 5 });
     const message = error instanceof Error ? error.message : String(error);
     return fallbackPack(
-      projectRoot,
-      host,
+      dependencies,
       input.query,
       `Risk: graph data is unavailable (${message}). Target and dependencies are not graph-verified.`,
       "graph_unavailable",
@@ -179,8 +186,7 @@ export async function resolveCodebaseEditContext(
 
   if (callersResult.resolution.status !== "resolved") {
     return fallbackPack(
-      projectRoot,
-      host,
+      dependencies,
       input.query,
       formatResolutionRisk(callersResult.resolution),
       callersResult.resolution.status,
@@ -190,8 +196,8 @@ export async function resolveCodebaseEditContext(
 
   const resolution = callersResult.resolution;
   const [definitionsResult, calleesResult] = await Promise.allSettled([
-    implementationLookup(projectRoot, host, symbol, { limit: 10 }),
-    getCallGraphData(projectRoot, host, {
+    dependencies.implementationLookup(symbol, { limit: 10 }),
+    dependencies.getCallGraphData({
       name: symbol,
       filePath: input.filePath ?? resolution.filePath,
       direction: "callees",
@@ -239,4 +245,16 @@ export async function resolveCodebaseEditContext(
       calleeCount: callees.length,
     },
   };
+}
+
+export async function resolveCodebaseEditContext(
+  projectRoot: string | undefined,
+  host: HostMode,
+  input: SharedCodebaseEditContextArgs,
+): Promise<CodebaseEditContextResult> {
+  return resolveCodebaseEditContextWithDependencies(input, {
+    searchCodebase: (query, options) => searchCodebase(projectRoot, host, query, options),
+    implementationLookup: (query, options) => implementationLookup(projectRoot, host, query, options),
+    getCallGraphData: (params) => getCallGraphData(projectRoot, host, params),
+  });
 }

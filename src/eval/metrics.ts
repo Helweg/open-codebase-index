@@ -121,6 +121,15 @@ function isExpectedFile(filePath: string, relevant: GoldenGradedEvidence[]): boo
   return relevant.some((entry) => pathMatchesExpected(filePath, entry.path));
 }
 
+function graphNeighborMatches(query: GoldenQuery, result: PerQueryEvalResult["results"][number]): boolean {
+  const expected = query.expected.graphNeighbor;
+  if (!expected || result.graphDirection !== expected.direction) return false;
+  if (expected.filePath !== undefined && !pathMatchesExpected(result.filePath, expected.filePath)) {
+    return false;
+  }
+  return expected.symbol === undefined || result.name === expected.symbol;
+}
+
 function resultRelevance(
   filePath: string,
   symbol: string | undefined,
@@ -369,6 +378,9 @@ export function buildPerQueryResult(
       : query.expected.recoveryExpectation === "filter-relaxed"
         ? context?.recoveryRelaxed === true
         : context?.recoveryUsed !== true,
+    graphNeighborMatched: query.expected.graphNeighbor === undefined
+      ? undefined
+      : results.some((result) => graphNeighborMatches(query, result)),
     language: query.language,
     difficulty: query.difficulty,
     tags: query.tags,
@@ -435,7 +447,7 @@ export function computeEvalMetrics(
   };
 
   const latencies = perQuery.map((item) => item.latencyMs);
-  const contextQueries = perQuery.filter((item) => item.retrievalMode === "context");
+  const contextQueries = perQuery.filter((item) => item.retrievalMode !== "search");
   const contextResponseTokens = contextQueries.map((item) => item.responseTokens);
   const totalContextResponseTokens = contextResponseTokens.reduce((sum, value) => sum + value, 0);
   const contextTokenUnits = totalContextResponseTokens / 1000;
@@ -446,6 +458,8 @@ export function computeEvalMetrics(
   let outcomeExpectedCount = 0;
   let recoveryMatchedCount = 0;
   let recoveryExpectedCount = 0;
+  let graphNeighborMatchedCount = 0;
+  let graphNeighborExpectedCount = 0;
 
   for (const query of perQuery) {
     if (positiveQueryIds.has(query.id)) {
@@ -476,6 +490,10 @@ export function computeEvalMetrics(
       recoveryExpectedCount += 1;
       if (query.recoveryMatched) recoveryMatchedCount += 1;
     }
+    if (query.graphNeighborMatched !== undefined) {
+      graphNeighborExpectedCount += 1;
+      if (query.graphNeighborMatched) graphNeighborMatchedCount += 1;
+    }
   }
 
   const queryTokens = queries.reduce((acc, q) => acc + estimateTokens(q.query), 0);
@@ -490,6 +508,9 @@ export function computeEvalMetrics(
     routeAccuracy: routeExpectedCount === 0 ? 0 : routeMatchedCount / routeExpectedCount,
     outcomeAccuracy: outcomeExpectedCount === 0 ? 0 : outcomeMatchedCount / outcomeExpectedCount,
     recoveryAccuracy: recoveryExpectedCount === 0 ? 0 : recoveryMatchedCount / recoveryExpectedCount,
+    graphNeighborRecall: graphNeighborExpectedCount === 0
+      ? 0
+      : graphNeighborMatchedCount / graphNeighborExpectedCount,
     distinctTop3Ratio: safeDiv(sum.distinctTop3Ratio),
     rawDistinctTop3Ratio: safeDiv(sum.rawDistinctTop3Ratio),
     latencyMs: {
