@@ -152,6 +152,8 @@ describe("cross-repo CodeGraph comparator", () => {
       sourceFile("src/eta.ts"),
       sourceFile("src/theta.ts"),
       sourceFile("src/iota.ts"),
+      sourceFile("src/__tests__/test-helper.ts"),
+      sourceFile("src/fixtures/sample-fixture.ts"),
     ];
 
     const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
@@ -159,6 +161,44 @@ describe("cross-repo CodeGraph comparator", () => {
 
     expect(definitionQueries).toHaveLength(3);
     expect(definitionQueries.every((query) => !query.expected.filePath.startsWith(".github/workflows/"))).toBe(true);
+    expect(definitionQueries.every((query) => !query.expected.filePath.includes("/__tests__/"))).toBe(true);
+    expect(definitionQueries.every((query) => !query.expected.filePath.includes("/fixtures/"))).toBe(true);
+    });
+
+  it("fails when all definition candidates are in test or fixture paths", () => {
+    const repoPath = "/repo";
+    const parsedFiles = [
+      {
+        path: path.join(repoPath, "src/__tests__/alpha.test.ts"),
+        hash: "alpha.test.ts",
+        symbols: [],
+        chunks: [{
+          content: "export function testAlpha() { return 1; }",
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: "testAlpha",
+          language: "typescript",
+        }],
+      },
+      {
+        path: path.join(repoPath, "src/fixtures/beta.fixture.ts"),
+        hash: "beta.fixture.ts",
+        symbols: [],
+        chunks: [{
+          content: "export function fixtureBeta() { return 1; }",
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: "fixtureBeta",
+          language: "typescript",
+        }],
+      },
+    ];
+
+    expect(() => buildGoldenDataset("fixture", repoPath, parsedFiles)).toThrow(
+      "No definition candidates outside unsupported CodeGraph source paths in fixture"
+    );
   });
 
   it("fails when all definition candidates are in unsupported workflow paths", () => {

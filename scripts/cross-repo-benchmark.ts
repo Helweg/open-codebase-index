@@ -11,6 +11,7 @@ import { createIsolatedSourceCopy, parseCodeGraphOutput, type CodeGraphResult } 
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import { runEvaluation } from "../src/eval/runner.js";
 import { parseGoldenDataset } from "../src/eval/schema.js";
+import { isFixturePath, isTestPath } from "../src/indexer/intent-aware-ranking.js";
 import type {
   EvalMetrics,
   EvalRunOptions,
@@ -64,6 +65,8 @@ const EXCLUDED_DIRS = new Set([
 ]);
 
 const CODEGRAPH_UNSUPPORTED_DEFINITION_PATHS = [".github/workflows/"];
+
+const CODEGRAPH_SOURCE_EXCLUDED_PATHS = [isTestPath, isFixturePath];
 
 export const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_PARSE_FILES = 2500;
@@ -583,6 +586,11 @@ function isCodeGraphUnsupportedDefinitionPath(filePath: string): boolean {
   );
 }
 
+function isCodeGraphSourceExcludedDefinitionPath(filePath: string): boolean {
+  const normalizedPath = normalizePathForMatch(filePath).toLowerCase();
+  return CODEGRAPH_SOURCE_EXCLUDED_PATHS.some((predicate) => predicate(normalizedPath));
+}
+
 function isFunctionOrClass(chunk: CodeChunk): chunk is CodeChunk & { name: string } {
   if (!chunk.name) return false;
   return getCanonicalChunkType(chunk.chunkType) !== undefined;
@@ -740,7 +748,10 @@ export function buildGoldenDataset(repoName: string, repoPath: string, parsedFil
     throw new Error(`No function/class candidates discovered in ${repoName}`);
   }
 
-  const definitionCandidates = candidates.filter((candidate) => !isCodeGraphUnsupportedDefinitionPath(candidate.filePath));
+  const definitionCandidates = candidates.filter((candidate) =>
+    !isCodeGraphUnsupportedDefinitionPath(candidate.filePath) &&
+    !isCodeGraphSourceExcludedDefinitionPath(candidate.filePath)
+  );
   if (definitionCandidates.length === 0) {
     throw new Error(`No definition candidates outside unsupported CodeGraph source paths in ${repoName}`);
   }
