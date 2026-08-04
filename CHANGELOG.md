@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Exact definition context**: Preserve exact definition lookup ordering when assembling `codebase_context` evidence, so diversification cannot displace the requested definition.
+
 ## [0.22.3] - 2026-08-02
 
 ### Changed
