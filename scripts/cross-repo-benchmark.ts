@@ -680,7 +680,7 @@ function pickDistinctFiles(candidates: SymbolCandidate[], limit: number): Symbol
   return picked;
 }
 
-function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: ParsedFile[]): GoldenDataset {
+export function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: ParsedFile[]): GoldenDataset {
   const candidates = buildSymbolCandidates(parsedFiles, repoPath);
   if (candidates.length === 0) {
     throw new Error(`No function/class candidates discovered in ${repoName}`);
@@ -694,11 +694,17 @@ function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: Par
   const queries: GoldenQuery[] = [];
   let counter = 1;
 
-  const addQuery = (queryType: GoldenQueryType, query: string, expected: GoldenQuery["expected"]): void => {
+  const addQuery = (
+    queryType: GoldenQueryType,
+    query: string,
+    expected: GoldenQuery["expected"],
+    options: Pick<GoldenQuery, "retrievalMode" | "args"> = {}
+  ): void => {
     queries.push({
       id: `${repoName}-${queryType}-${String(counter).padStart(2, "0")}`,
       query,
       queryType,
+      ...options,
       expected,
     });
     counter += 1;
@@ -708,6 +714,10 @@ function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: Par
     addQuery("definition", `where is ${candidate.symbol} defined`, {
       filePath: candidate.filePath,
       symbol: candidate.symbol,
+      expectedRoute: "definition",
+    }, {
+      retrievalMode: "context",
+      args: { symbol: candidate.symbol },
     });
   }
 

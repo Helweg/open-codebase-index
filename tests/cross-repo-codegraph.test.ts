@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import type { GoldenDataset, GoldenQuery, PerQueryEvalResult } from "../src/eval/types.js";
+import type { ParsedFile } from "../src/native/index.js";
 import {
+  buildGoldenDataset,
   buildReportMarkdown,
   parseCliArgs,
   runCodeGraphRepeat,
@@ -85,6 +87,35 @@ describe("cross-repo CodeGraph comparator", () => {
     const repoPath = tempDir("cross-repo-cg-cli-");
     expect(parseCliArgs(["--repos", repoPath]).codegraph).toBe(false);
     expect(parseCliArgs(["--repos", repoPath, "--codegraph"]).codegraph).toBe(true);
+  });
+
+  it("routes generated definition queries through context definition lookup", () => {
+    const repoPath = "/repo";
+    const parsedFiles: ParsedFile[] = ["alpha", "beta", "gamma"].map((symbol) => ({
+      path: path.join(repoPath, "src", `${symbol}.ts`),
+      hash: symbol,
+      symbols: [],
+      chunks: [{
+        content: `export function ${symbol}() { return "${symbol}"; }`,
+        startLine: 1,
+        endLine: 1,
+        chunkType: "function",
+        name: symbol,
+        language: "typescript",
+      }],
+    }));
+
+    const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
+    const definitions = dataset.queries.filter((item) => item.queryType === "definition");
+
+    expect(definitions).toHaveLength(3);
+    for (const definition of definitions) {
+      expect(definition).toMatchObject({
+        retrievalMode: "context",
+        args: { symbol: definition.expected.symbol },
+        expected: { expectedRoute: "definition" },
+      });
+    }
   });
 
   it("uses a fresh isolated repo per repeat, exact pinned commands, strict scoped metrics, and raw artifacts", async () => {
