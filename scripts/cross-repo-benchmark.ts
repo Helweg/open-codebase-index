@@ -1344,7 +1344,8 @@ function ms(value: number): string {
 function appendCodeGraphMetricTable(
   lines: string[],
   pluginMetrics: EvalMetrics,
-  codeGraphMetrics: EvalMetrics
+  codeGraphMetrics: EvalMetrics,
+  includeLatency = true
 ): void {
   lines.push("| Metric | Plugin | CodeGraph |");
   lines.push("|---|---:|---:|");
@@ -1354,9 +1355,11 @@ function appendCodeGraphMetricTable(
   lines.push(`| Hit@10 | ${pct(pluginMetrics.hitAt10)} | ${pct(codeGraphMetrics.hitAt10)} |`);
   lines.push(`| MRR@10 | ${num(pluginMetrics.mrrAt10)} | ${num(codeGraphMetrics.mrrAt10)} |`);
   lines.push(`| nDCG@10 | ${num(pluginMetrics.ndcgAt10)} | ${num(codeGraphMetrics.ndcgAt10)} |`);
-  lines.push(`| Latency p50 (ms) | ${ms(pluginMetrics.latencyMs.p50)} | ${ms(codeGraphMetrics.latencyMs.p50)} |`);
-  lines.push(`| Latency p95 (ms) | ${ms(pluginMetrics.latencyMs.p95)} | ${ms(codeGraphMetrics.latencyMs.p95)} |`);
-  lines.push(`| Latency p99 (ms) | ${ms(pluginMetrics.latencyMs.p99)} | ${ms(codeGraphMetrics.latencyMs.p99)} |`);
+  if (includeLatency) {
+    lines.push(`| Latency p50 (ms) | ${ms(pluginMetrics.latencyMs.p50)} | ${ms(codeGraphMetrics.latencyMs.p50)} |`);
+    lines.push(`| Latency p95 (ms) | ${ms(pluginMetrics.latencyMs.p95)} | ${ms(codeGraphMetrics.latencyMs.p95)} |`);
+    lines.push(`| Latency p99 (ms) | ${ms(pluginMetrics.latencyMs.p99)} | ${ms(codeGraphMetrics.latencyMs.p99)} |`);
+  }
   lines.push("");
 }
 
@@ -1472,6 +1475,7 @@ export function buildReportMarkdown(
     lines.push("## Fair CodeGraph Comparator");
     lines.push("");
     lines.push("Plugin metrics are recomputed per repeat from exactly the same query IDs with `expected.symbol` that CodeGraph receives.");
+    lines.push("Latency is omitted in this comparator because each `codegraph query` timing includes one-shot CLI process startup.");
     lines.push("");
 
     for (const result of successful) {
@@ -1494,7 +1498,7 @@ export function buildReportMarkdown(
 
       if (comparison.metrics) {
         lines.push("");
-        appendCodeGraphMetricTable(lines, comparison.metrics.plugin, comparison.metrics.codegraph);
+        appendCodeGraphMetricTable(lines, comparison.metrics.plugin, comparison.metrics.codegraph, false);
       } else {
         lines.push("");
         lines.push("No comparison result: no CodeGraph repeat completed successfully.");
@@ -1511,7 +1515,8 @@ export function buildReportMarkdown(
       appendCodeGraphMetricTable(
         lines,
         averageMetrics(comparable.map((metrics) => metrics.plugin)),
-        averageMetrics(comparable.map((metrics) => metrics.codegraph))
+        averageMetrics(comparable.map((metrics) => metrics.codegraph)),
+        false
       );
     } else {
       lines.push("No comparison result: no repository had a successful CodeGraph repeat.");
