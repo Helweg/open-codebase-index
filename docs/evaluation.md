@@ -17,6 +17,12 @@ agent-facing `codebase_context` gateway, run:
 npm run eval:agent
 ```
 
+Run the pre-edit-context dataset to exercise the edit-context path and any graph-neighbor checks:
+
+```bash
+npm run eval:pre-edit
+```
+
 Run the agent-facing dataset with its matching quality and context-efficiency gates:
 
 ```bash
@@ -41,10 +47,18 @@ Version 2 golden queries can declare:
 - `language`, `difficulty`, and bounded `tags` for per-query diagnostics
 - `args.symbol`, `args.fileType`, and `args.directory`, which the runner passes
   through the same search/context paths used by production tools
+- `args.callerLimit`, `args.calleeLimit`, and `args.tokenBudget`, which control
+  `edit-context` graph expansion depth and response budget
 - `expected.expectedRoute`, `expected.expectedOutcome`, and
   `expected.recoveryExpectation`
 - `expected.gradedEvidence`, whose entries identify a repository-relative path,
   optional exact symbol, and relevance grade from 1 to 3
+
+The pre-edit path additionally supports:
+
+- `expected.graphNeighbor` with:
+  - `direction`: `caller` or `callee`
+  - one of `filePath` or `symbol` (at least one required)
 
 Hit and reciprocal-rank metrics require both the labeled path and symbol when a
 symbol is present. nDCG uses the relevance grades. Legacy `filePath` and
@@ -256,6 +270,7 @@ Golden sets are versioned JSON files:
 - `benchmarks/golden/medium.json`
 - `benchmarks/golden/large.json`
 - `benchmarks/golden/agent-context.json`
+- `benchmarks/golden/pre-edit-context.json`
 
 Schema:
 
@@ -296,10 +311,32 @@ Allowed values:
 - `search` (default) evaluates the raw hybrid search path.
 - `context` evaluates agent-facing gateway behavior. Confident symbol queries
   use authoritative definition lookup; other questions use conceptual search.
+- `edit-context` evaluates the edit workflow context path. If symbol resolution is
+  successful, route and resolved-route metrics will report `definition`.
+  Otherwise they remain `search`. This mode passes through
+  `args.tokenBudget`, `args.callerLimit`, and `args.calleeLimit`.
 
 The per-query artifact records both `resolvedRoute` and `routedQuery`, making
 automatic routing decisions visible rather than hiding them inside aggregate
 quality scores.
+
+### `expected.graphNeighbor`
+
+`expected.graphNeighbor` is a single-hop follow-up assertion used by
+`graphNeighborRecall`. The evaluator matches a result when:
+
+- `graphDirection` equals `expected.direction`
+- `filePath` matches the expected path (exact or suffix)
+- if `symbol` is provided, chunk `name` equals that symbol
+
+Important caveats:
+
+- Only queries that declare `expected.graphNeighbor` are included in the
+  `graphNeighborRecall` denominator.
+- In non-`edit-context` retrieval modes, graph direction metadata is typically
+  absent, so this metric is usually not recoverable there.
+- `callee` matching depends on successful edit-context target resolution and
+  emitted callee detail.
 
 ### `expected`
 
@@ -312,6 +349,7 @@ Optional:
 
 - `expected.symbol`
 - `expected.branch`
+- `expected.graphNeighbor`
 
 Validation errors are surfaced with clear path-specific messages (e.g. `queries[2].expected.acceptableFiles must be an array of strings`).
 
@@ -324,6 +362,7 @@ Context response budgets and response-token metrics use the `cl100k_base` tokeni
 - Hit@1, Hit@3, Hit@5, Hit@10
 - MRR@10
 - nDCG@10
+- Graph-neighbor recall (for queries declaring `expected.graphNeighbor`)
 - Latency p50/p95/p99
 - Token estimate + embedding call counts + estimated embedding cost
 - Context response-token total/average/p95/max
@@ -354,6 +393,9 @@ Files:
 - `summary.md` — human markdown report
 - `per-query.json` — per-query details and top-k hits
 - `compare.json` — baseline deltas or sweep aggregate (when baseline/sweep used)
+
+For reproducible multi-repository comparison methodology and disclosure controls,
+see [Public Benchmark Matrix](./public-benchmark-matrix.md).
 
 ## Baseline blessing workflow
 
