@@ -384,6 +384,10 @@ describe("cross-repo CodeGraph comparator", () => {
     expect(fairSection).toContain("| Metric | Plugin | CodeGraph |");
     expect(fairSection).not.toContain("| Ripgrep |");
     expect(fairSection).not.toContain("ast-grep");
+    expect(fairSection).toContain("Latency is omitted in this comparator because each `codegraph query` timing includes one-shot CLI process startup.");
+    expect(fairSection).not.toContain("| Latency p50 (ms) |");
+    expect(fairSection).not.toContain("| Latency p95 (ms) |");
+    expect(fairSection).not.toContain("| Latency p99 (ms) |");
   });
 
   it("disqualifies invocation failures without zero-scoring and keeps CodeGraph out of general tables", async () => {
