@@ -165,6 +165,45 @@ describe("cross-repo CodeGraph comparator", () => {
     expect(definitionQueries.every((query) => !query.expected.filePath.includes("/fixtures/"))).toBe(true);
     });
 
+  it("excludes documentation candidates from source definition set and keeps source candidates", () => {
+    const repoPath = "/repo";
+    const sourceFile = (name: string): ParsedFile => {
+      const symbol = path.basename(name).replace(/\.[^.]+$/, "");
+      return {
+        path: path.join(repoPath, name),
+        hash: name,
+        symbols: [],
+        chunks: [{
+          content: `export function ${symbol}() { return 1; }`,
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: symbol,
+          language: name.endsWith(".py") ? "python" : "typescript",
+        }],
+      };
+    };
+
+    const parsedFiles = [
+      sourceFile("src/alpha.ts"),
+      sourceFile("src/beta.ts"),
+      sourceFile("src/gamma.ts"),
+      sourceFile("docs/_themes/flask_theme_support.py"),
+      sourceFile("src/delta.ts"),
+    ];
+
+    const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
+    const definitionQueries = dataset.queries.filter((query) => query.queryType === "definition");
+
+    expect(definitionQueries).toHaveLength(3);
+    expect(
+      definitionQueries.some((query) => query.expected.filePath === "docs/_themes/flask_theme_support.py")
+    ).toBe(false);
+    expect(
+      definitionQueries.every((query) => query.expected.filePath.startsWith("src/") && !query.expected.filePath.includes("docs/"))
+    ).toBe(true);
+  });
+
   it("fails when all definition candidates are in test or fixture paths", () => {
     const repoPath = "/repo";
     const parsedFiles = [

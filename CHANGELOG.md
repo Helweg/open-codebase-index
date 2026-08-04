@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Cross-repo comparison eligibility**: Exclude documentation-only symbols from the CodeGraph exact-definition cohort, keeping the comparator aligned to source-intent definition retrieval.
 - **Exact definition context**: Preserve exact definition lookup ordering when assembling `codebase_context` evidence, so diversification cannot displace the requested definition.
 
 ## [0.22.3] - 2026-08-02

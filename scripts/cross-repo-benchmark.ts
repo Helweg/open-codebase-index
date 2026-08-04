@@ -11,7 +11,7 @@ import { createIsolatedSourceCopy, parseCodeGraphOutput, type CodeGraphResult } 
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import { runEvaluation } from "../src/eval/runner.js";
 import { parseGoldenDataset } from "../src/eval/schema.js";
-import { isFixturePath, isTestPath } from "../src/indexer/intent-aware-ranking.js";
+import { isDocumentationPath, isFixturePath, isTestPath } from "../src/indexer/intent-aware-ranking.js";
 import type {
   EvalMetrics,
   EvalRunOptions,
@@ -66,7 +66,7 @@ const EXCLUDED_DIRS = new Set([
 
 const CODEGRAPH_UNSUPPORTED_DEFINITION_PATHS = [".github/workflows/"];
 
-const CODEGRAPH_SOURCE_EXCLUDED_PATHS = [isTestPath, isFixturePath];
+const CODEGRAPH_SOURCE_EXCLUDED_PATHS = [isTestPath, isFixturePath, isDocumentationPath];
 
 export const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_PARSE_FILES = 2500;
