@@ -16,6 +16,9 @@ import {
   CODE_COMMUNITIES_MIN_COUPLING,
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
+  DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
 } from "../../tools/contracts.js";
 import {
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
@@ -39,6 +42,7 @@ import {
   executeCallGraph,
   executeCallGraphPath,
   executeCodebaseContext,
+  executeCodebaseEditContext,
   executeCodeCommunities,
   executeIndexCodebase,
   executeIndexHealthCheck,
@@ -98,6 +102,24 @@ export const codebase_context: ToolDefinition = tool({
   },
   async execute(args, context) {
     return (await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
+  },
+});
+
+export const codebase_edit_context: ToolDefinition = tool({
+  description: "PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when the target cannot be resolved.",
+  args: {
+    query: z.string().describe("The requested change or target behavior"),
+    symbol: z.string().nullable().optional().describe("Authoritative target symbol when known"),
+    filePath: z.string().nullable().optional().describe("Optional file path used to disambiguate duplicate symbol names"),
+    callerLimit: z.number().int().min(MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).max(MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT)
+      .nullable().optional().default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT),
+    calleeLimit: z.number().int().min(MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).max(MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT)
+      .nullable().optional().default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT),
+    tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
+      .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),
+  },
+  async execute(args, context) {
+    return (await executeCodebaseEditContext(context?.worktree, DEFAULT_HOST, args)).text;
   },
 });
 

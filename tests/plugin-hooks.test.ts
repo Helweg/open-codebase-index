@@ -60,6 +60,7 @@ vi.mock("../src/tools/index.js", () => {
   const toolStub = {};
   return {
     codebase_context: toolStub,
+    codebase_edit_context: toolStub,
     codebase_search: toolStub,
     codebase_peek: toolStub,
     index_codebase: toolStub,

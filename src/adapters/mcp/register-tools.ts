@@ -27,11 +27,15 @@ import {
   CODE_COMMUNITIES_MIN_COUPLING,
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
+  DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
 } from "../../tools/contracts.js";
 import {
   executeCallGraph,
   executeCallGraphPath,
   executeCodebaseContext,
+  executeCodebaseEditContext,
   executeCodeCommunities,
   executeIndexCodebase,
   executeIndexHealthCheck,
@@ -79,6 +83,26 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
     async (args) => {
       const result = await executeCodebaseContext(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.CODEBASE_EDIT_CONTEXT,
+    "PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when resolution is unsafe.",
+    {
+      query: z.string().describe("The requested change or target behavior."),
+      symbol: allowNullAsUndefined(z.string().optional()).describe("Authoritative target symbol when known."),
+      filePath: allowNullAsUndefined(z.string().optional()).describe("Optional file path used to disambiguate duplicate symbol names."),
+      callerLimit: allowNullAsUndefined(z.number().int().min(MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).max(MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).optional()
+        .default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT)),
+      calleeLimit: allowNullAsUndefined(z.number().int().min(MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).max(MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT).optional()
+        .default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT)),
+      tokenBudget: allowNullAsUndefined(z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
+        .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)),
+    },
+    async (args) => {
+      const result = await executeCodebaseEditContext(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
