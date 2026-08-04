@@ -10,6 +10,10 @@ import type { ParsedFile } from "../src/native/index.js";
 import {
   buildGoldenDataset,
   buildReportMarkdown,
+  buildPluginEvalRunOptions,
+  controlledEvalConfigPath,
+  writeControlledEvalConfig,
+  MAX_FILE_SIZE_BYTES,
   parseCliArgs,
   runCodeGraphRepeat,
   type CliOptions,
@@ -328,5 +332,66 @@ describe("cross-repo CodeGraph comparator", () => {
     expect(artifact.init.error).toBe("init process exited 1");
     expect(artifact.queries).toEqual([]);
     expect(artifact.comparison).toBeUndefined();
+  });
+
+  it("uses a generated eval config artifact with hard-coded index caps and passes it to plugin run options", () => {
+    const repoPath = tempDir("cross-repo-eval-config-run-repo-");
+    const runDir = tempDir("cross-repo-eval-config-run-artifacts-");
+    const homeDir = tempDir("cross-repo-eval-config-home-");
+
+    const hostileHome = process.env.HOME;
+    const controlledHome = path.join(homeDir, "user-home");
+    process.env.HOME = controlledHome;
+
+    try {
+      const globalConfigPath = path.join(controlledHome, ".config", "opencode", "codebase-index.json");
+      fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
+      fs.writeFileSync(
+        globalConfigPath,
+        JSON.stringify({
+          indexing: {
+            maxFileSize: 12_345,
+            maxChunksPerFile: 7,
+          },
+        }, null, 2),
+        "utf-8"
+      );
+
+      const configPath = writeControlledEvalConfig(controlledEvalConfigPath(runDir, "fixture"));
+      const rawConfig = JSON.parse(fs.readFileSync(configPath, "utf-8")) as {
+        indexing?: {
+          maxFileSize?: number;
+          maxChunksPerFile?: number;
+        };
+      };
+
+      expect(path.dirname(configPath)).toBe(path.join(runDir, "eval-configs"));
+      expect(rawConfig).toEqual({
+        indexing: {
+          maxFileSize: MAX_FILE_SIZE_BYTES,
+          maxChunksPerFile: 100,
+        },
+      });
+
+      const runOptions = buildPluginEvalRunOptions({
+        projectRoot: repoPath,
+        datasetPath: "datasets/fixture.json",
+        outputRoot: "plugin",
+        reindexApplied: false,
+        configPath,
+      });
+
+      expect(runOptions).toEqual({
+        projectRoot: repoPath,
+        datasetPath: "datasets/fixture.json",
+        outputRoot: "plugin",
+        ciMode: false,
+        reindex: false,
+        configPath,
+      });
+      expect(runOptions.configPath).toBe(configPath);
+    } finally {
+      process.env.HOME = hostileHome;
+    }
   });
 });

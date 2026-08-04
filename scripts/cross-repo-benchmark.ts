@@ -63,9 +63,10 @@ const EXCLUDED_DIRS = new Set([
   "temp",
 ]);
 
-const MAX_FILE_SIZE_BYTES = 1_000_000;
+export const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_PARSE_FILES = 2500;
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@1.5.0";
+const MAX_CHUNKS_PER_FILE = 100;
 
 export interface CliOptions {
   repos: string[];
@@ -104,6 +105,13 @@ export interface CodeGraphRepeatSummary {
   pluginMetrics?: EvalMetrics;
   codeGraphMetrics?: EvalMetrics;
   error?: string;
+}
+
+export interface ControlledEvalConfigArtifact {
+  indexing: {
+    maxFileSize: number;
+    maxChunksPerFile: number;
+  };
 }
 
 export interface RepoBenchmarkResult {
@@ -245,6 +253,42 @@ function normalizePathForMatch(input: string): string {
 
 function ensureDir(dirPath: string): void {
   mkdirSync(dirPath, { recursive: true });
+}
+
+export function controlledEvalConfigPath(runDir: string, repoName: string): string {
+  return path.join(runDir, "eval-configs", `${repoName}-benchmark.json`);
+}
+
+export function writeControlledEvalConfig(configPath: string): string {
+  const content = {
+    indexing: {
+      maxFileSize: MAX_FILE_SIZE_BYTES,
+      maxChunksPerFile: MAX_CHUNKS_PER_FILE,
+    },
+  } satisfies ControlledEvalConfigArtifact;
+
+  ensureDir(path.dirname(configPath));
+  writeFileSync(configPath, JSON.stringify(content, null, 2), "utf-8");
+  return configPath;
+}
+
+export function buildPluginEvalRunOptions(
+  params: {
+    projectRoot: string;
+    datasetPath: string;
+    outputRoot: string;
+    reindexApplied: boolean;
+    configPath: string;
+  }
+): EvalRunOptions {
+  return {
+    projectRoot: params.projectRoot,
+    datasetPath: params.datasetPath,
+    outputRoot: params.outputRoot,
+    ciMode: false,
+    reindex: params.reindexApplied,
+    configPath: params.configPath,
+  };
 }
 
 function timestampForDir(date = new Date()): string {
@@ -1494,6 +1538,9 @@ async function runForRepo(
       metrics: EvalMetrics;
       reindexApplied: boolean;
     }> = [];
+    const controlledEvalConfigArtifactPath = writeControlledEvalConfig(
+      controlledEvalConfigPath(runDir, repoName)
+    );
     let lastPluginResult: Awaited<ReturnType<typeof runEvaluation>> | null = null;
     let lastRipgrepQueryCount = 0;
     let lastSgQueryCount = 0;
@@ -1503,13 +1550,13 @@ async function runForRepo(
 
     for (let repeat = 0; repeat < options.repeats; repeat += 1) {
       const reindexApplied = options.reindex && repeat === 0;
-      const runOptions: EvalRunOptions = {
+      const runOptions: EvalRunOptions = buildPluginEvalRunOptions({
         projectRoot: repoPath,
         datasetPath,
         outputRoot: pluginOutputRoot,
-        ciMode: false,
-        reindex: reindexApplied,
-      };
+        reindexApplied,
+        configPath: controlledEvalConfigArtifactPath,
+      });
 
       const pluginResult = await runEvaluation(runOptions);
       lastPluginResult = pluginResult;
