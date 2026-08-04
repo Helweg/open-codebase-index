@@ -87,7 +87,7 @@ export function parseCodeGraphOutput(output: string, isolatedRepoPath: string): 
     }
 
     const { node, score } = entry;
-    if (typeof node !== "object" || node === null || Array.isArray(node)) {
+    if (!isRecord(node)) {
       throw new Error(`Malformed CodeGraph output at index ${index}: node must be object`);
     }
 
