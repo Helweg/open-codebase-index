@@ -87,6 +87,20 @@ Ast-grep baseline scope:
 - This avoids scoring ast-grep against non-structural natural-language query types that are outside AST pattern matching semantics.
 - sg metrics are computed on this scoped subset only; report output includes the scoped denominator (`scoped/total`) for transparency.
 
+## CodeGraph fair comparator
+
+Run the opt-in, fixed-version comparator with `--codegraph`:
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts \
+  --repos /path/to/repo \
+  --reindex --repeats 3 --codegraph
+```
+
+The runner uses `@colbymchenry/codegraph@1.5.0` in a fresh temporary copy for every repeat. It excludes existing `.codegraph`, `.codebase-index`, build outputs, dependencies, and benchmark results. It initializes CodeGraph in that copy, then runs only generated queries that include `expected.symbol`.
+
+The report places this result in a standalone **Fair CodeGraph Comparator** section. Plugin metrics are recomputed from exactly the same query IDs. A failed CodeGraph initialization, query, or strict-output parse disqualifies that repeat and prevents it from being presented as a comparable result. Raw commands, per-query results, scope IDs, and errors are written under `<run>/codegraph/<repo>/repeat-*.json`.
+
 ## Output artifacts
 
 Each run writes to:
