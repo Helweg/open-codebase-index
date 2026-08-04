@@ -124,3 +124,11 @@ Run gates in order and stop on gate failure.
    - publish only if all above gates pass
    - include raw artifacts and `disclosure` block
    - keep scripts and inputs unchanged after execution
+
+## Comparator interface requirements
+
+Automated per-query retrieval metrics require structured result output from each comparator.
+
+Tools that only provide text-only contextual exploration must be evaluated in a separate
+agent-level arm or through a disclosed deterministic parser. This keeps the benchmark
+from granting hidden result-credit.
