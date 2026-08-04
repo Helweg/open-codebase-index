@@ -9,7 +9,7 @@
       "queryType": "definition",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/indexer/index.ts",
+        "filePath": "src/indexer/search-ranking.ts",
         "symbol": "fuseResultsRrf"
       }
     },
@@ -29,7 +29,7 @@
       "queryType": "definition",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/indexer/index.ts",
+        "filePath": "src/indexer/search-ranking.ts",
         "symbol": "rerankResults"
       }
     },
@@ -39,7 +39,7 @@
       "queryType": "definition",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/mcp-server.ts",
+        "filePath": "src/adapters/mcp/server.ts",
         "symbol": "createMcpServer"
       }
     },
@@ -58,7 +58,7 @@
       "queryType": "conceptual",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/mcp-server/register-tools.ts"
+        "filePath": "src/adapters/mcp/register-tools.ts"
       }
     },
     {
@@ -67,7 +67,7 @@
       "queryType": "conceptual",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/pi-extension.ts"
+        "filePath": "src/adapters/pi/extension.ts"
       }
     },
     {
