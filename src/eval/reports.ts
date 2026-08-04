@@ -79,6 +79,7 @@ export function createSummaryMarkdown(
   lines.push(`| Hit@10 | ${formatPct(summary.metrics.hitAt10)} |`);
   lines.push(`| MRR@10 | ${summary.metrics.mrrAt10.toFixed(4)} |`);
   lines.push(`| nDCG@10 | ${summary.metrics.ndcgAt10.toFixed(4)} |`);
+  lines.push(`| Graph-neighbor recall | ${(summary.metrics.graphNeighborRecall ?? 0).toFixed(4)} |`);
   lines.push(`| Distinct Top@3 | ${formatPct(summary.metrics.distinctTop3Ratio)} |`);
   lines.push(`| Raw Distinct Top@3 | ${formatPct(summary.metrics.rawDistinctTop3Ratio)} |`);
   lines.push(`| Latency p50 | ${formatMs(summary.metrics.latencyMs.p50)} |`);

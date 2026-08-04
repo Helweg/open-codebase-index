@@ -346,8 +346,22 @@ export async function getCallGraphData(
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
+  return getCallGraphDataForIndexer(indexer, root, params);
+}
+
+export async function getCallGraphDataForIndexer(
+  indexer: Indexer,
+  projectRoot: string,
+  params: {
+    name: string;
+    direction?: "callers" | "callees";
+    symbolId?: string;
+    filePath?: string;
+    relationshipType?: "Call" | "MethodCall" | "Constructor" | "Import" | "Inherits" | "Implements";
+  },
+): Promise<CallGraphDataResult> {
   const symbols = await indexer.getCallGraphSymbols();
-  const resolution = resolveCallGraphSymbol(symbols, root, params.name, params.filePath, params.symbolId);
+  const resolution = resolveCallGraphSymbol(symbols, projectRoot, params.name, params.filePath, params.symbolId);
   const direction = params.direction === "callees" ? "callees" : "callers";
   if (resolution.status !== "resolved") {
     return { direction, resolution, callers: [], callees: [], relationshipType: params.relationshipType };

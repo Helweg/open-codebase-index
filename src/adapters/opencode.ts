@@ -8,6 +8,7 @@ import { createWatcherWithIndexer } from "../watcher/index.js";
 import {
   codebase_search,
   codebase_context,
+  codebase_edit_context,
   codebase_peek,
   index_codebase,
   index_status,
@@ -137,6 +138,7 @@ const plugin: Plugin = async ({ directory, worktree }) => {
     return {
       tool: {
         [TOOL_NAME.CODEBASE_CONTEXT]: codebase_context,
+        [TOOL_NAME.CODEBASE_EDIT_CONTEXT]: codebase_edit_context,
         [TOOL_NAME.CODEBASE_SEARCH]: codebase_search,
         [TOOL_NAME.CODEBASE_PEEK]: codebase_peek,
         [TOOL_NAME.INDEX_CODEBASE]: index_codebase,

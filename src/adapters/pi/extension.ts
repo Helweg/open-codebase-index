@@ -37,6 +37,7 @@ import {
   MIN_CONTEXT_RESULT_LIMIT,
   resolveCodebaseContext,
 } from "../../tools/context.js";
+import { resolveCodebaseEditContext } from "../../tools/edit-context.js";
 import { registerPiCallGraphTools } from "./call-graph.js";
 import { stopAutoIndex } from "../../utils/auto-index.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
@@ -48,6 +49,9 @@ import {
   CODE_COMMUNITIES_MAX_COUPLING_LIMIT,
   CODE_COMMUNITIES_MIN_SIZE,
   CODE_COMMUNITIES_MIN_COUPLING,
+  DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
+  MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT,
 } from "../../tools/contracts.js";
 
 const HOST = "pi" as const;
@@ -103,6 +107,33 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await resolveCodebaseContext(projectRoot(ctx), HOST, params);
       return text(result.text, result.details);
+    },
+  });
+
+  pi.registerTool({
+    name: TOOL_NAME.CODEBASE_EDIT_CONTEXT,
+    label: "Codebase Edit Context",
+    description: "PRE-EDIT TOOL for a known or suspected symbol. Returns bounded target source and direct graph evidence, with a risk-marked fallback when unresolved.",
+    parameters: Type.Object({
+      query: Type.String({ description: "The requested change or target behavior" }),
+      symbol: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      filePath: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+      callerLimit: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT, maximum: MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT }),
+        Type.Null(),
+      ], { default: DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT })),
+      calleeLimit: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT, maximum: MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT }),
+        Type.Null(),
+      ], { default: DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT })),
+      tokenBudget: Type.Optional(Type.Union([
+        Type.Integer({ minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET, maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET }),
+        Type.Null(),
+      ], { default: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await resolveCodebaseEditContext(projectRoot(ctx), HOST, params);
+      return text(result.text);
     },
   });
 

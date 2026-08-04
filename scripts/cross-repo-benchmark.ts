@@ -5,7 +5,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { promisify } from "util";
+import { fileURLToPath } from "url";
 
+import { createIsolatedSourceCopy, parseCodeGraphOutput, type CodeGraphResult } from "./codegraph-baseline.js";
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import { runEvaluation } from "../src/eval/runner.js";
 import { parseGoldenDataset } from "../src/eval/schema.js";
@@ -61,10 +63,12 @@ const EXCLUDED_DIRS = new Set([
   "temp",
 ]);
 
-const MAX_FILE_SIZE_BYTES = 1_000_000;
+export const MAX_FILE_SIZE_BYTES = 1_000_000;
 const MAX_PARSE_FILES = 2500;
+const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@1.5.0";
+const MAX_CHUNKS_PER_FILE = 100;
 
-interface CliOptions {
+export interface CliOptions {
   repos: string[];
   outputRoot: string;
   reindex: boolean;
@@ -73,6 +77,7 @@ interface CliOptions {
   persistDatasets: boolean;
   skipRipgrep: boolean;
   skipSg: boolean;
+  codegraph: boolean;
 }
 
 interface FileCollectionResult {
@@ -90,7 +95,26 @@ interface SymbolCandidate {
 
 type CanonicalChunkType = "function" | "class" | undefined;
 
-interface RepoBenchmarkResult {
+export interface CodeGraphRepeatSummary {
+  repeat: number;
+  status: "completed" | "disqualified" | "no-scope";
+  artifactPath: string;
+  scopedQueryCount: number;
+  totalQueryCount: number;
+  queryIds: string[];
+  pluginMetrics?: EvalMetrics;
+  codeGraphMetrics?: EvalMetrics;
+  error?: string;
+}
+
+export interface ControlledEvalConfigArtifact {
+  indexing: {
+    maxFileSize: number;
+    maxChunksPerFile: number;
+  };
+}
+
+export interface RepoBenchmarkResult {
   repoName: string;
   repoPath: string;
   datasetPath: string;
@@ -128,6 +152,58 @@ interface RepoBenchmarkResult {
     scopedQueryCount: number;
     totalQueryCount: number;
   };
+  codegraph?: {
+    scopedQueryCount: number;
+    totalQueryCount: number;
+    successfulRepeatCount: number;
+    disqualifiedRepeatCount: number;
+    repeatSummaries: CodeGraphRepeatSummary[];
+    metrics?: {
+      plugin: EvalMetrics;
+      codegraph: EvalMetrics;
+    };
+  };
+  error?: string;
+}
+
+interface CodeGraphCommandResult {
+  stdout: string;
+}
+
+export type CodeGraphExecutor = (
+  executable: string,
+  args: string[]
+) => Promise<CodeGraphCommandResult>;
+
+interface CodeGraphQueryArtifact {
+  id: string;
+  symbol: string;
+  command: string[];
+  latencyMs?: number;
+  results?: CodeGraphResult[];
+  perQuery?: PerQueryEvalResult;
+  error?: string;
+}
+
+interface CodeGraphRepeatArtifact {
+  repeat: number;
+  status: CodeGraphRepeatSummary["status"];
+  isolatedRepoPath?: string;
+  scope: {
+    totalQueryCount: number;
+    scopedQueryCount: number;
+    queryIds: string[];
+  };
+  init: {
+    command: string[];
+    error?: string;
+  };
+  pluginPerQuery: PerQueryEvalResult[];
+  queries: CodeGraphQueryArtifact[];
+  comparison?: {
+    pluginMetrics: EvalMetrics;
+    codeGraphMetrics: EvalMetrics;
+  };
   error?: string;
 }
 
@@ -146,7 +222,7 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg]
+npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
 
 Defaults:
   repos: none (required via --repos or BENCHMARK_REPOS)
@@ -155,6 +231,7 @@ Defaults:
   repeats: 1
   max-parse-files: 2500
   persist-datasets: false
+  codegraph: false
 `);
 }
 
@@ -178,6 +255,42 @@ function ensureDir(dirPath: string): void {
   mkdirSync(dirPath, { recursive: true });
 }
 
+export function controlledEvalConfigPath(runDir: string, repoName: string): string {
+  return path.join(runDir, "eval-configs", `${repoName}-benchmark.json`);
+}
+
+export function writeControlledEvalConfig(configPath: string): string {
+  const content = {
+    indexing: {
+      maxFileSize: MAX_FILE_SIZE_BYTES,
+      maxChunksPerFile: MAX_CHUNKS_PER_FILE,
+    },
+  } satisfies ControlledEvalConfigArtifact;
+
+  ensureDir(path.dirname(configPath));
+  writeFileSync(configPath, JSON.stringify(content, null, 2), "utf-8");
+  return configPath;
+}
+
+export function buildPluginEvalRunOptions(
+  params: {
+    projectRoot: string;
+    datasetPath: string;
+    outputRoot: string;
+    reindexApplied: boolean;
+    configPath: string;
+  }
+): EvalRunOptions {
+  return {
+    projectRoot: params.projectRoot,
+    datasetPath: params.datasetPath,
+    outputRoot: params.outputRoot,
+    ciMode: false,
+    reindex: params.reindexApplied,
+    configPath: params.configPath,
+  };
+}
+
 function timestampForDir(date = new Date()): string {
   return date.toISOString().replace(/[:.]/g, "-");
 }
@@ -186,7 +299,7 @@ function toRepoName(repoPath: string): string {
   return path.basename(repoPath.replace(/[\\/]+$/, ""));
 }
 
-function parseCliArgs(argv: string[]): CliOptions {
+export function parseCliArgs(argv: string[]): CliOptions {
   let repos: string[] = [];
   let outputRoot = path.resolve(process.cwd(), "benchmarks/results/cross-repo");
   let reindex = false;
@@ -195,6 +308,7 @@ function parseCliArgs(argv: string[]): CliOptions {
   let persistDatasets = false;
   let skipRipgrep = false;
   let skipSg = false;
+  let codegraph = false;
 
   const envRepos = process.env.BENCHMARK_REPOS;
   if (envRepos && envRepos.trim().length > 0) {
@@ -289,6 +403,11 @@ function parseCliArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--codegraph") {
+      codegraph = true;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -305,6 +424,7 @@ function parseCliArgs(argv: string[]): CliOptions {
     persistDatasets,
     skipRipgrep,
     skipSg,
+    codegraph,
   };
 }
 
@@ -604,7 +724,7 @@ function pickDistinctFiles(candidates: SymbolCandidate[], limit: number): Symbol
   return picked;
 }
 
-function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: ParsedFile[]): GoldenDataset {
+export function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: ParsedFile[]): GoldenDataset {
   const candidates = buildSymbolCandidates(parsedFiles, repoPath);
   if (candidates.length === 0) {
     throw new Error(`No function/class candidates discovered in ${repoName}`);
@@ -618,11 +738,17 @@ function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: Par
   const queries: GoldenQuery[] = [];
   let counter = 1;
 
-  const addQuery = (queryType: GoldenQueryType, query: string, expected: GoldenQuery["expected"]): void => {
+  const addQuery = (
+    queryType: GoldenQueryType,
+    query: string,
+    expected: GoldenQuery["expected"],
+    options: Pick<GoldenQuery, "retrievalMode" | "args"> = {}
+  ): void => {
     queries.push({
       id: `${repoName}-${queryType}-${String(counter).padStart(2, "0")}`,
       query,
       queryType,
+      ...options,
       expected,
     });
     counter += 1;
@@ -632,6 +758,10 @@ function buildGoldenDataset(repoName: string, repoPath: string, parsedFiles: Par
     addQuery("definition", `where is ${candidate.symbol} defined`, {
       filePath: candidate.filePath,
       symbol: candidate.symbol,
+      expectedRoute: "definition",
+    }, {
+      retrievalMode: "context",
+      args: { symbol: candidate.symbol },
     });
   }
 
@@ -937,6 +1067,148 @@ async function runSgBaseline(
   };
 }
 
+export interface RunCodeGraphRepeatOptions {
+  repoPath: string;
+  dataset: GoldenDataset;
+  pluginPerQuery: PerQueryEvalResult[];
+  repeat: number;
+  artifactPath: string;
+  executor?: CodeGraphExecutor;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+const defaultCodeGraphExecutor: CodeGraphExecutor = async (executable, args) => {
+  const result = await execFileAsync(executable, args, { maxBuffer: 10 * 1024 * 1024 });
+  return { stdout: result.stdout };
+};
+
+export async function runCodeGraphRepeat({
+  repoPath,
+  dataset,
+  pluginPerQuery,
+  repeat,
+  artifactPath,
+  executor = defaultCodeGraphExecutor,
+}: RunCodeGraphRepeatOptions): Promise<CodeGraphRepeatSummary> {
+  const scopedQueries = dataset.queries.filter(
+    (query) => typeof query.expected.symbol === "string" && query.expected.symbol.length > 0
+  );
+  const queryIds = scopedQueries.map((query) => query.id);
+  let scopedPluginPerQuery: PerQueryEvalResult[] = [];
+  const artifact: CodeGraphRepeatArtifact = {
+    repeat,
+    status: "disqualified",
+    scope: {
+      totalQueryCount: dataset.queries.length,
+      scopedQueryCount: scopedQueries.length,
+      queryIds,
+    },
+    init: { command: [] },
+    pluginPerQuery: [],
+    queries: [],
+  };
+  let isolated: ReturnType<typeof createIsolatedSourceCopy> | undefined;
+
+  try {
+    isolated = createIsolatedSourceCopy(repoPath);
+    artifact.isolatedRepoPath = isolated.isolatedRepoPath;
+    artifact.init.command = ["npx", "--yes", CODEGRAPH_PACKAGE, "init", isolated.isolatedRepoPath];
+
+    try {
+      await executor("npx", artifact.init.command.slice(1));
+    } catch (error: unknown) {
+      artifact.init.error = errorMessage(error);
+      throw new Error(`CodeGraph init invocation failed: ${artifact.init.error}`);
+    }
+
+    const pluginById = new Map(pluginPerQuery.map((result) => [result.id, result]));
+    scopedPluginPerQuery = scopedQueries.map((query) => {
+      const result = pluginById.get(query.id);
+      if (!result) {
+        throw new Error(`Plugin per-query result missing for CodeGraph-scoped query '${query.id}'`);
+      }
+      return result;
+    });
+    artifact.pluginPerQuery = scopedPluginPerQuery;
+
+    if (scopedQueries.length === 0) {
+      artifact.status = "no-scope";
+    } else {
+      const codeGraphPerQuery: PerQueryEvalResult[] = [];
+      for (const query of scopedQueries) {
+        const symbol = query.expected.symbol;
+        if (!symbol) continue;
+        const command = [
+          "npx",
+          "--yes",
+          CODEGRAPH_PACKAGE,
+          "query",
+          symbol,
+          "--path",
+          isolated.isolatedRepoPath,
+          "--limit",
+          "10",
+          "--json",
+        ];
+        const queryArtifact: CodeGraphQueryArtifact = { id: query.id, symbol, command };
+        artifact.queries.push(queryArtifact);
+        const start = performance.now();
+
+        try {
+          const output = await executor("npx", command.slice(1));
+          queryArtifact.latencyMs = performance.now() - start;
+          queryArtifact.results = parseCodeGraphOutput(output.stdout, isolated.isolatedRepoPath);
+          queryArtifact.perQuery = buildPerQueryResult(
+            query,
+            queryArtifact.results.map((result) => ({
+              filePath: result.node.filePath,
+              startLine: result.node.startLine,
+              endLine: result.node.endLine,
+              score: result.score,
+              chunkType: result.node.kind,
+              name: result.node.name,
+            })),
+            queryArtifact.latencyMs,
+            10
+          );
+          codeGraphPerQuery.push(queryArtifact.perQuery);
+        } catch (error: unknown) {
+          queryArtifact.error = errorMessage(error);
+          throw new Error(`CodeGraph query failed for '${query.id}': ${queryArtifact.error}`);
+        }
+      }
+
+      const pluginMetrics = computeEvalMetrics(scopedQueries, scopedPluginPerQuery, 0, 0, 0);
+      const codeGraphMetrics = computeEvalMetrics(scopedQueries, codeGraphPerQuery, 0, 0, 0);
+      artifact.status = "completed";
+      artifact.comparison = { pluginMetrics, codeGraphMetrics };
+    }
+  } catch (error: unknown) {
+    artifact.status = "disqualified";
+    artifact.error = errorMessage(error);
+  } finally {
+    isolated?.cleanup();
+  }
+
+  ensureDir(path.dirname(artifactPath));
+  writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), "utf-8");
+
+  return {
+    repeat,
+    status: artifact.status,
+    artifactPath,
+    scopedQueryCount: scopedQueries.length,
+    totalQueryCount: dataset.queries.length,
+    queryIds,
+    pluginMetrics: artifact.comparison?.pluginMetrics,
+    codeGraphMetrics: artifact.comparison?.codeGraphMetrics,
+    error: artifact.error,
+  };
+}
+
 function averageMetrics(metricsList: EvalMetrics[]): EvalMetrics {
   if (metricsList.length === 0) {
     return {
@@ -1043,7 +1315,26 @@ function ms(value: number): string {
   return value.toFixed(2);
 }
 
-function buildReportMarkdown(
+function appendCodeGraphMetricTable(
+  lines: string[],
+  pluginMetrics: EvalMetrics,
+  codeGraphMetrics: EvalMetrics
+): void {
+  lines.push("| Metric | Plugin | CodeGraph |");
+  lines.push("|---|---:|---:|");
+  lines.push(`| Hit@1 | ${pct(pluginMetrics.hitAt1)} | ${pct(codeGraphMetrics.hitAt1)} |`);
+  lines.push(`| Hit@3 | ${pct(pluginMetrics.hitAt3)} | ${pct(codeGraphMetrics.hitAt3)} |`);
+  lines.push(`| Hit@5 | ${pct(pluginMetrics.hitAt5)} | ${pct(codeGraphMetrics.hitAt5)} |`);
+  lines.push(`| Hit@10 | ${pct(pluginMetrics.hitAt10)} | ${pct(codeGraphMetrics.hitAt10)} |`);
+  lines.push(`| MRR@10 | ${num(pluginMetrics.mrrAt10)} | ${num(codeGraphMetrics.mrrAt10)} |`);
+  lines.push(`| nDCG@10 | ${num(pluginMetrics.ndcgAt10)} | ${num(codeGraphMetrics.ndcgAt10)} |`);
+  lines.push(`| Latency p50 (ms) | ${ms(pluginMetrics.latencyMs.p50)} | ${ms(codeGraphMetrics.latencyMs.p50)} |`);
+  lines.push(`| Latency p95 (ms) | ${ms(pluginMetrics.latencyMs.p95)} | ${ms(codeGraphMetrics.latencyMs.p95)} |`);
+  lines.push(`| Latency p99 (ms) | ${ms(pluginMetrics.latencyMs.p99)} | ${ms(codeGraphMetrics.latencyMs.p99)} |`);
+  lines.push("");
+}
+
+export function buildReportMarkdown(
   runAt: string,
   options: CliOptions,
   runDir: string,
@@ -1067,6 +1358,7 @@ function buildReportMarkdown(
       options.skipSg ? "skipped" : "enabled (query types: definition, keyword-heavy)"
     }`
   );
+  lines.push(`- CodeGraph fair comparator: ${options.codegraph ? "enabled" : "disabled"}`);
   lines.push("");
 
   const aggregateSgHeaderLabel = (() => {
@@ -1150,6 +1442,57 @@ function buildReportMarkdown(
   lines.push(`| Latency p99 (ms) | ${ms(pluginAggregate.latencyMs.p99)} | ${ripgrepAggregate ? ms(ripgrepAggregate.latencyMs.p99) : "N/A"} | ${sgAggregate ? ms(sgAggregate.latencyMs.p99) : "N/A"} |`);
   lines.push("");
 
+  if (options.codegraph) {
+    lines.push("## Fair CodeGraph Comparator");
+    lines.push("");
+    lines.push("Plugin metrics are recomputed per repeat from exactly the same query IDs with `expected.symbol` that CodeGraph receives.");
+    lines.push("");
+
+    for (const result of successful) {
+      lines.push(`### ${result.repoName}`);
+      lines.push("");
+      const comparison = result.codegraph;
+      if (!comparison) {
+        lines.push("No comparison result: CodeGraph was not run for this repository.");
+        lines.push("");
+        continue;
+      }
+
+      lines.push(`- Scope: ${comparison.scopedQueryCount}/${comparison.totalQueryCount} queries`);
+      lines.push(`- Valid repeats: ${comparison.successfulRepeatCount}/${comparison.repeatSummaries.length}`);
+      for (const repeat of comparison.repeatSummaries) {
+        if (repeat.status !== "completed") {
+          lines.push(`- Repeat ${repeat.repeat}: No comparison result (${repeat.error ?? "no expected.symbol queries"}); artifact: ${repeat.artifactPath}`);
+        }
+      }
+
+      if (comparison.metrics) {
+        lines.push("");
+        appendCodeGraphMetricTable(lines, comparison.metrics.plugin, comparison.metrics.codegraph);
+      } else {
+        lines.push("");
+        lines.push("No comparison result: no CodeGraph repeat completed successfully.");
+        lines.push("");
+      }
+    }
+
+    const comparable = successful
+      .map((result) => result.codegraph?.metrics)
+      .filter((metrics): metrics is NonNullable<NonNullable<RepoBenchmarkResult["codegraph"]>["metrics"]> => metrics !== undefined);
+    lines.push("### Aggregate fair comparison");
+    lines.push("");
+    if (comparable.length > 0) {
+      appendCodeGraphMetricTable(
+        lines,
+        averageMetrics(comparable.map((metrics) => metrics.plugin)),
+        averageMetrics(comparable.map((metrics) => metrics.codegraph))
+      );
+    } else {
+      lines.push("No comparison result: no repository had a successful CodeGraph repeat.");
+      lines.push("");
+    }
+  }
+
   const failed = repoResults.filter((item) => item.error);
   if (failed.length > 0) {
     lines.push("## Failures");
@@ -1186,6 +1529,7 @@ async function runForRepo(
     const pluginRuns: EvalMetrics[] = [];
     const ripgrepRuns: EvalMetrics[] = [];
     const sgRuns: EvalMetrics[] = [];
+    const codeGraphRepeats: CodeGraphRepeatSummary[] = [];
     const pluginRepeatSummaries: Array<{
       repeat: number;
       outputDir: string;
@@ -1194,6 +1538,9 @@ async function runForRepo(
       metrics: EvalMetrics;
       reindexApplied: boolean;
     }> = [];
+    const controlledEvalConfigArtifactPath = writeControlledEvalConfig(
+      controlledEvalConfigPath(runDir, repoName)
+    );
     let lastPluginResult: Awaited<ReturnType<typeof runEvaluation>> | null = null;
     let lastRipgrepQueryCount = 0;
     let lastSgQueryCount = 0;
@@ -1203,13 +1550,13 @@ async function runForRepo(
 
     for (let repeat = 0; repeat < options.repeats; repeat += 1) {
       const reindexApplied = options.reindex && repeat === 0;
-      const runOptions: EvalRunOptions = {
+      const runOptions: EvalRunOptions = buildPluginEvalRunOptions({
         projectRoot: repoPath,
         datasetPath,
         outputRoot: pluginOutputRoot,
-        ciMode: false,
-        reindex: reindexApplied,
-      };
+        reindexApplied,
+        configPath: controlledEvalConfigArtifactPath,
+      });
 
       const pluginResult = await runEvaluation(runOptions);
       lastPluginResult = pluginResult;
@@ -1222,6 +1569,16 @@ async function runForRepo(
         metrics: pluginResult.summary.metrics,
         reindexApplied,
       });
+
+      if (options.codegraph) {
+        codeGraphRepeats.push(await runCodeGraphRepeat({
+          repoPath,
+          dataset,
+          pluginPerQuery: pluginResult.perQuery,
+          repeat: repeat + 1,
+          artifactPath: path.join(runDir, "codegraph", repoName, `repeat-${repeat + 1}.json`),
+        }));
+      }
 
       if (!options.skipRipgrep) {
         const ripgrepResult = await runRipgrepBaseline(repoPath, dataset);
@@ -1279,6 +1636,30 @@ async function runForRepo(
         queryTypeScope: lastSgQueryTypeScope,
         scopedQueryCount: lastSgScopedQueryCount,
         totalQueryCount: lastSgTotalQueryCount,
+      };
+    }
+
+    if (options.codegraph) {
+      const successfulComparisons = codeGraphRepeats.filter(
+        (repeat): repeat is CodeGraphRepeatSummary & {
+          pluginMetrics: EvalMetrics;
+          codeGraphMetrics: EvalMetrics;
+        } => repeat.status === "completed"
+          && repeat.pluginMetrics !== undefined
+          && repeat.codeGraphMetrics !== undefined
+      );
+      result.codegraph = {
+        scopedQueryCount: codeGraphRepeats[0]?.scopedQueryCount ?? 0,
+        totalQueryCount: dataset.queries.length,
+        successfulRepeatCount: successfulComparisons.length,
+        disqualifiedRepeatCount: codeGraphRepeats.filter((repeat) => repeat.status === "disqualified").length,
+        repeatSummaries: codeGraphRepeats,
+        ...(successfulComparisons.length > 0 ? {
+          metrics: {
+            plugin: medianMetrics(successfulComparisons.map((repeat) => repeat.pluginMetrics)),
+            codegraph: medianMetrics(successfulComparisons.map((repeat) => repeat.codeGraphMetrics)),
+          },
+        } : {}),
       };
     }
 
@@ -1377,6 +1758,7 @@ async function main(): Promise<void> {
       persistDatasets: options.persistDatasets,
       skipRipgrep: options.skipRipgrep,
       skipSg: options.skipSg,
+      codegraph: options.codegraph,
     },
     runDir,
     repos: results,
@@ -1399,6 +1781,21 @@ async function main(): Promise<void> {
               .filter((item): item is EvalMetrics => item !== undefined)
           ),
     },
+    codegraphComparison: options.codegraph ? (() => {
+      const comparable = results
+        .filter((item) => !item.error)
+        .map((item) => item.codegraph?.metrics)
+        .filter((metrics): metrics is NonNullable<NonNullable<RepoBenchmarkResult["codegraph"]>["metrics"]> => metrics !== undefined);
+      return {
+        comparedRepoCount: comparable.length,
+        plugin: comparable.length > 0
+          ? averageMetrics(comparable.map((metrics) => metrics.plugin))
+          : undefined,
+        codegraph: comparable.length > 0
+          ? averageMetrics(comparable.map((metrics) => metrics.codegraph))
+          : undefined,
+      };
+    })() : undefined,
   };
 
   const reportMdPath = path.join(runDir, "report.md");
@@ -1420,8 +1817,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  console.error(message);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  main().catch((error: unknown) => {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  });
+}

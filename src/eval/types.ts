@@ -10,9 +10,10 @@ export type GoldenQueryType =
 export type GoldenQueryDifficulty = "easy" | "medium" | "hard";
 export type GoldenQueryExpectedOutcome = "results" | "no-results";
 export type GoldenQueryRecoveryExpectation = "none" | "filter-relaxed";
-export type GoldenRetrievalMode = "search" | "context";
+export type GoldenRetrievalMode = "search" | "context" | "edit-context";
 export type EvalResolvedRoute = "search" | "definition";
 export type GoldenExpectedRoute = "search" | "definition";
+export type GoldenGraphNeighborDirection = "caller" | "callee";
 
 export interface GoldenGradedEvidence {
   path: string;
@@ -22,8 +23,18 @@ export interface GoldenGradedEvidence {
 
 export interface GoldenQueryArgs {
   symbol?: string;
+  filePath?: string;
   fileType?: string;
   directory?: string;
+  callerLimit?: number;
+  calleeLimit?: number;
+  tokenBudget?: number;
+}
+
+export interface GoldenExpectedGraphNeighbor {
+  direction: GoldenGraphNeighborDirection;
+  filePath?: string;
+  symbol?: string;
 }
 
 export interface GoldenExpected {
@@ -35,6 +46,7 @@ export interface GoldenExpected {
   expectedOutcome?: GoldenQueryExpectedOutcome;
   recoveryExpectation?: GoldenQueryRecoveryExpectation;
   gradedEvidence?: GoldenGradedEvidence[];
+  graphNeighbor?: GoldenExpectedGraphNeighbor;
 }
 
 export interface GoldenQuery {
@@ -86,6 +98,7 @@ export interface EvalSearchResult {
   score: number;
   chunkType: string;
   name?: string;
+  graphDirection?: GoldenGraphNeighborDirection;
 }
 
 export type FailureBucket =
@@ -104,6 +117,7 @@ export interface PerQueryEvalResult {
   routeMatched?: boolean;
   outcomeMatched?: boolean;
   recoveryMatched?: boolean;
+  graphNeighborMatched?: boolean;
   language?: string;
   difficulty?: GoldenQueryDifficulty;
   tags?: string[];
@@ -151,6 +165,7 @@ export interface EvalMetrics {
   routeAccuracy: number;
   outcomeAccuracy: number;
   recoveryAccuracy: number;
+  graphNeighborRecall?: number;
   distinctTop3Ratio: number;
   rawDistinctTop3Ratio: number;
   latencyMs: {

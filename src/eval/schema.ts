@@ -3,6 +3,7 @@ import { readFileSync } from "fs";
 import type {
   EvalBudget,
   GoldenDataset,
+  GoldenExpectedGraphNeighbor,
   GoldenExpected,
   GoldenGradedEvidence,
   GoldenQuery,
@@ -120,13 +121,29 @@ function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefin
   }
 
   const symbol = parseStringOrUndefined(value.symbol, `${path}.symbol`);
+  const filePath = parseStringOrUndefined(value.filePath, `${path}.filePath`);
   const fileType = parseStringOrUndefined(value.fileType, `${path}.fileType`);
   const directory = parseStringOrUndefined(value.directory, `${path}.directory`);
+  const callerLimit = parsePositiveIntegerOrUndefined(value.callerLimit, `${path}.callerLimit`);
+  const calleeLimit = parsePositiveIntegerOrUndefined(value.calleeLimit, `${path}.calleeLimit`);
+  const tokenBudget = parsePositiveIntegerOrUndefined(value.tokenBudget, `${path}.tokenBudget`);
   return {
     ...(symbol !== undefined ? { symbol } : {}),
+    ...(filePath !== undefined ? { filePath } : {}),
     ...(fileType !== undefined ? { fileType } : {}),
     ...(directory !== undefined ? { directory } : {}),
+    ...(callerLimit !== undefined ? { callerLimit } : {}),
+    ...(calleeLimit !== undefined ? { calleeLimit } : {}),
+    ...(tokenBudget !== undefined ? { tokenBudget } : {}),
   };
+}
+
+function parsePositiveIntegerOrUndefined(value: unknown, path: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    throw new Error(`${path} must be a positive integer`);
+  }
+  return value;
 }
 
 const SEMVER_VERSION_PATTERN =
@@ -145,8 +162,8 @@ function parseSemanticVersion(value: unknown, path: string): string {
 
 function parseRetrievalMode(value: unknown, path: string): GoldenRetrievalMode {
   if (value === undefined || value === "search") return "search";
-  if (value === "context") return value;
-  throw new Error(`${path} must be one of: search, context`);
+  if (value === "context" || value === "edit-context") return value;
+  throw new Error(`${path} must be one of: search, context, edit-context`);
 }
 
 function parseStringOrUndefined(value: unknown, path: string): string | undefined {
@@ -199,6 +216,31 @@ function parseEvidenceRelevance(
   return value;
 }
 
+function parseExpectedGraphNeighbor(
+  value: unknown,
+  path: string,
+): GoldenExpectedGraphNeighbor | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+
+  if (value.direction !== "caller" && value.direction !== "callee") {
+    throw new Error(`${path}.direction must be one of: caller, callee`);
+  }
+  const filePath = parseStringOrUndefined(value.filePath, `${path}.filePath`);
+  const symbol = parseStringOrUndefined(value.symbol, `${path}.symbol`);
+  if (filePath === undefined && symbol === undefined) {
+    throw new Error(`${path} must include filePath or symbol`);
+  }
+
+  return {
+    direction: value.direction,
+    ...(filePath !== undefined ? { filePath } : {}),
+    ...(symbol !== undefined ? { symbol } : {}),
+  };
+}
+
 function parseExpected(input: unknown, path: string): GoldenExpected {
   if (!isRecord(input)) {
     throw new Error(`${path} must be an object`);
@@ -212,10 +254,12 @@ function parseExpected(input: unknown, path: string): GoldenExpected {
   const expectedOutcomeRaw = input.expectedOutcome;
   const recoveryExpectationRaw = input.recoveryExpectation;
   const gradedEvidenceRaw = input.gradedEvidence;
+  const graphNeighborRaw = input.graphNeighbor;
 
   const filePath = parseStringOrUndefined(filePathRaw, `${path}.filePath`);
   const acceptableFiles = isStringArray(acceptableFilesRaw) ? acceptableFilesRaw : undefined;
   const gradedEvidence = parseGradedEvidence(gradedEvidenceRaw, `${path}.gradedEvidence`);
+  const graphNeighbor = parseExpectedGraphNeighbor(graphNeighborRaw, `${path}.graphNeighbor`);
 
   const expectedOutcome = parseExpectedOutcome(expectedOutcomeRaw, `${path}.expectedOutcome`);
   if (
@@ -256,6 +300,7 @@ function parseExpected(input: unknown, path: string): GoldenExpected {
     expectedOutcome,
     recoveryExpectation,
     ...(gradedEvidence.length > 0 ? { gradedEvidence } : {}),
+    ...(graphNeighbor !== undefined ? { graphNeighbor } : {}),
   };
 }
 

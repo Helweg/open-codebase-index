@@ -35,5 +35,19 @@ describe("eval reports", () => {
     const markdown = createSummaryMarkdown(summary);
     expect(markdown).toContain("Context response tokens total");
     expect(markdown).toContain("Context response tokens max");
+    expect(markdown).toContain("| Graph-neighbor recall | 0.0000 |");
+  });
+
+  it("reports measured graph-neighbor recall", () => {
+    tempDir = mkdtempSync(path.join(os.tmpdir(), "eval-reports-"));
+    const source = JSON.parse(
+      readFileSync("benchmarks/baselines/eval-baseline-summary.json", "utf-8"),
+    ) as { metrics: Record<string, unknown> };
+    source.metrics.graphNeighborRecall = 0.5;
+    const summaryPath = path.join(tempDir, "summary.json");
+    writeFileSync(summaryPath, JSON.stringify(source), "utf-8");
+    const summary = loadSummary(summaryPath);
+
+    expect(createSummaryMarkdown(summary)).toContain("| Graph-neighbor recall | 0.5000 |");
   });
 });

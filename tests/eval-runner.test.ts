@@ -5,6 +5,7 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runEvaluation, runSweep } from "../src/eval/runner.js";
+import * as operationRuntime from "../src/tools/operation-runtime.js";
 
 describe("eval runner", () => {
   let tempDir: string;
@@ -147,6 +148,96 @@ describe("eval runner", () => {
     });
 
     expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
+  });
+
+  it("evaluates edit-context targets and only scores published graph neighbors when expected", async () => {
+    writeFileSync(
+      path.join(tempDir, "src", "indexer", "index.ts"),
+      [
+        "export function rankHybridResults(query: string) { return query.length; }",
+        "export function evaluateRanking() { return rankHybridResults('query'); }",
+        "",
+      ].join("\n"),
+      "utf-8",
+    );
+    writeFileSync(
+      path.join(tempDir, "benchmarks", "golden", "edit-context.json"),
+      JSON.stringify({
+        version: "1.0.0",
+        name: "edit-context",
+        queries: [
+          {
+            id: "with-neighbor",
+            query: "change rankHybridResults behavior",
+            queryType: "definition",
+            retrievalMode: "edit-context",
+            args: {
+              symbol: "rankHybridResults",
+              filePath: "src/indexer/index.ts",
+              tokenBudget: 512,
+            },
+            expected: {
+              filePath: "src/indexer/index.ts",
+              symbol: "rankHybridResults",
+              graphNeighbor: {
+                direction: "caller",
+                filePath: "src/indexer/index.ts",
+                symbol: "evaluateRanking",
+              },
+            },
+          },
+          {
+            id: "target-only",
+            query: "review rankHybridResults before editing",
+            queryType: "definition",
+            retrievalMode: "edit-context",
+            args: {
+              symbol: "rankHybridResults",
+              filePath: "src/indexer/index.ts",
+              tokenBudget: 512,
+            },
+            expected: {
+              filePath: "src/indexer/index.ts",
+              symbol: "rankHybridResults",
+            },
+          },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const runtimeCacheSpy = vi.spyOn(operationRuntime, "getIndexerForProject");
+    const result = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/edit-context.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    expect(runtimeCacheSpy).not.toHaveBeenCalled();
+    runtimeCacheSpy.mockRestore();
+    const withNeighbor = result.perQuery.find((query) => query.id === "with-neighbor");
+    const targetOnly = result.perQuery.find((query) => query.id === "target-only");
+    expect(withNeighbor).toMatchObject({
+      retrievalMode: "edit-context",
+      resolvedRoute: "definition",
+      routedQuery: "rankHybridResults",
+      hitAt1: true,
+      graphNeighborMatched: true,
+      tokenBudget: 512,
+    });
+    expect(withNeighbor?.results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "rankHybridResults" }),
+      expect.objectContaining({ name: "evaluateRanking", graphDirection: "caller" }),
+    ]));
+    expect(withNeighbor?.responseTokens).toBeLessThanOrEqual(512);
+    expect(targetOnly?.graphNeighborMatched).toBeUndefined();
+    expect(targetOnly?.results.every((item) => item.graphDirection === undefined)).toBe(true);
+    expect(result.summary.metrics.graphNeighborRecall).toBe(1);
+    expect(result.summary.metrics.contextEfficiency.queryCount).toBe(2);
+    expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8"))
+      .toContain("Graph-neighbor recall");
   });
 
   it("fails fast when reindexing produces no searchable vectors", async () => {

@@ -46,6 +46,19 @@ export interface SharedCodebaseContextArgs {
   tokenBudget?: number | null;
 }
 
+export interface SharedCodebaseEditContextArgs {
+  query: string;
+  symbol?: string | null;
+  filePath?: string | null;
+  callerLimit?: number | null;
+  calleeLimit?: number | null;
+  tokenBudget?: number | null;
+}
+
+export const MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 1 as const;
+export const MAX_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 20 as const;
+export const DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 5 as const;
+
 export interface SharedIndexCodebaseArgs {
   force?: boolean;
   estimateOnly?: boolean;

@@ -3,6 +3,7 @@ import type {
   SharedCallGraphArgs,
   SharedCallGraphPathArgs,
   SharedCodebaseContextArgs,
+  SharedCodebaseEditContextArgs,
   SharedCodeCommunitiesArgs,
   SharedIndexCodebaseArgs,
   SharedIndexLogsArgs,
@@ -21,6 +22,7 @@ import {
   runIndexHealthCheck,
 } from "./operations.js";
 import { formatCostEstimate } from "../utils/cost.js";
+import { resolveCodebaseEditContext } from "./edit-context.js";
 import { resolveCodebaseContext } from "./context.js";
 import {
   formatCallGraphPathResult,
@@ -45,6 +47,14 @@ export async function executeCodebaseContext(
   args: SharedCodebaseContextArgs,
 ): Promise<ExecutionResult> {
   return { text: (await resolveCodebaseContext(projectRoot, host, args)).text };
+}
+
+export async function executeCodebaseEditContext(
+  projectRoot: string | undefined,
+  host: HostMode,
+  args: SharedCodebaseEditContextArgs,
+): Promise<ExecutionResult> {
+  return { text: (await resolveCodebaseEditContext(projectRoot, host, args)).text };
 }
 
 export async function executeIndexCodebase(
