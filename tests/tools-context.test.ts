@@ -948,6 +948,63 @@ describe("native OpenCode codebase_context", () => {
     });
   });
 
+  it("preserves OpenCode text output when diagnostic is disabled", async () => {
+    const baseline = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    });
+
+    const noDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    }, context);
+
+    const omittedDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+    }, context);
+
+    expect(noDiagnostic).toBe(baseline.text);
+    expect(omittedDiagnostic).toBe(baseline.text);
+  });
+
+  it("appends diagnostics text in OpenCode output when diagnostic is true", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([{
+      filePath: "src/resolve.ts",
+      startLine: 10,
+      endLine: 20,
+      name: "resolveContext",
+      chunkType: "function",
+      content: "function resolveContext() {}",
+      score: 0.99,
+    }]);
+
+    const withDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    }, context);
+
+    const baseline = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    });
+
+    expect(withDiagnostic.startsWith(baseline.text)).toBe(true);
+    expect(withDiagnostic).toContain("\nDiagnostics:\n");
+    expect(withDiagnostic).toContain('"route"');
+    expect(withDiagnostic).toContain("\"route\": \"definition\"");
+    expect(withDiagnostic).not.toContain('"selectedCount"');
+  });
+
   it("omits diagnostic details when diagnostic flag is false", async () => {
     operationMocks.implementationLookup.mockResolvedValue([{
       filePath: "src/resolve.ts",
