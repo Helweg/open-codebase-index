@@ -1,0 +1,14 @@
+[
+  {
+    "name": "axios",
+    "repositoryUrl": "https://github.com/axios/axios",
+    "commitSha": "5b8a826771b77ab30081d033fdba9ef3b90e439a",
+    "path": "../demo-repos/axios"
+  },
+  {
+    "name": "express",
+    "repositoryUrl": "https://github.com/expressjs/express",
+    "commitSha": "1faf228935aa0a13111f92c28ee795be64ce3f0f",
+    "path": "../demo-repos/express"
+  }
+]

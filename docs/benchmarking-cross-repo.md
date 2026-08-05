@@ -39,6 +39,50 @@ export BENCHMARK_REPOS=/path/to/repo1,/path/to/repo2
 npx tsx scripts/cross-repo-benchmark.ts
 ```
 
+Option C: manifest file
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts --manifest /path/to/cross-repo-manifest.json
+```
+
+Manifest entries support checked-in repository metadata:
+
+```json
+[
+  {
+    "name": "axios",
+    "repositoryUrl": "https://github.com/axios/axios",
+    "commitSha": "5b8a826771b77ab30081d033fdba9ef3b90e439a",
+    "path": "../demo-repos/axios"
+  }
+]
+```
+
+Path values are resolved relative to the manifest location. Before any benchmark run, manifest mode validates each entry:
+
+- Repository path exists
+- `git rev-parse HEAD` is exactly the listed `commitSha`
+
+This mode enforces immutable revision provenance for reproducible benchmarking.
+
+The checked-in smoke manifest expects local clones under `demo-repos/`. Prepare
+the pinned revisions once, then run the matrix without editing the manifest:
+
+```bash
+mkdir -p demo-repos
+git clone https://github.com/axios/axios.git demo-repos/axios
+git -C demo-repos/axios checkout --detach 5b8a826771b77ab30081d033fdba9ef3b90e439a
+git clone https://github.com/expressjs/express.git demo-repos/express
+git -C demo-repos/express checkout --detach 1faf228935aa0a13111f92c28ee795be64ce3f0f
+
+npx tsx scripts/cross-repo-benchmark.ts \
+  --manifest benchmarks/cross-repo-manifest.json \
+  --reindex --repeats 2 --codegraph
+```
+
+`demo-repos/` is ignored by Git. The runner aborts before evaluating if either
+checkout is not at its pinned revision.
+
 ## Reindex modes
 
 - Default: `--no-reindex` behavior (fast iteration, reuses existing index)
@@ -55,6 +99,8 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 
 # Repeat runs for stable medians (recommended)
 npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --repeats 20
+
+npx tsx scripts/cross-repo-benchmark.ts --manifest benchmarks/cross-repo-manifest.json --repeats 20
 ```
 
 ## Sampling and mutability notes

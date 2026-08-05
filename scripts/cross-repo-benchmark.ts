@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFile } from "child_process";
+import { execFile, execFileSync } from "child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
@@ -73,8 +73,23 @@ const MAX_PARSE_FILES = 2500;
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph@1.5.0";
 const MAX_CHUNKS_PER_FILE = 100;
 
+export interface RepoDescriptor {
+  name: string;
+  path: string;
+  repositoryUrl?: string;
+  commitSha?: string;
+}
+
+interface ManifestEntry {
+  name: string;
+  repositoryUrl: string;
+  commitSha: string;
+  path: string;
+}
+
 export interface CliOptions {
-  repos: string[];
+  repos: RepoDescriptor[];
+  manifestPath?: string;
   outputRoot: string;
   reindex: boolean;
   repeats: number;
@@ -83,6 +98,13 @@ export interface CliOptions {
   skipRipgrep: boolean;
   skipSg: boolean;
   codegraph: boolean;
+}
+
+export interface RepoRepositoryMetadata {
+  name: string;
+  repositoryUrl: string;
+  commitSha: string;
+  path: string;
 }
 
 interface FileCollectionResult {
@@ -122,6 +144,7 @@ export interface ControlledEvalConfigArtifact {
 export interface RepoBenchmarkResult {
   repoName: string;
   repoPath: string;
+  repository?: RepoRepositoryMetadata;
   datasetPath: string;
   datasetQueryCount: number;
   fileSampling: {
@@ -227,10 +250,10 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
+	npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--manifest /path/to/manifest.json] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
 
-Defaults:
-  repos: none (required via --repos or BENCHMARK_REPOS)
+	Defaults:
+	  repos: none (required via --repos, --manifest, or BENCHMARK_REPOS)
   output: benchmarks/results/cross-repo
   reindex: false
   repeats: 1
@@ -258,6 +281,99 @@ function normalizePathForMatch(input: string): string {
 
 function ensureDir(dirPath: string): void {
   mkdirSync(dirPath, { recursive: true });
+}
+
+function parseGitHead(repoPath: string): string {
+  return execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], {
+    encoding: "utf-8",
+  }).trim();
+}
+
+function parseManifestEntry(entry: unknown, index: number): ManifestEntry {
+  if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+    throw new Error(`Invalid manifest entry at index ${index}: expected an object`);
+  }
+
+  const candidate = entry as Partial<ManifestEntry>;
+
+  if (typeof candidate.name !== "string" || candidate.name.trim().length === 0) {
+    throw new Error(`Invalid manifest entry at index ${index}: name must be a non-empty string`);
+  }
+
+  if (typeof candidate.repositoryUrl !== "string" || candidate.repositoryUrl.trim().length === 0) {
+    throw new Error(`Invalid manifest entry at index ${index}: repositoryUrl must be a non-empty string`);
+  }
+
+  const canonicalRepositoryUrl = candidate.repositoryUrl.trim();
+  if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\.git)?$/.test(canonicalRepositoryUrl)) {
+    throw new Error(`Invalid manifest entry at index ${index}: repositoryUrl must be a canonical GitHub URL`);
+  }
+
+  if (typeof candidate.commitSha !== "string" || !/^[0-9a-fA-F]{40}$/.test(candidate.commitSha.trim())) {
+    throw new Error(`Invalid manifest entry at index ${index}: commitSha must be a 40-character hex SHA`);
+  }
+
+  if (typeof candidate.path !== "string" || candidate.path.trim().length === 0) {
+    throw new Error(`Invalid manifest entry at index ${index}: path must be a non-empty string`);
+  }
+
+  return {
+    name: candidate.name.trim(),
+    repositoryUrl: canonicalRepositoryUrl,
+    commitSha: candidate.commitSha.toLowerCase(),
+    path: candidate.path.trim(),
+  };
+}
+
+export function parseManifest(pathToManifest: string): RepoDescriptor[] {
+  const manifestPath = path.resolve(expandHome(pathToManifest));
+  const rawManifest = readFileSync(manifestPath, "utf-8");
+
+  let entries: unknown;
+  try {
+    entries = JSON.parse(rawManifest) as unknown;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Invalid JSON in manifest ${manifestPath}: ${message}`);
+  }
+
+  if (!Array.isArray(entries)) {
+    throw new Error(`Manifest ${manifestPath} must contain an array of entries`);
+  }
+
+  const baseDirectory = path.dirname(manifestPath);
+
+  return entries.map((entry, index) => {
+    const parsed = parseManifestEntry(entry, index);
+    const resolvedPath = path.resolve(baseDirectory, parsed.path);
+
+    if (!existsSync(resolvedPath)) {
+      throw new Error(`Manifest entry ${parsed.name} references missing path: ${resolvedPath}`);
+    }
+
+    let headSha = "";
+    try {
+      headSha = parseGitHead(resolvedPath);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Manifest entry ${parsed.name} failed HEAD lookup at ${resolvedPath}: ${message}`);
+    }
+
+    if (!/^[0-9a-fA-F]{40}$/.test(headSha)) {
+      throw new Error(`Manifest entry ${parsed.name} has invalid HEAD SHA '${headSha}' at ${resolvedPath}`);
+    }
+
+    if (headSha.toLowerCase() !== parsed.commitSha.toLowerCase()) {
+      throw new Error(`Manifest entry ${parsed.name} commit mismatch: ${parsed.commitSha} != ${headSha}`);
+    }
+
+    return {
+      name: parsed.name,
+      path: resolvedPath,
+      repositoryUrl: parsed.repositoryUrl,
+      commitSha: parsed.commitSha,
+    };
+  });
 }
 
 export function controlledEvalConfigPath(runDir: string, repoName: string): string {
@@ -304,8 +420,36 @@ function toRepoName(repoPath: string): string {
   return path.basename(repoPath.replace(/[\\/]+$/, ""));
 }
 
+function reposFromCommaSeparated(value: string): RepoDescriptor[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .map((item) => {
+      const resolvedPath = path.resolve(expandHome(item));
+      return {
+        name: toRepoName(resolvedPath),
+        path: resolvedPath,
+      };
+    });
+}
+
+function repositoryMetadataFromDescriptor(repo: RepoDescriptor): RepoRepositoryMetadata | undefined {
+  if (!repo.repositoryUrl || !repo.commitSha) {
+    return undefined;
+  }
+
+  return {
+    name: repo.name,
+    repositoryUrl: repo.repositoryUrl,
+    commitSha: repo.commitSha,
+    path: repo.path,
+  };
+}
+
 export function parseCliArgs(argv: string[]): CliOptions {
-  let repos: string[] = [];
+  let repos: RepoDescriptor[] = [];
+  let manifestPath: string | undefined;
   let outputRoot = path.resolve(process.cwd(), "benchmarks/results/cross-repo");
   let reindex = false;
   let repeats = 1;
@@ -317,11 +461,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
 
   const envRepos = process.env.BENCHMARK_REPOS;
   if (envRepos && envRepos.trim().length > 0) {
-    repos = envRepos
-      .split(",")
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0)
-      .map((item) => path.resolve(expandHome(item)));
+    repos = reposFromCommaSeparated(envRepos);
   }
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -336,11 +476,18 @@ export function parseCliArgs(argv: string[]): CliOptions {
       if (!value) {
         throw new Error("--repos requires a comma-separated value");
       }
-      repos = value
-        .split(",")
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0)
-        .map((item) => path.resolve(expandHome(item)));
+      repos = repos.concat(reposFromCommaSeparated(value));
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--manifest") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--manifest requires a path");
+      }
+      manifestPath = value;
+      repos = repos.concat(parseManifest(value));
       i += 1;
       continue;
     }
@@ -417,11 +564,12 @@ export function parseCliArgs(argv: string[]): CliOptions {
   }
 
   if (repos.length === 0) {
-    throw new Error("No repositories configured. Pass --repos /path/a,/path/b or set BENCHMARK_REPOS");
+    throw new Error("No repositories configured. Pass --repos /path/a,/path/b, --manifest path, or set BENCHMARK_REPOS");
   }
 
   return {
     repos,
+    manifestPath,
     outputRoot,
     reindex,
     repeats,
@@ -1538,13 +1686,15 @@ export function buildReportMarkdown(
 }
 
 async function runForRepo(
-  repoPath: string,
+  repo: RepoDescriptor,
   options: CliOptions,
   runDir: string,
   datasetRoot: string,
   persistentDatasetRoot: string
 ): Promise<RepoBenchmarkResult> {
-  const repoName = toRepoName(repoPath);
+  const repoName = repo.name;
+  const repoPath = repo.path;
+  const repositoryMetadata = repositoryMetadataFromDescriptor(repo);
   const datasetPath = path.join(datasetRoot, `${repoName}.json`);
   const persistentDatasetPath = path.join(persistentDatasetRoot, `${repoName}.json`);
 
@@ -1634,6 +1784,7 @@ async function runForRepo(
     const result: RepoBenchmarkResult = {
       repoName,
       repoPath,
+      repository: repositoryMetadata,
       datasetPath,
       datasetQueryCount: dataset.queries.length,
       fileSampling: {
@@ -1700,6 +1851,7 @@ async function runForRepo(
     return {
       repoName,
       repoPath,
+      repository: repositoryMetadata,
       datasetPath,
       datasetQueryCount: 0,
       fileSampling: {
@@ -1722,7 +1874,7 @@ async function runForRepo(
 
 async function main(): Promise<void> {
   const options = parseCliArgs(process.argv.slice(2));
-  const resolvedRepos = options.repos.map((repo) => path.resolve(expandHome(repo)));
+  const resolvedRepos = options.repos.map((repo) => path.resolve(expandHome(repo.path)));
 
   if (resolvedRepos.length === 0) {
     throw new Error("No repositories configured");
@@ -1751,11 +1903,11 @@ async function main(): Promise<void> {
 
   const results: RepoBenchmarkResult[] = [];
 
-  for (const repoPath of resolvedRepos) {
-    const repoName = toRepoName(repoPath);
+  for (const repo of options.repos) {
+    const repoName = repo.name;
     console.log(`\n[${repoName}] generating dataset + running evaluations...`);
     const repoResult = await runForRepo(
-      repoPath,
+      repo,
       options,
       runDir,
       datasetRoot,
@@ -1781,7 +1933,8 @@ async function main(): Promise<void> {
   const reportJson = {
     generatedAt: new Date().toISOString(),
     options: {
-      repos: resolvedRepos,
+      repos: options.repos,
+      manifestPath: options.manifestPath,
       outputRoot: options.outputRoot,
       reindex: options.reindex,
       repeats: options.repeats,

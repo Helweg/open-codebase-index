@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,8 @@ import {
   MAX_FILE_SIZE_BYTES,
   parseCliArgs,
   runCodeGraphRepeat,
+  parseManifest,
+  type RepoDescriptor,
   type CliOptions,
   type RepoBenchmarkResult,
 } from "../scripts/cross-repo-benchmark.js";
@@ -65,8 +68,9 @@ function fixture(): { dataset: GoldenDataset; pluginPerQuery: PerQueryEvalResult
 }
 
 function cliOptions(repoPath: string): CliOptions {
+  const repoName = path.basename(repoPath);
   return {
-    repos: [repoPath],
+    repos: [{ name: repoName, path: repoPath }],
     outputRoot: repoPath,
     reindex: false,
     repeats: 2,
@@ -76,6 +80,17 @@ function cliOptions(repoPath: string): CliOptions {
     skipSg: true,
     codegraph: true,
   };
+}
+
+function createTempGitRepo(repoRoot: string): string {
+  fs.mkdirSync(repoRoot, { recursive: true });
+  execSync(`git -C ${JSON.stringify(repoRoot)} init -q`);
+  fs.writeFileSync(path.join(repoRoot, "README.md"), "temporary repo\n", "utf-8");
+  execSync(`git -C ${JSON.stringify(repoRoot)} add README.md`);
+  execSync(
+    `git -C ${JSON.stringify(repoRoot)} commit -q --author="Test <test@example.com>" --date=now -m "initial commit" --allow-empty`
+  );
+  return execSync(`git -C ${JSON.stringify(repoRoot)} rev-parse HEAD`, { encoding: "utf-8" }).trim();
 }
 
 describe("cross-repo CodeGraph comparator", () => {
@@ -91,6 +106,56 @@ describe("cross-repo CodeGraph comparator", () => {
     const repoPath = tempDir("cross-repo-cg-cli-");
     expect(parseCliArgs(["--repos", repoPath]).codegraph).toBe(false);
     expect(parseCliArgs(["--repos", repoPath, "--codegraph"]).codegraph).toBe(true);
+  });
+
+  it("loads manifest entries and resolves relative repo paths", () => {
+    const root = tempDir("cross-repo-manifest-");
+    const repoDir = path.join(root, "repos", "axios");
+    const manifestPath = path.join(root, "manifest.json");
+    const commitSha = createTempGitRepo(repoDir);
+
+    const manifest = [
+      {
+        name: "axios",
+        repositoryUrl: "https://github.com/axios/axios",
+        commitSha,
+        path: "repos/axios",
+      },
+    ];
+
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest), "utf-8");
+
+    const repos = parseManifest(manifestPath);
+
+    expect(repos).toEqual<RepoDescriptor[]>([
+      {
+        name: "axios",
+        path: repoDir,
+        repositoryUrl: "https://github.com/axios/axios",
+        commitSha,
+      },
+    ]);
+  });
+
+  it("throws when manifest commit SHA does not match repo HEAD", () => {
+    const root = tempDir("cross-repo-manifest-mismatch-");
+    const repoDir = path.join(root, "repos", "express");
+    const manifestPath = path.join(root, "manifest.json");
+    const commitSha = createTempGitRepo(repoDir);
+
+    const manifest = [
+      {
+        name: "express",
+        repositoryUrl: "https://github.com/expressjs/express",
+        commitSha: commitSha === "0000000000000000000000000000000000000000" ?
+          "1111111111111111111111111111111111111111" : "0000000000000000000000000000000000000000",
+        path: "repos/express",
+      },
+    ];
+
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest), "utf-8");
+
+    expect(() => parseManifest(manifestPath)).toThrow("commit mismatch");
   });
 
   it("routes generated definition queries through context definition lookup", () => {

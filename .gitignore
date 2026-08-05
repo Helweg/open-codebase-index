@@ -56,6 +56,9 @@ test-*.mjs
 benchmark-results/
 benchmarks/results/
 
+# Local checkouts used by the checked-in cross-repo benchmark manifest
+demo-repos/
+
 # Local agent/session artifacts
 .sisyphus/
 .superset/
