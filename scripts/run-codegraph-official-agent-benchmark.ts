@@ -625,7 +625,7 @@ function buildCodeGraphConfig(manifest: BenchmarkManifest, repoPath: string): Mc
     mcpServers: {
       codegraph: {
         command: "npx",
-        args: ["--yes", "--package", manifest.source.codegraphPackage, "mcp", "--path", repoPath],
+        args: ["--yes", manifest.source.codegraphPackage, "serve", "--mcp", "--path", repoPath],
       },
     },
   };
@@ -637,7 +637,7 @@ function buildOpenCodebaseIndexConfig(repoPath: string): McpConfig {
     mcpServers: {
       "open-codebase-index": {
         command: "node",
-        args: [cliPath, "mcp", "--host", "claude", "--project", repoPath],
+        args: [cliPath, "--host", "claude", "--project", repoPath],
       },
     },
   };
@@ -649,16 +649,54 @@ function configFileForArm(manifest: BenchmarkManifest, arm: (typeof ARMS)[number
   return buildOpenCodebaseIndexConfig(repoPath);
 }
 
+async function indexWorkspaceForArm(
+  manifest: BenchmarkManifest,
+  arm: (typeof ARMS)[number],
+  workspacePath: string,
+  commandRunner: CommandRunner,
+): Promise<void> {
+  if (arm === "baseline") return;
+
+  if (arm === "codegraph") {
+    await commandRunner("npx", ["--yes", manifest.source.codegraphPackage, "init", workspacePath]);
+    return;
+  }
+
+  const cliPath = path.resolve(process.cwd(), "dist", "cli.js");
+  if (!existsSync(cliPath)) {
+    throw new Error(`Local MCP CLI is missing: ${cliPath}. Run npm run build:ts before --execute.`);
+  }
+  await commandRunner("node", [cliPath, "index", "--host", "claude", "--project", workspacePath, "--force"]);
+}
+
 function writeConfig(configPath: string, config: McpConfig): void {
   mkdirSync(path.dirname(configPath), { recursive: true });
   writeFileSync(configPath, JSON.stringify(config, null, 2), "utf-8");
 }
 
+function sessionIdFromStreamJson(output: string): string | undefined {
+  for (const line of output.split("\n").reverse()) {
+    if (!line.trim()) continue;
+    try {
+      const event: unknown = JSON.parse(line);
+      if (isRecord(event) && isNonEmptyString(event.session_id)) {
+        return event.session_id;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
 async function runClaudeSession(
   prompt: string,
   configPath: string,
+  workspacePath: string,
   model: string,
   effort: EffortLevel,
+  maxBudgetUsd: number,
+  sessionId: string | undefined,
   commandRunner: CommandRunner,
 ): Promise<string> {
   const args = [
@@ -670,11 +708,21 @@ async function runClaudeSession(
     effort,
     "--output-format",
     "stream-json",
+    "--verbose",
+    "--permission-mode",
+    "bypassPermissions",
+    "--max-budget-usd",
+    String(maxBudgetUsd),
+    "--strict-mcp-config",
     "--mcp-config",
     configPath,
   ];
 
-  const result = await commandRunner("claude", args);
+  if (sessionId) {
+    args.push("--resume", sessionId);
+  }
+
+  const result = await commandRunner("claude", args, { cwd: workspacePath });
   return result.stdout;
 }
 
@@ -716,10 +764,12 @@ export async function executeBenchmark(
         const armRunRoot = path.join(runRoot, repository.id, arm, `run-${run}`);
         const workspaceRoot = path.join(armRunRoot, "workspace");
         copyIsolatedRepo(preparedRepo.path, workspaceRoot);
+        await indexWorkspaceForArm(manifest, arm, workspaceRoot, commandRunner);
 
         const config = configFileForArm(manifest, arm, workspaceRoot);
         const configPath = path.join(armRunRoot, `mcp-config-${arm}.json`);
         writeConfig(configPath, config);
+        let sessionId: string | undefined;
 
         for (let turn = 0; turn < resolvedTurns; turn += 1) {
           const question = questionSet[turn];
@@ -731,11 +781,18 @@ export async function executeBenchmark(
           const raw = await runClaudeSession(
             question,
             configPath,
+            workspaceRoot,
             manifest.source.model,
             manifest.source.effort,
+            maxBudgetUsd,
+            sessionId,
             commandRunner,
           );
           writeFileSync(artifactPath, `${raw}\n`, { encoding: "utf-8" });
+          sessionId = sessionIdFromStreamJson(raw);
+          if (turn < resolvedTurns - 1 && !sessionId) {
+            throw new Error(`Claude did not return a session_id for ${repository.id}/${arm}/run-${run}/turn-${turn + 1}`);
+          }
         }
       }
     }

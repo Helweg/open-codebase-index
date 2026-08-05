@@ -18,14 +18,19 @@ import {
 interface MockCall {
   command: string;
   args: string[];
+  cwd?: string;
 }
 
 function makeCommandRunner(
   callMap: MockCall[],
   options: { gitHeadByPath?: Record<string, string>; defaultGitHead?: string },
 ): (command: string, args: string[], runnerOptions?: { cwd?: string }) => Promise<{ stdout: string; stderr: string }> {
-  return async (command: string, args: string[]): Promise<{ stdout: string; stderr: string }> => {
-    callMap.push({ command, args: [...args] });
+  return async (
+    command: string,
+    args: string[],
+    runnerOptions?: { cwd?: string },
+  ): Promise<{ stdout: string; stderr: string }> => {
+    callMap.push({ command, args: [...args], cwd: runnerOptions?.cwd });
 
     if (
       command === "git" &&
@@ -258,7 +263,14 @@ describe("run-codegraph-official-agent benchmark execution plumbing", () => {
         expect(text).toContain("--model sonnet");
         expect(text).toContain("--effort high");
         expect(text).toContain("--output-format stream-json");
+        expect(text).toContain("--strict-mcp-config");
+        expect(text).toContain("--permission-mode bypassPermissions");
+        expect(text).toContain("--max-budget-usd 4");
+        expect(call.cwd).toContain(path.join("run-1", "workspace"));
       }
+
+      expect(commands.some((entry) => entry.command === "npx" && entry.args.includes("init"))).toBe(true);
+      expect(commands.some((entry) => entry.command === "node" && entry.args.includes("index"))).toBe(true);
     } finally {
       rmSync(outputDir, { recursive: true, force: true });
     }

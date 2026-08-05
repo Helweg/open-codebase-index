@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "source": {
+    "name": "CodeGraph README agent benchmark",
+    "methodologyRepository": "https://github.com/colbymchenry/codegraph",
+    "methodologyCommit": "a7db24d0c08cbedcd1b0aff100bc0079f666ee14",
+    "codegraphPackage": "@colbymchenry/codegraph@1.5.0",
+    "defaultRuns": 4,
+    "defaultTurns": 3,
+    "model": "sonnet",
+    "effort": "high"
+  },
+  "repositories": [
+    {
+      "id": "vscode",
+      "url": "https://github.com/microsoft/vscode.git",
+      "commit": "13c6ffb35d0f706d16d8d58f6b48f72f76be5882",
+      "questions": [
+        "How does the extension host communicate with the main process?",
+        "Where in that path would a message be dropped if the extension host crashes?",
+        "What would I need to change to add a new message type to that protocol?"
+      ]
+    },
+    {
+      "id": "excalidraw",
+      "url": "https://github.com/excalidraw/excalidraw.git",
+      "commit": "e4ab626739f5f163c5eca56190f615643218b61c",
+      "questions": [
+        "How does Excalidraw render and update canvas elements?",
+        "Which part of that path decides whether a full re-render happens or an incremental one?",
+        "If I added a new element type, what in that render path would need to change?"
+      ]
+    },
+    {
+      "id": "django",
+      "url": "https://github.com/django/django.git",
+      "commit": "dfc52e53f1d19a2730854d68b602fb4dba8bf0c5",
+      "questions": [
+        "How does Django's ORM build and execute a query from a QuerySet?",
+        "Where in that path is the SQL actually compiled into a string?",
+        "What would I change to add a new lookup type to that pipeline?"
+      ]
+    },
+    {
+      "id": "tokio",
+      "url": "https://github.com/tokio-rs/tokio.git",
+      "commit": "108d6d3dc038332af2af83957748333091e35b3f",
+      "questions": [
+        "How does tokio schedule and run async tasks on its runtime?",
+        "Where does a task move between the local and the global queue in that path?",
+        "What in that path would I touch to add a per-task instrumentation hook?"
+      ]
+    },
+    {
+      "id": "okhttp",
+      "url": "https://github.com/square/okhttp.git",
+      "commit": "4fc083138014aba3d0078f5c26d1ce84815fa984",
+      "questions": [
+        "How does OkHttp process a request through its interceptor chain?",
+        "Where in that chain is the connection actually acquired?",
+        "What would I change to add a new interceptor stage before the cache?"
+      ]
+    },
+    {
+      "id": "gin",
+      "url": "https://github.com/gin-gonic/gin.git",
+      "commit": "34dac209ffb6ef85cc78c5d217bbb7ad001d68fd",
+      "questions": [
+        "How does gin route requests through its middleware chain?",
+        "Where is the 404 / no-route case handled in that same chain?",
+        "What would I change to add a per-route middleware that runs before the global ones?"
+      ]
+    },
+    {
+      "id": "alamofire",
+      "url": "https://github.com/Alamofire/Alamofire.git",
+      "commit": "0455bfb650893e86ad07ace16e5f2d36dadf46f4",
+      "questions": [
+        "How does Alamofire build, send, and validate a request?",
+        "Where does retry / interceptor logic hook into that path?",
+        "What would I change to add a new validation step to it?"
+      ]
+    }
+  ]
+}
