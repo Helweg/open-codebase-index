@@ -133,11 +133,13 @@
           "lib/cancel/CancelToken.js",
           "lib/cancel/CanceledError.js",
           "lib/core/dispatchRequest.js",
+          "lib/adapters/fetch.js",
           "lib/helpers/composeSignals.js"
         ],
         "gradedEvidence": [
           {"path": "lib/cancel/CancelToken.js", "relevance": 3},
           {"path": "lib/core/dispatchRequest.js", "relevance": 3},
+          {"path": "lib/adapters/fetch.js", "relevance": 3},
           {"path": "lib/helpers/composeSignals.js", "relevance": 2},
           {"path": "lib/cancel/CanceledError.js", "relevance": 2}
         ]
