@@ -118,17 +118,27 @@ async function resolveCodebaseContextUnmeasured(
     };
   }
 
-  return resolveSearchContext({ query: input.query, symbol, limit, tokenBudget, fileType, directory }, {
-    lookup: (lookupSymbol, retrievalLimit, scope) => implementationLookup(projectRoot, host, lookupSymbol, {
+  return resolveSearchContext({
+    query: input.query,
+    symbol,
+    limit,
+    tokenBudget,
+    fileType,
+    directory,
+    diagnostic: input.diagnostic,
+  }, {
+    lookup: (lookupSymbol, retrievalLimit, scope, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
       limit: retrievalLimit,
       fileType: scope.fileType,
       directory: scope.directory,
+      trace,
     }),
-    search: (queryText, retrievalLimit, scope) => searchCodebase(projectRoot, host, queryText, {
+    search: (queryText, retrievalLimit, scope, trace) => searchCodebase(projectRoot, host, queryText, {
       limit: retrievalLimit,
       fileType: scope.fileType,
       directory: scope.directory,
       metadataOnly: true,
+      trace,
     }),
   });
 }

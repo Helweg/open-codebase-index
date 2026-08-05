@@ -21,6 +21,50 @@ export interface ContextPackOptions {
   includeExactSearchHandoff?: boolean;
   preferImplementationPaths?: boolean;
   preserveInputOrder?: boolean;
+  trace?: (trace: ContextPackTrace) => void;
+}
+
+export interface ContextPackTrace {
+  inputCandidates: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    score: number;
+    chunkType: string;
+    name?: string;
+  }>;
+  rankedCandidates: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    score: number;
+    chunkType: string;
+    name?: string;
+  }>;
+  deduplicatedCandidates: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    score: number;
+    chunkType: string;
+    name?: string;
+  }>;
+  diversifiedCandidates: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    score: number;
+    chunkType: string;
+    name?: string;
+  }>;
+  selectedCandidates: Array<{
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    score: number;
+    chunkType: string;
+    name?: string;
+  }>;
 }
 
 export interface ContextPackResult {
@@ -160,6 +204,17 @@ function compactEvidenceValue(value: string, maxChars: number): string {
 const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;
 const MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS = 64;
 
+function toContextPackTraceCandidate(result: SearchResult): ContextPackTrace["inputCandidates"][number] {
+  return {
+    filePath: result.filePath,
+    startLine: result.startLine,
+    endLine: result.endLine,
+    score: result.score,
+    chunkType: result.chunkType,
+    name: result.name,
+  };
+}
+
 export function formatExactSearchHandoff(results: SearchResult[]): string | null {
   const suggestedNames: string[] = [];
   const seen = new Set<string>();
@@ -232,8 +287,11 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const ranked = preserveInputOrder
     ? results.map((result, originalIndex) => ({ result, originalIndex }))
     : rankContextCandidates(results, options.preferImplementationPaths ?? false);
+  const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
   const deduplicated = deduplicateContextCandidates(ranked);
+  const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
   const diversified = preserveInputOrder ? deduplicated : diversifyContextCandidates(deduplicated);
+  const diversifiedCandidates = diversified.map((result) => toContextPackTraceCandidate(result));
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
   const limitOmittedCount = deduplicated.length - selectable.length;
@@ -268,6 +326,15 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const fitted = fitTextToContextBudget(text, tokenBudget);
   const budgetOmittedCount = selectable.length - selected.length;
   const omittedCount = candidateCount - selected.length;
+  if (options.trace) {
+    options.trace({
+      inputCandidates: results.map(toContextPackTraceCandidate),
+      rankedCandidates,
+      deduplicatedCandidates,
+      diversifiedCandidates,
+      selectedCandidates: selected.map(toContextPackTraceCandidate),
+    });
+  }
   return {
     requestedTokenBudget,
     tokenBudget,

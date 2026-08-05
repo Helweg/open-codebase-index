@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchTrace } from "../src/indexer/index.js";
 
 import { countContextTokens } from "../src/tools/utils.js";
-import { resolveSearchContext } from "../src/tools/context.js";
+import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
 
 const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
@@ -884,5 +884,102 @@ describe("native OpenCode codebase_context", () => {
         ],
       },
     });
+  });
+
+  it("forwards the diagnostic flag from codebase context into search traces", async () => {
+    operationMocks.implementationLookup.mockImplementation(async (_projectRoot, _host, _query, options) => {
+      options.trace?.({
+        semanticCandidates: [],
+        keywordCandidates: [],
+        hybridCandidates: [],
+        postExternalRerankCandidates: [],
+        tieredCandidates: [],
+        finalCandidates: [],
+      });
+
+      return [{
+        filePath: "src/resolve.ts",
+        startLine: 10,
+        endLine: 20,
+        name: "resolveContext",
+        chunkType: "function",
+        content: "function resolveContext() {}",
+        score: 0.99,
+      }];
+    });
+
+    const result = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    });
+
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith(
+      "/repo",
+      "opencode",
+      "resolveContext",
+      expect.objectContaining({
+        limit: 100,
+        fileType: undefined,
+        directory: undefined,
+        trace: expect.any(Function),
+      }),
+    );
+    expect(operationMocks.searchCodebase).not.toHaveBeenCalled();
+    expect(result.details?.diagnostic).toMatchObject({
+      route: "definition",
+      searchTrace: {
+        semanticCandidates: [],
+      },
+      contextPackTrace: {
+        selectedCandidates: [
+          {
+            filePath: "src/resolve.ts",
+            startLine: 10,
+            endLine: 20,
+            score: 0.99,
+            chunkType: "function",
+            name: "resolveContext",
+          },
+        ],
+      },
+    });
+  });
+
+  it("omits diagnostic details when diagnostic flag is false", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([{
+      filePath: "src/resolve.ts",
+      startLine: 1,
+      endLine: 2,
+      name: "resolveContext",
+      chunkType: "function",
+      content: "function resolveContext() {}",
+      score: 0.9,
+    }]);
+
+    const result = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    });
+
+    expect(result.details?.diagnostic).toBeUndefined();
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith(
+      "/repo",
+      "opencode",
+      "resolveContext",
+      expect.objectContaining({
+        limit: 100,
+        fileType: undefined,
+        directory: undefined,
+      }),
+    );
+    const lookupOptions = operationMocks.implementationLookup.mock.calls[0][3] as {
+      trace?: ((trace: SearchTrace) => void) | undefined;
+    };
+    expect(lookupOptions.trace).toBeUndefined();
+    expect(result.text).toContain("src/resolve.ts");
   });
 });

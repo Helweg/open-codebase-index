@@ -369,6 +369,40 @@ export interface SearchResult {
   blame?: GitBlameMetadata;
 }
 
+interface CandidateSnapshot {
+  id: string;
+  filePath: string;
+  startLine: number;
+  endLine: number;
+  score: number;
+  chunkType: string;
+  name?: string;
+}
+
+export interface SearchTrace {
+  semanticCandidates: CandidateSnapshot[];
+  keywordCandidates: CandidateSnapshot[];
+  hybridCandidates: CandidateSnapshot[];
+  postExternalRerankCandidates: CandidateSnapshot[];
+  tieredCandidates: CandidateSnapshot[];
+  finalCandidates: CandidateSnapshot[];
+}
+
+interface SearchOptions {
+  hybridWeight?: number;
+  fileType?: string;
+  directory?: string;
+  chunkType?: string;
+  contextLines?: number;
+  filterByBranch?: boolean;
+  metadataOnly?: boolean;
+  definitionIntent?: boolean;
+  blameAuthor?: string;
+  blameSha?: string;
+  blameSince?: string;
+  trace?: (trace: SearchTrace) => void;
+}
+
 export interface HealthCheckResult {
   removed: number;
   filePaths: string[];
@@ -4613,6 +4647,22 @@ export class Indexer {
     }
   }
 
+  private buildCandidateSnapshot(candidate: RankedCandidate): CandidateSnapshot {
+    return {
+      id: candidate.id,
+      filePath: candidate.metadata.filePath,
+      startLine: candidate.metadata.startLine,
+      endLine: candidate.metadata.endLine,
+      score: candidate.score,
+      chunkType: candidate.metadata.chunkType,
+      name: candidate.metadata.name,
+    };
+  }
+
+  private buildCandidateSnapshotList(candidates: RankedCandidate[]): CandidateSnapshot[] {
+    return candidates.map((candidate) => this.buildCandidateSnapshot(candidate));
+  }
+
   private searchSemanticCandidates(
     store: VectorStore,
     embedding: number[],
@@ -4633,19 +4683,7 @@ export class Indexer {
   async search(
     query: string,
     limit?: number,
-    options?: {
-      hybridWeight?: number;
-      fileType?: string;
-      directory?: string;
-      chunkType?: string;
-      contextLines?: number;
-      filterByBranch?: boolean;
-      metadataOnly?: boolean;
-      definitionIntent?: boolean;
-      blameAuthor?: string;
-      blameSha?: string;
-      blameSince?: string;
-    }
+    options?: SearchOptions
   ): Promise<SearchResult[]> {
     const { store, provider, invertedIndex, database, readIssues, compatibility } = await this.ensureInitialized();
     this.requireReadableComponents(readIssues, "vectors", "database");
@@ -4869,6 +4907,17 @@ export class Indexer {
       prefilterMs: Math.round(prefilterMs * 100) / 100,
       fusionMs: Math.round(fusionMs * 100) / 100,
     });
+
+    if (options?.trace) {
+      options.trace({
+        semanticCandidates: this.buildCandidateSnapshotList(scopedSemanticCandidates),
+        keywordCandidates: this.buildCandidateSnapshotList(scopedKeywordCandidates),
+        hybridCandidates: this.buildCandidateSnapshotList(combined),
+        postExternalRerankCandidates: this.buildCandidateSnapshotList(rerankedCombined),
+        tieredCandidates: this.buildCandidateSnapshotList(tiered),
+        finalCandidates: this.buildCandidateSnapshotList(finalResults),
+      });
+    }
 
     const metadataOnly = options?.metadataOnly ?? false;
 
