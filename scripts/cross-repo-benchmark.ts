@@ -1799,7 +1799,7 @@ async function runForRepo(
   const datasetPath = path.join(datasetRoot, `${repoName}.json`);
 
   try {
-    const { dataset, collection, datasetPath } = resolveBenchmarkDataset(
+    const { dataset, collection, datasetPath: resolvedDatasetPath } = resolveBenchmarkDataset(
       repo,
       {
         datasetDir: options.datasetDir,
@@ -1837,7 +1837,7 @@ async function runForRepo(
       const reindexApplied = options.reindex && repeat === 0;
       const runOptions: EvalRunOptions = buildPluginEvalRunOptions({
         projectRoot: repoPath,
-        datasetPath,
+        datasetPath: resolvedDatasetPath,
         outputRoot: pluginOutputRoot,
         reindexApplied,
         configPath: controlledEvalConfigArtifactPath,
@@ -1889,7 +1889,7 @@ async function runForRepo(
       repoName,
       repoPath,
       repository: repositoryMetadata,
-      datasetPath,
+      datasetPath: resolvedDatasetPath,
       datasetQueryCount: dataset.queries.length,
       fileSampling: {
         parsedFileCount: collection.files.length,
