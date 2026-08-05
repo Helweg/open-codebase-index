@@ -99,6 +99,7 @@ export const codebase_context: ToolDefinition = tool({
     tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
       .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
       .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
+    diagnostic: z.boolean().optional().describe("Collect diagnostic routing and search traces without changing normal text output."),
   },
   async execute(args, context) {
     return (await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
