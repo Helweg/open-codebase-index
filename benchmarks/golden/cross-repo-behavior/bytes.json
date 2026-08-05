@@ -1,0 +1,141 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-behavior-bytes",
+  "description": "Hand-labeled behavior and task queries grounded in bytes source at pinned commit 76c0fbb54ed4336caf9d2311658a2f4a5627c21d.",
+  "queries": [
+    {
+      "id": "bytes-behavior-capacity-01",
+      "query": "How does BytesMut reserve capacity by choosing among existing spare space, shifting consumed bytes, reclaiming uniquely owned shared storage, or allocating a larger vector?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": ["configuration", "capacity", "allocation"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/bytes_mut.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/bytes_mut.rs", "relevance": 3}
+        ]
+      }
+    },
+    {
+      "id": "bytes-behavior-numeric-flow-02",
+      "query": "How are fixed-width and variable-width integers encoded and decoded in different byte orders while advancing readable and writable buffer cursors?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": ["data-flow", "endianness", "buffer-cursors"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/buf/buf_impl.rs",
+          "src/buf/buf_mut.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/buf/buf_impl.rs", "relevance": 3},
+          {"path": "src/buf/buf_mut.rs", "relevance": 3}
+        ]
+      }
+    },
+    {
+      "id": "bytes-behavior-bounds-errors-03",
+      "query": "What bounds checks and error values protect buffer reads and cursor movement when a caller requests more bytes than remain, including fallible reads that must not consume data?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "medium",
+      "tags": ["error-handling", "bounds", "fallible-read"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/buf/buf_impl.rs",
+          "src/lib.rs",
+          "src/bytes.rs",
+          "src/buf/take.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/buf/buf_impl.rs", "relevance": 3},
+          {"path": "src/lib.rs", "relevance": 3},
+          {"path": "src/bytes.rs", "relevance": 1},
+          {"path": "src/buf/take.rs", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "bytes-behavior-buffer-adapters-04",
+      "query": "How do the chain and take adapters expose multiple buffers as one continuous but bounded readable view, including advancing across the first buffer and limiting vectored chunks?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": ["extension", "adapters", "composition"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/buf/buf_impl.rs",
+          "src/buf/chain.rs",
+          "src/buf/take.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/buf/chain.rs", "relevance": 3},
+          {"path": "src/buf/take.rs", "relevance": 3},
+          {"path": "src/buf/buf_impl.rs", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "bytes-behavior-io-bridges-05",
+      "query": "How are Buf and BufMut adapted to standard Read, BufRead, and Write interfaces while limiting each operation to remaining data or capacity and advancing the underlying buffer?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "medium",
+      "tags": ["extension", "io", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/buf/reader.rs",
+          "src/buf/writer.rs",
+          "src/buf/buf_impl.rs",
+          "src/buf/buf_mut.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/buf/reader.rs", "relevance": 3},
+          {"path": "src/buf/writer.rs", "relevance": 3},
+          {"path": "src/buf/buf_impl.rs", "relevance": 1},
+          {"path": "src/buf/buf_mut.rs", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "bytes-behavior-shared-storage-06",
+      "query": "How do freezing, slicing, and splitting share byte storage without copying, and when can immutable Bytes be converted back into BytesMut using the original allocation?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": ["cross-file", "shared-storage", "copy-on-write"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "src/bytes.rs",
+          "src/bytes_mut.rs"
+        ],
+        "gradedEvidence": [
+          {"path": "src/bytes.rs", "relevance": 3},
+          {"path": "src/bytes_mut.rs", "relevance": 3}
+        ]
+      }
+    }
+  ]
+}

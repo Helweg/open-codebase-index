@@ -1,0 +1,147 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-behavior-axios",
+  "description": "Hand-labeled behavior and task queries grounded in axios source at pinned commit 5b8a826771b77ab30081d033fdba9ef3b90e439a.",
+  "queries": [
+    {
+      "id": "axios-behavior-configuration-01",
+      "query": "How are instance defaults and per-request options merged when fields require request-only values, fallback values, deep object merging, or case-insensitive header merging?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": ["configuration", "defaults", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/core/mergeConfig.js",
+          "lib/core/Axios.js",
+          "lib/defaults/index.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/core/mergeConfig.js", "relevance": 3},
+          {"path": "lib/core/Axios.js", "relevance": 2},
+          {"path": "lib/defaults/index.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "axios-behavior-request-flow-02",
+      "query": "Trace how request data is transformed before a transport adapter runs and how response data is transformed on both successful and rejected adapter results.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["request-flow", "data-transform", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/core/dispatchRequest.js",
+          "lib/core/transformData.js",
+          "lib/defaults/index.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/core/dispatchRequest.js", "relevance": 3},
+          {"path": "lib/core/transformData.js", "relevance": 3},
+          {"path": "lib/defaults/index.js", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "axios-behavior-error-handling-03",
+      "query": "How does Axios decide whether an HTTP response resolves or rejects, and how is a rejected status converted into a structured request error?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": ["error-handling", "status", "response"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/core/settle.js",
+          "lib/core/AxiosError.js",
+          "lib/defaults/index.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/core/settle.js", "relevance": 3},
+          {"path": "lib/core/AxiosError.js", "relevance": 2},
+          {"path": "lib/defaults/index.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "axios-behavior-interceptors-04",
+      "query": "How are request and response interceptors ordered, conditionally skipped, and executed around the core request dispatch step?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["extension", "interceptors", "request-flow"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/core/Axios.js",
+          "lib/core/InterceptorManager.js",
+          "lib/core/dispatchRequest.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/core/Axios.js", "relevance": 3},
+          {"path": "lib/core/InterceptorManager.js", "relevance": 2},
+          {"path": "lib/core/dispatchRequest.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "axios-behavior-adapters-05",
+      "query": "How does Axios select among named or custom transport adapters and explain why none of the configured adapters can run in the current environment?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": ["configuration", "adapters", "extension"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/adapters/adapters.js",
+          "lib/defaults/index.js",
+          "lib/core/dispatchRequest.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/adapters/adapters.js", "relevance": 3},
+          {"path": "lib/defaults/index.js", "relevance": 2},
+          {"path": "lib/core/dispatchRequest.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "axios-behavior-cancellation-06",
+      "query": "Trace how legacy cancel tokens and abort signals become cancellation errors and are checked before and after transport execution, including combined timeout signals.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["error-handling", "cancellation", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/cancel/CancelToken.js",
+          "lib/cancel/CanceledError.js",
+          "lib/core/dispatchRequest.js",
+          "lib/helpers/composeSignals.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/cancel/CancelToken.js", "relevance": 3},
+          {"path": "lib/core/dispatchRequest.js", "relevance": 3},
+          {"path": "lib/helpers/composeSignals.js", "relevance": 2},
+          {"path": "lib/cancel/CanceledError.js", "relevance": 2}
+        ]
+      }
+    }
+  ]
+}

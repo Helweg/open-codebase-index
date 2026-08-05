@@ -1,0 +1,147 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-behavior-express",
+  "description": "Hand-labeled behavior and task queries grounded in Express source at pinned commit 1faf228935aa0a13111f92c28ee795be64ce3f0f.",
+  "queries": [
+    {
+      "id": "express-behavior-configuration-01",
+      "query": "How are default application settings initialized and converted into derived functions for ETags, query parsing, and trust proxy behavior?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": ["configuration", "defaults", "application"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/application.js",
+          "lib/utils.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/application.js", "relevance": 3},
+          {"path": "lib/utils.js", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "express-behavior-request-flow-02",
+      "query": "Trace an incoming request from the application handler through router layer matching, parameter processing, route dispatch, and final-handler fallback.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["request-flow", "routing", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/application.js",
+          "lib/router/index.js",
+          "lib/router/layer.js",
+          "lib/router/route.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/router/index.js", "relevance": 3},
+          {"path": "lib/application.js", "relevance": 2},
+          {"path": "lib/router/layer.js", "relevance": 2},
+          {"path": "lib/router/route.js", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "express-behavior-error-handling-03",
+      "query": "How does next with an error skip normal routes and select four-argument error middleware while preserving errors thrown by handlers?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["error-handling", "middleware", "routing"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/router/index.js",
+          "lib/router/layer.js",
+          "lib/router/route.js",
+          "lib/application.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/router/index.js", "relevance": 3},
+          {"path": "lib/router/layer.js", "relevance": 3},
+          {"path": "lib/router/route.js", "relevance": 2},
+          {"path": "lib/application.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "express-behavior-mounted-apps-04",
+      "query": "How does app.use distinguish ordinary middleware from a mounted sub-application, wire it into the router, and restore request and response prototypes after child handling?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["extension", "middleware", "sub-app"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/application.js",
+          "lib/router/index.js",
+          "lib/middleware/init.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/application.js", "relevance": 3},
+          {"path": "lib/router/index.js", "relevance": 2},
+          {"path": "lib/middleware/init.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "express-behavior-prototypes-05",
+      "query": "How are application-specific request and response prototypes installed for each request, including request-response links, response locals, and the X-Powered-By header?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": ["extension", "prototype", "middleware"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/middleware/init.js",
+          "lib/express.js",
+          "lib/application.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/middleware/init.js", "relevance": 3},
+          {"path": "lib/express.js", "relevance": 2},
+          {"path": "lib/application.js", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "express-behavior-rendering-06",
+      "query": "Trace response rendering from merging response and application locals through view lookup, engine loading, caching, and either sending output or forwarding render errors.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": ["data-flow", "views", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "lib/response.js",
+          "lib/application.js",
+          "lib/view.js"
+        ],
+        "gradedEvidence": [
+          {"path": "lib/response.js", "relevance": 3},
+          {"path": "lib/application.js", "relevance": 3},
+          {"path": "lib/view.js", "relevance": 3}
+        ]
+      }
+    }
+  ]
+}

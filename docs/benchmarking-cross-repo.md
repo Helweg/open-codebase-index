@@ -88,11 +88,27 @@ git clone https://github.com/expressjs/express.git demo-repos/express
 git -C demo-repos/express checkout --detach 1faf228935aa0a13111f92c28ee795be64ce3f0f
 git clone https://github.com/sindresorhus/got.git demo-repos/got
 git -C demo-repos/got checkout --detach b855688f0e520c82aff7a1dd913f9f95a4a05337
+git clone https://github.com/tokio-rs/bytes.git demo-repos/bytes
+git -C demo-repos/bytes checkout --detach 76c0fbb54ed4336caf9d2311658a2f4a5627c21d
 
 npx tsx scripts/cross-repo-benchmark.ts \
   --manifest benchmarks/cross-repo-manifest.json \
   --reindex --repeats 2 --codegraph
 ```
+
+## Behavior corpus run
+
+For the checked-in behavior-query corpus, run this command instead:
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts \
+  --manifest benchmarks/cross-repo-manifest.json \
+  --dataset-dir benchmarks/golden/cross-repo-behavior \
+  --reindex --repeats 2
+```
+
+This command is intentionally run **without** `--codegraph` because the CodeGraph
+CLI is symbol-only and does not benchmark natural-language behavior queries.
 
 `demo-repos/` is ignored by Git. The runner aborts before evaluating if either
 checkout is not at its pinned revision.

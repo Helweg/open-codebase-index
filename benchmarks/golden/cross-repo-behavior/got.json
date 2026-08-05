@@ -1,0 +1,149 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-behavior-got",
+  "description": "Hand-labeled behavior and task queries grounded in Got source at pinned commit b855688f0e520c82aff7a1dd913f9f95a4a05337.",
+  "queries": [
+    {
+      "id": "got-behavior-configuration-01",
+      "query": "How are Got defaults cloned and user options merged while init hooks run, unknown or non-mergeable keys are handled, and the request URL is applied last?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["configuration", "options", "hooks"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/core/options.ts",
+          "source/create.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/core/options.ts", "relevance": 3},
+          {"path": "source/create.ts", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "got-behavior-request-body-02",
+      "query": "Trace how body, form, and JSON options are kept mutually exclusive, serialized with content headers and length, and written for streams, buffers, typed arrays, or iterables.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["request-flow", "body", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/core/options.ts",
+          "source/core/index.ts",
+          "source/core/utils/get-body-size.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/core/options.ts", "relevance": 3},
+          {"path": "source/core/index.ts", "relevance": 3},
+          {"path": "source/core/utils/get-body-size.ts", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "got-behavior-retries-03",
+      "query": "How does Got decide whether and when to retry a failed request, honor Retry-After and backoff rules, run before-retry hooks, and reject retries for consumed body streams?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["error-handling", "retry", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/core/calculate-retry-delay.ts",
+          "source/core/index.ts",
+          "source/as-promise/index.ts",
+          "source/core/options.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/core/calculate-retry-delay.ts", "relevance": 3},
+          {"path": "source/core/index.ts", "relevance": 3},
+          {"path": "source/as-promise/index.ts", "relevance": 2},
+          {"path": "source/core/options.ts", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "got-behavior-extension-04",
+      "query": "How do extended Got instances compose default options and custom handlers, then run lifecycle hooks that can modify requests, responses, retries, and errors?",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["extension", "handlers", "hooks"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/create.ts",
+          "source/core/options.ts",
+          "source/core/index.ts",
+          "source/as-promise/index.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/create.ts", "relevance": 3},
+          {"path": "source/core/options.ts", "relevance": 3},
+          {"path": "source/core/index.ts", "relevance": 2},
+          {"path": "source/as-promise/index.ts", "relevance": 2}
+        ]
+      }
+    },
+    {
+      "id": "got-behavior-redirects-05",
+      "query": "How are redirects followed while enforcing redirect limits, rewriting methods or dropping bodies when required, and stripping credentials or sensitive headers across origins?",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["request-flow", "redirect", "security"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/core/index.ts",
+          "source/core/options.ts",
+          "source/core/errors.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/core/index.ts", "relevance": 3},
+          {"path": "source/core/options.ts", "relevance": 2},
+          {"path": "source/core/errors.ts", "relevance": 1}
+        ]
+      }
+    },
+    {
+      "id": "got-behavior-response-errors-06",
+      "query": "Trace how Promise responses are decoded and parsed, converted into HTTP or parse errors, passed through before-error hooks, or returned when HTTP errors are disabled.",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["error-handling", "response", "cross-file"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "acceptableFiles": [
+          "source/as-promise/index.ts",
+          "source/core/response.ts",
+          "source/core/errors.ts",
+          "source/core/index.ts"
+        ],
+        "gradedEvidence": [
+          {"path": "source/as-promise/index.ts", "relevance": 3},
+          {"path": "source/core/response.ts", "relevance": 3},
+          {"path": "source/core/errors.ts", "relevance": 2},
+          {"path": "source/core/index.ts", "relevance": 2}
+        ]
+      }
+    }
+  ]
+}
