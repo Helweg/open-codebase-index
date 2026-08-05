@@ -45,6 +45,18 @@ Option C: manifest file
 npx tsx scripts/cross-repo-benchmark.ts --manifest /path/to/cross-repo-manifest.json
 ```
 
+Option D: prebuilt dataset directory
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts \
+  --repos /path/to/repo1,/path/to/repo2 \
+  --dataset-dir benchmarks/golden/cross-repo
+```
+
+With `--dataset-dir`, each repository requires `<dataset-dir>/<repo-name>.json`.
+The runner validates each file via `parseGoldenDataset`, then copies that exact file into `<run>/datasets/`.
+If any required dataset file is missing or invalid, the run fails before evaluations begin.
+
 Manifest entries support checked-in repository metadata:
 
 ```json
@@ -113,6 +125,9 @@ npx tsx scripts/cross-repo-benchmark.ts --manifest benchmarks/cross-repo-manifes
 ```bash
 npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --persist-datasets
 ```
+
+`--persist-datasets` is respected when `--dataset-dir` is used too.
+The loaded dataset file is copied unchanged into `benchmarks/golden/cross-repo/`.
 
 - File parsing is capped (`--max-parse-files`, default `2500`). Reports include whether truncation occurred.
 

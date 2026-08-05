@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 
 import { execFile, execFileSync } from "child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  writeFileSync,
+} from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { promisify } from "util";
@@ -90,6 +97,7 @@ interface ManifestEntry {
 export interface CliOptions {
   repos: RepoDescriptor[];
   manifestPath?: string;
+  datasetDir?: string;
   outputRoot: string;
   reindex: boolean;
   repeats: number;
@@ -107,7 +115,7 @@ export interface RepoRepositoryMetadata {
   path: string;
 }
 
-interface FileCollectionResult {
+export interface FileCollectionResult {
   files: string[];
   truncated: boolean;
   maxParseFiles: number;
@@ -250,7 +258,7 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-	npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--manifest /path/to/manifest.json] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
+	npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--manifest /path/to/manifest.json] [--dataset-dir /path/to/datasets] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
 
 	Defaults:
 	  repos: none (required via --repos, --manifest, or BENCHMARK_REPOS)
@@ -455,6 +463,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let repeats = 1;
   let maxParseFiles = MAX_PARSE_FILES;
   let persistDatasets = false;
+  let datasetDir: string | undefined;
   let skipRipgrep = false;
   let skipSg = false;
   let codegraph = false;
@@ -488,6 +497,16 @@ export function parseCliArgs(argv: string[]): CliOptions {
       }
       manifestPath = value;
       repos = repos.concat(parseManifest(value));
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--dataset-dir") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--dataset-dir requires a path");
+      }
+      datasetDir = path.resolve(expandHome(value));
       i += 1;
       continue;
     }
@@ -570,6 +589,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   return {
     repos,
     manifestPath,
+    datasetDir,
     outputRoot,
     reindex,
     repeats,
@@ -1011,6 +1031,73 @@ function writeDataset(datasetPath: string, dataset: GoldenDataset): void {
   ensureDir(path.dirname(datasetPath));
   parseGoldenDataset(dataset, datasetPath);
   writeFileSync(datasetPath, JSON.stringify(dataset, null, 2), "utf-8");
+}
+
+export interface ResolvedDataset {
+  dataset: GoldenDataset;
+  collection: FileCollectionResult;
+  datasetPath: string;
+}
+
+export function resolveBenchmarkDataset(
+  repo: RepoDescriptor,
+  options: Pick<CliOptions, "datasetDir" | "maxParseFiles" | "persistDatasets">,
+  datasetRoot: string,
+  persistentDatasetRoot: string,
+): ResolvedDataset {
+  const repoName = repo.name;
+  const datasetPath = path.join(datasetRoot, `${repoName}.json`);
+  const persistentDatasetPath = path.join(persistentDatasetRoot, `${repoName}.json`);
+
+  if (options.datasetDir) {
+    const sourcePath = path.join(options.datasetDir, `${repoName}.json`);
+    if (!existsSync(sourcePath)) {
+      throw new Error(`Missing dataset file for repository ${repoName}: ${sourcePath}`);
+    }
+
+    const raw = readFileSync(sourcePath, "utf-8");
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to parse dataset JSON from ${sourcePath}: ${message}`);
+    }
+
+    const dataset = parseGoldenDataset(parsed, sourcePath);
+
+    ensureDir(path.dirname(datasetPath));
+    copyFileSync(sourcePath, datasetPath);
+
+    if (options.persistDatasets) {
+      ensureDir(path.dirname(persistentDatasetPath));
+      copyFileSync(sourcePath, persistentDatasetPath);
+    }
+
+    return {
+      dataset,
+      collection: {
+        files: [],
+        truncated: false,
+        maxParseFiles: options.maxParseFiles,
+      },
+      datasetPath,
+    };
+  }
+
+  const { parsedFiles, collection } = collectParsedFiles(repo.path, options.maxParseFiles);
+  const dataset = buildGoldenDataset(repo.name, repo.path, parsedFiles);
+  writeDataset(datasetPath, dataset);
+
+  if (options.persistDatasets) {
+    writeDataset(persistentDatasetPath, dataset);
+  }
+
+  return {
+    dataset,
+    collection,
+    datasetPath,
+  };
 }
 
 function escapeRegexLiteral(input: string): string {
@@ -1710,15 +1797,18 @@ async function runForRepo(
   const repoPath = repo.path;
   const repositoryMetadata = repositoryMetadataFromDescriptor(repo);
   const datasetPath = path.join(datasetRoot, `${repoName}.json`);
-  const persistentDatasetPath = path.join(persistentDatasetRoot, `${repoName}.json`);
 
   try {
-    const { parsedFiles, collection } = collectParsedFiles(repoPath, options.maxParseFiles);
-    const dataset = buildGoldenDataset(repoName, repoPath, parsedFiles);
-    writeDataset(datasetPath, dataset);
-    if (options.persistDatasets) {
-      writeDataset(persistentDatasetPath, dataset);
-    }
+    const { dataset, collection, datasetPath } = resolveBenchmarkDataset(
+      repo,
+      {
+        datasetDir: options.datasetDir,
+        maxParseFiles: options.maxParseFiles,
+        persistDatasets: options.persistDatasets,
+      },
+      datasetRoot,
+      persistentDatasetRoot,
+    );
 
     const pluginOutputRoot = path.join(runDir, "plugin", repoName);
     const pluginRuns: EvalMetrics[] = [];
@@ -1919,7 +2009,7 @@ async function main(): Promise<void> {
 
   for (const repo of options.repos) {
     const repoName = repo.name;
-    console.log(`\n[${repoName}] generating dataset + running evaluations...`);
+    console.log(`\n[${repoName}] ${options.datasetDir ? "loading" : "generating"} dataset + running evaluations...`);
     const repoResult = await runForRepo(
       repo,
       options,
@@ -1949,6 +2039,7 @@ async function main(): Promise<void> {
     options: {
       repos: options.repos,
       manifestPath: options.manifestPath,
+      datasetDir: options.datasetDir,
       outputRoot: options.outputRoot,
       reindex: options.reindex,
       repeats: options.repeats,

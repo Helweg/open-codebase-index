@@ -13,6 +13,7 @@ import {
   buildReportMarkdown,
   buildPluginEvalRunOptions,
   controlledEvalConfigPath,
+  resolveBenchmarkDataset,
   writeControlledEvalConfig,
   MAX_FILE_SIZE_BYTES,
   parseCliArgs,
@@ -135,6 +136,18 @@ describe("cross-repo CodeGraph comparator", () => {
         commitSha,
       },
     ]);
+  });
+
+  it("parses --dataset-dir CLI flag", () => {
+    const repoPath = tempDir("cross-repo-dataset-dir-cli-");
+    const root = tempDir("cross-repo-dataset-dir-dir-");
+    const options = parseCliArgs([
+      "--repos",
+      repoPath,
+      "--dataset-dir",
+      path.join(root, "datasets"),
+    ]);
+    expect(options.datasetDir).toBe(path.join(root, "datasets"));
   });
 
   it("throws when manifest commit SHA does not match repo HEAD", () => {
@@ -374,6 +387,96 @@ describe("cross-repo CodeGraph comparator", () => {
     expect(() => buildGoldenDataset("fixture", repoPath, parsedFiles)).toThrow(
       "No definition candidates outside unsupported CodeGraph source paths in fixture"
     );
+  });
+
+  it("loads datasets from --dataset-dir and copies exact files into run and golden artifacts", () => {
+    const repoPath = tempDir("cross-repo-dataset-dir-repo-");
+    const datasetSourceDir = tempDir("cross-repo-dataset-dir-src-");
+    const datasetRoot = tempDir("cross-repo-dataset-dir-run-");
+    const goldenRoot = tempDir("cross-repo-dataset-dir-golden-");
+    const datasetPath = path.join(datasetSourceDir, `${path.basename(repoPath)}.json`);
+    const datasetPayload = {
+      version: "1.0.0",
+      name: "from-fixture",
+      queries: [
+        {
+          id: "alpha-definition-01",
+          query: "where is Alpha defined",
+          queryType: "definition",
+          expected: {
+            filePath: "src/a.ts",
+            symbol: "Alpha",
+            expectedRoute: "definition",
+          },
+        },
+      ],
+    };
+    fs.writeFileSync(datasetPath, JSON.stringify(datasetPayload, null, 2), "utf-8");
+
+    const resolved = resolveBenchmarkDataset(
+      { name: path.basename(repoPath), path: repoPath },
+      {
+        datasetDir: datasetSourceDir,
+        maxParseFiles: 10,
+        persistDatasets: true,
+      },
+      datasetRoot,
+      goldenRoot,
+    );
+
+    const runDatasetPath = path.join(datasetRoot, `${path.basename(repoPath)}.json`);
+    const goldenDatasetPath = path.join(goldenRoot, `${path.basename(repoPath)}.json`);
+
+    expect(resolved.datasetPath).toBe(runDatasetPath);
+    expect(resolved.collection.files).toEqual([]);
+    expect(resolved.collection.truncated).toBe(false);
+    expect(resolved.dataset).toMatchObject({ version: "1.0.0", name: "from-fixture" });
+    expect(fs.readFileSync(runDatasetPath, "utf-8")).toBe(fs.readFileSync(datasetPath, "utf-8"));
+    expect(fs.readFileSync(goldenDatasetPath, "utf-8")).toBe(fs.readFileSync(datasetPath, "utf-8"));
+  });
+
+  it("requires a matching dataset file for each repo when --dataset-dir is provided", () => {
+    const repoPath = tempDir("cross-repo-dataset-dir-missing-");
+    const datasetSourceDir = tempDir("cross-repo-dataset-dir-missing-src-");
+    const datasetRoot = tempDir("cross-repo-dataset-dir-missing-run-");
+    const goldenRoot = tempDir("cross-repo-dataset-dir-missing-golden-");
+
+    expect(() => resolveBenchmarkDataset(
+      { name: path.basename(repoPath), path: repoPath },
+      {
+        datasetDir: datasetSourceDir,
+        maxParseFiles: 10,
+        persistDatasets: false,
+      },
+      datasetRoot,
+      goldenRoot,
+    )).toThrow(`Missing dataset file for repository ${path.basename(repoPath)}`);
+  });
+
+  it("validates loaded dataset files with parseGoldenDataset", () => {
+    const repoPath = tempDir("cross-repo-dataset-dir-invalid-");
+    const datasetSourceDir = tempDir("cross-repo-dataset-dir-invalid-src-");
+    const datasetRoot = tempDir("cross-repo-dataset-dir-invalid-run-");
+    const goldenRoot = tempDir("cross-repo-dataset-dir-invalid-golden-");
+    const repoName = path.basename(repoPath);
+    const datasetPath = path.join(datasetSourceDir, `${repoName}.json`);
+
+    fs.writeFileSync(datasetPath, JSON.stringify({
+      version: "invalid",
+      name: "bad",
+      queries: [],
+    }), "utf-8");
+
+    expect(() => resolveBenchmarkDataset(
+      { name: repoName, path: repoPath },
+      {
+        datasetDir: datasetSourceDir,
+        maxParseFiles: 10,
+        persistDatasets: false,
+      },
+      datasetRoot,
+      goldenRoot,
+    )).toThrow(`${datasetPath}.version must be a valid semantic version (MAJOR.MINOR.PATCH)`);
   });
 
   it("uses a fresh isolated repo per repeat, exact pinned commands, strict scoped metrics, and raw artifacts", async () => {
