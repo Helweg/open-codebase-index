@@ -264,7 +264,7 @@ function isWeakContainer(metadata: ChunkMetadata): boolean {
 }
 
 export function isLikelyImplementationPath(filePath: string): boolean {
-  if (isTestPath(filePath) || isFixturePath(filePath) || isDocumentationPath(filePath) || isGeneratedOrVendorPath(filePath)) {
+  if (isBenchmarkPath(filePath) || isTestPath(filePath) || isFixturePath(filePath) || isDocumentationPath(filePath) || isGeneratedOrVendorPath(filePath)) {
     return false;
   }
   if (!isConfigPath(filePath)) return true;

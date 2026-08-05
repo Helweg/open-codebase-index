@@ -817,6 +817,39 @@ describe("tools utils", () => {
       ]);
     });
 
+    it("puts source files ahead of benchmark artifacts when source evidence is requested", () => {
+      const results: SearchResult[] = [
+        {
+          filePath: "crates/abc/benches/feature.rs",
+          startLine: 1,
+          endLine: 20,
+          content: "benchmark",
+          score: 0.99,
+          chunkType: "function",
+          name: "bench_impl",
+        },
+        {
+          filePath: "src/feature.ts",
+          startLine: 1,
+          endLine: 30,
+          content: "implementation",
+          score: 0.60,
+          chunkType: "function",
+          name: "feature",
+        },
+      ];
+
+      const packed = buildContextPack(results, {
+        tokenBudget: 2048,
+        preferImplementationPaths: true,
+      });
+
+      expect(packed.results.map((result) => result.filePath)).toEqual([
+        "src/feature.ts",
+        "crates/abc/benches/feature.rs",
+      ]);
+    });
+
     it("preserves score ordering when implementation preference is disabled", () => {
       const results: SearchResult[] = [
         {
