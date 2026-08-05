@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SearchTrace } from "../src/indexer/index.js";
 
+import { codebase_context as opencodeCodebaseContext } from "../src/adapters/opencode/tools.js";
 import { countContextTokens } from "../src/tools/utils.js";
 import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
 
@@ -981,5 +982,10 @@ describe("native OpenCode codebase_context", () => {
     };
     expect(lookupOptions.trace).toBeUndefined();
     expect(result.text).toContain("src/resolve.ts");
+  });
+
+  it("exposes the diagnostic flag in OpenCode schema", () => {
+    const args = (opencodeCodebaseContext as { args: Record<string, unknown> }).args;
+    expect(args).toHaveProperty("diagnostic");
   });
 });

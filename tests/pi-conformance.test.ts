@@ -185,6 +185,44 @@ describe("Pi adapter conformance", () => {
       default: 10,
       anyOf: expect.arrayContaining([expect.objectContaining({ minimum: 1, maximum: 100 })]),
     }));
+    expect(tools.get("codebase_context")?.parameters?.properties?.diagnostic).toEqual(
+      expect.objectContaining({
+        anyOf: expect.arrayContaining([expect.objectContaining({ type: "boolean" })]),
+      }),
+    );
+  });
+
+  it("keeps Pi normal output unchanged when diagnostic is false", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([{
+      chunkType: "function",
+      name: "validateToken",
+      filePath: "src/auth.ts",
+      startLine: 12,
+      endLine: 30,
+      score: 0.95,
+      content: "function validateToken() {}",
+    }]);
+
+    const { tools } = await registerPiTools();
+
+    const withoutDiagnostic = await tools.get("codebase_context")?.execute(
+      "tool-call",
+      { query: "unused", symbol: "validateToken", limit: 8, tokenBudget: 128 },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+    const withDiagnosticFalse = await tools.get("codebase_context")?.execute(
+      "tool-call",
+      { query: "unused", symbol: "validateToken", limit: 8, tokenBudget: 128, diagnostic: false },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(withDiagnosticFalse?.content[0]?.text).toEqual(withoutDiagnostic?.content[0]?.text);
+    expect(withDiagnosticFalse?.details).toBeDefined();
+    expect(withDiagnosticFalse?.details).not.toHaveProperty("diagnostic");
   });
 
   it("formats metadata-only peek results with the shared exact-search handoff", async () => {

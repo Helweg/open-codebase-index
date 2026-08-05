@@ -80,10 +80,14 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
           .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),
       ).describe(`Maximum response tokens for this context pack (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
+      diagnostic: z.boolean().optional().describe("Collect diagnostic routing and search traces without changing normal text output."),
     },
     async (args) => {
       const result = await executeCodebaseContext(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: result.text }] };
+      return {
+        content: [{ type: "text", text: result.text }],
+        ...(args.diagnostic ? { structuredContent: result.details } : {}),
+      };
     },
   );
 

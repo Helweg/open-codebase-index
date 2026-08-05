@@ -512,6 +512,15 @@ describe("MCP server tools and prompts", () => {
     expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
   });
 
+  it("should expose a diagnostic option on codebase_context schema", async () => {
+    const tools = await client.listTools();
+    const codebaseContext = tools.tools.find((tool) => tool.name === "codebase_context");
+
+    const properties = codebaseContext?.inputSchema?.properties;
+    expect(properties).toBeDefined();
+    expect(properties).toHaveProperty("diagnostic");
+  });
+
   it("should register all 5 prompts", async () => {
     const prompts = await client.listPrompts();
 
@@ -802,6 +811,19 @@ describe("MCP server tools and prompts", () => {
       100,
       expect.objectContaining({ definitionIntent: true }),
     );
+  });
+
+  it("should return codebase_context diagnostics as MCP structured content on request", async () => {
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "where is validateToken defined", symbol: "validateToken", diagnostic: true },
+    });
+
+    const content = result.content as Array<{ type: string; text?: string }>;
+    expect(content[0].text).toContain('function "validateToken"');
+    expect(result.structuredContent).toMatchObject({
+      diagnostic: expect.objectContaining({ route: "definition" }),
+    });
   });
 
   it("should infer an exact symbol and route through implementation lookup", async () => {
