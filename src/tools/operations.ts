@@ -22,6 +22,7 @@ import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate } from "../utils/cost.js";
 import type { AutoIndexStatusSnapshot } from "../utils/auto-index.js";
+import type { SearchTrace } from "../indexer/index.js";
 import {
   formatEffectivenessMetrics,
   getProcessEffectivenessMetrics,
@@ -231,6 +232,7 @@ export async function searchCodebase(
     blameAuthor?: string;
     blameSha?: string;
     blameSince?: string;
+    trace?: (trace: SearchTrace) => void;
   } = {},
 ): Promise<SearchResult[]> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
@@ -245,6 +247,7 @@ export async function searchCodebase(
     blameAuthor: options.blameAuthor,
     blameSha: options.blameSha,
     blameSince: options.blameSince,
+    trace: options.trace,
   });
 }
 
@@ -321,6 +324,7 @@ export async function implementationLookup(
     limit?: number;
     fileType?: string;
     directory?: string;
+    trace?: (trace: SearchTrace) => void;
   } = {},
 ): Promise<SearchResult[]> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
@@ -329,6 +333,7 @@ export async function implementationLookup(
     fileType: options.fileType,
     directory: options.directory,
     definitionIntent: true,
+    trace: options.trace,
   });
 }
 
