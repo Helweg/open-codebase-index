@@ -219,10 +219,21 @@ describe("Pi adapter conformance", () => {
       () => {},
       { cwd: "/repo" },
     );
+    const withDiagnostic = await tools.get("codebase_context")?.execute(
+      "tool-call",
+      { query: "unused", symbol: "validateToken", limit: 8, tokenBudget: 128, diagnostic: true },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
 
     expect(withDiagnosticFalse?.content[0]?.text).toEqual(withoutDiagnostic?.content[0]?.text);
     expect(withDiagnosticFalse?.details).toBeDefined();
     expect(withDiagnosticFalse?.details).not.toHaveProperty("diagnostic");
+    expect(withDiagnostic?.content[0]?.text).toEqual(withoutDiagnostic?.content[0]?.text);
+    expect(withDiagnostic?.details).toMatchObject({
+      diagnostic: expect.objectContaining({ route: "definition", routedQuery: "validateToken" }),
+    });
   });
 
   it("formats metadata-only peek results with the shared exact-search handoff", async () => {
