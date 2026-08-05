@@ -73,6 +73,16 @@ function toCandidate(candidate: FixtureCandidate): RankedCandidate {
   };
 }
 
+function fixtureCandidate(
+  id: string,
+  filePath: string,
+  score: number,
+  name: string,
+  chunkType = "function_item",
+): RankedCandidate {
+  return toCandidate({ id, filePath, score, name, chunkType, startLine: 1, endLine: 4 });
+}
+
 function evidenceRecallAtK(ids: string[], relevantIds: string[], k: number): number {
   const relevant = new Set(relevantIds);
   const found = new Set(ids.slice(0, k).filter((id) => relevant.has(id)));
@@ -141,5 +151,28 @@ describe("intent-aware local ranking evaluation", () => {
     expect(actual).toEqual(golden);
     expect(actual.intentAware.evidenceRecallAt3).toBeGreaterThan(actual.baseline.evidenceRecallAt3);
     expect(actual.intentAware.mrr).toBeGreaterThan(actual.baseline.mrr);
+  });
+
+  it("keeps source-oriented conceptual queries ahead of benchmark artifacts", () => {
+    const rankedConceptual = rankIntentAwareCandidates(
+      "std io buffer",
+      [
+        fixtureCandidate("bench", "crates/abc/benches/buf.rs", 0.95, "bench_artifact", "function_item"),
+        fixtureCandidate("source", "src/buf/reader.rs", 0.9, "source_artifact", "function_item"),
+      ],
+      2,
+    ).map((candidate) => candidate.id);
+
+    const rankedBenchmark = rankIntentAwareCandidates(
+      "std io benchmark",
+      [
+        fixtureCandidate("source", "src/buf/reader.rs", 0.9, "source_artifact", "function_item"),
+        fixtureCandidate("bench", "crates/abc/benches/buf.rs", 0.95, "bench_artifact", "function_item"),
+      ],
+      2,
+    ).map((candidate) => candidate.id);
+
+    expect(rankedConceptual).toEqual(["source", "bench"]);
+    expect(rankedBenchmark).toEqual(["bench", "source"]);
   });
 });

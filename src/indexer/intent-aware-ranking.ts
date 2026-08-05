@@ -217,6 +217,11 @@ export function isTestPath(filePath: string): boolean {
     /\.(?:test|spec)\.[^/]+$/u.test(normalized);
 }
 
+export function isBenchmarkPath(filePath: string): boolean {
+  const normalized = normalizePath(filePath);
+  return /(?:^|\/)(?:bench|benches)(?:\/|$)/u.test(normalized) || /\.bench\.[^/]+$/u.test(normalized);
+}
+
 export function isFixturePath(filePath: string): boolean {
   const normalized = normalizePath(filePath);
   return /(?:^|\/)(?:fixture|fixtures|testdata|snapshots?)(?:\/|$)/u.test(normalized) || normalized.endsWith(".snap");
@@ -344,6 +349,7 @@ function scoreCandidate(query: string, intent: QueryIntentProfile, candidate: Ra
 
   if (intent.primary === "conceptual") {
     boost += Math.min(0.14, overlap * 0.14);
+    if (isBenchmarkPath(metadata.filePath)) boost -= 0.12;
     if (generatedOrVendor) boost -= 0.18;
     if (importChunk || weakContainer) boost -= 0.04;
   } else if (intent.primary === "test") {
