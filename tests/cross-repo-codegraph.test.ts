@@ -241,7 +241,49 @@ describe("cross-repo CodeGraph comparator", () => {
     expect(definitionQueries.every((query) => !query.expected.filePath.startsWith(".github/workflows/"))).toBe(true);
     expect(definitionQueries.every((query) => !query.expected.filePath.includes("/__tests__/"))).toBe(true);
     expect(definitionQueries.every((query) => !query.expected.filePath.includes("/fixtures/"))).toBe(true);
-    });
+  });
+
+  it("excludes benchmark paths and files from definition candidates", () => {
+    const repoPath = "/repo";
+    const sourceFile = (name: string): ParsedFile => {
+      const symbol = path.basename(name).replace(/\.[^.]+$/, "").replace(/[^a-z]/gi, "");
+      return {
+        path: path.join(repoPath, name),
+        hash: name,
+        symbols: [],
+        chunks: [{
+          content: `export function ${symbol}() { return 1; }`,
+          startLine: 1,
+          endLine: 1,
+          chunkType: "function",
+          name: symbol,
+          language: "typescript",
+        }],
+      };
+    };
+
+    const parsedFiles = [
+      sourceFile("src/alpha.ts"),
+      sourceFile("src/beta.ts"),
+      sourceFile("src/gamma.ts"),
+      sourceFile("src/benches/bench-helper.ts"),
+      sourceFile("benches/benchmark.ts"),
+      sourceFile("src/feature.bench.ts"),
+    ];
+
+    const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
+    const definitionQueries = dataset.queries.filter((query) => query.queryType === "definition");
+
+    expect(definitionQueries).toHaveLength(3);
+    expect(
+      definitionQueries.some((query) =>
+        query.expected.filePath.includes("/benches/") ||
+        query.expected.filePath.includes("/bench/") ||
+        query.expected.filePath.endsWith(".bench.ts") ||
+        query.expected.filePath.endsWith(".bench.js")
+      )
+    ).toBe(false);
+  });
 
   it("excludes documentation candidates from source definition set and keeps source candidates", () => {
     const repoPath = "/repo";
