@@ -89,7 +89,7 @@ function createTempGitRepo(repoRoot: string): string {
   fs.writeFileSync(path.join(repoRoot, "README.md"), "temporary repo\n", "utf-8");
   execSync(`git -C ${JSON.stringify(repoRoot)} add README.md`);
   execSync(
-    `git -C ${JSON.stringify(repoRoot)} commit -q --author="Test <test@example.com>" --date=now -m "initial commit" --allow-empty`
+    `git -C ${JSON.stringify(repoRoot)} -c user.name=Test -c user.email=test@example.com commit -q --author="Test <test@example.com>" --date=now -m "initial commit" --allow-empty`,
   );
   return execSync(`git -C ${JSON.stringify(repoRoot)} rev-parse HEAD`, { encoding: "utf-8" }).trim();
 }
