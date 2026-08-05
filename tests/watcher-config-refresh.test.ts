@@ -18,6 +18,7 @@ vi.mock("../src/git/index.js", async (importOriginal) => ({
 }));
 
 import { parseConfig } from "../src/config/schema.js";
+import { resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import { createWatcherWithIndexer } from "../src/watcher/index.js";
 
 const WATCH_EVENT_TIMEOUT_MS = 10000;
@@ -86,7 +87,8 @@ describe("watcher config refresh", () => {
     operationMocks.refreshIndexerForDirectory.mockClear();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await resetAutoIndexCoordinatorsForTests();
     rmSync(tempDir, { recursive: true, force: true });
   });
 

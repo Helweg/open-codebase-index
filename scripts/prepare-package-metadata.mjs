@@ -90,6 +90,13 @@ const outputDir = path.resolve(args.get("--output-dir") || projectRoot);
 const packageJsonPath = path.join(projectRoot, "package.json");
 const packageLockPath = path.join(projectRoot, "package-lock.json");
 
+const EXCLUDED_INDEX_PATHS = [
+  path.join(".opencode", "index"),
+  path.join(".claude", "index"),
+  path.join(".codebase-index", "index"),
+];
+const EXCLUDED_STAGING_DIRECTORIES = new Set([".git", "demo-repos"]);
+
 if (!existsSync(packageJsonPath)) fail(`Missing package.json at ${packageJsonPath}`);
 if (!existsSync(packageLockPath)) fail(`Missing package-lock.json at ${packageLockPath}`);
 
@@ -112,7 +119,16 @@ function copyProject() {
       if (relative === "") return true;
       const segments = relative.split(path.sep);
       const firstSegment = segments[0];
-      if (firstSegment === ".git" || firstSegment === "node_modules") return false;
+      if (segments.some((segment) => EXCLUDED_STAGING_DIRECTORIES.has(segment) || segment === "node_modules")) {
+        return false;
+      }
+      if (firstSegment === ".") return false;
+      if (segments.length >= 2) {
+        const pathPrefix = path.join(segments[0], segments[1]);
+        if (EXCLUDED_INDEX_PATHS.includes(pathPrefix)) {
+          return false;
+        }
+      }
       return !(firstSegment === "native" && segments[1] === "target");
     },
   });

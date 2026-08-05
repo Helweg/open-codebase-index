@@ -5,6 +5,10 @@ import * as os from "os";
 import { FileWatcher, GitHeadWatcher, FileChange, createWatcherWithIndexer } from "../src/watcher/index.js";
 import { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { IndexLockContentionError } from "../src/indexer/index-lock.js";
+import {
+  requestBackgroundIndex,
+  resetAutoIndexCoordinatorsForTests,
+} from "../src/utils/auto-index.js";
 
 const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): ParsedCodebaseIndexConfig => ({
   embeddingProvider: "auto",
@@ -55,16 +59,6 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
   ...overrides,
 });
 
-const waitForIndexerCalls = async (
-  indexer: { index: ReturnType<typeof vi.fn> },
-  expectedCalls: number,
-  timeoutMs = 3000,
-): Promise<void> => {
-  await vi.waitFor(() => {
-    expect(indexer.index).toHaveBeenCalledTimes(expectedCalls);
-  }, { timeout: timeoutMs });
-};
-
 const writeUntilObserved = async (
   write: (attempt: number) => void,
   assertion: () => void,
@@ -99,6 +93,7 @@ describe("FileWatcher", () => {
 
   afterEach(async () => {
     await watcher?.stop();
+    await resetAutoIndexCoordinatorsForTests();
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -310,13 +305,15 @@ describe("FileWatcher", () => {
       resolveIndex?.();
     });
 
-    it("coalesces file-triggered reindex requests while one is running", async () => {
-      vi.setConfig({ testTimeout: 6000 });
+    it("coalesces pending watcher requests while a file-triggered reindex is running", async () => {
+      let blockIndex = true;
       const pendingResolves: Array<() => void> = [];
       const indexer = {
-        index: vi.fn(() => new Promise<void>((resolve) => {
-          pendingResolves.push(resolve);
-        })),
+        index: vi.fn(() => blockIndex
+          ? new Promise<void>((resolve) => {
+              pendingResolves.push(resolve);
+            })
+          : Promise.resolve()),
       };
       const combinedWatcher = createWatcherWithIndexer(
         () => indexer,
@@ -325,18 +322,27 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await combinedWatcher.whenReady();
-      fs.writeFileSync(path.join(tempDir, "src", "first.ts"), "export const first = 1;");
-      await waitForIndexerCalls(indexer, 1);
-      fs.writeFileSync(path.join(tempDir, "src", "second.ts"), "export const second = 2;");
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      try {
+        await combinedWatcher.whenReady();
+        await writeUntilObserved(
+          (attempt) => fs.writeFileSync(
+            path.join(tempDir, "src", "first.ts"),
+            `export const first = ${attempt};`,
+          ),
+          () => expect(indexer.index).toHaveBeenCalledTimes(1),
+        );
 
-      expect(indexer.index).toHaveBeenCalledTimes(1);
-      pendingResolves[0]?.();
-      await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+        requestBackgroundIndex(tempDir, "opencode");
+        requestBackgroundIndex(tempDir, "opencode");
+        expect(indexer.index).toHaveBeenCalledTimes(1);
 
-      await combinedWatcher.stop();
-      pendingResolves[1]?.();
+        pendingResolves[0]?.();
+        await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+      } finally {
+        blockIndex = false;
+        pendingResolves.forEach((resolve) => resolve());
+        await combinedWatcher.stop();
+      }
     });
 
     it("keeps one pending request and retries after INDEX_BUSY", async () => {

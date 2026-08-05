@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -51,12 +51,12 @@ function readText(filePath: string): string {
   return readFileSync(filePath, "utf-8");
 }
 
-function prepareMetadata(packageName: string, outputDir: string, repositoryUrl?: string): void {
+function prepareMetadata(packageName: string, outputDir: string, repositoryUrl?: string, projectRoot = process.cwd()): void {
   const args = [
     "--package-name",
     packageName,
     "--project-root",
-    process.cwd(),
+    projectRoot,
     "--output-dir",
     outputDir,
   ];
@@ -65,6 +65,48 @@ function prepareMetadata(packageName: string, outputDir: string, repositoryUrl?:
   }
 
   execFileSync(process.execPath, [path.join(process.cwd(), "scripts", "prepare-package-metadata.mjs"), ...args]);
+}
+
+function writeFixtureProjectManifestFiles(projectRoot: string): void {
+  const current = IDENTITY_CATALOG.product.current;
+  writeFileSync(
+    path.join(projectRoot, "package.json"),
+    `${JSON.stringify(
+      {
+        name: current.packageName,
+        bin: {
+          [current.mcpBinary]: "dist/cli.js",
+        },
+        repository: {
+          url: current.repository,
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
+  writeFileSync(
+    path.join(projectRoot, "package-lock.json"),
+    `${JSON.stringify(
+      {
+        name: current.packageName,
+        lockfileVersion: 3,
+        packages: {
+          "": {
+            name: current.packageName,
+            version: "0.0.0",
+            bin: {
+              [current.mcpBinary]: "dist/cli.js",
+            },
+          },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf-8",
+  );
 }
 
 describe("Phase 1 product identity compatibility", () => {
@@ -201,6 +243,53 @@ describe("Phase 1 product identity compatibility", () => {
       expect(packageJson).toEqual(checkedInPackageJson);
       expect(packageLock).toEqual(checkedInPackageLock);
     } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("excludes persisted host index artifacts from copied project metadata", () => {
+    const projectRoot = mkdtempSync(path.join(os.tmpdir(), "codebase-index-staging-input-"));
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-staging-output-"));
+    try {
+      writeFixtureProjectManifestFiles(projectRoot);
+      writeFileSync(path.join(projectRoot, "README.md"), "Staging input fixture\n", "utf-8");
+
+      const hostIndexPaths = [
+        [".opencode", "index"],
+        [".claude", "index"],
+        [".codebase-index", "index"],
+      ] as const;
+      for (const [hostDir, indexDir] of hostIndexPaths) {
+        const hostIndexRoot = path.join(projectRoot, hostDir, indexDir);
+        const retainedFile = path.join(hostIndexRoot, "should-not-copy.txt");
+        mkdirSync(hostIndexRoot, { recursive: true });
+        writeFileSync(retainedFile, `${hostDir}/${indexDir}\n`, "utf-8");
+      }
+
+      const nestedNodeModulesPath = path.join(projectRoot, ".opencode", "runtime", "node_modules", "foo", "index.js");
+      mkdirSync(path.dirname(nestedNodeModulesPath), { recursive: true });
+      writeFileSync(nestedNodeModulesPath, "module fixture\n", "utf-8");
+
+      const demoRepositoryPath = path.join(projectRoot, "demo-repos", "fixture", "index.ts");
+      mkdirSync(path.dirname(demoRepositoryPath), { recursive: true });
+      writeFileSync(demoRepositoryPath, "export {};\n", "utf-8");
+
+      const opencodeKeepPath = path.join(projectRoot, ".opencode", "keep-me.txt");
+      mkdirSync(path.dirname(opencodeKeepPath), { recursive: true });
+      writeFileSync(opencodeKeepPath, "keep me\n", "utf-8");
+
+      prepareMetadata(IDENTITY_CATALOG.product.current.packageName, tempDir, undefined, projectRoot);
+
+      for (const [hostDir, indexDir] of hostIndexPaths) {
+        const stagedHostIndex = path.join(tempDir, hostDir, indexDir);
+        expect(existsSync(stagedHostIndex)).toBe(false);
+      }
+      expect(existsSync(path.join(tempDir, ".opencode", "runtime", "node_modules", "foo"))).toBe(false);
+      expect(existsSync(path.join(tempDir, "demo-repos"))).toBe(false);
+      expect(readText(path.join(tempDir, ".opencode", "keep-me.txt"))).toBe("keep me\n");
+      expect(readText(path.join(tempDir, "README.md"))).toBe("Staging input fixture\n");
+    } finally {
+      rmSync(projectRoot, { recursive: true, force: true });
       rmSync(tempDir, { recursive: true, force: true });
     }
   });
