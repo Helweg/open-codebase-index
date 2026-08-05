@@ -10,5 +10,11 @@
     "repositoryUrl": "https://github.com/expressjs/express",
     "commitSha": "1faf228935aa0a13111f92c28ee795be64ce3f0f",
     "path": "../demo-repos/express"
+  },
+  {
+    "name": "got",
+    "repositoryUrl": "https://github.com/sindresorhus/got",
+    "commitSha": "b855688f0e520c82aff7a1dd913f9f95a4a05337",
+    "path": "../demo-repos/got"
   }
 ]

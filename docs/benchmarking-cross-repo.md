@@ -74,6 +74,8 @@ git clone https://github.com/axios/axios.git demo-repos/axios
 git -C demo-repos/axios checkout --detach 5b8a826771b77ab30081d033fdba9ef3b90e439a
 git clone https://github.com/expressjs/express.git demo-repos/express
 git -C demo-repos/express checkout --detach 1faf228935aa0a13111f92c28ee795be64ce3f0f
+git clone https://github.com/sindresorhus/got.git demo-repos/got
+git -C demo-repos/got checkout --detach b855688f0e520c82aff7a1dd913f9f95a4a05337
 
 npx tsx scripts/cross-repo-benchmark.ts \
   --manifest benchmarks/cross-repo-manifest.json \
