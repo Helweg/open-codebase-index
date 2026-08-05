@@ -10,11 +10,5 @@
     "repositoryUrl": "https://github.com/expressjs/express",
     "commitSha": "1faf228935aa0a13111f92c28ee795be64ce3f0f",
     "path": "../demo-repos/express"
-  },
-  {
-    "name": "typescript",
-    "repositoryUrl": "https://github.com/microsoft/TypeScript",
-    "commitSha": "a5e123d9e0690fcea92878ea8a0a382922009fc9",
-    "path": "../demo-repos/typescript"
   }
 ]

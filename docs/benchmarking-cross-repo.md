@@ -54,18 +54,6 @@ Manifest entries support checked-in repository metadata:
     "repositoryUrl": "https://github.com/axios/axios",
     "commitSha": "5b8a826771b77ab30081d033fdba9ef3b90e439a",
     "path": "../demo-repos/axios"
-  },
-  {
-    "name": "express",
-    "repositoryUrl": "https://github.com/expressjs/express",
-    "commitSha": "1faf228935aa0a13111f92c28ee795be64ce3f0f",
-    "path": "../demo-repos/express"
-  },
-  {
-    "name": "typescript",
-    "repositoryUrl": "https://github.com/microsoft/TypeScript",
-    "commitSha": "a5e123d9e0690fcea92878ea8a0a382922009fc9",
-    "path": "../demo-repos/typescript"
   }
 ]
 ```
@@ -86,8 +74,6 @@ git clone https://github.com/axios/axios.git demo-repos/axios
 git -C demo-repos/axios checkout --detach 5b8a826771b77ab30081d033fdba9ef3b90e439a
 git clone https://github.com/expressjs/express.git demo-repos/express
 git -C demo-repos/express checkout --detach 1faf228935aa0a13111f92c28ee795be64ce3f0f
-git clone https://github.com/microsoft/TypeScript.git demo-repos/typescript
-git -C demo-repos/typescript checkout --detach a5e123d9e0690fcea92878ea8a0a382922009fc9
 
 npx tsx scripts/cross-repo-benchmark.ts \
   --manifest benchmarks/cross-repo-manifest.json \
