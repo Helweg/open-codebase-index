@@ -900,6 +900,16 @@ export function buildGoldenDataset(repoName: string, repoPath: string, parsedFil
     !isCodeGraphUnsupportedDefinitionPath(candidate.filePath) &&
     !isCodeGraphSourceExcludedDefinitionPath(candidate.filePath)
   );
+
+  const definitionCounts = new Map<string, number>();
+  for (const candidate of definitionCandidates) {
+    definitionCounts.set(candidate.symbol, (definitionCounts.get(candidate.symbol) ?? 0) + 1);
+  }
+
+  const uniqueDefinitionCandidates = definitionCandidates.filter(
+    (candidate) => definitionCounts.get(candidate.symbol) === 1
+  );
+
   if (definitionCandidates.length === 0) {
     throw new Error(`No definition candidates outside unsupported CodeGraph source paths in ${repoName}`);
   }
@@ -907,7 +917,11 @@ export function buildGoldenDataset(repoName: string, repoPath: string, parsedFil
   const implementation = pickDistinctFiles(candidates.slice(3).length > 0 ? candidates.slice(3) : candidates, 3);
   const similarities = pickDistinctFiles(candidates.slice(6).length > 0 ? candidates.slice(6) : candidates, 2);
   const keywordHeavy = pickDistinctFiles(candidates.slice(8).length > 0 ? candidates.slice(8) : candidates, 2);
-  const definitions = pickDistinctFiles(definitionCandidates, 3);
+  if (uniqueDefinitionCandidates.length === 0) {
+    throw new Error(`No unique definition candidates outside unsupported CodeGraph source paths in ${repoName}`);
+  }
+
+  const definitions = pickDistinctFiles(uniqueDefinitionCandidates, 3);
 
   const queries: GoldenQuery[] = [];
   let counter = 1;

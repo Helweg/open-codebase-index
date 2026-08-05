@@ -269,6 +269,41 @@ describe("cross-repo CodeGraph comparator", () => {
     ).toBe(true);
   });
 
+  it("excludes duplicate symbols from definition candidates across source files", () => {
+    const repoPath = "/repo";
+    const sourceFile = (name: string, symbol: string): ParsedFile => ({
+      path: path.join(repoPath, name),
+      hash: name,
+      symbols: [],
+      chunks: [{
+        content: `export function ${symbol}() { return 1; }`,
+        startLine: 1,
+        endLine: 1,
+        chunkType: "function",
+        name: symbol,
+        language: "typescript",
+      }],
+    });
+
+    const parsedFiles: ParsedFile[] = [
+      sourceFile("src/duplicate.ts", "shared"),
+      sourceFile("src/unique-one.ts", "uniqueOne"),
+      sourceFile("src/duplicate-two.ts", "shared"),
+      sourceFile("src/unique-two.ts", "uniqueTwo"),
+      sourceFile("src/unique-three.ts", "uniqueThree"),
+    ];
+
+    const dataset = buildGoldenDataset("fixture", repoPath, parsedFiles);
+    const definitions = dataset.queries.filter((query) => query.queryType === "definition");
+    const definitionSymbols = definitions.map((query) => query.expected.symbol);
+
+    expect(definitions).toHaveLength(3);
+    expect(definitionSymbols).toContain("uniqueOne");
+    expect(definitionSymbols).toContain("uniqueTwo");
+    expect(definitionSymbols).toContain("uniqueThree");
+    expect(definitionSymbols).not.toContain("shared");
+  });
+
   it("fails when all definition candidates are in test or fixture paths", () => {
     const repoPath = "/repo";
     const parsedFiles = [
