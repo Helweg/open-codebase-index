@@ -1,0 +1,119 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-hand-labeled-express",
+  "description": "Hand-labeled definition-only benchmark dataset for the pinned express repository",
+  "queries": [
+    {
+      "id": "express-definition-01",
+      "query": "where is createApplication defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "createApplication"
+      },
+      "expected": {
+        "filePath": "lib/express.js",
+        "symbol": "createApplication",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-02",
+      "query": "where is logerror defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "logerror"
+      },
+      "expected": {
+        "filePath": "lib/application.js",
+        "symbol": "logerror",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-03",
+      "query": "where is tryRender defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "tryRender"
+      },
+      "expected": {
+        "filePath": "lib/application.js",
+        "symbol": "tryRender",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-04",
+      "query": "where is defineGetter defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "defineGetter"
+      },
+      "expected": {
+        "filePath": "lib/request.js",
+        "symbol": "defineGetter",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-05",
+      "query": "where is sendfile defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "sendfile"
+      },
+      "expected": {
+        "filePath": "lib/response.js",
+        "symbol": "sendfile",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-06",
+      "query": "where is appendMethods defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "appendMethods"
+      },
+      "expected": {
+        "filePath": "lib/router/index.js",
+        "symbol": "appendMethods",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-07",
+      "query": "where is Layer defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Layer"
+      },
+      "expected": {
+        "filePath": "lib/router/layer.js",
+        "symbol": "Layer",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-definition-08",
+      "query": "where is Route defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Route"
+      },
+      "expected": {
+        "filePath": "lib/router/route.js",
+        "symbol": "Route",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-hand-labeled-got",
+  "description": "Hand-labeled definition-only benchmark dataset for the pinned got repository",
+  "queries": [
+    {
+      "id": "got-definition-01",
+      "query": "where is isRequest defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "isRequest"
+      },
+      "expected": {
+        "filePath": "source/core/errors.ts",
+        "symbol": "isRequest",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-02",
+      "query": "where is wrapAssertionWithContext defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "wrapAssertionWithContext"
+      },
+      "expected": {
+        "filePath": "source/core/options.ts",
+        "symbol": "wrapAssertionWithContext",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-03",
+      "query": "where is assertAny defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "assertAny"
+      },
+      "expected": {
+        "filePath": "source/core/options.ts",
+        "symbol": "assertAny",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-04",
+      "query": "where is assertPlainObject defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "assertPlainObject"
+      },
+      "expected": {
+        "filePath": "source/core/options.ts",
+        "symbol": "assertPlainObject",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-05",
+      "query": "where is usesUnixSocket defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "usesUnixSocket"
+      },
+      "expected": {
+        "filePath": "source/core/options.ts",
+        "symbol": "usesUnixSocket",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-06",
+      "query": "where is hasCredentialInUrl defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "hasCredentialInUrl"
+      },
+      "expected": {
+        "filePath": "source/core/options.ts",
+        "symbol": "hasCredentialInUrl",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-07",
+      "query": "where is isTlsSocket defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "isTlsSocket"
+      },
+      "expected": {
+        "filePath": "source/core/utils/defer-to-connect.ts",
+        "symbol": "isTlsSocket",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "got-definition-08",
+      "query": "where is isClientRequest defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "isClientRequest"
+      },
+      "expected": {
+        "filePath": "source/core/utils/is-client-request.ts",
+        "symbol": "isClientRequest",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}

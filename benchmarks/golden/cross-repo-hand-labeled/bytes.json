@@ -1,0 +1,119 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-hand-labeled-bytes",
+  "description": "Hand-labeled definition-only benchmark dataset for the pinned bytes repository",
+  "queries": [
+    {
+      "id": "bytes-definition-01",
+      "query": "where is sign_extend defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "sign_extend"
+      },
+      "expected": {
+        "filePath": "src/buf/buf_impl.rs",
+        "symbol": "sign_extend",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-02",
+      "query": "where is increment_shared defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "increment_shared"
+      },
+      "expected": {
+        "filePath": "src/bytes_mut.rs",
+        "symbol": "increment_shared",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-03",
+      "query": "where is original_capacity_to_repr defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "original_capacity_to_repr"
+      },
+      "expected": {
+        "filePath": "src/bytes_mut.rs",
+        "symbol": "original_capacity_to_repr",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-04",
+      "query": "where is rebuild_vec defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "rebuild_vec"
+      },
+      "expected": {
+        "filePath": "src/bytes_mut.rs",
+        "symbol": "rebuild_vec",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-05",
+      "query": "where is shared_v_clone defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "shared_v_clone"
+      },
+      "expected": {
+        "filePath": "src/bytes_mut.rs",
+        "symbol": "shared_v_clone",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-06",
+      "query": "where is static_clone defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "static_clone"
+      },
+      "expected": {
+        "filePath": "src/bytes.rs",
+        "symbol": "static_clone",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-07",
+      "query": "where is owned_to_vec defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "owned_to_vec"
+      },
+      "expected": {
+        "filePath": "src/bytes.rs",
+        "symbol": "owned_to_vec",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "bytes-definition-08",
+      "query": "where is free_boxed_slice defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "free_boxed_slice"
+      },
+      "expected": {
+        "filePath": "src/bytes.rs",
+        "symbol": "free_boxed_slice",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}

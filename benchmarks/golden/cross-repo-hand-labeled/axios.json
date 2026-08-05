@@ -1,0 +1,119 @@
+{
+  "version": "1.0.0",
+  "name": "cross-repo-hand-labeled-axios",
+  "description": "Hand-labeled definition-only benchmark dataset for the pinned axios repository",
+  "queries": [
+    {
+      "id": "axios-definition-01",
+      "query": "where is createInstance defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "createInstance"
+      },
+      "expected": {
+        "filePath": "lib/axios.js",
+        "symbol": "createInstance",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-02",
+      "query": "where is CancelToken defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "CancelToken"
+      },
+      "expected": {
+        "filePath": "lib/cancel/CancelToken.js",
+        "symbol": "CancelToken",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-03",
+      "query": "where is Axios defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Axios"
+      },
+      "expected": {
+        "filePath": "lib/core/Axios.js",
+        "symbol": "Axios",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-04",
+      "query": "where is AxiosError defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "AxiosError"
+      },
+      "expected": {
+        "filePath": "lib/core/AxiosError.js",
+        "symbol": "AxiosError",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-05",
+      "query": "where is InterceptorManager defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "InterceptorManager"
+      },
+      "expected": {
+        "filePath": "lib/core/InterceptorManager.js",
+        "symbol": "InterceptorManager",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-06",
+      "query": "where is AxiosTransformStream defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "AxiosTransformStream"
+      },
+      "expected": {
+        "filePath": "lib/helpers/AxiosTransformStream.js",
+        "symbol": "AxiosTransformStream",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-07",
+      "query": "where is AxiosURLSearchParams defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "AxiosURLSearchParams"
+      },
+      "expected": {
+        "filePath": "lib/helpers/AxiosURLSearchParams.js",
+        "symbol": "AxiosURLSearchParams",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-definition-08",
+      "query": "where is speedometer defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "speedometer"
+      },
+      "expected": {
+        "filePath": "lib/helpers/speedometer.js",
+        "symbol": "speedometer",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}
