@@ -188,8 +188,9 @@ describe("run-codegraph-official-agent benchmark planning", () => {
     expect(summary).toContain("Repos: 7");
     expect(summary).toContain("Runs per repo: 4");
     expect(summary).toContain("Turns per run: 3");
-    expect(summary).toContain("Total planned agent sessions: 84");
-    expect(summary).toContain("Max budget ceiling: $4.00 per session");
+    expect(summary).toContain("Total arm sessions: 84");
+    expect(summary).toContain("Total Claude invocations: 252");
+    expect(summary).toContain("Max budget ceiling: $4.00 per invocation, $1008.00 total");
   });
 });
 

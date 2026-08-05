@@ -455,7 +455,9 @@ export function planSummary(manifest: BenchmarkManifest, runs: number, turns: nu
   const resolvedRuns = runs || manifest.source.defaultRuns;
   const resolvedTurns = turns || manifest.source.defaultTurns;
   const repos = manifest.repositories.length;
-  const sessions = repos * resolvedRuns * resolvedTurns;
+  const armSessions = repos * resolvedRuns * ARMS.length;
+  const agentInvocations = armSessions * resolvedTurns;
+  const maxTotalBudgetUsd = agentInvocations * maxBudgetUsd;
 
   const armLabels = [
     "baseline",
@@ -468,8 +470,9 @@ export function planSummary(manifest: BenchmarkManifest, runs: number, turns: nu
     `Repos: ${repos}`,
     `Runs per repo: ${resolvedRuns}`,
     `Turns per run: ${resolvedTurns}`,
-    `Total planned agent sessions: ${sessions}`,
-    `Max budget ceiling: $${maxBudgetUsd.toFixed(2)} per session`,
+    `Total arm sessions: ${armSessions}`,
+    `Total Claude invocations: ${agentInvocations}`,
+    `Max budget ceiling: $${maxBudgetUsd.toFixed(2)} per invocation, $${maxTotalBudgetUsd.toFixed(2)} total`,
   ].join("\n");
 }
 
