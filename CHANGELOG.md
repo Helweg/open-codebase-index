@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Context diagnostics**: `codebase_context` now supports an optional `diagnostic` flag across MCP, OpenCode, and Pi. It exposes bounded routing, retrieval, and evidence-pack traces for troubleshooting without changing normal text output.
+
 ### Fixed
 
 - **Cross-repo comparison latency**: Omit non-comparable CodeGraph CLI startup time from fair quality tables while retaining raw timing artifacts for diagnostics.

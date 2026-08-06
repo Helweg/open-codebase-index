@@ -75,6 +75,8 @@ Preferred entry point for general repository questions. It returns a bounded, de
 
 Important options include result limits, file and directory filters, path disambiguation, and a `tokenBudget` from 128 to 4000 tokens.
 
+Set `diagnostic: true` when troubleshooting a surprising result. MCP returns the normal text response unchanged and provides bounded routing, retrieval, and evidence-pack traces as structured content. OpenCode and Pi render the same diagnostics alongside the normal response. Leave it unset during normal use.
+
 ### `codebase_peek`
 
 Returns likely locations and metadata without full source bodies. Use it when you want to choose files before reading them.
