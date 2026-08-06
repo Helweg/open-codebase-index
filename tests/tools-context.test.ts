@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { SearchTrace } from "../src/indexer/index.js";
+
+import { codebase_context as opencodeCodebaseContext } from "../src/adapters/opencode/tools.js";
 import { countContextTokens } from "../src/tools/utils.js";
-import { resolveSearchContext } from "../src/tools/context.js";
+import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
 
 const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
@@ -563,8 +566,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" });
-    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined });
+    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" }, undefined);
+    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined }, undefined);
     expect(result.details?.recovery?.attempts).toEqual([
       {
         kind: "conceptual",
@@ -616,8 +619,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined });
-    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined });
+    expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined }, undefined);
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined);
     expect(result.text).toContain("src/auth.ts:1-8");
     expect(result.text).toContain("Recovery: inferred definition missed; inferred-symbol query tried.");
     expect(result.text.indexOf("Recovery:")).toBeLessThan(result.text.indexOf("[1]"));
@@ -680,8 +683,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" });
-    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined });
+    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" }, undefined);
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined);
     expect(result.details?.recovery?.attempts).toHaveLength(3);
     expect(new Set(result.details?.recovery?.attempts.map((attempt) => JSON.stringify(attempt))).size)
       .toBe(3);
@@ -737,8 +740,8 @@ describe("native OpenCode codebase_context", () => {
     expect(lookup).toHaveBeenNthCalledWith(1, "resolveSearchContext", 100, {
       fileType: "ts",
       directory: "src/tools",
-    });
-    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {});
+    }, undefined);
+    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {}, undefined);
     expect(search).not.toHaveBeenCalled();
     expect(result.details).toMatchObject({
       route: "definition",
@@ -779,10 +782,10 @@ describe("native OpenCode codebase_context", () => {
     });
 
     expect(search.mock.calls).toEqual([
-      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }],
-      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }],
-      ["where is `getStatus` defined", 100, {}],
-      ["getStatus", 100, {}],
+      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }, undefined],
+      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }, undefined],
+      ["where is `getStatus` defined", 100, {}, undefined],
+      ["getStatus", 100, {}, undefined],
     ]);
     const recoveryLine = result.text.split("\n").find((line) => line.startsWith("Recovery:"));
     expect(recoveryLine).toBe("Recovery: inferred definition missed; inferred-symbol query tried; directory filter removed; file-type filter removed.");
@@ -822,5 +825,224 @@ describe("native OpenCode codebase_context", () => {
     expect(result.details?.truncated).toBe(false);
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
+  });
+
+  it("captures search and context-pack traces when diagnostic flag is set", async () => {
+    const search = vi.fn().mockImplementation(async (_query: string, _limit: number, _scope: unknown, trace?: (trace: SearchTrace) => void) => {
+      trace?.({
+        semanticCandidates: [],
+        keywordCandidates: [],
+        hybridCandidates: [],
+        postExternalRerankCandidates: [],
+        tieredCandidates: [],
+        finalCandidates: [],
+      });
+      return [
+        {
+          filePath: "src/trace.ts",
+          startLine: 4,
+          endLine: 12,
+          name: "traceTarget",
+          chunkType: "function",
+          content: "function traceTarget() {}",
+          score: 0.9,
+        },
+      ];
+    });
+
+    const result = await resolveSearchContext({
+      query: "where is traceTarget defined",
+      symbol: undefined,
+      limit: 10,
+      tokenBudget: 128,
+      fileType: undefined,
+      directory: undefined,
+      diagnostic: true,
+    }, {
+      lookup: vi.fn().mockResolvedValue([]),
+      search,
+    });
+
+    expect(search).toHaveBeenCalledWith("where is traceTarget defined", 100, {}, expect.any(Function));
+    expect(result.details?.diagnostic).toMatchObject({
+      route: "conceptual",
+      searchQuery: expect.any(String),
+      searchScope: {},
+      searchTrace: {
+        semanticCandidates: [],
+        keywordCandidates: [],
+      },
+      contextPackTrace: {
+        inputCandidates: [
+          {
+            filePath: "src/trace.ts",
+            startLine: 4,
+            endLine: 12,
+            score: 0.9,
+            chunkType: "function",
+            name: "traceTarget",
+          },
+        ],
+      },
+    });
+  });
+
+  it("forwards the diagnostic flag from codebase context into search traces", async () => {
+    operationMocks.implementationLookup.mockImplementation(async (_projectRoot, _host, _query, options) => {
+      options.trace?.({
+        semanticCandidates: [],
+        keywordCandidates: [],
+        hybridCandidates: [],
+        postExternalRerankCandidates: [],
+        tieredCandidates: [],
+        finalCandidates: [],
+      });
+
+      return [{
+        filePath: "src/resolve.ts",
+        startLine: 10,
+        endLine: 20,
+        name: "resolveContext",
+        chunkType: "function",
+        content: "function resolveContext() {}",
+        score: 0.99,
+      }];
+    });
+
+    const result = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    });
+
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith(
+      "/repo",
+      "opencode",
+      "resolveContext",
+      expect.objectContaining({
+        limit: 100,
+        fileType: undefined,
+        directory: undefined,
+        trace: expect.any(Function),
+      }),
+    );
+    expect(operationMocks.searchCodebase).not.toHaveBeenCalled();
+    expect(result.details?.diagnostic).toMatchObject({
+      route: "definition",
+      searchTrace: {
+        semanticCandidates: [],
+      },
+      contextPackTrace: {
+        selectedCandidates: [
+          {
+            filePath: "src/resolve.ts",
+            startLine: 10,
+            endLine: 20,
+            score: 0.99,
+            chunkType: "function",
+            name: "resolveContext",
+          },
+        ],
+      },
+    });
+  });
+
+  it("preserves OpenCode text output when diagnostic is disabled", async () => {
+    const baseline = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    });
+
+    const noDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    }, context);
+
+    const omittedDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+    }, context);
+
+    expect(noDiagnostic).toBe(baseline.text);
+    expect(omittedDiagnostic).toBe(baseline.text);
+  });
+
+  it("appends diagnostics text in OpenCode output when diagnostic is true", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([{
+      filePath: "src/resolve.ts",
+      startLine: 10,
+      endLine: 20,
+      name: "resolveContext",
+      chunkType: "function",
+      content: "function resolveContext() {}",
+      score: 0.99,
+    }]);
+
+    const withDiagnostic = await opencodeCodebaseContext.execute({
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    }, context);
+
+    const baseline = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: true,
+    });
+
+    expect(withDiagnostic.startsWith(baseline.text)).toBe(true);
+    expect(withDiagnostic).toContain("\nDiagnostics:\n");
+    expect(withDiagnostic).toContain('"route"');
+    expect(withDiagnostic).toContain("\"route\": \"definition\"");
+    expect(withDiagnostic).not.toContain('"selectedCount"');
+  });
+
+  it("omits diagnostic details when diagnostic flag is false", async () => {
+    operationMocks.implementationLookup.mockResolvedValue([{
+      filePath: "src/resolve.ts",
+      startLine: 1,
+      endLine: 2,
+      name: "resolveContext",
+      chunkType: "function",
+      content: "function resolveContext() {}",
+      score: 0.9,
+    }]);
+
+    const result = await resolveCodebaseContext("/repo", "opencode", {
+      ...commonArgs,
+      query: "resolve context",
+      symbol: "resolveContext",
+      diagnostic: false,
+    });
+
+    expect(result.details?.diagnostic).toBeUndefined();
+    expect(operationMocks.implementationLookup).toHaveBeenCalledWith(
+      "/repo",
+      "opencode",
+      "resolveContext",
+      expect.objectContaining({
+        limit: 100,
+        fileType: undefined,
+        directory: undefined,
+      }),
+    );
+    const lookupOptions = operationMocks.implementationLookup.mock.calls[0][3] as {
+      trace?: ((trace: SearchTrace) => void) | undefined;
+    };
+    expect(lookupOptions.trace).toBeUndefined();
+    expect(result.text).toContain("src/resolve.ts");
+  });
+
+  it("exposes the diagnostic flag in OpenCode schema", () => {
+    const args = (opencodeCodebaseContext as { args: Record<string, unknown> }).args;
+    expect(args).toHaveProperty("diagnostic");
   });
 });

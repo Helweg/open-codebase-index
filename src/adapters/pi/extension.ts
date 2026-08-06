@@ -94,6 +94,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
         Type.Integer({ minimum: MIN_CONTEXT_PATH_DEPTH, maximum: MAX_CONTEXT_PATH_DEPTH }),
         Type.Null(),
       ], { default: 10, description: `Maximum call-graph traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})` })),
+      diagnostic: Type.Optional(Type.Union([Type.Boolean(), Type.Null()], { description: "Collect diagnostic routing and search traces without changing normal output." })),
       fileType: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Filter by file extension, e.g., ts, py, rs" })),
       directory: Type.Optional(Type.Union([Type.String(), Type.Null()], { description: "Filter by directory path" })),
       tokenBudget: Type.Optional(Type.Union([
@@ -105,7 +106,11 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await resolveCodebaseContext(projectRoot(ctx), HOST, params);
+      const normalizedParams = {
+        ...params,
+        diagnostic: params.diagnostic ?? undefined,
+      };
+      const result = await resolveCodebaseContext(projectRoot(ctx), HOST, normalizedParams);
       return text(result.text, result.details);
     },
   });

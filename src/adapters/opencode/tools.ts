@@ -68,6 +68,31 @@ const DEFAULT_HOST: HostMode = "opencode";
 const CHUNK_TYPE_VALUES = CHUNK_TYPES;
 const RELATIONSHIP_TYPE_VALUES = RELATIONSHIP_TYPES;
 
+function stableSortedDiagnosticValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stableSortedDiagnosticValue(item));
+  }
+
+  if (value === null || typeof value !== "object") {
+    return value;
+  }
+
+  const entries = Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right));
+  const sorted: Record<string, unknown> = {};
+
+  for (const [key, item] of entries) {
+    sorted[key] = stableSortedDiagnosticValue(item);
+  }
+
+  return sorted;
+}
+
+function formatCodebaseContextDiagnostic(details: unknown): string {
+  const sorted = stableSortedDiagnosticValue(details);
+  return `\nDiagnostics:\n${JSON.stringify(sorted, null, 2)}`;
+}
+
 export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig): void {
   initializeToolOperations(projectRoot, config, DEFAULT_HOST);
 }
@@ -99,9 +124,15 @@ export const codebase_context: ToolDefinition = tool({
     tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
       .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
       .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
+    diagnostic: z.boolean().optional().describe("Collect diagnostic routing and search traces without changing normal text output."),
   },
   async execute(args, context) {
-    return (await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args)).text;
+    const result = await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args);
+    if (!args.diagnostic || !result.details?.diagnostic) {
+      return result.text;
+    }
+
+    return `${result.text}${formatCodebaseContextDiagnostic(result.details.diagnostic)}`;
   },
 });
 

@@ -44,6 +44,7 @@ export interface SharedCodebaseContextArgs {
   fileType?: string | null;
   directory?: string | null;
   tokenBudget?: number | null;
+  diagnostic?: boolean;
 }
 
 export interface SharedCodebaseEditContextArgs {

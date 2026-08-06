@@ -36,6 +36,7 @@ import { formatCodeCommunities } from "./format-communities.js";
 
 export interface ExecutionResult {
   text: string;
+  details?: Record<string, unknown>;
   isError?: boolean;
 }
 
@@ -46,7 +47,8 @@ export async function executeCodebaseContext(
   host: HostMode,
   args: SharedCodebaseContextArgs,
 ): Promise<ExecutionResult> {
-  return { text: (await resolveCodebaseContext(projectRoot, host, args)).text };
+  const result = await resolveCodebaseContext(projectRoot, host, args);
+  return { text: result.text, details: result.details };
 }
 
 export async function executeCodebaseEditContext(
