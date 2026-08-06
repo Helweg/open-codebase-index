@@ -1,8 +1,7 @@
 #!/usr/bin/env node
 
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { spawn } from "node:child_process";
 import * as path from "node:path";
 
 import { fileURLToPath } from "node:url";
@@ -71,8 +70,6 @@ interface CommandResult {
 }
 
 type CommandRunner = (command: string, args: string[], options?: { cwd?: string }) => Promise<CommandResult>;
-
-const execFileAsync = promisify(execFile);
 
 const DEFAULT_MANIFEST_PATH = path.join(process.cwd(), "benchmarks", "codegraph-official-agent.json");
 const DEFAULT_OUTPUT_ROOT = path.join(process.cwd(), "benchmarks", "results", "codegraph-official-agent");
@@ -150,26 +147,33 @@ function assertPathSafeId(value: unknown): string {
   return value;
 }
 
-function resolveCommandResult(command: string, result: unknown): CommandResult {
-  if (
-    isRecord(result) &&
-    "stdout" in result &&
-    "stderr" in result &&
-    typeof result.stdout === "string" &&
-    typeof result.stderr === "string"
-  ) {
-    return { stdout: result.stdout, stderr: result.stderr };
-  }
-  throw new Error(`Invalid command result from ${command}`);
-}
-
 export async function runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<CommandResult> {
-  const result = await execFileAsync(command, args, {
-    encoding: "utf-8",
-    cwd: options?.cwd,
-    maxBuffer: 30 * 1024 * 1024,
+  return new Promise<CommandResult>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options?.cwd,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.setEncoding("utf-8");
+    child.stderr.setEncoding("utf-8");
+    child.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(`Command failed: ${command} ${args.join(" ")}\n${stderr}`));
+    });
+    child.stdin.end();
   });
-  return resolveCommandResult(command, result);
 }
 
 function parseSource(source: unknown): BenchmarkSourceManifest {
