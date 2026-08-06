@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Context diagnostics**: `codebase_context` now supports an optional `diagnostic` flag across MCP, OpenCode, and Pi. It exposes bounded routing, retrieval, and evidence-pack traces for troubleshooting without changing normal text output.
+- **Pre-edit evaluation gate**: `codebase_edit_context` now has a documented CI evaluation gate. The budget gate supports a `minGraphNeighborRecall` threshold, and `npm run eval:pre-edit:ci` runs the deterministic mock-embedding baseline (Hit@5 1.0, MRR@10 1.0, graph-neighbor recall 1.0) with thresholds in `benchmarks/budgets/pre-edit.json`.
 
 ### Fixed
 

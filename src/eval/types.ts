@@ -81,6 +81,7 @@ export interface EvalBudget {
     minHitAt5?: number;
     minMrrAt10?: number;
     minRawDistinctTop3Ratio?: number;
+    minGraphNeighborRecall?: number;
     maxContextResponseTokensAverage?: number;
     maxContextResponseTokensP95?: number;
     maxContextResponseTokensMax?: number;

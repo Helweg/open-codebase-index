@@ -1,0 +1,17 @@
+{
+  "name": "pre-edit-context-eval-budget",
+  "failOnMissingBaseline": false,
+  "thresholds": {
+    "p95LatencyMaxAbsoluteMs": 5000,
+    "minHitAt5": 1.0,
+    "minMrrAt10": 1.0,
+    "minGraphNeighborRecall": 1.0,
+    "maxContextResponseTokensAverage": 600,
+    "maxContextResponseTokensP95": 800,
+    "maxContextResponseTokensMax": 1000,
+    "maxContextDuplicateCandidateRatio": 0.5,
+    "minContextSelectedFileRatio": 0.5,
+    "minContextHitAt5Per1kResponseTokens": 1.0,
+    "minContextMrrAt10Per1kResponseTokens": 1.0
+  }
+}

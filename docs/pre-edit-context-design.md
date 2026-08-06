@@ -42,6 +42,26 @@ Add a `pre-edit-context` golden set with definition-led modification tasks. Each
 
 The acceptance gate is no regression in the existing `agent-context` and representative evaluation suites, plus a documented pre-edit baseline for Hit@5, MRR@10, graph-neighbor recall, p95 latency, and returned tokens.
 
+## Baseline (mock embeddings, 2026-08-06)
+
+The gate runs in CI through `npm run eval:pre-edit:ci` with the deterministic mock-embedding provider and `benchmarks/budgets/pre-edit.json`.
+
+| Metric | Baseline | Budget threshold |
+|---|---|---|
+| Hit@5 | 1.0000 | `minHitAt5` 1.0 |
+| MRR@10 | 1.0000 | `minMrrAt10` 1.0 |
+| Graph-neighbor recall | 1.0000 | `minGraphNeighborRecall` 1.0 |
+| p95 latency | 687 ms | `p95LatencyMaxAbsoluteMs` 5000 |
+| Response tokens average | 358.5 | `maxContextResponseTokensAverage` 600 |
+| Response tokens p95 | 399.5 | `maxContextResponseTokensP95` 800 |
+| Response tokens max | 404 | `maxContextResponseTokensMax` 1000 |
+| Duplicate candidate ratio | 0.0 | `maxContextDuplicateCandidateRatio` 0.5 |
+| Selected-file ratio | 0.7857 | `minContextSelectedFileRatio` 0.5 |
+| Hit@5 per 1k response tokens | 2.789 | `minContextHitAt5Per1kResponseTokens` 1.0 |
+| MRR@10 per 1k response tokens | 2.789 | `minContextMrrAt10Per1kResponseTokens` 1.0 |
+
+The budget gate supports the `minGraphNeighborRecall` threshold for datasets whose queries assert graph neighbors; datasets without graph-neighbor expectations are unaffected because the metric is only compared when present.
+
 ## Explicit non-goals
 
 - No new parser or call-resolution heuristic in the first release.

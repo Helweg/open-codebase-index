@@ -466,6 +466,11 @@ export function parseBudget(raw: unknown, sourceLabel: string): EvalBudget {
         "minRawDistinctTop3Ratio",
         sourceLabel
       ),
+      minGraphNeighborRecall: parseThresholdValue(
+        thresholds.minGraphNeighborRecall,
+        "minGraphNeighborRecall",
+        sourceLabel
+      ),
       maxContextResponseTokensAverage: parseThresholdValue(
         thresholds.maxContextResponseTokensAverage,
         "maxContextResponseTokensAverage",
