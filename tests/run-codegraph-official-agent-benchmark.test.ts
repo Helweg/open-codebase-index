@@ -177,6 +177,41 @@ describe("run-codegraph-official-agent benchmark CLI args", () => {
     expect(args.turns).toBe(1);
     expect(args.maxBudgetUsd).toBe(7.5);
   });
+
+  it("parses single-session execution selectors", () => {
+    const args = parseCliArgs([
+      "--execute",
+      "--run-root",
+      "/tmp/session-root",
+      "--repo",
+      "vscode",
+      "--run",
+      "1",
+      "--arm",
+      "codegraph",
+    ]);
+
+    expect(args.mode).toBe("execute");
+    expect(args.selectedRunRoot).toBe("/tmp/session-root");
+    expect(args.selectedRepo).toBe("vscode");
+    expect(args.selectedRun).toBe(1);
+    expect(args.selectedArm).toBe("codegraph");
+  });
+
+  it("rejects partial single-session selectors", () => {
+    expect(() => parseCliArgs(["--execute", "--run-root", "/tmp/session-root", "--repo", "vscode", "--arm", "codegraph"])).toThrow(
+      /Selection requires/,
+    );
+    expect(() => parseCliArgs(["--repo", "vscode", "--run", "1", "--arm", "codegraph", "--run-root", "/tmp/session-root"])).toThrow(
+      /Single-session selection requires --execute/,
+    );
+  });
+
+  it("rejects invalid arm in selection mode", () => {
+    expect(() =>
+      parseCliArgs(["--execute", "--run-root", "/tmp/session-root", "--repo", "vscode", "--run", "1", "--arm", "bad"]),
+    ).toThrow(/--arm must/);
+  });
 });
 
 describe("run-codegraph-official-agent benchmark planning", () => {
@@ -206,6 +241,105 @@ describe("run-codegraph-official-agent benchmark execution plumbing", () => {
     });
 
     rmSync(outputDir, { recursive: true, force: true });
+  });
+
+  it("executes selected session in existing run root and skips completed session artifacts", async () => {
+    const manifest = miniManifest();
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-bench-selected-run-"));
+    const commands: MockCall[] = [];
+    const runner = makeCommandRunner(commands, { defaultGitHead: manifest.repositories[0].commit });
+
+    try {
+      const repoPath = path.join(outputDir, "prepared", "mini");
+      fs.mkdirSync(repoPath, { recursive: true });
+      fs.writeFileSync(path.join(repoPath, "file.txt"), "ready", "utf-8");
+      await prepareRepositories(manifest, outputDir, undefined, runner);
+
+      const runRoot = path.join(outputDir, "runs", "manual-root");
+      const sessionRoot = path.join(runRoot, "mini", "codegraph", "run-1");
+      const completedArtifact = path.join(sessionRoot, "turn-1.jsonl");
+      fs.mkdirSync(sessionRoot, { recursive: true });
+      fs.writeFileSync(completedArtifact, "{\"session_id\":\"existing\",\"type\":\"final\"}\n", "utf-8");
+
+      await executeBenchmark(
+        manifest,
+        outputDir,
+        1,
+        1,
+        4,
+        runner,
+        {
+          runRoot,
+          repositoryId: "mini",
+          run: 1,
+          arm: "codegraph",
+        },
+      );
+
+      const after = fs.readFileSync(completedArtifact, "utf-8");
+      expect(after).toBe("{\"session_id\":\"existing\",\"type\":\"final\"}\n");
+
+      const claudeCalls = commands.filter((entry) => entry.command === "claude");
+      expect(claudeCalls).toHaveLength(0);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects selected sessions with missing run root", async () => {
+    const manifest = miniManifest();
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-bench-selected-missing-run-root-"));
+    const commands: MockCall[] = [];
+
+    try {
+      const repoPath = path.join(outputDir, "prepared", "mini");
+      fs.mkdirSync(repoPath, { recursive: true });
+      fs.writeFileSync(path.join(repoPath, "file.txt"), "ready", "utf-8");
+      await prepareRepositories(manifest, outputDir, undefined, makeCommandRunner(commands, { defaultGitHead: manifest.repositories[0].commit }));
+
+      await expect(
+        executeBenchmark(manifest, outputDir, 1, 1, 4, async () => ({ stdout: "", stderr: "" }), {
+          runRoot: path.join(outputDir, "does-not-exist"),
+          repositoryId: "mini",
+          run: 1,
+          arm: "codegraph",
+        }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining("Selected run root does not exist"),
+      });
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects selected sessions with repository not in manifest", async () => {
+    const manifest = miniManifest();
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-bench-selected-repo-mismatch-"));
+    const commands: MockCall[] = [];
+
+    try {
+      const repoPath = path.join(outputDir, "prepared", "mini");
+      fs.mkdirSync(repoPath, { recursive: true });
+      fs.writeFileSync(path.join(repoPath, "file.txt"), "ready", "utf-8");
+      const runner = makeCommandRunner(commands, { defaultGitHead: manifest.repositories[0].commit });
+      await prepareRepositories(manifest, outputDir, undefined, runner);
+
+      const runRoot = path.join(outputDir, "runs", "manual-root");
+      fs.mkdirSync(runRoot, { recursive: true });
+
+      await expect(
+        executeBenchmark(manifest, outputDir, 1, 1, 4, runner, {
+          runRoot,
+          repositoryId: "not-present",
+          run: 1,
+          arm: "codegraph",
+        }),
+      ).rejects.toMatchObject({
+        message: expect.stringContaining("not in the manifest"),
+      });
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
   });
 
   it("prepares repositories and executes with strict MCP configs and jsonl outputs", async () => {

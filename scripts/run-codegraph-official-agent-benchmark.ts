@@ -39,6 +39,10 @@ export interface ParsedCliOptions {
   turns: number;
   maxBudgetUsd: number;
   mode: "dry-run" | "prepare" | "execute";
+  selectedRepo?: string;
+  selectedArm?: (typeof ARMS)[number];
+  selectedRun?: number;
+  selectedRunRoot?: string;
 }
 
 export interface PreparedRepository {
@@ -116,6 +120,10 @@ function isGitHubHttpsUrl(value: unknown): value is string {
 
 function isNpmPackage(value: unknown): value is string {
   return typeof value === "string" && /^@?[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+@[^\s]+$/.test(value);
+}
+
+function isKnownArm(value: unknown): value is (typeof ARMS)[number] {
+  return typeof value === "string" && (ARMS as readonly string[]).includes(value);
 }
 
 function expandHome(input: string): string {
@@ -344,6 +352,10 @@ export function parseCliArgs(argv: string[]): ParsedCliOptions {
   let turns = 0;
   let maxBudgetUsd = DEFAULT_MAX_BUDGET_USD;
   let mode: ParsedCliOptions["mode"] = "dry-run";
+  let selectedRepo: string | undefined;
+  let selectedArm: (typeof ARMS)[number] | undefined;
+  let selectedRun = 0;
+  let selectedRunRoot: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -358,6 +370,53 @@ export function parseCliArgs(argv: string[]): ParsedCliOptions {
         throw new Error("--manifest requires a path value");
       }
       manifestPath = expandHome(value);
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--run-root") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--run-root requires a path value");
+      }
+      selectedRunRoot = expandHome(value);
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--repo") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--repo requires a repository id");
+      }
+      selectedRepo = value;
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--run") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--run requires a positive integer");
+      }
+      const parsed = Number.parseInt(value, 10);
+      if (!Number.isFinite(parsed) || parsed < 1) {
+        throw new Error("--run must be a positive integer");
+      }
+      selectedRun = parsed;
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--arm") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--arm requires one of baseline, codegraph, or open-codebase-index");
+      }
+      if (!isKnownArm(value)) {
+        throw new Error("--arm must be baseline, codegraph, or open-codebase-index");
+      }
+      selectedArm = value;
       i += 1;
       continue;
     }
@@ -442,8 +501,29 @@ export function parseCliArgs(argv: string[]): ParsedCliOptions {
     throw new Error("Manifest path is required");
   }
 
+  const hasSelection =
+    selectedRepo !== undefined ||
+    selectedArm !== undefined ||
+    selectedRun !== 0 ||
+    selectedRunRoot !== undefined;
+
+  const hasIncompleteSelection =
+    selectedRepo === undefined ||
+    selectedArm === undefined ||
+    selectedRun === 0 ||
+    selectedRunRoot === undefined;
+
+  if (hasSelection && hasIncompleteSelection) {
+    throw new Error("Selection requires --run-root, --repo, --run, and --arm");
+  }
+
+  if (hasSelection && mode !== "execute") {
+    throw new Error("Single-session selection requires --execute");
+  }
+
   const resolvedManifestPath = path.resolve(expandHome(manifestPath));
   const resolvedOutputRoot = path.resolve(expandHome(outputRoot));
+  const resolvedSelectedRunRoot = selectedRunRoot ? path.resolve(expandHome(selectedRunRoot)) : undefined;
 
   return {
     manifestPath: resolvedManifestPath,
@@ -452,6 +532,10 @@ export function parseCliArgs(argv: string[]): ParsedCliOptions {
     turns,
     maxBudgetUsd,
     mode,
+    selectedRepo,
+    selectedArm,
+    selectedRun: hasSelection ? selectedRun : undefined,
+    selectedRunRoot: resolvedSelectedRunRoot,
   };
 }
 
@@ -696,6 +780,39 @@ function sessionIdFromStreamJson(output: string): string | undefined {
   return undefined;
 }
 
+function resolveArmSessionProgress(armRunRoot: string, turns: number): {
+  startTurn: number;
+  sessionId: string | undefined;
+  completed: boolean;
+} {
+  let startTurn = 0;
+  let sessionId: string | undefined;
+
+  for (let turn = 0; turn < turns; turn += 1) {
+    const artifactPath = path.join(armRunRoot, `turn-${turn + 1}.jsonl`);
+    if (!existsSync(artifactPath)) {
+      return { startTurn, sessionId, completed: false };
+    }
+
+    const raw = readFileSync(artifactPath, "utf-8").trim();
+    if (raw.length === 0) {
+      return { startTurn, sessionId, completed: false };
+    }
+
+    const found = sessionIdFromStreamJson(raw);
+    if (found) {
+      sessionId = found;
+    }
+    startTurn = turn + 1;
+  }
+
+  return {
+    startTurn,
+    sessionId,
+    completed: startTurn >= turns,
+  };
+}
+
 async function runClaudeSession(
   prompt: string,
   configPath: string,
@@ -744,21 +861,56 @@ export async function executeBenchmark(
   turns: number,
   maxBudgetUsd: number,
   commandRunner: CommandRunner = runCommand,
+  selectedSession?: {
+    runRoot: string;
+    repositoryId: string;
+    run: number;
+    arm: (typeof ARMS)[number];
+  },
 ): Promise<void> {
   if (maxBudgetUsd <= 0) {
     throw new Error("Max budget must be greater than 0");
   }
 
+  const runRoot = selectedSession ? selectedSession.runRoot : getRunRoot(outputRoot);
+  if (selectedSession && !existsSync(runRoot)) {
+    throw new Error(`Selected run root does not exist: ${runRoot}`);
+  }
+
   const state = await ensurePreparedWorkspace(manifest, outputRoot, commandRunner);
-  const runRoot = getRunRoot(outputRoot);
+
   const preparedById = new Map(state.repositories.map((entry) => [entry.id, entry] as const));
   const resolvedRuns = runs || manifest.source.defaultRuns;
   const resolvedTurns = turns || manifest.source.defaultTurns;
+  const selectedRepo = selectedSession ? preparedById.get(selectedSession.repositoryId) : undefined;
+  if (selectedSession) {
+    if (!selectedRepo) {
+      throw new Error(`Repository '${selectedSession.repositoryId}' is not in the manifest`);
+    }
 
-  for (const repository of manifest.repositories) {
-    const preparedRepo = preparedById.get(repository.id);
+    const selectedArmValid = ARMS.includes(selectedSession.arm);
+    if (!selectedArmValid) {
+      throw new Error(`Invalid arm '${selectedSession.arm}'`);
+    }
+  }
+
+  const selectedArm = selectedSession?.arm;
+  const selectedRun = selectedSession?.run;
+  const selectedRunNumber = selectedSession?.run ?? 0;
+
+  const repositoriesToRun = selectedSession ? [selectedRepo as PreparedRepository] : manifest.repositories.map((repo) => {
+    const preparedRepo = preparedById.get(repo.id);
     if (!preparedRepo) {
-      throw new Error(`Missing prepared repository '${repository.id}'`);
+      throw new Error(`Missing prepared repository '${repo.id}'`);
+    }
+    return preparedRepo;
+  });
+  const runList = selectedSession ? [selectedRun] : Array.from({ length: resolvedRuns }, (_, i) => i + 1);
+
+  for (const preparedRepo of repositoriesToRun) {
+    const repository = manifest.repositories.find((repo) => repo.id === preparedRepo.id);
+    if (!repository) {
+      throw new Error(`Prepared repository '${preparedRepo.id}' is not in manifest`);
     }
 
     const questionSet = sanitizeQuestions(repository, resolvedTurns);
@@ -766,9 +918,23 @@ export async function executeBenchmark(
       throw new Error(`Repository '${repository.id}' has only ${questionSet.length} questions, expected ${resolvedTurns}`);
     }
 
-    for (let run = 1; run <= resolvedRuns; run += 1) {
-      for (const arm of ARMS) {
+    const repositoryRunList = selectedSession
+      ? runList.filter((run) => run === selectedRunNumber)
+      : runList;
+
+    for (const run of repositoryRunList) {
+      const armList = selectedSession ? [selectedArm as (typeof ARMS)[number]] : ARMS;
+      for (const arm of armList) {
         const armRunRoot = path.join(runRoot, repository.id, arm, `run-${run}`);
+
+        const progress = selectedSession
+          ? resolveArmSessionProgress(armRunRoot, resolvedTurns)
+          : { startTurn: 0, sessionId: undefined, completed: false };
+
+        if (selectedSession && progress.completed) {
+          continue;
+        }
+
         const workspaceRoot = path.join(armRunRoot, "workspace");
         copyIsolatedRepo(preparedRepo.path, workspaceRoot);
         await indexWorkspaceForArm(manifest, arm, workspaceRoot, commandRunner);
@@ -776,9 +942,9 @@ export async function executeBenchmark(
         const config = configFileForArm(manifest, arm, workspaceRoot);
         const configPath = path.join(armRunRoot, `mcp-config-${arm}.json`);
         writeConfig(configPath, config);
-        let sessionId: string | undefined;
+        let sessionId: string | undefined = progress.sessionId;
 
-        for (let turn = 0; turn < resolvedTurns; turn += 1) {
+        for (let turn = progress.startTurn; turn < resolvedTurns; turn += 1) {
           const question = questionSet[turn];
           if (!question) {
             throw new Error(`Missing question ${turn} for repository '${repository.id}'`);
@@ -805,16 +971,24 @@ export async function executeBenchmark(
     }
   }
 
-  const planPath = path.join(runRoot, "plan.txt");
-  mkdirSync(runRoot, { recursive: true });
-  writeFileSync(planPath, [
-    planSummary(manifest, resolvedRuns, resolvedTurns, maxBudgetUsd),
-    `Execution output root: ${runRoot}`,
-  ].join("\n"), "utf-8");
+  if (!selectedSession) {
+    const planPath = path.join(runRoot, "plan.txt");
+    mkdirSync(runRoot, { recursive: true });
+    writeFileSync(planPath, [
+      planSummary(manifest, resolvedRuns, resolvedTurns, maxBudgetUsd),
+      `Execution output root: ${runRoot}`,
+    ].join("\n"), "utf-8");
+  }
 }
 
 function printUsage(): void {
-  console.log(`Usage: npx tsx scripts/run-codegraph-official-agent-benchmark.ts [--manifest path] [--output path] [--runs N] [--turns N] [--max-budget N] [--dry-run|--prepare|--execute]`);
+  console.log(
+    "Usage: npx tsx scripts/run-codegraph-official-agent-benchmark.ts [--manifest path] [--output path] [--runs N] [--turns N] [--max-budget N] [--dry-run|--prepare|--execute]",
+  );
+  console.log("Or run one session in an existing run root:");
+  console.log(
+    "  --execute --run-root <path> --repo <id> --run <N> --arm <baseline|codegraph|open-codebase-index>",
+  );
   console.log("Defaults:");
   console.log(`- manifest: ${DEFAULT_MANIFEST_PATH}`);
   console.log(`- output: ${DEFAULT_OUTPUT_ROOT}`);
@@ -855,8 +1029,21 @@ async function main(): Promise<void> {
   }
 
   if (options.mode === "execute") {
-    await executeBenchmark(manifest, options.outputRoot, runs, turns, options.maxBudgetUsd, runCommand);
-    console.log(`Execution artifacts written under ${options.outputRoot}/${RUNS_DIR}`);
+    const selectedSession = options.selectedRepo
+      ? {
+          runRoot: options.selectedRunRoot ?? "",
+          repositoryId: options.selectedRepo,
+          run: options.selectedRun ?? 0,
+          arm: options.selectedArm as (typeof ARMS)[number],
+        }
+      : undefined;
+
+    await executeBenchmark(manifest, options.outputRoot, runs, turns, options.maxBudgetUsd, runCommand, selectedSession);
+    if (selectedSession) {
+      console.log(`Execution artifacts written under ${selectedSession.runRoot}`);
+    } else {
+      console.log(`Execution artifacts written under ${options.outputRoot}/${RUNS_DIR}`);
+    }
   }
 }
 
