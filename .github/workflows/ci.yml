@@ -111,6 +111,9 @@ jobs:
       - name: Run eval harness smoke check (mock embeddings)
         run: npm run eval:smoke
 
+      - name: Run pre-edit context eval gate (mock embeddings)
+        run: npm run eval:pre-edit:ci
+
       - name: Stop mock embeddings server
         if: always()
         run: |

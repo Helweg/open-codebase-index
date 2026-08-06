@@ -177,6 +177,66 @@ describe("eval budget gate", () => {
     expect(gate.violations.some((v) => v.metric === "rawDistinctTop3RatioMaxDrop")).toBe(true);
   });
 
+  it("fails when graph-neighbor recall drops below minimum", () => {
+    const budget: EvalBudget = {
+      name: "pre-edit",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minGraphNeighborRecall: 1,
+      },
+    };
+
+    const gate = evaluateBudgetGate(
+      budget,
+      {
+        ...summary(5),
+        metrics: {
+          ...summary(5).metrics,
+          graphNeighborRecall: 0.5,
+        },
+      }
+    );
+    expect(gate.passed).toBe(false);
+    expect(gate.violations.some((v) => v.metric === "minGraphNeighborRecall")).toBe(true);
+  });
+
+  it("passes when graph-neighbor recall meets the minimum", () => {
+    const budget: EvalBudget = {
+      name: "pre-edit",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minGraphNeighborRecall: 0.5,
+      },
+    };
+
+    const gate = evaluateBudgetGate(
+      budget,
+      {
+        ...summary(5),
+        metrics: {
+          ...summary(5).metrics,
+          graphNeighborRecall: 1,
+        },
+      }
+    );
+    expect(gate.passed).toBe(true);
+    expect(gate.violations).toHaveLength(0);
+  });
+
+  it("skips graph-neighbor gate when metric is absent", () => {
+    const budget: EvalBudget = {
+      name: "search-only",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minGraphNeighborRecall: 1,
+      },
+    };
+
+    const gate = evaluateBudgetGate(budget, summary(5));
+    expect(gate.passed).toBe(true);
+    expect(gate.violations).toHaveLength(0);
+  });
+
   it("enforces context response, duplicate, and quality-per-token thresholds", () => {
     const budget: EvalBudget = {
       name: "context",

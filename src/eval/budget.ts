@@ -34,6 +34,17 @@ export function evaluateBudgetGate(
     });
   }
 
+  if (
+    thresholds.minGraphNeighborRecall !== undefined &&
+    summary.metrics.graphNeighborRecall !== undefined &&
+    summary.metrics.graphNeighborRecall < thresholds.minGraphNeighborRecall
+  ) {
+    violations.push({
+      metric: "minGraphNeighborRecall",
+      message: `Graph-neighbor recall ${summary.metrics.graphNeighborRecall.toFixed(4)} is below minimum ${thresholds.minGraphNeighborRecall.toFixed(4)}`,
+    });
+  }
+
   if (comparison) {
     if (
       thresholds.hitAt5MaxDrop !== undefined &&
