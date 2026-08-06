@@ -936,8 +936,11 @@ export async function executeBenchmark(
         }
 
         const workspaceRoot = path.join(armRunRoot, "workspace");
-        copyIsolatedRepo(preparedRepo.path, workspaceRoot);
-        await indexWorkspaceForArm(manifest, arm, workspaceRoot, commandRunner);
+        const reuseWorkspace = selectedSession && existsSync(workspaceRoot);
+        if (!reuseWorkspace) {
+          copyIsolatedRepo(preparedRepo.path, workspaceRoot);
+          await indexWorkspaceForArm(manifest, arm, workspaceRoot, commandRunner);
+        }
 
         const config = configFileForArm(manifest, arm, workspaceRoot);
         const configPath = path.join(armRunRoot, `mcp-config-${arm}.json`);

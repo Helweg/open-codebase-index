@@ -286,6 +286,39 @@ describe("run-codegraph-official-agent benchmark execution plumbing", () => {
     }
   });
 
+  it("resumes an incomplete selected session from its existing workspace without re-indexing", async () => {
+    const manifest = miniManifest();
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-bench-selected-resume-"));
+    const commands: MockCall[] = [];
+    const runner = makeCommandRunner(commands, { defaultGitHead: manifest.repositories[0].commit });
+
+    try {
+      const repoPath = path.join(outputDir, "prepared", "mini");
+      fs.mkdirSync(repoPath, { recursive: true });
+      fs.writeFileSync(path.join(repoPath, "file.txt"), "ready", "utf-8");
+      await prepareRepositories(manifest, outputDir, undefined, runner);
+
+      const runRoot = path.join(outputDir, "runs", "manual-root");
+      const workspaceRoot = path.join(runRoot, "mini", "open-codebase-index", "run-1", "workspace");
+      fs.mkdirSync(workspaceRoot, { recursive: true });
+      fs.writeFileSync(path.join(workspaceRoot, "partial-index-marker"), "keep", "utf-8");
+
+      await executeBenchmark(manifest, outputDir, 1, 1, 4, runner, {
+        runRoot,
+        repositoryId: "mini",
+        run: 1,
+        arm: "open-codebase-index",
+      });
+
+      expect(fs.readFileSync(path.join(workspaceRoot, "partial-index-marker"), "utf-8")).toBe("keep");
+      expect(fs.existsSync(path.join(path.dirname(workspaceRoot), "turn-1.jsonl"))).toBe(true);
+      expect(commands.some((entry) => entry.command === "node" && entry.args.includes("index"))).toBe(false);
+      expect(commands.filter((entry) => entry.command === "claude")).toHaveLength(1);
+    } finally {
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects selected sessions with missing run root", async () => {
     const manifest = miniManifest();
     const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-bench-selected-missing-run-root-"));
