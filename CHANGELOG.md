@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dependency vulnerabilities**: Bumped transitive dependency pins to patched releases so `npm audit` reports 0 vulnerabilities: `hono` 4.12.34 (CORS ReDoS), `ip-address` 10.4.0 (SSRF and trust-boundary bypasses), `fast-uri` 3.1.5 (host confusion), `postcss` 8.5.26 (source-map disclosure), `undici` 8.9.0 via `@earendil-works/pi-coding-agent` 0.84.0 (CRLF injection, cache parsing, cookie and retry issues), `brace-expansion` 5.0.9 (DoS), and `@eslint/config-array` 0.23.5 (minimatch-based DoS path).
+
 - **Cross-repo comparison latency**: Omit non-comparable CodeGraph CLI startup time from fair quality tables while retaining raw timing artifacts for diagnostics.
 - **Cross-repo comparison eligibility**: Exclude documentation-only symbols from the CodeGraph exact-definition cohort, keeping the comparator aligned to source-intent definition retrieval.
 - **Exact definition context**: Preserve exact definition lookup ordering when assembling `codebase_context` evidence, so diversification cannot displace the requested definition.

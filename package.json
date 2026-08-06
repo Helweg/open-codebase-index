@@ -100,7 +100,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.82.0",
+    "@earendil-works/pi-coding-agent": "^0.84.0",
     "@eslint/js": "^9.39.4",
     "@napi-rs/cli": "^3.6.0",
     "@types/node": "^25.5.2",
@@ -113,18 +113,20 @@
     "vitest": "^4.1.2"
   },
   "overrides": {
+    "@eslint/config-array": "0.23.5",
     "@hono/node-server": "2.0.10",
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "express-rate-limit": "8.5.2",
-    "fast-uri": "3.1.4",
-    "hono": "4.12.27",
-    "ip-address": "10.2.0",
-    "postcss": "8.5.18",
+    "fast-uri": "3.1.5",
+    "hono": "4.12.34",
+    "ip-address": "10.4.0",
+    "postcss": "8.5.26",
     "qs": "6.15.2",
     "vite": "8.0.16",
     "esbuild": "0.28.1",
     "body-parser": "2.3.0",
-    "js-yaml": "4.3.0"
+    "js-yaml": "4.3.0",
+    "undici": "8.10.0"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
