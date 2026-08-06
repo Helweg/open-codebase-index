@@ -39,6 +39,22 @@
         "filePath": "src/eval/runner.ts",
         "symbol": "runEvaluation"
       }
+    },
+    {
+      "id": "edit-context-unresolved-fallback",
+      "query": "how is context evidence about a code target assembled for an agent before editing",
+      "queryType": "definition",
+      "retrievalMode": "edit-context",
+      "args": {
+        "symbol": "resolveDefinitelyNonExistentSymbol",
+        "tokenBudget": 1200
+      },
+      "expected": {
+        "filePath": "src/tools/edit-context.ts",
+        "symbol": "formatResolutionRisk",
+        "expectedRoute": "search",
+        "expectedOutcome": "results"
+      }
     }
   ]
 }
