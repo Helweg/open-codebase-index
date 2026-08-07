@@ -403,19 +403,24 @@ pub fn detect_communities(
     for _ in 0..50 {
         let mut changed = false;
         for id in &order {
-            let neighbors = adjacency.get(id).cloned().unwrap_or_default();
-            let active_neighbors: Vec<&String> = neighbors
-                .iter()
-                .filter(|n| active_ids.contains(*n))
-                .collect();
-            if active_neighbors.is_empty() {
+            let Some(neighbors) = adjacency.get(id) else {
                 continue;
-            }
+            };
 
             let mut label_counts: HashMap<String, usize> = HashMap::new();
-            for n in &active_neighbors {
-                let lbl = labels.get(*n).cloned().unwrap_or_else(|| (*n).clone());
+            for neighbor in neighbors
+                .iter()
+                .filter(|neighbor| active_ids.contains(*neighbor))
+            {
+                let lbl = labels
+                    .get(neighbor)
+                    .cloned()
+                    .unwrap_or_else(|| neighbor.clone());
                 *label_counts.entry(lbl).or_insert(0) += 1;
+            }
+
+            if label_counts.is_empty() {
+                continue;
             }
 
             let mut best_label: Option<String> = None;

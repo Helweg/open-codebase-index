@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Community detection performance**: Avoid cloning adjacency sets on every label-propagation pass, keeping the 10k-node community and coupling workload within its CI performance budget.
+
+- **Package metadata staging**: Exclude local indexes, benchmark results, and other generated workspace artifacts from staged package copies, preventing release-validation timeouts and accidental inclusion of local data.
+
 - **Dependency vulnerabilities**: Bumped transitive dependency pins to patched releases so `npm audit` reports 0 vulnerabilities: `hono` 4.12.34 (CORS ReDoS), `ip-address` 10.4.0 (SSRF and trust-boundary bypasses), `fast-uri` 3.1.5 (host confusion), `postcss` 8.5.26 (source-map disclosure), `undici` 8.9.0 via `@earendil-works/pi-coding-agent` 0.84.0 (CRLF injection, cache parsing, cookie and retry issues), `brace-expansion` 5.0.9 (DoS), and `@eslint/config-array` 0.23.5 (minimatch-based DoS path).
 
 - **Pre-edit fallback quality gates**: Added optional `minRouteAccuracy` and `minOutcomeAccuracy` evaluation budget thresholds and applied them in `benchmarks/budgets/pre-edit.json` so unresolved `expectedRoute`/`expectedOutcome` assertions now gate CI.

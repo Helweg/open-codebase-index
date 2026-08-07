@@ -112,7 +112,18 @@ function copyProject() {
       if (relative === "") return true;
       const segments = relative.split(path.sep);
       const firstSegment = segments[0];
-      if (firstSegment === ".git" || firstSegment === "node_modules") return false;
+      if (
+        firstSegment === ".git"
+        || firstSegment === "node_modules"
+        || firstSegment === ".opencode"
+        || firstSegment === ".claude"
+        || firstSegment === ".codebase-index"
+        || firstSegment === ".codegraph"
+        || firstSegment === ".sisyphus"
+        || firstSegment === ".omo"
+        || firstSegment === "opencode-codebase-index"
+        || (firstSegment === "benchmarks" && segments[1] === "results")
+      ) return false;
       return !(firstSegment === "native" && segments[1] === "target");
     },
   });
