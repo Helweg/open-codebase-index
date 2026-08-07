@@ -27,6 +27,9 @@ function summary(p95: number): EvalSummary {
       ndcgAt10: 1,
       distinctTop3Ratio: 1,
       rawDistinctTop3Ratio: 1,
+      routeAccuracy: 1,
+      outcomeAccuracy: 1,
+      recoveryAccuracy: 0,
       latencyMs: {
         p50: p95,
         p95,
@@ -221,6 +224,71 @@ describe("eval budget gate", () => {
     );
     expect(gate.passed).toBe(true);
     expect(gate.violations).toHaveLength(0);
+  });
+
+  it("fails when route accuracy falls below threshold", () => {
+    const budget: EvalBudget = {
+      name: "pre-edit",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minRouteAccuracy: 1,
+      },
+    };
+
+    const gate = evaluateBudgetGate(
+      budget,
+      {
+        ...summary(5),
+        metrics: {
+          ...summary(5).metrics,
+          routeAccuracy: 0,
+        },
+      }
+    );
+
+    expect(gate.passed).toBe(false);
+    expect(gate.violations.some((v) => v.metric === "minRouteAccuracy")).toBe(true);
+  });
+
+  it("passes when route and outcome accuracy meet thresholds", () => {
+    const budget: EvalBudget = {
+      name: "pre-edit",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minRouteAccuracy: 1,
+        minOutcomeAccuracy: 1,
+      },
+    };
+
+    const gate = evaluateBudgetGate(budget, summary(5));
+
+    expect(gate.passed).toBe(true);
+    expect(gate.violations.some((v) => v.metric === "minRouteAccuracy")).toBe(false);
+    expect(gate.violations.some((v) => v.metric === "minOutcomeAccuracy")).toBe(false);
+  });
+
+  it("fails when outcome accuracy falls below threshold", () => {
+    const budget: EvalBudget = {
+      name: "pre-edit",
+      failOnMissingBaseline: false,
+      thresholds: {
+        minOutcomeAccuracy: 1,
+      },
+    };
+
+    const gate = evaluateBudgetGate(
+      budget,
+      {
+        ...summary(5),
+        metrics: {
+          ...summary(5).metrics,
+          outcomeAccuracy: 0,
+        },
+      }
+    );
+
+    expect(gate.passed).toBe(false);
+    expect(gate.violations.some((v) => v.metric === "minOutcomeAccuracy")).toBe(true);
   });
 
   it("skips graph-neighbor gate when metric is absent", () => {

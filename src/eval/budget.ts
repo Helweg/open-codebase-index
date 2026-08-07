@@ -45,6 +45,26 @@ export function evaluateBudgetGate(
     });
   }
 
+  if (
+    thresholds.minRouteAccuracy !== undefined &&
+    summary.metrics.routeAccuracy < thresholds.minRouteAccuracy
+  ) {
+    violations.push({
+      metric: "minRouteAccuracy",
+      message: `Route accuracy ${summary.metrics.routeAccuracy.toFixed(4)} is below minimum ${thresholds.minRouteAccuracy.toFixed(4)}`,
+    });
+  }
+
+  if (
+    thresholds.minOutcomeAccuracy !== undefined &&
+    summary.metrics.outcomeAccuracy < thresholds.minOutcomeAccuracy
+  ) {
+    violations.push({
+      metric: "minOutcomeAccuracy",
+      message: `Outcome accuracy ${summary.metrics.outcomeAccuracy.toFixed(4)} is below minimum ${thresholds.minOutcomeAccuracy.toFixed(4)}`,
+    });
+  }
+
   if (comparison) {
     if (
       thresholds.hitAt5MaxDrop !== undefined &&

@@ -51,6 +51,8 @@ The gate runs in CI through `npm run eval:pre-edit:ci` with the deterministic mo
 | Hit@5 | 1.0000 | `minHitAt5` 1.0 |
 | MRR@10 | 1.0000 | `minMrrAt10` 1.0 |
 | Graph-neighbor recall | 1.0000 | `minGraphNeighborRecall` 1.0 |
+| Route accuracy | 1.0000 | `minRouteAccuracy` 1.0 |
+| Outcome accuracy | 1.0000 | `minOutcomeAccuracy` 1.0 |
 | p95 latency | 672 ms | `p95LatencyMaxAbsoluteMs` 5000 |
 | Response tokens average | 314.3 | `maxContextResponseTokensAverage` 600 |
 | Response tokens p95 | 394.9 | `maxContextResponseTokensP95` 800 |
@@ -60,7 +62,7 @@ The gate runs in CI through `npm run eval:pre-edit:ci` with the deterministic mo
 | Hit@5 per 1k response tokens | 3.181 | `minContextHitAt5Per1kResponseTokens` 1.0 |
 | MRR@10 per 1k response tokens | 3.181 | `minContextMrrAt10Per1kResponseTokens` 1.0 |
 
-The budget gate supports the `minGraphNeighborRecall` threshold for datasets whose queries assert graph neighbors; datasets without graph-neighbor expectations are unaffected because the metric is only compared when present.
+The budget gate also supports `minRouteAccuracy` and `minOutcomeAccuracy` so unresolved-query fallback behavior is enforced when queries assert `expectedRoute` and `expectedOutcome`.
 
 ## Explicit non-goals
 
