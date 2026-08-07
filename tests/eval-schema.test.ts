@@ -389,6 +389,8 @@ describe("eval schema", () => {
           rawDistinctTop3RatioMaxDrop: 0.1,
           p95LatencyMaxMultiplier: 1.5,
           minRawDistinctTop3Ratio: 0.7,
+          minRouteAccuracy: 0.95,
+          minOutcomeAccuracy: 0.85,
           maxContextResponseTokensAverage: 800,
           maxContextResponseTokensP95: 1200,
           maxContextResponseTokensMax: 1200,
@@ -404,6 +406,8 @@ describe("eval schema", () => {
     expect(budget.thresholds.hitAt5MaxDrop).toBe(0.05);
     expect(budget.thresholds.rawDistinctTop3RatioMaxDrop).toBe(0.1);
     expect(budget.thresholds.minRawDistinctTop3Ratio).toBe(0.7);
+    expect(budget.thresholds.minRouteAccuracy).toBe(0.95);
+    expect(budget.thresholds.minOutcomeAccuracy).toBe(0.85);
     expect(budget.thresholds.maxContextResponseTokensAverage).toBe(800);
     expect(budget.thresholds.maxContextResponseTokensP95).toBe(1200);
     expect(budget.thresholds.maxContextResponseTokensMax).toBe(1200);

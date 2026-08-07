@@ -437,6 +437,8 @@ Example:
     "p95LatencyMaxAbsoluteMs": 4000,
     "minHitAt5": 0.4,
     "minMrrAt10": 0.25,
+    "minRouteAccuracy": 0.75,
+    "minOutcomeAccuracy": 0.75,
     "maxContextResponseTokensAverage": 1000,
     "maxContextResponseTokensP95": 1200,
     "maxContextResponseTokensMax": 1200,
@@ -454,5 +456,6 @@ Guidance:
 - Keep `p95LatencyMaxMultiplier` tolerant enough for CI variance.
 - Use absolute floor metrics (`minHitAt5`, `minMrrAt10`) to prevent silent quality drift.
 - Keep context response caps at or below the production default unless a dataset intentionally exercises a larger `tokenBudget`.
+- Add route/outcome gates (`minRouteAccuracy`, `minOutcomeAccuracy`) for datasets that assert `expectedRoute`/`expectedOutcome` so fallback behavior is enforced as an observable quality signal.
 - Track quality-per-token floors together with absolute quality so smaller responses do not pass by becoming less useful.
 - Duplicate-candidate gates measure retrieval waste before packing; the selected-file floor prevents evidence from concentrating in too few files.

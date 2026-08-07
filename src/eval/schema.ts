@@ -471,6 +471,16 @@ export function parseBudget(raw: unknown, sourceLabel: string): EvalBudget {
         "minGraphNeighborRecall",
         sourceLabel
       ),
+      minRouteAccuracy: parseThresholdValue(
+        thresholds.minRouteAccuracy,
+        "minRouteAccuracy",
+        sourceLabel
+      ),
+      minOutcomeAccuracy: parseThresholdValue(
+        thresholds.minOutcomeAccuracy,
+        "minOutcomeAccuracy",
+        sourceLabel
+      ),
       maxContextResponseTokensAverage: parseThresholdValue(
         thresholds.maxContextResponseTokensAverage,
         "maxContextResponseTokensAverage",

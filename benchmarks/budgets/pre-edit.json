@@ -6,6 +6,8 @@
     "minHitAt5": 1.0,
     "minMrrAt10": 1.0,
     "minGraphNeighborRecall": 1.0,
+    "minRouteAccuracy": 1.0,
+    "minOutcomeAccuracy": 1.0,
     "maxContextResponseTokensAverage": 600,
     "maxContextResponseTokensP95": 800,
     "maxContextResponseTokensMax": 1000,
