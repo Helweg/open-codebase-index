@@ -7,10 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.4] - 2026-08-07
+
 ### Added
 
 - **Context diagnostics**: `codebase_context` now supports an optional `diagnostic` flag across MCP, OpenCode, and Pi. It exposes bounded routing, retrieval, and evidence-pack traces for troubleshooting without changing normal text output.
+- **Pre-edit context**: Added the portable `codebase_edit_context` tool for gathering bounded, edit-oriented repository evidence across MCP, OpenCode, and Pi.
 - **Pre-edit evaluation gate**: `codebase_edit_context` now has a documented CI evaluation gate. The budget gate supports a `minGraphNeighborRecall` threshold, and `npm run eval:pre-edit:ci` runs the deterministic mock-embedding baseline (Hit@5 1.0, MRR@10 1.0, graph-neighbor recall 1.0) with thresholds in `benchmarks/budgets/pre-edit.json`. The golden dataset covers a resolvable caller lookup, a target-only lookup, and an unresolved-symbol fallback that must route to the conceptual search pack.
+- **Fair CodeGraph comparator**: Added a documented cross-repository benchmark harness and public comparison matrix for normalized CodeGraph retrieval measurements.
 
 ### Fixed
 
@@ -21,6 +25,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Package metadata staging**: Exclude local indexes, benchmark results, and other generated workspace artifacts from staged package copies, preventing release-validation timeouts and accidental inclusion of local data.
 
 - **Dependency vulnerabilities**: Bumped transitive dependency pins to patched releases so `npm audit` reports 0 vulnerabilities: `hono` 4.12.34 (CORS ReDoS), `ip-address` 10.4.0 (SSRF and trust-boundary bypasses), `fast-uri` 3.1.5 (host confusion), `postcss` 8.5.26 (source-map disclosure), `undici` 8.9.0 via `@earendil-works/pi-coding-agent` 0.84.0 (CRLF injection, cache parsing, cookie and retry issues), `brace-expansion` 5.0.9 (DoS), and `@eslint/config-array` 0.23.5 (minimatch-based DoS path).
+
+- **JS-YAML vulnerability**: Pinned transitive `js-yaml` to 4.3.1 to remediate CVE-2026-59870 quadratic CPU consumption in `!!omap` resolution.
 
 - **Pre-edit fallback quality gates**: Added optional `minRouteAccuracy` and `minOutcomeAccuracy` evaluation budget thresholds and applied them in `benchmarks/budgets/pre-edit.json` so unresolved `expectedRoute`/`expectedOutcome` assertions now gate CI.
 
