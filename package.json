@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
