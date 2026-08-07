@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -260,6 +260,10 @@ describe("Phase 1 product identity compatibility", () => {
       expect(stagedCodexManifest.author?.url).toBe(IDENTITY_CATALOG.product.current.repository);
       expect(stagedCodexManifest.interface.websiteURL).toBe(IDENTITY_CATALOG.product.current.repository);
       expect(stagedClaudeMarketplace.owner.url).toBe(IDENTITY_CATALOG.product.current.repository);
+      expect(existsSync(path.join(tempDir, ".opencode"))).toBe(false);
+      expect(existsSync(path.join(tempDir, ".claude"))).toBe(false);
+      expect(existsSync(path.join(tempDir, ".codebase-index"))).toBe(false);
+      expect(existsSync(path.join(tempDir, "benchmarks", "results"))).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
