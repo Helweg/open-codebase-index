@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **GitHub Actions runtime**: Updated the CI path-semantics job to Node 24-compatible `actions/checkout` and `actions/setup-node` releases, removing the deprecated Node 20 action-runtime warning.
+
 - **Community detection performance**: Avoid cloning adjacency sets on every label-propagation pass, keeping the 10k-node community and coupling workload within its CI performance budget.
 
 - **Package metadata staging**: Exclude local indexes, benchmark results, and other generated workspace artifacts from staged package copies, preventing release-validation timeouts and accidental inclusion of local data.
