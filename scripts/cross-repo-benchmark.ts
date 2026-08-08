@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 
 import { execFile } from "child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
 import { promisify } from "util";
@@ -77,6 +85,7 @@ const MAX_CHUNKS_PER_FILE = 100;
 export interface CliOptions {
   repos: string[];
   outputRoot: string;
+  datasetDir?: string;
   reindex: boolean;
   repeats: number;
   maxParseFiles: number;
@@ -328,11 +337,12 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph] [--codebase-memory-mcp]
+npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--dataset-dir /path/to/golden] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph] [--codebase-memory-mcp]
 
 Defaults:
   repos: none (required via --repos or BENCHMARK_REPOS)
   output: benchmarks/results/cross-repo
+  dataset-dir: none
   reindex: false
   repeats: 1
   max-parse-files: 2500
@@ -353,6 +363,103 @@ function expandHome(input: string): string {
     return path.join(home, input.slice(2));
   }
   return input;
+}
+
+function isPathInsideRepo(repoPath: string, candidate: string): boolean {
+  const resolvedCandidate = path.resolve(repoPath, candidate);
+  const relative = path.relative(repoPath, resolvedCandidate);
+  return (
+    relative !== "" &&
+    relative !== "." &&
+    !relative.startsWith("..") &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function validateRelativePathExists(repoPath: string, value: string, field: string): void {
+  if (!isPathInsideRepo(repoPath, value)) {
+    throw new Error(`Dataset evidence path ${value} for ${field} is outside repository ${repoPath}`);
+  }
+
+  const absolute = path.resolve(repoPath, value);
+  let stats: { isFile(): boolean };
+  try {
+    stats = statSync(absolute);
+  } catch {
+    throw new Error(`Dataset evidence path ${value} for ${field} does not exist in ${repoPath}`);
+  }
+
+  if (!stats.isFile()) {
+    throw new Error(`Dataset evidence path ${value} for ${field} must be a file in ${repoPath}`);
+  }
+}
+
+function collectDefinitionEvidencePaths(query: GoldenQuery): string[] {
+  const expected = query.expected;
+  const evidencePaths = new Set<string>();
+
+  if (expected.filePath) {
+    evidencePaths.add(expected.filePath);
+  }
+
+  if (expected.acceptableFiles) {
+    for (const filePath of expected.acceptableFiles) {
+      evidencePaths.add(filePath);
+    }
+  }
+
+  if (expected.gradedEvidence) {
+    for (const graded of expected.gradedEvidence) {
+      evidencePaths.add(graded.path);
+    }
+  }
+
+  return [...evidencePaths];
+}
+
+export function validateDatasetEvidencePaths(dataset: GoldenDataset, repoPath: string): void {
+  for (const query of dataset.queries) {
+    for (const evidencePath of collectDefinitionEvidencePaths(query)) {
+      validateRelativePathExists(repoPath, evidencePath, query.id);
+    }
+  }
+}
+
+export function validateDefinitionComparatorQueries(dataset: GoldenDataset): void {
+  for (const query of dataset.queries) {
+    if (query.queryType !== "definition") {
+      continue;
+    }
+
+    if (!query.expected.symbol || query.expected.symbol.length === 0) {
+      throw new Error(`Definition dataset query ${query.id} missing expected.symbol`);
+    }
+
+    if (query.expected.expectedRoute !== "definition") {
+      throw new Error(`Definition dataset query ${query.id} missing expected.expectedRoute=definition`);
+    }
+
+    if (!query.args || query.args.symbol !== query.expected.symbol) {
+      throw new Error(`Definition dataset query ${query.id} must set args.symbol to ${query.expected.symbol}`);
+    }
+  }
+}
+
+export function loadFixedDataset(datasetPath: string, repoPath: string): GoldenDataset {
+  const rawText = readFileSync(datasetPath, "utf-8");
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(rawText);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to parse dataset JSON from ${datasetPath}: ${message}`);
+  }
+
+  const dataset = parseGoldenDataset(raw, datasetPath);
+  validateDatasetEvidencePaths(dataset, repoPath);
+  validateDefinitionComparatorQueries(dataset);
+  return dataset;
 }
 
 function normalizePathForMatch(input: string): string {
@@ -426,6 +533,7 @@ function toRepoName(repoPath: string): string {
 export function parseCliArgs(argv: string[]): CliOptions {
   let repos: string[] = [];
   let outputRoot = path.resolve(process.cwd(), "benchmarks/results/cross-repo");
+  let datasetDir: string | undefined;
   let reindex = false;
   let repeats = 1;
   let maxParseFiles = MAX_PARSE_FILES;
@@ -471,6 +579,16 @@ export function parseCliArgs(argv: string[]): CliOptions {
         throw new Error("--output requires a path");
       }
       outputRoot = path.resolve(expandHome(value));
+      i += 1;
+      continue;
+    }
+
+    if (arg === "--dataset-dir") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--dataset-dir requires a directory path");
+      }
+      datasetDir = path.resolve(expandHome(value));
       i += 1;
       continue;
     }
@@ -548,6 +666,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   return {
     repos,
     outputRoot,
+    datasetDir,
     reindex,
     repeats,
     maxParseFiles,
@@ -2015,7 +2134,7 @@ export function buildReportMarkdown(
   return `${lines.join("\n")}\n`;
 }
 
-async function runForRepo(
+export async function runForRepo(
   repoPath: string,
   options: CliOptions,
   runDir: string,
@@ -2025,11 +2144,24 @@ async function runForRepo(
   const repoName = toRepoName(repoPath);
   const datasetPath = path.join(datasetRoot, `${repoName}.json`);
   const persistentDatasetPath = path.join(persistentDatasetRoot, `${repoName}.json`);
+  const fixedDatasetPath = options.datasetDir
+    ? path.join(options.datasetDir, `${repoName}.json`)
+    : undefined;
 
   try {
     const { parsedFiles, collection } = collectParsedFiles(repoPath, options.maxParseFiles);
-    const dataset = buildGoldenDataset(repoName, repoPath, parsedFiles);
-    writeDataset(datasetPath, dataset);
+    const dataset = fixedDatasetPath && existsSync(fixedDatasetPath)
+      ? (() => {
+        const loaded = loadFixedDataset(fixedDatasetPath, repoPath);
+        ensureDir(path.dirname(datasetPath));
+        copyFileSync(fixedDatasetPath, datasetPath);
+        return loaded;
+      })()
+      : buildGoldenDataset(repoName, repoPath, parsedFiles);
+
+    if (!fixedDatasetPath || !existsSync(fixedDatasetPath)) {
+      writeDataset(datasetPath, dataset);
+    }
     if (options.persistDatasets) {
       writeDataset(persistentDatasetPath, dataset);
     }
