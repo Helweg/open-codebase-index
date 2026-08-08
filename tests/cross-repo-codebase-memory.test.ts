@@ -76,7 +76,7 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
     expect(init.resultJson).toEqual({ project: "project-123", extra: true });
 
     const query = parseCodebaseMemoryMcpQueryOutput(JSON.stringify({
-      total: 2,
+      total: 3,
       results: [
         {
           name: "alpha",
@@ -91,10 +91,15 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
           label: "method",
           lines: { preview: "export function alpha() {}" },
         },
+        {
+          name: "folder-alpha",
+          file_path: "src/c",
+          label: "Folder",
+        },
       ],
     }), isolatedRepoPath);
 
-    expect(query.total).toBe(2);
+    expect(query.total).toBe(3);
     expect(query.results).toEqual([
       {
         name: "alpha",
@@ -110,9 +115,16 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
         lines: { preview: "export function alpha() {}" },
         score: 0.5,
       },
+      {
+        name: "folder-alpha",
+        filePath: "src/c",
+        label: "Folder",
+        lines: undefined,
+        score: 1 / 3,
+      },
     ]);
     expect(query.results.every((result) => !("startLine" in result) && !("endLine" in result))).toBe(true);
-    expect(query.resultJson.total).toBe(2);
+    expect(query.resultJson.total).toBe(3);
     expect((query.resultJson.results as Array<Record<string, unknown>>)[0]).toMatchObject({
       extra: "preserved in raw JSON",
     });
@@ -131,7 +143,7 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
       JSON.stringify({ total: -1, results: [] }),
       JSON.stringify({ total: 0, results: {} }),
       JSON.stringify({ total: 0, results: [{}] }),
-      JSON.stringify({ total: 1, results: [{ name: "alpha", file_path: "src/a.ts", label: "function" }] }),
+      JSON.stringify({ total: 1, results: [{ name: "alpha", label: "function" }] }),
       JSON.stringify({ total: 0, results: [{ name: "alpha", file_path: "src/a.ts", label: "function", lines: [] }] }),
     ];
 

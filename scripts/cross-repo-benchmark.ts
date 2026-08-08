@@ -247,7 +247,7 @@ export interface CodebaseMemoryMcpParsedResult {
   name: string;
   filePath: string;
   label: string;
-  lines: unknown;
+  lines?: unknown;
   score: number;
 }
 
@@ -1444,10 +1444,6 @@ export function parseCodebaseMemoryMcpQueryOutput(
     if (typeof candidate.label !== "string" || candidate.label.trim().length === 0) {
       throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: label must be a non-empty string`);
     }
-    if (!Object.hasOwn(candidate, "lines")) {
-      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: missing lines`);
-    }
-
     return {
       name: candidate.name,
       filePath: resolveCodebaseMemoryMcpPath(isolatedRepoPath, candidate.file_path),
