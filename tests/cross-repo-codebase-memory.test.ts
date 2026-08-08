@@ -143,7 +143,6 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
       JSON.stringify({ total: -1, results: [] }),
       JSON.stringify({ total: 0, results: {} }),
       JSON.stringify({ total: 0, results: [{}] }),
-      JSON.stringify({ total: 1, results: [{ name: "alpha", label: "function" }] }),
       JSON.stringify({ total: 0, results: [{ name: "alpha", file_path: "src/a.ts", label: "function", lines: [] }] }),
     ];
 
@@ -152,6 +151,55 @@ describe("cross-repo codebase-memory-mcp comparator", () => {
         /Malformed codebase-memory-mcp query output/,
       );
     }
+  });
+
+  it("skips non-code results that omit file_path while preserving valid file-backed entries", () => {
+    const isolatedRepoPath = tempDir("cross-repo-memory-parse-skip-");
+    const query = parseCodebaseMemoryMcpQueryOutput(JSON.stringify({
+      total: 4,
+      results: [
+        {
+          name: "has-path",
+          file_path: "src/a.ts",
+          label: "function",
+          lines: [1, 2],
+        },
+        {
+          name: "folder-missing-path",
+          label: "Folder",
+        },
+        {
+          name: "empty-path",
+          file_path: "",
+          label: "function",
+          lines: [3, 4],
+        },
+        {
+          name: "another",
+          file_path: "src/b.ts",
+          label: "method",
+          lines: { preview: "export function another() {}" },
+        },
+      ],
+    }), isolatedRepoPath);
+
+    expect(query.total).toBe(4);
+    expect(query.results).toEqual([
+      {
+        name: "has-path",
+        filePath: "src/a.ts",
+        label: "function",
+        lines: [1, 2],
+        score: 1,
+      },
+      {
+        name: "another",
+        filePath: "src/b.ts",
+        label: "method",
+        lines: { preview: "export function another() {}" },
+        score: 1 / 2,
+      },
+    ]);
   });
 
   it("rejects result paths that escape the isolated repository", () => {

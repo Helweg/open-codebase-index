@@ -1429,29 +1429,33 @@ export function parseCodebaseMemoryMcpQueryOutput(
     throw new Error("Malformed codebase-memory-mcp query output: total cannot be smaller than results length");
   }
 
-  const results = resultJson.results.map((entry, index) => {
+  const results = resultJson.results.reduce((acc, entry, index) => {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: result must be an object`);
     }
 
     const candidate = entry as Record<string, unknown>;
+    if (typeof candidate.file_path !== "string" || candidate.file_path.trim().length === 0) {
+      return acc;
+    }
+
     if (typeof candidate.name !== "string" || candidate.name.trim().length === 0) {
       throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: name must be a non-empty string`);
-    }
-    if (typeof candidate.file_path !== "string" || candidate.file_path.trim().length === 0) {
-      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: file_path must be a non-empty string`);
     }
     if (typeof candidate.label !== "string" || candidate.label.trim().length === 0) {
       throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: label must be a non-empty string`);
     }
-    return {
+
+    acc.push({
       name: candidate.name,
       filePath: resolveCodebaseMemoryMcpPath(isolatedRepoPath, candidate.file_path),
       label: candidate.label,
       lines: candidate.lines,
-      score: 1 / (index + 1),
-    };
-  });
+      score: 1 / (acc.length + 1),
+    });
+
+    return acc;
+  }, [] as CodebaseMemoryMcpParsedResult[]);
 
   return { total: resultJson.total as number, results, resultJson };
 }
