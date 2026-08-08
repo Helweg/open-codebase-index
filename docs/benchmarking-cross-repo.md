@@ -22,7 +22,7 @@ Metrics reported per repo and aggregated:
 - Installed Ollama embedding model `nomic-embed-text`
 - `rg` installed
 - `sg` installed (`brew install ast-grep` on macOS)
-- `npx` (for `codegraph` execution)
+- `npx` (for opt-in CodeGraph and `codebase-memory-mcp` execution)
 
 ## Configure repositories (required)
 
@@ -81,6 +81,9 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 
 # Enable CodeGraph baseline (scoped to queries with expected.symbol)
 npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --codegraph
+
+# Enable codebase-memory-mcp comparator (scoped to definition queries with expected.symbol)
+npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --codebase-memory-mcp
 ```
 
 Ast-grep baseline scope:
@@ -105,6 +108,22 @@ The report places this result in a standalone **Fair CodeGraph Comparator** sect
 
 The comparator intentionally omits latency in the CodeGraph row because each `codegraph query` invocation is measured through `npx`, which includes one-shot CLI process startup. This makes the timing comparable only to plugin-side warm eval timings and is not a fair latency comparison without additional normalization.
 
+## codebase-memory-mcp fair comparator
+
+Run the opt-in, fixed-version comparator with `--codebase-memory-mcp`:
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts \
+  --repos /path/to/repo \
+  --reindex --repeats 3 --codebase-memory-mcp
+```
+
+The runner invokes the exact package `codebase-memory-mcp@0.8.1` directly through `npx`; it does not run a separate install command and does not write agent configuration. Every repeat creates one fresh isolated source copy and sets `CBM_CACHE_DIR` to a repeat-local directory inside that copy, so the comparator does not read or write global cache state. It initializes the copy with the package CLI's `index_repository` command and uses the returned `project` value for all `search_graph` calls in that repeat. Generated candidates remain aligned with the runner's existing plugin file sampling and controlled file-size configuration because comparator scope is derived only from the same generated dataset.
+
+The comparator scores only generated `definition` queries with a non-empty `expected.symbol`. Each query uses an anchored, regex-escaped `name_pattern`. Because the CLI returns file-level results without scores or start/end spans, the runner assigns a deterministic rank-derived score (`1 / rank`) and does not fabricate source spans. Result paths must resolve inside the isolated repository or the repeat is disqualified.
+
+The report places results in a standalone **Fair codebase-memory-mcp Comparator** section. Plugin metrics are recomputed from exactly the same query IDs. Malformed init or query JSON, path escapes, and failed init or query invocations disqualify the repeat instead of recording a zero score. Raw commands, stdout, parsed result JSON, file-level candidates, scope IDs, and errors are written under `<run>/codebase-memory-mcp/<repo>/repeat-*.json`. Latency is omitted from the comparison table because each query timing includes one-shot `npx` CLI process startup.
+
 ## Output artifacts
 
 Each run writes to:
@@ -113,8 +132,8 @@ Each run writes to:
 - `benchmarks/results/cross-repo/<timestamp>/report.json`
 - `benchmarks/results/cross-repo/<timestamp>/repos/<repo>.json`
 - `benchmarks/results/cross-repo/<timestamp>/datasets/<repo>.json`
-- `benchmarks/results/cross-repo/<timestamp>/codegraph/<repo>/<repeat>/summary.json`
-- `benchmarks/results/cross-repo/<timestamp>/codegraph/<repo>/<repeat>/per-query.json`
+- `benchmarks/results/cross-repo/<timestamp>/codegraph/<repo>/repeat-<n>.json` when `--codegraph` is enabled
+- `benchmarks/results/cross-repo/<timestamp>/codebase-memory-mcp/<repo>/repeat-<n>.json` when `--codebase-memory-mcp` is enabled
 
 When `--persist-datasets` is set, auto-generated dataset files are also written to:
 

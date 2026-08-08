@@ -84,6 +84,7 @@ export interface CliOptions {
   skipRipgrep: boolean;
   skipSg: boolean;
   codegraph: boolean;
+  codebaseMemoryMcp: boolean;
 }
 
 interface FileCollectionResult {
@@ -173,6 +174,17 @@ export interface RepoBenchmarkResult {
       codegraph: EvalMetrics;
     };
   };
+  codebaseMemoryMcp?: {
+    scopedQueryCount: number;
+    totalQueryCount: number;
+    successfulRepeatCount: number;
+    disqualifiedRepeatCount: number;
+    repeatSummaries: CodebaseMemoryMcpRepeatSummary[];
+    metrics?: {
+      plugin: EvalMetrics;
+      codebaseMemoryMcp: EvalMetrics;
+    };
+  };
   error?: string;
 }
 
@@ -217,6 +229,90 @@ interface CodeGraphRepeatArtifact {
   error?: string;
 }
 
+const CODEBASE_MEMORY_MCP_PACKAGE = "codebase-memory-mcp@0.8.1";
+
+export interface CodebaseMemoryMcpRepeatSummary {
+  repeat: number;
+  status: "completed" | "disqualified" | "no-scope";
+  artifactPath: string;
+  scopedQueryCount: number;
+  totalQueryCount: number;
+  queryIds: string[];
+  pluginMetrics?: EvalMetrics;
+  codebaseMemoryMcpMetrics?: EvalMetrics;
+  error?: string;
+}
+
+export interface CodebaseMemoryMcpParsedResult {
+  name: string;
+  filePath: string;
+  label: string;
+  lines: unknown;
+  score: number;
+}
+
+export interface CodebaseMemoryMcpInitResponse {
+  project: string;
+  resultJson: Record<string, unknown>;
+}
+
+export interface CodebaseMemoryMcpQueryResponse {
+  total: number;
+  results: CodebaseMemoryMcpParsedResult[];
+  resultJson: Record<string, unknown>;
+}
+
+interface CodebaseMemoryMcpQueryArtifact {
+  id: string;
+  symbol: string;
+  command: string[];
+  latencyMs?: number;
+  stdout?: string;
+  resultJson?: Record<string, unknown>;
+  total?: number;
+  results?: CodebaseMemoryMcpParsedResult[];
+  perQuery?: PerQueryEvalResult;
+  error?: string;
+}
+
+interface CodebaseMemoryMcpInitArtifact {
+  command: string[];
+  stdout?: string;
+  resultJson?: Record<string, unknown>;
+  error?: string;
+  project?: string;
+}
+
+interface CodebaseMemoryMcpRepeatArtifact {
+  repeat: number;
+  status: CodebaseMemoryMcpRepeatSummary["status"];
+  isolatedRepoPath?: string;
+  cacheDir?: string;
+  scope: {
+    totalQueryCount: number;
+    scopedQueryCount: number;
+    queryIds: string[];
+  };
+  init: CodebaseMemoryMcpInitArtifact;
+  pluginPerQuery: PerQueryEvalResult[];
+  queries: CodebaseMemoryMcpQueryArtifact[];
+  comparison?: {
+    pluginMetrics: EvalMetrics;
+    codebaseMemoryMcpMetrics: EvalMetrics;
+  };
+  error?: string;
+}
+
+export interface CodebaseMemoryMcpExecutionOptions {
+  env: NodeJS.ProcessEnv;
+}
+
+export type CodebaseMemoryMcpExecutor = (
+  executable: string,
+  args: string[],
+  options?: CodebaseMemoryMcpExecutionOptions,
+) => Promise<{ stdout: string }>;
+
 interface RipgrepJsonPath {
   text?: string;
 }
@@ -232,7 +328,7 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph]
+npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph] [--codebase-memory-mcp]
 
 Defaults:
   repos: none (required via --repos or BENCHMARK_REPOS)
@@ -242,6 +338,7 @@ Defaults:
   max-parse-files: 2500
   persist-datasets: false
   codegraph: false
+  codebase-memory-mcp: false
   plugin eval provider: local Ollama (embeddingModel: ${CROSS_REPO_OLLAMA_MODEL})
 `);
 }
@@ -336,6 +433,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let skipRipgrep = false;
   let skipSg = false;
   let codegraph = false;
+  let codebaseMemoryMcp = false;
 
   const envRepos = process.env.BENCHMARK_REPOS;
   if (envRepos && envRepos.trim().length > 0) {
@@ -435,6 +533,11 @@ export function parseCliArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--codebase-memory-mcp") {
+      codebaseMemoryMcp = true;
+      continue;
+    }
+
     throw new Error(`Unknown argument: ${arg}`);
   }
 
@@ -452,6 +555,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     skipRipgrep,
     skipSg,
     codegraph,
+    codebaseMemoryMcp,
   };
 }
 
@@ -1257,6 +1361,282 @@ export async function runCodeGraphRepeat({
   };
 }
 
+export interface CodebaseMemoryMcpRepeatOptions {
+  repoPath: string;
+  dataset: GoldenDataset;
+  pluginPerQuery: PerQueryEvalResult[];
+  repeat: number;
+  artifactPath: string;
+  executor?: CodebaseMemoryMcpExecutor;
+}
+
+function parseJsonRecord(output: string, description: string): Record<string, unknown> {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(output);
+  } catch {
+    throw new Error(`Malformed codebase-memory-mcp ${description}: expected JSON object`);
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`Malformed codebase-memory-mcp ${description}: expected JSON object`);
+  }
+
+  return parsed as Record<string, unknown>;
+}
+
+function resolveCodebaseMemoryMcpPath(isolatedRepoPath: string, filePath: string): string {
+  const root = path.resolve(isolatedRepoPath);
+  const portableFilePath = filePath.replace(/\\/g, path.sep);
+  const resolved = path.resolve(root, portableFilePath);
+  const relative = path.relative(root, resolved);
+
+  if (
+    relative === ""
+    || relative === "."
+    || relative === ".."
+    || relative.startsWith(`..${path.sep}`)
+    || path.isAbsolute(relative)
+  ) {
+    throw new Error(`codebase-memory-mcp output path outside isolated repo: ${filePath}`);
+  }
+
+  return normalizePathForMatch(relative);
+}
+
+export function parseCodebaseMemoryMcpInitOutput(output: string): CodebaseMemoryMcpInitResponse {
+  const resultJson = parseJsonRecord(output, "init output");
+  if (typeof resultJson.project !== "string" || resultJson.project.trim().length === 0) {
+    throw new Error("Malformed codebase-memory-mcp init output: project must be a non-empty string");
+  }
+
+  return { project: resultJson.project, resultJson };
+}
+
+export function parseCodebaseMemoryMcpQueryOutput(
+  output: string,
+  isolatedRepoPath: string,
+): CodebaseMemoryMcpQueryResponse {
+  const resultJson = parseJsonRecord(output, "query output");
+  if (!Number.isInteger(resultJson.total) || (resultJson.total as number) < 0) {
+    throw new Error("Malformed codebase-memory-mcp query output: total must be a non-negative integer");
+  }
+  if (!Array.isArray(resultJson.results)) {
+    throw new Error("Malformed codebase-memory-mcp query output: results must be an array");
+  }
+  if ((resultJson.total as number) < resultJson.results.length) {
+    throw new Error("Malformed codebase-memory-mcp query output: total cannot be smaller than results length");
+  }
+
+  const results = resultJson.results.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: result must be an object`);
+    }
+
+    const candidate = entry as Record<string, unknown>;
+    if (typeof candidate.name !== "string" || candidate.name.trim().length === 0) {
+      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: name must be a non-empty string`);
+    }
+    if (typeof candidate.file_path !== "string" || candidate.file_path.trim().length === 0) {
+      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: file_path must be a non-empty string`);
+    }
+    if (typeof candidate.label !== "string" || candidate.label.trim().length === 0) {
+      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: label must be a non-empty string`);
+    }
+    if (!Object.hasOwn(candidate, "lines")) {
+      throw new Error(`Malformed codebase-memory-mcp query output at index ${index}: missing lines`);
+    }
+
+    return {
+      name: candidate.name,
+      filePath: resolveCodebaseMemoryMcpPath(isolatedRepoPath, candidate.file_path),
+      label: candidate.label,
+      lines: candidate.lines,
+      score: 1 / (index + 1),
+    };
+  });
+
+  return { total: resultJson.total as number, results, resultJson };
+}
+
+const defaultCodebaseMemoryMcpExecutor: CodebaseMemoryMcpExecutor = async (executable, args, options) => {
+  const result = await execFileAsync(executable, args, {
+    maxBuffer: 10 * 1024 * 1024,
+    env: options?.env,
+  });
+  return { stdout: result.stdout };
+};
+
+export async function runCodebaseMemoryMcpRepeat({
+  repoPath,
+  dataset,
+  pluginPerQuery,
+  repeat,
+  artifactPath,
+  executor = defaultCodebaseMemoryMcpExecutor,
+}: CodebaseMemoryMcpRepeatOptions): Promise<CodebaseMemoryMcpRepeatSummary> {
+  const scopedQueries = dataset.queries.filter(
+    (query) => query.queryType === "definition"
+      && typeof query.expected.symbol === "string"
+      && query.expected.symbol.length > 0
+  );
+  const queryIds = scopedQueries.map((query) => query.id);
+  const artifact: CodebaseMemoryMcpRepeatArtifact = {
+    repeat,
+    status: "disqualified",
+    scope: {
+      totalQueryCount: dataset.queries.length,
+      scopedQueryCount: scopedQueries.length,
+      queryIds,
+    },
+    init: { command: [] },
+    pluginPerQuery: [],
+    queries: [],
+  };
+
+  if (scopedQueries.length === 0) {
+    artifact.status = "no-scope";
+    ensureDir(path.dirname(artifactPath));
+    writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), "utf-8");
+    return {
+      repeat,
+      status: artifact.status,
+      artifactPath,
+      scopedQueryCount: 0,
+      totalQueryCount: dataset.queries.length,
+      queryIds,
+    };
+  }
+
+  let isolated: ReturnType<typeof createIsolatedSourceCopy> | undefined;
+
+  try {
+    isolated = createIsolatedSourceCopy(repoPath);
+    artifact.isolatedRepoPath = isolated.isolatedRepoPath;
+    artifact.cacheDir = path.join(isolated.isolatedRepoPath, ".codebase-memory-mcp-cache");
+    const executionOptions: CodebaseMemoryMcpExecutionOptions = {
+      env: {
+        ...process.env,
+        CBM_CACHE_DIR: artifact.cacheDir,
+      },
+    };
+    artifact.init.command = [
+      "npx",
+      "--yes",
+      CODEBASE_MEMORY_MCP_PACKAGE,
+      "cli",
+      "index_repository",
+      JSON.stringify({ repo_path: isolated.isolatedRepoPath }),
+    ];
+
+    let project: string;
+    try {
+      const initOutput = await executor("npx", artifact.init.command.slice(1), executionOptions);
+      artifact.init.stdout = initOutput.stdout;
+      const initResponse = parseCodebaseMemoryMcpInitOutput(initOutput.stdout);
+      project = initResponse.project;
+      artifact.init.project = project;
+      artifact.init.resultJson = initResponse.resultJson;
+    } catch (error: unknown) {
+      artifact.init.error = errorMessage(error);
+      throw new Error(`Codebase Memory MCP init invocation failed: ${artifact.init.error}`);
+    }
+
+    const pluginById = new Map(pluginPerQuery.map((result) => [result.id, result]));
+    const scopedPluginPerQuery = scopedQueries.map((query) => {
+      const result = pluginById.get(query.id);
+      if (!result) {
+        throw new Error(`Plugin per-query result missing for Codebase Memory MCP-scoped query '${query.id}'`);
+      }
+      return result;
+    });
+    artifact.pluginPerQuery = scopedPluginPerQuery;
+
+    const codebaseMemoryMcpPerQuery: PerQueryEvalResult[] = [];
+    for (const query of scopedQueries) {
+        const symbol = query.expected.symbol;
+        if (!symbol) continue;
+        const command = [
+          "npx",
+          "--yes",
+          CODEBASE_MEMORY_MCP_PACKAGE,
+          "cli",
+          "search_graph",
+          JSON.stringify({
+            project,
+            name_pattern: `^${escapeRegexLiteral(symbol)}$`,
+          }),
+        ];
+        const queryArtifact: CodebaseMemoryMcpQueryArtifact = {
+          id: query.id,
+          symbol,
+          command,
+        };
+        artifact.queries.push(queryArtifact);
+
+        const start = performance.now();
+
+        try {
+          const output = await executor("npx", command.slice(1), executionOptions);
+          queryArtifact.latencyMs = performance.now() - start;
+          queryArtifact.stdout = output.stdout;
+          const queryResponse = parseCodebaseMemoryMcpQueryOutput(
+            output.stdout,
+            isolated.isolatedRepoPath,
+          );
+          queryArtifact.resultJson = queryResponse.resultJson;
+          queryArtifact.total = queryResponse.total;
+          queryArtifact.results = queryResponse.results;
+          queryArtifact.perQuery = buildPerQueryResult(
+            query,
+            queryResponse.results.map((result) => ({
+              filePath: result.filePath,
+              score: result.score,
+              chunkType: result.label,
+              name: result.name,
+            })),
+            queryArtifact.latencyMs,
+            10,
+          );
+          codebaseMemoryMcpPerQuery.push(queryArtifact.perQuery);
+        } catch (error: unknown) {
+          queryArtifact.error = errorMessage(error);
+          throw new Error(`Codebase Memory MCP query failed for '${query.id}': ${queryArtifact.error}`);
+        }
+    }
+
+    const pluginMetrics = computeEvalMetrics(scopedQueries, scopedPluginPerQuery, 0, 0, 0);
+    const codebaseMemoryMcpMetrics = computeEvalMetrics(scopedQueries, codebaseMemoryMcpPerQuery, 0, 0, 0);
+
+    artifact.status = "completed";
+    artifact.comparison = {
+      pluginMetrics,
+      codebaseMemoryMcpMetrics,
+    };
+  } catch (error: unknown) {
+    artifact.status = "disqualified";
+    artifact.error = errorMessage(error);
+  } finally {
+    isolated?.cleanup();
+  }
+
+  ensureDir(path.dirname(artifactPath));
+  writeFileSync(artifactPath, JSON.stringify(artifact, null, 2), "utf-8");
+
+  return {
+    repeat,
+    status: artifact.status,
+    artifactPath,
+    scopedQueryCount: scopedQueries.length,
+    totalQueryCount: dataset.queries.length,
+    queryIds,
+    pluginMetrics: artifact.comparison?.pluginMetrics,
+    codebaseMemoryMcpMetrics: artifact.comparison?.codebaseMemoryMcpMetrics,
+    error: artifact.error,
+  };
+}
+
 function averageMetrics(metricsList: EvalMetrics[]): EvalMetrics {
   if (metricsList.length === 0) {
     return {
@@ -1369,18 +1749,29 @@ function appendCodeGraphMetricTable(
   codeGraphMetrics: EvalMetrics,
   includeLatency = true
 ): void {
-  lines.push("| Metric | Plugin | CodeGraph |");
+  appendComparatorMetricTable(lines, "Plugin", "CodeGraph", pluginMetrics, codeGraphMetrics, includeLatency);
+}
+
+function appendComparatorMetricTable(
+  lines: string[],
+  leftName: string,
+  rightName: string,
+  leftMetrics: EvalMetrics,
+  rightMetrics: EvalMetrics,
+  includeLatency = true,
+): void {
+  lines.push(`| Metric | ${leftName} | ${rightName} |`);
   lines.push("|---|---:|---:|");
-  lines.push(`| Hit@1 | ${pct(pluginMetrics.hitAt1)} | ${pct(codeGraphMetrics.hitAt1)} |`);
-  lines.push(`| Hit@3 | ${pct(pluginMetrics.hitAt3)} | ${pct(codeGraphMetrics.hitAt3)} |`);
-  lines.push(`| Hit@5 | ${pct(pluginMetrics.hitAt5)} | ${pct(codeGraphMetrics.hitAt5)} |`);
-  lines.push(`| Hit@10 | ${pct(pluginMetrics.hitAt10)} | ${pct(codeGraphMetrics.hitAt10)} |`);
-  lines.push(`| MRR@10 | ${num(pluginMetrics.mrrAt10)} | ${num(codeGraphMetrics.mrrAt10)} |`);
-  lines.push(`| nDCG@10 | ${num(pluginMetrics.ndcgAt10)} | ${num(codeGraphMetrics.ndcgAt10)} |`);
+  lines.push(`| Hit@1 | ${pct(leftMetrics.hitAt1)} | ${pct(rightMetrics.hitAt1)} |`);
+  lines.push(`| Hit@3 | ${pct(leftMetrics.hitAt3)} | ${pct(rightMetrics.hitAt3)} |`);
+  lines.push(`| Hit@5 | ${pct(leftMetrics.hitAt5)} | ${pct(rightMetrics.hitAt5)} |`);
+  lines.push(`| Hit@10 | ${pct(leftMetrics.hitAt10)} | ${pct(rightMetrics.hitAt10)} |`);
+  lines.push(`| MRR@10 | ${num(leftMetrics.mrrAt10)} | ${num(rightMetrics.mrrAt10)} |`);
+  lines.push(`| nDCG@10 | ${num(leftMetrics.ndcgAt10)} | ${num(rightMetrics.ndcgAt10)} |`);
   if (includeLatency) {
-    lines.push(`| Latency p50 (ms) | ${ms(pluginMetrics.latencyMs.p50)} | ${ms(codeGraphMetrics.latencyMs.p50)} |`);
-    lines.push(`| Latency p95 (ms) | ${ms(pluginMetrics.latencyMs.p95)} | ${ms(codeGraphMetrics.latencyMs.p95)} |`);
-    lines.push(`| Latency p99 (ms) | ${ms(pluginMetrics.latencyMs.p99)} | ${ms(codeGraphMetrics.latencyMs.p99)} |`);
+    lines.push(`| Latency p50 (ms) | ${ms(leftMetrics.latencyMs.p50)} | ${ms(rightMetrics.latencyMs.p50)} |`);
+    lines.push(`| Latency p95 (ms) | ${ms(leftMetrics.latencyMs.p95)} | ${ms(rightMetrics.latencyMs.p95)} |`);
+    lines.push(`| Latency p99 (ms) | ${ms(leftMetrics.latencyMs.p99)} | ${ms(rightMetrics.latencyMs.p99)} |`);
   }
   lines.push("");
 }
@@ -1410,6 +1801,7 @@ export function buildReportMarkdown(
     }`
   );
   lines.push(`- CodeGraph fair comparator: ${options.codegraph ? "enabled" : "disabled"}`);
+  lines.push(`- codebase-memory-mcp fair comparator: ${options.codebaseMemoryMcp ? "enabled" : "disabled"}`);
   lines.push("");
 
   const aggregateSgHeaderLabel = (() => {
@@ -1546,6 +1938,70 @@ export function buildReportMarkdown(
     }
   }
 
+  if (options.codebaseMemoryMcp) {
+    lines.push("## Fair codebase-memory-mcp Comparator");
+    lines.push("");
+    lines.push("Plugin metrics are recomputed per repeat from exactly the same definition-query IDs with `expected.symbol` that codebase-memory-mcp receives.");
+    lines.push("Latency is omitted in this comparator because each `search_graph` timing includes one-shot `npx` CLI process startup.");
+    lines.push("");
+
+    for (const result of successful) {
+      lines.push(`### ${result.repoName}`);
+      lines.push("");
+      const comparison = result.codebaseMemoryMcp;
+      if (!comparison) {
+        lines.push("No comparison result: codebase-memory-mcp was not run for this repository.");
+        lines.push("");
+        continue;
+      }
+
+      lines.push(`- Scope: ${comparison.scopedQueryCount}/${comparison.totalQueryCount} queries`);
+      lines.push(`- Valid repeats: ${comparison.successfulRepeatCount}/${comparison.repeatSummaries.length}`);
+      for (const repeat of comparison.repeatSummaries) {
+        if (repeat.status !== "completed") {
+          lines.push(
+            `- Repeat ${repeat.repeat}: No comparison result (${repeat.error ?? "no definition queries with expected.symbol"}); artifact: ${repeat.artifactPath}`
+          );
+        }
+      }
+
+      if (comparison.metrics) {
+        lines.push("");
+        appendComparatorMetricTable(
+          lines,
+          "Plugin",
+          "codebase-memory-mcp",
+          comparison.metrics.plugin,
+          comparison.metrics.codebaseMemoryMcp,
+          false,
+        );
+      } else {
+        lines.push("");
+        lines.push("No comparison result: no codebase-memory-mcp repeat completed successfully.");
+        lines.push("");
+      }
+    }
+
+    const comparable = successful
+      .map((result) => result.codebaseMemoryMcp?.metrics)
+      .filter((metrics): metrics is NonNullable<NonNullable<RepoBenchmarkResult["codebaseMemoryMcp"]>["metrics"]> => metrics !== undefined);
+    lines.push("### Aggregate fair comparison");
+    lines.push("");
+    if (comparable.length > 0) {
+      appendComparatorMetricTable(
+        lines,
+        "Plugin",
+        "codebase-memory-mcp",
+        averageMetrics(comparable.map((metrics) => metrics.plugin)),
+        averageMetrics(comparable.map((metrics) => metrics.codebaseMemoryMcp)),
+        false,
+      );
+    } else {
+      lines.push("No comparison result: no repository had a successful codebase-memory-mcp repeat.");
+      lines.push("");
+    }
+  }
+
   const failed = repoResults.filter((item) => item.error);
   if (failed.length > 0) {
     lines.push("## Failures");
@@ -1583,6 +2039,7 @@ async function runForRepo(
     const ripgrepRuns: EvalMetrics[] = [];
     const sgRuns: EvalMetrics[] = [];
     const codeGraphRepeats: CodeGraphRepeatSummary[] = [];
+    const codebaseMemoryMcpRepeats: CodebaseMemoryMcpRepeatSummary[] = [];
     const pluginRepeatSummaries: Array<{
       repeat: number;
       outputDir: string;
@@ -1631,6 +2088,18 @@ async function runForRepo(
           repeat: repeat + 1,
           artifactPath: path.join(runDir, "codegraph", repoName, `repeat-${repeat + 1}.json`),
         }));
+      }
+
+      if (options.codebaseMemoryMcp) {
+        codebaseMemoryMcpRepeats.push(
+          await runCodebaseMemoryMcpRepeat({
+            repoPath,
+            dataset,
+            pluginPerQuery: pluginResult.perQuery,
+            repeat: repeat + 1,
+            artifactPath: path.join(runDir, "codebase-memory-mcp", repoName, `repeat-${repeat + 1}.json`),
+          }),
+        );
       }
 
       if (!options.skipRipgrep) {
@@ -1711,6 +2180,30 @@ async function runForRepo(
           metrics: {
             plugin: medianMetrics(successfulComparisons.map((repeat) => repeat.pluginMetrics)),
             codegraph: medianMetrics(successfulComparisons.map((repeat) => repeat.codeGraphMetrics)),
+          },
+        } : {}),
+      };
+    }
+
+    if (options.codebaseMemoryMcp) {
+      const successfulComparisons = codebaseMemoryMcpRepeats.filter(
+        (repeat): repeat is CodebaseMemoryMcpRepeatSummary & {
+          pluginMetrics: EvalMetrics;
+          codebaseMemoryMcpMetrics: EvalMetrics;
+        } => repeat.status === "completed"
+          && repeat.pluginMetrics !== undefined
+          && repeat.codebaseMemoryMcpMetrics !== undefined
+      );
+      result.codebaseMemoryMcp = {
+        scopedQueryCount: codebaseMemoryMcpRepeats[0]?.scopedQueryCount ?? 0,
+        totalQueryCount: dataset.queries.length,
+        successfulRepeatCount: successfulComparisons.length,
+        disqualifiedRepeatCount: codebaseMemoryMcpRepeats.filter((repeat) => repeat.status === "disqualified").length,
+        repeatSummaries: codebaseMemoryMcpRepeats,
+        ...(successfulComparisons.length > 0 ? {
+          metrics: {
+            plugin: medianMetrics(successfulComparisons.map((repeat) => repeat.pluginMetrics)),
+            codebaseMemoryMcp: medianMetrics(successfulComparisons.map((repeat) => repeat.codebaseMemoryMcpMetrics)),
           },
         } : {}),
       };
@@ -1814,6 +2307,7 @@ async function main(): Promise<void> {
       skipRipgrep: options.skipRipgrep,
       skipSg: options.skipSg,
       codegraph: options.codegraph,
+      codebaseMemoryMcp: options.codebaseMemoryMcp,
     },
     runDir,
     repos: results,
@@ -1836,6 +2330,17 @@ async function main(): Promise<void> {
               .filter((item): item is EvalMetrics => item !== undefined)
           ),
     },
+    codebaseMemoryMcpComparison: options.codebaseMemoryMcp ? (() => {
+      const comparable = results
+        .filter((item) => !item.error)
+        .map((item) => item.codebaseMemoryMcp?.metrics)
+        .filter((metrics): metrics is NonNullable<NonNullable<RepoBenchmarkResult["codebaseMemoryMcp"]>["metrics"]> => metrics !== undefined);
+      return {
+        comparedRepoCount: comparable.length,
+        plugin: comparable.length > 0 ? averageMetrics(comparable.map((metrics) => metrics.plugin)) : undefined,
+        codebaseMemoryMcp: comparable.length > 0 ? averageMetrics(comparable.map((metrics) => metrics.codebaseMemoryMcp)) : undefined,
+      };
+    })() : undefined,
     codegraphComparison: options.codegraph ? (() => {
       const comparable = results
         .filter((item) => !item.error)
