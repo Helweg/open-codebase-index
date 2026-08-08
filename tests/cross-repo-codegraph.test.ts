@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as detector from "../src/embeddings/detector.js";
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import type { GoldenDataset, GoldenQuery, PerQueryEvalResult } from "../src/eval/types.js";
 import type { ParsedFile } from "../src/native/index.js";
@@ -11,6 +12,7 @@ import {
   buildGoldenDataset,
   buildReportMarkdown,
   buildPluginEvalRunOptions,
+  ensureLocalOllamaForCrossRepoBenchmark,
   controlledEvalConfigPath,
   writeControlledEvalConfig,
   MAX_FILE_SIZE_BYTES,
@@ -521,6 +523,8 @@ describe("cross-repo CodeGraph comparator", () => {
           maxFileSize?: number;
           maxChunksPerFile?: number;
         };
+        embeddingProvider?: string;
+        embeddingModel?: string;
       };
 
       expect(path.dirname(configPath)).toBe(path.join(runDir, "eval-configs"));
@@ -529,6 +533,8 @@ describe("cross-repo CodeGraph comparator", () => {
           maxFileSize: MAX_FILE_SIZE_BYTES,
           maxChunksPerFile: 100,
         },
+        embeddingProvider: "ollama",
+        embeddingModel: "nomic-embed-text",
       });
 
       const runOptions = buildPluginEvalRunOptions({
@@ -551,5 +557,39 @@ describe("cross-repo CodeGraph comparator", () => {
     } finally {
       process.env.HOME = hostileHome;
     }
+  });
+
+  it("fails fast if local Ollama or model is unavailable", async () => {
+    const spy = vi.spyOn(detector, "detectEmbeddingProvider");
+    spy.mockRejectedValueOnce(
+      new Error("Preferred provider 'ollama' is not configured or authenticated"),
+    );
+
+    await expect(ensureLocalOllamaForCrossRepoBenchmark()).rejects.toMatchObject({
+      message:
+        "Cross-repo benchmark requires local Ollama with model 'nomic-embed-text'. Pre-flight check failed: Preferred provider 'ollama' is not configured or authenticated",
+    });
+    expect(spy).toHaveBeenCalledWith("ollama", "nomic-embed-text");
+  });
+
+  it("passes local Ollama preflight if model is available", async () => {
+    const spy = vi.spyOn(detector, "detectEmbeddingProvider");
+    spy.mockResolvedValueOnce({
+      provider: "ollama",
+      credentials: {
+        provider: "ollama",
+        baseUrl: "http://localhost:11434",
+      },
+      modelInfo: {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        maxTokens: 2048,
+        costPer1MTokens: 0,
+      },
+    });
+
+    await expect(ensureLocalOllamaForCrossRepoBenchmark()).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledWith("ollama", "nomic-embed-text");
   });
 });

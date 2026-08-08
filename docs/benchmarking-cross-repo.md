@@ -18,6 +18,8 @@ Metrics reported per repo and aggregated:
 ## Prerequisites
 
 - Built project dependencies (`npm install`)
+- Local Ollama daemon reachable at `OLLAMA_HOST` (default `http://localhost:11434`)
+- Installed Ollama embedding model `nomic-embed-text`
 - `rg` installed
 - `sg` installed (`brew install ast-grep` on macOS)
 - `npx` (for `codegraph` execution)

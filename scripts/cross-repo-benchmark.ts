@@ -7,6 +7,7 @@ import { performance } from "perf_hooks";
 import { promisify } from "util";
 import { fileURLToPath } from "url";
 
+import { detectEmbeddingProvider } from "../src/embeddings/detector.js";
 import { createIsolatedSourceCopy, parseCodeGraphOutput, type CodeGraphResult } from "./codegraph-baseline.js";
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import { runEvaluation } from "../src/eval/runner.js";
@@ -117,7 +118,11 @@ export interface ControlledEvalConfigArtifact {
     maxFileSize: number;
     maxChunksPerFile: number;
   };
+  embeddingProvider: "ollama";
+  embeddingModel: string;
 }
+
+const CROSS_REPO_OLLAMA_MODEL = "nomic-embed-text";
 
 export interface RepoBenchmarkResult {
   repoName: string;
@@ -237,6 +242,7 @@ Defaults:
   max-parse-files: 2500
   persist-datasets: false
   codegraph: false
+  plugin eval provider: local Ollama (embeddingModel: ${CROSS_REPO_OLLAMA_MODEL})
 `);
 }
 
@@ -270,11 +276,27 @@ export function writeControlledEvalConfig(configPath: string): string {
       maxFileSize: MAX_FILE_SIZE_BYTES,
       maxChunksPerFile: MAX_CHUNKS_PER_FILE,
     },
+    embeddingProvider: "ollama",
+    embeddingModel: CROSS_REPO_OLLAMA_MODEL,
   } satisfies ControlledEvalConfigArtifact;
 
   ensureDir(path.dirname(configPath));
   writeFileSync(configPath, JSON.stringify(content, null, 2), "utf-8");
   return configPath;
+}
+
+export async function ensureLocalOllamaForCrossRepoBenchmark(
+  model = CROSS_REPO_OLLAMA_MODEL,
+): Promise<void> {
+  try {
+    await detectEmbeddingProvider("ollama", model);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(
+      `Cross-repo benchmark requires local Ollama with model '${model}'. ` +
+        `Pre-flight check failed: ${message}`,
+    );
+  }
 }
 
 export function buildPluginEvalRunOptions(
@@ -1733,6 +1755,8 @@ async function main(): Promise<void> {
       throw new Error(`Repository path does not exist: ${repoPath}`);
     }
   }
+
+  await ensureLocalOllamaForCrossRepoBenchmark();
 
   const runTimestamp = timestampForDir();
   const runDir = path.join(options.outputRoot, runTimestamp);
