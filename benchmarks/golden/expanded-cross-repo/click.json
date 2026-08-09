@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "expanded-click-definitions",
-  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "click-echo",
@@ -71,6 +71,69 @@
         "filePath": "src/click/decorators.py",
         "symbol": "option",
         "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "click-shell-completion",
+      "query": "shell_complete CompletionItem incomplete get_completions BashComplete ZshComplete",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "python",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "shell-completion",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "src/click/shell_completion.py",
+            "relevance": 3
+          },
+          {
+            "path": "src/click/core.py",
+            "relevance": 2
+          },
+          {
+            "path": "src/click/types.py",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "click-atomic-lazy-file-io",
+      "query": "atomic _LazyFile open_stream stdin stdout temporary os.replace close_intelligently",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "python",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "file-io",
+        "resource-lifecycle",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "src/click/_compat.py",
+            "relevance": 3
+          },
+          {
+            "path": "src/click/utils.py",
+            "relevance": 3
+          },
+          {
+            "path": "src/click/types.py",
+            "relevance": 2
+          }
+        ]
       }
     }
   ]

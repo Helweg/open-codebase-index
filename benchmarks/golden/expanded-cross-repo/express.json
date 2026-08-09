@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "expanded-express-definitions",
-  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "express-create-application",
@@ -71,6 +71,62 @@
         "filePath": "examples/view-constructor/github-view.js",
         "symbol": "GithubView",
         "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "express-view-render-resolution",
+      "query": "res.render _locals app.render view cache defaultEngine engines lookup nextTick",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "rendering",
+        "view-resolution",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/application.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/view.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/response.js",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "express-response-file-transfer",
+      "query": "sendFile download attachment Content-Disposition root sendfile onaborted onfinish",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "response",
+        "file-transfer",
+        "streaming"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/response.js",
+            "relevance": 3
+          }
+        ]
       }
     }
   ]

@@ -118,6 +118,47 @@ function withRunEvaluationMock(result: Awaited<ReturnType<typeof runner.runEvalu
 }
 
 describe("cross-repo benchmark dataset-dir flag", () => {
+  it("keeps the expanded frozen cohort balanced between definition and keyword-heavy retrieval", () => {
+    const cohortDir = path.join(process.cwd(), "benchmarks", "golden", "expanded-cross-repo");
+    const cohort = JSON.parse(fs.readFileSync(path.join(cohortDir, "cohort.json"), "utf-8")) as {
+      version: string;
+      name: string;
+      queryCountPerRepository: number;
+      repositories: Array<{ dataset: string }>;
+    };
+
+    expect(cohort).toMatchObject({
+      version: "1.1.0",
+      name: "expanded-cross-repo-mixed-intent-pilot",
+      queryCountPerRepository: 7,
+    });
+    expect(cohort.repositories).toHaveLength(5);
+
+    for (const repository of cohort.repositories) {
+      const dataset = JSON.parse(fs.readFileSync(path.join(cohortDir, repository.dataset), "utf-8")) as {
+        version: string;
+        queries: Array<{
+          id: string;
+          queryType: string;
+          retrievalMode?: string;
+          expected: { expectedRoute?: string; gradedEvidence?: unknown[] };
+        }>;
+      };
+      const definitions = dataset.queries.filter((query) => query.queryType === "definition");
+      const keywordHeavy = dataset.queries.filter((query) => query.queryType === "keyword-heavy");
+
+      expect(dataset.version).toBe("1.1.0");
+      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(7);
+      expect(definitions).toHaveLength(5);
+      expect(keywordHeavy).toHaveLength(2);
+      for (const query of keywordHeavy) {
+        expect(query.retrievalMode).toBe("search");
+        expect(query.expected.expectedRoute).toBe("search");
+        expect(query.expected.gradedEvidence?.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("parses --dataset-dir in CLI args", () => {
     const repoPath = tempDir("cross-repo-benchmark-cli-repo-");
     const datasetDir = tempDir("cross-repo-benchmark-cli-fixed-");

@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "expanded-cobra-definitions",
-  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "cobra-no-args",
@@ -71,6 +71,71 @@
         "filePath": "cobra.go",
         "symbol": "OnInitialize",
         "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "cobra-dynamic-shell-completion",
+      "query": "ValidArgsFunction RegisterFlagCompletionFunc ShellCompDirective NoFileComp FilterFileExt ActiveHelp",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "go",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "shell-completion",
+        "directives",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "completions.go",
+            "relevance": 3
+          },
+          {
+            "path": "command.go",
+            "relevance": 2
+          },
+          {
+            "path": "active_help.go",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "cobra-flag-group-validation",
+      "query": "MarkFlagsRequiredTogether MarkFlagsOneRequired MarkFlagsMutuallyExclusive annotations ValidateFlagGroups enforceFlagGroupsForCompletion",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "go",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "flags",
+        "validation",
+        "shell-completion",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "flag_groups.go",
+            "relevance": 3
+          },
+          {
+            "path": "command.go",
+            "relevance": 2
+          },
+          {
+            "path": "completions.go",
+            "relevance": 2
+          }
+        ]
       }
     }
   ]
