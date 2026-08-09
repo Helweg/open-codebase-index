@@ -1,10 +1,10 @@
 use crate::types::Language;
 use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol};
 use anyhow::{anyhow, Result};
-use lazy_static::lazy_static;
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::{LazyLock, Mutex};
 #[cfg(debug_assertions)]
 use std::time::Instant;
 use tree_sitter::{Parser, Tree};
@@ -511,203 +511,201 @@ pub fn print_parser_perf_stats() {
     PERF_STATS.lock().unwrap().print();
 }
 
-lazy_static! {
-    static ref PERF_STATS: std::sync::Mutex<PerfStats> = std::sync::Mutex::new(PerfStats::new());
-    static ref TS_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        // Original 10 types
-        set.insert("function_declaration");
-        set.insert("function");
-        set.insert("arrow_function");
-        set.insert("method_definition");
-        set.insert("class_declaration");
-        set.insert("interface_declaration");
-        set.insert("type_alias_declaration");
-        set.insert("enum_declaration");
-        set.insert("export_statement");
-        set.insert("lexical_declaration");
-        set.insert("abstract_class_declaration");
-        // Added 5 most common statement types
-        set.insert("expression_statement");
-        set.insert("if_statement");
-        set.insert("for_statement");
-        set.insert("return_statement");
-        set.insert("try_statement");
-        set.insert("while_statement");
-        set.insert("statement_block");
-        set.insert("for_in_statement");
-        set
-    };
-    static ref PYTHON_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("class_definition");
-        set.insert("decorated_definition");
-        set
-    };
-    static ref RUST_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_item");
-        set.insert("impl_item");
-        set.insert("struct_item");
-        set.insert("enum_item");
-        set.insert("trait_item");
-        set.insert("mod_item");
-        set.insert("macro_definition");
-        set
-    };
-    static ref SWIFT_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("class_declaration");
-        set.insert("protocol_declaration");
-        set.insert("function_declaration");
-        set.insert("protocol_function_declaration");
-        set.insert("init_declaration");
-        set.insert("deinit_declaration");
-        set.insert("subscript_declaration");
-        set
-    };
-    static ref GO_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_declaration");
-        set.insert("method_declaration");
-        set.insert("type_declaration");
-        set.insert("type_spec");
-        set
-    };
-    static ref JAVA_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("class_declaration");
-        set.insert("method_declaration");
-        set.insert("constructor_declaration");
-        set.insert("interface_declaration");
-        set.insert("enum_declaration");
-        set.insert("annotation_type_declaration");
-        set
-    };
-    static ref CSHARP_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("class_declaration");
-        set.insert("method_declaration");
-        set.insert("constructor_declaration");
-        set.insert("interface_declaration");
-        set.insert("enum_declaration");
-        set.insert("struct_declaration");
-        set.insert("record_declaration");
-        set.insert("property_declaration");
-        set
-    };
-    static ref RUBY_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("method");
-        set.insert("singleton_method");
-        set.insert("class");
-        set.insert("module");
-        set
-    };
-    static ref BASH_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set
-    };
-    static ref C_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("struct_specifier");
-        set.insert("enum_specifier");
-        set.insert("type_definition");
-        set
-    };
-    static ref CPP_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("class_specifier");
-        set.insert("struct_specifier");
-        set.insert("enum_specifier");
-        set.insert("namespace_definition");
-        set.insert("template_declaration");
-        set
-    };
-    static ref METAL_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("class_specifier");
-        set.insert("struct_specifier");
-        set.insert("union_specifier");
-        set.insert("enum_specifier");
-        set.insert("type_definition");
-        set.insert("alias_declaration");
-        set
-    };
-    static ref TOML_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("table");
-        set.insert("table_array_element");
-        set
-    };
-    static ref YAML_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("block_mapping_pair");
-        set.insert("block_sequence");
-        set
-    };
-    static ref PHP_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("method_declaration");
-        set.insert("class_declaration");
-        set.insert("interface_declaration");
-        set.insert("trait_declaration");
-        set.insert("enum_declaration");
-        set
-    };
-    static ref ZIG_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_declaration");
-        set.insert("test_declaration");
-        set.insert("struct_declaration");
-        set.insert("enum_declaration");
-        set.insert("union_declaration");
-        set.insert("opaque_declaration");
-        set.insert("error_set_declaration");
-        set
-    };
-    // GDScript grammar (PrestonKnopp/tree-sitter-gdscript). Declaration-like
-    // nodes only — variable_statement is intentionally excluded because
-    // module-level `var foo = ...` lines would generate one chunk per
-    // variable and drown out real declarations.
-    static ref GDSCRIPT_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("constructor_definition");
-        set.insert("class_definition");
-        set.insert("enum_definition");
-        set.insert("signal_statement");
-        set.insert("const_statement");
-        set.insert("class_name_statement");
-        set
-    };
-    static ref MATLAB_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("function_definition");
-        set.insert("class_definition");
-        set
-    };
-    // Apex grammar (tree-sitter-sfapex) is Java-derived: the declaration node
-    // kinds match Java exactly, plus `trigger_declaration` which is unique to
-    // Apex (Salesforce database triggers). Verified against tree-sitter-sfapex
-    // 3.0 by parsing representative classes/triggers/interfaces.
-    static ref APEX_SEMANTIC_NODES: HashSet<&'static str> = {
-        let mut set = HashSet::new();
-        set.insert("class_declaration");
-        set.insert("method_declaration");
-        set.insert("constructor_declaration");
-        set.insert("interface_declaration");
-        set.insert("enum_declaration");
-        set.insert("trigger_declaration");
-        set
-    };
-}
+static PERF_STATS: LazyLock<Mutex<PerfStats>> = LazyLock::new(|| Mutex::new(PerfStats::new()));
+static TS_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    // Original 10 types
+    set.insert("function_declaration");
+    set.insert("function");
+    set.insert("arrow_function");
+    set.insert("method_definition");
+    set.insert("class_declaration");
+    set.insert("interface_declaration");
+    set.insert("type_alias_declaration");
+    set.insert("enum_declaration");
+    set.insert("export_statement");
+    set.insert("lexical_declaration");
+    set.insert("abstract_class_declaration");
+    // Added 5 most common statement types
+    set.insert("expression_statement");
+    set.insert("if_statement");
+    set.insert("for_statement");
+    set.insert("return_statement");
+    set.insert("try_statement");
+    set.insert("while_statement");
+    set.insert("statement_block");
+    set.insert("for_in_statement");
+    set
+});
+static PYTHON_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("class_definition");
+    set.insert("decorated_definition");
+    set
+});
+static RUST_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_item");
+    set.insert("impl_item");
+    set.insert("struct_item");
+    set.insert("enum_item");
+    set.insert("trait_item");
+    set.insert("mod_item");
+    set.insert("macro_definition");
+    set
+});
+static SWIFT_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("class_declaration");
+    set.insert("protocol_declaration");
+    set.insert("function_declaration");
+    set.insert("protocol_function_declaration");
+    set.insert("init_declaration");
+    set.insert("deinit_declaration");
+    set.insert("subscript_declaration");
+    set
+});
+static GO_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_declaration");
+    set.insert("method_declaration");
+    set.insert("type_declaration");
+    set.insert("type_spec");
+    set
+});
+static JAVA_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("class_declaration");
+    set.insert("method_declaration");
+    set.insert("constructor_declaration");
+    set.insert("interface_declaration");
+    set.insert("enum_declaration");
+    set.insert("annotation_type_declaration");
+    set
+});
+static CSHARP_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("class_declaration");
+    set.insert("method_declaration");
+    set.insert("constructor_declaration");
+    set.insert("interface_declaration");
+    set.insert("enum_declaration");
+    set.insert("struct_declaration");
+    set.insert("record_declaration");
+    set.insert("property_declaration");
+    set
+});
+static RUBY_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("method");
+    set.insert("singleton_method");
+    set.insert("class");
+    set.insert("module");
+    set
+});
+static BASH_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set
+});
+static C_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("struct_specifier");
+    set.insert("enum_specifier");
+    set.insert("type_definition");
+    set
+});
+static CPP_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("class_specifier");
+    set.insert("struct_specifier");
+    set.insert("enum_specifier");
+    set.insert("namespace_definition");
+    set.insert("template_declaration");
+    set
+});
+static METAL_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("class_specifier");
+    set.insert("struct_specifier");
+    set.insert("union_specifier");
+    set.insert("enum_specifier");
+    set.insert("type_definition");
+    set.insert("alias_declaration");
+    set
+});
+static TOML_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("table");
+    set.insert("table_array_element");
+    set
+});
+static YAML_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("block_mapping_pair");
+    set.insert("block_sequence");
+    set
+});
+static PHP_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("method_declaration");
+    set.insert("class_declaration");
+    set.insert("interface_declaration");
+    set.insert("trait_declaration");
+    set.insert("enum_declaration");
+    set
+});
+static ZIG_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_declaration");
+    set.insert("test_declaration");
+    set.insert("struct_declaration");
+    set.insert("enum_declaration");
+    set.insert("union_declaration");
+    set.insert("opaque_declaration");
+    set.insert("error_set_declaration");
+    set
+});
+// GDScript grammar (PrestonKnopp/tree-sitter-gdscript). Declaration-like
+// nodes only — variable_statement is intentionally excluded because
+// module-level `var foo = ...` lines would generate one chunk per
+// variable and drown out real declarations.
+static GDSCRIPT_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("constructor_definition");
+    set.insert("class_definition");
+    set.insert("enum_definition");
+    set.insert("signal_statement");
+    set.insert("const_statement");
+    set.insert("class_name_statement");
+    set
+});
+static MATLAB_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("function_definition");
+    set.insert("class_definition");
+    set
+});
+// Apex grammar (tree-sitter-sfapex) is Java-derived: the declaration node
+// kinds match Java exactly, plus `trigger_declaration` which is unique to
+// Apex (Salesforce database triggers). Verified against tree-sitter-sfapex
+// 3.0 by parsing representative classes/triggers/interfaces.
+static APEX_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let mut set = HashSet::new();
+    set.insert("class_declaration");
+    set.insert("method_declaration");
+    set.insert("constructor_declaration");
+    set.insert("interface_declaration");
+    set.insert("enum_declaration");
+    set.insert("trigger_declaration");
+    set
+});
 
 fn is_semantic_node(node_type: &str, language: &Language) -> bool {
     #[cfg(debug_assertions)]

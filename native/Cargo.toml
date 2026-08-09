@@ -43,12 +43,9 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 rayon = "1.10"
-walkdir = "2.5"
-ignore = "0.4"
 thiserror = "1.0"
 anyhow = "1.0"
 streaming-iterator = "0.1"
-lazy_static = "1.4"
 # On Linux/macOS: use default features (simsimd + fp16lib) for SIMD-accelerated vector ops
 # On Windows: disable simsimd — MSVC lacks _mm512_reduce_add_ph intrinsic (usearch#325)
 [target.'cfg(not(target_os = "windows"))'.dependencies]
