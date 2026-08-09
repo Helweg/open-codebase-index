@@ -152,6 +152,8 @@ describe("codegraph baseline foundation", () => {
       withTempFile(path.join(root, ".git", "HEAD"));
       withTempFile(path.join(root, ".codegraph", "config.json"));
       withTempFile(path.join(root, ".codebase-index", "state.json"));
+      withTempFile(path.join(root, ".opencode", "config.json"));
+      withTempFile(path.join(root, ".opencode", "index", "state.json"));
       withTempFile(path.join(root, "node_modules", "pkg", "index.js"));
       withTempFile(path.join(root, "dist", "bundle.js"));
       withTempFile(path.join(root, "build", "out.js"));
@@ -170,6 +172,7 @@ describe("codegraph baseline foundation", () => {
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, ".git"))).toBe(false);
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, ".codegraph"))).toBe(false);
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, ".codebase-index"))).toBe(false);
+      expect(fs.existsSync(path.join(isolated.isolatedRepoPath, ".opencode"))).toBe(false);
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, "node_modules"))).toBe(false);
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, "dist"))).toBe(false);
       expect(fs.existsSync(path.join(isolated.isolatedRepoPath, "build"))).toBe(false);

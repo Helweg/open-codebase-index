@@ -224,6 +224,33 @@ export function extractPrimaryIdentifierQueryHint(query: string): string | null 
   return best ?? null;
 }
 
+function pathSegmentsForAffinityMatch(filePath: string): string[] {
+  const normalizedPath = normalizeRankingText(filePath).replace(/\\/g, "/");
+  const segments = normalizedPath.split("/").filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return [];
+  }
+
+  const basename = segments[segments.length - 1] ?? "";
+  const basenameWithoutExt = basename.replace(/\.[^/.]+$/u, "");
+  const normalizedSegments = segments.map((segment) => segment.toLowerCase());
+
+  return Array.from(new Set([
+    ...normalizedSegments,
+    basenameWithoutExt.toLowerCase(),
+  ]));
+}
+
+function hasModuleAffinity(filePath: string, exactIdentifierVariants: string[]): boolean {
+  const haystack = pathSegmentsForAffinityMatch(filePath);
+  return exactIdentifierVariants.some((variant) => {
+    if (!variant || variant.length < 2) {
+      return false;
+    }
+    return haystack.includes(variant);
+  });
+}
+
 const FILE_PATH_HINT_EXTENSIONS = [
   "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
   "py", "rs", "go", "java", "kt", "kts", "swift", "rb", "php",
@@ -296,10 +323,15 @@ export function buildDeterministicIdentifierPass(
     .map((candidate) => {
       const nameLower = (candidate.metadata.name ?? "").toLowerCase();
       const pathLower = candidate.metadata.filePath.toLowerCase();
-      let maxMatch = 0;
-      const nameMatchesPrimary = primaryVariants.some((variant) =>
-        nameLower === variant || nameLower.replace(/[^a-z0-9]/g, "") === variant.replace(/[^a-z0-9]/g, "")
+
+      const exactIdentifierVariants = primaryVariants.filter((value) => value.length >= 2);
+      const exactMatch = exactIdentifierVariants.some((variant) =>
+        nameLower === variant ||
+        nameLower.replace(/[^a-z0-9]/g, "") === variant.replace(/[^a-z0-9]/g, "")
       );
+      let maxMatch = 0;
+      const nameMatchesPrimary = exactMatch;
+      const pathAffinity = exactMatch ? hasModuleAffinity(candidate.metadata.filePath, exactIdentifierVariants) : false;
       const pathMatchesFileHint = filePathHint ? pathMatchesHint(candidate.metadata.filePath, filePathHint) : false;
 
       for (const hint of hints) {
@@ -324,6 +356,7 @@ export function buildDeterministicIdentifierPass(
         maxMatch,
         pathMatchesFileHint,
         nameMatchesPrimary,
+        pathAffinity,
       };
     })
     .filter((entry) => entry.maxMatch >= 0.7)
@@ -331,6 +364,11 @@ export function buildDeterministicIdentifierPass(
       const aAnchored = a.pathMatchesFileHint && a.nameMatchesPrimary ? 1 : 0;
       const bAnchored = b.pathMatchesFileHint && b.nameMatchesPrimary ? 1 : 0;
       if (aAnchored !== bAnchored) return bAnchored - aAnchored;
+
+      if (a.nameMatchesPrimary !== b.nameMatchesPrimary) {
+        return b.nameMatchesPrimary ? 1 : -1;
+      }
+      if (a.pathAffinity !== b.pathAffinity) return b.pathAffinity ? 1 : -1;
       if (b.maxMatch !== a.maxMatch) return b.maxMatch - a.maxMatch;
       if (b.candidate.score !== a.candidate.score) return b.candidate.score - a.candidate.score;
       return a.candidate.id.localeCompare(b.candidate.id);

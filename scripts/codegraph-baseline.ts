@@ -9,6 +9,7 @@ const EXCLUDED_DIRS = new Set([
   ".git",
   ".codegraph",
   ".codebase-index",
+  ".opencode",
   "node_modules",
   "dist",
   "build",

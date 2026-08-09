@@ -4,6 +4,7 @@ import * as path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as detector from "../src/embeddings/detector.js";
 import { buildPerQueryResult, computeEvalMetrics } from "../src/eval/metrics.js";
 import type { GoldenDataset, GoldenQuery, PerQueryEvalResult } from "../src/eval/types.js";
 import type { ParsedFile } from "../src/native/index.js";
@@ -11,11 +12,13 @@ import {
   buildGoldenDataset,
   buildReportMarkdown,
   buildPluginEvalRunOptions,
+  ensureLocalOllamaForCrossRepoBenchmark,
   controlledEvalConfigPath,
   writeControlledEvalConfig,
   MAX_FILE_SIZE_BYTES,
   parseCliArgs,
   runCodeGraphRepeat,
+  runCodebaseMemoryMcpRepeat,
   type CliOptions,
   type RepoBenchmarkResult,
 } from "../scripts/cross-repo-benchmark.js";
@@ -75,6 +78,7 @@ function cliOptions(repoPath: string): CliOptions {
     skipRipgrep: true,
     skipSg: true,
     codegraph: true,
+    codebaseMemoryMcp: false,
   };
 }
 
@@ -91,6 +95,12 @@ describe("cross-repo CodeGraph comparator", () => {
     const repoPath = tempDir("cross-repo-cg-cli-");
     expect(parseCliArgs(["--repos", repoPath]).codegraph).toBe(false);
     expect(parseCliArgs(["--repos", repoPath, "--codegraph"]).codegraph).toBe(true);
+  });
+
+  it("opts in only with --codebase-memory-mcp", () => {
+    const repoPath = tempDir("cross-repo-cbmcp-cli-");
+    expect(parseCliArgs(["--repos", repoPath]).codebaseMemoryMcp).toBe(false);
+    expect(parseCliArgs(["--repos", repoPath, "--codebase-memory-mcp"]).codebaseMemoryMcp).toBe(true);
   });
 
   it("routes generated definition queries through context definition lookup", () => {
@@ -521,6 +531,8 @@ describe("cross-repo CodeGraph comparator", () => {
           maxFileSize?: number;
           maxChunksPerFile?: number;
         };
+        embeddingProvider?: string;
+        embeddingModel?: string;
       };
 
       expect(path.dirname(configPath)).toBe(path.join(runDir, "eval-configs"));
@@ -529,6 +541,8 @@ describe("cross-repo CodeGraph comparator", () => {
           maxFileSize: MAX_FILE_SIZE_BYTES,
           maxChunksPerFile: 100,
         },
+        embeddingProvider: "ollama",
+        embeddingModel: "nomic-embed-text",
       });
 
       const runOptions = buildPluginEvalRunOptions({
@@ -551,5 +565,190 @@ describe("cross-repo CodeGraph comparator", () => {
     } finally {
       process.env.HOME = hostileHome;
     }
+  });
+
+  it("fails fast if local Ollama or model is unavailable", async () => {
+    const spy = vi.spyOn(detector, "detectEmbeddingProvider");
+    spy.mockRejectedValueOnce(
+      new Error("Preferred provider 'ollama' is not configured or authenticated"),
+    );
+
+    await expect(ensureLocalOllamaForCrossRepoBenchmark()).rejects.toMatchObject({
+      message:
+        "Cross-repo benchmark requires local Ollama with model 'nomic-embed-text'. Pre-flight check failed: Preferred provider 'ollama' is not configured or authenticated",
+    });
+    expect(spy).toHaveBeenCalledWith("ollama", "nomic-embed-text");
+  });
+
+  it("passes local Ollama preflight if model is available", async () => {
+    const spy = vi.spyOn(detector, "detectEmbeddingProvider");
+    spy.mockResolvedValueOnce({
+      provider: "ollama",
+      credentials: {
+        provider: "ollama",
+        baseUrl: "http://localhost:11434",
+      },
+      modelInfo: {
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        maxTokens: 2048,
+        costPer1MTokens: 0,
+      },
+    });
+
+    await expect(ensureLocalOllamaForCrossRepoBenchmark()).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledWith("ollama", "nomic-embed-text");
+  });
+
+  it("uses per-repeat isolated repos, exact JSON args, strict scoped metrics, and raw artifacts", async () => {
+    const repoPath = tempDir("cross-repo-cbmcp-source-");
+    const artifactRoot = tempDir("cross-repo-cbmcp-artifacts-");
+    fs.mkdirSync(path.join(repoPath, "src"), { recursive: true });
+    fs.writeFileSync(path.join(repoPath, "src", "a.ts"), "export function alpha() {}", "utf-8");
+    fs.writeFileSync(path.join(repoPath, "src", "b.ts"), "export function beta() {}", "utf-8");
+    const { dataset, pluginPerQuery } = fixture();
+    const artifactPaths: string[] = [];
+    const isolatedProjects: string[] = [];
+    const executor = vi.fn(async (_executable: string, args: string[]) => {
+      expect(args[0]).toBe("--yes");
+      expect(args[1]).toBe("codebase-memory-mcp@0.8.1");
+      expect(args[2]).toBe("cli");
+
+      if (args[3] === "index_repository") {
+        const parsed = JSON.parse(args[4]!) as { repo_path: string };
+        isolatedProjects.push(parsed.repo_path);
+        expect(typeof parsed.repo_path).toBe("string");
+        expect(fs.existsSync(parsed.repo_path)).toBe(true);
+        return { stdout: JSON.stringify({ project: "demo-project" }) };
+      }
+
+      if (args[3] === "search_graph") {
+        const parsed = JSON.parse(args[4]!) as { project: string; name_pattern: string };
+        expect(parsed.project).toBe("demo-project");
+        const symbolMatch = parsed.name_pattern.replace(/^\^/, "").replace(/\$$/, "");
+
+        return {
+          stdout: JSON.stringify({
+            total: 1,
+            results: [{
+              name: symbolMatch,
+              file_path: symbolMatch === "symbol-miss" ? "src/wrong.ts" : "src/a.ts",
+              label: "function",
+              lines: [1, 3],
+            }],
+          }),
+        };
+      }
+
+      throw new Error(`Unexpected codebase-memory-mcp args: ${JSON.stringify(args)}`);
+    });
+
+    const summaries = await Promise.all([1, 2].map((repeat) => {
+      const artifactPath = path.join(artifactRoot, `repeat-${repeat}.json`);
+      artifactPaths.push(artifactPath);
+      return runCodebaseMemoryMcpRepeat({
+        repoPath,
+        dataset,
+        pluginPerQuery,
+        repeat,
+        artifactPath,
+        executor,
+      });
+    }));
+
+    expect(isolatedProjects).toHaveLength(2);
+    expect(new Set(isolatedProjects).size).toBe(2);
+
+    for (const summary of summaries) {
+      expect(summary.status).toBe("completed");
+      expect(summary.pluginMetrics?.hitAt1).toBe(0.5);
+      expect(summary.codebaseMemoryMcpMetrics?.hitAt1).toBe(0.5);
+
+      const artifact = JSON.parse(fs.readFileSync(summary.artifactPath, "utf-8")) as {
+        init: { command: string[]; project?: string };
+        scope: { totalQueryCount: number; scopedQueryCount: number; queryIds: string[] };
+        queries: Array<{ id: string; resultJson: { results: unknown[] }; command: string[] }>;
+        comparison: {
+          pluginMetrics: { hitAt1: number };
+          codebaseMemoryMcpMetrics: { hitAt1: number };
+        };
+      };
+
+      expect(artifact.init.project).toBe("demo-project");
+      expect(artifact.init.command.slice(0, 5)).toEqual([
+        "npx",
+        "--yes",
+        "codebase-memory-mcp@0.8.1",
+        "cli",
+        "index_repository",
+      ]);
+      const initPayload = JSON.parse(artifact.init.command[5]!) as { repo_path: string };
+      expect(isolatedProjects).toContain(initPayload.repo_path);
+      expect(initPayload.repo_path).not.toBe(repoPath);
+      expect(artifact.scope).toEqual({ totalQueryCount: 3, scopedQueryCount: 2, queryIds: ["symbol-hit", "symbol-miss"] });
+      expect(artifact.queries).toHaveLength(2);
+      expect(artifact.queries[0]!.id).toBe("symbol-hit");
+      expect(artifact.queries.every((item) => Array.isArray(item.resultJson.results))).toBe(true);
+      expect(artifact.comparison.pluginMetrics.hitAt1).toBe(0.5);
+      expect(artifact.comparison.codebaseMemoryMcpMetrics.hitAt1).toBe(0.5);
+    }
+
+    for (const artifactPath of artifactPaths) {
+      const artifact = JSON.parse(fs.readFileSync(artifactPath, "utf-8")) as {
+        queries: Array<{ command: string[] }>;
+      };
+      for (const query of artifact.queries) {
+        expect(query.command.slice(0, 5)).toEqual([
+          "npx",
+          "--yes",
+          "codebase-memory-mcp@0.8.1",
+          "cli",
+          "search_graph",
+        ]);
+        const payload = JSON.parse(query.command[5]!) as { project: string; name_pattern: string };
+        expect(payload.project).toBe("demo-project");
+        expect(payload.name_pattern).toMatch(/^\^.+\$$/);
+      }
+    }
+
+    expect(executor).toHaveBeenCalledTimes(6);
+  });
+
+  it("disqualifies malformed search output and records raw command context", async () => {
+    const repoPath = tempDir("cross-repo-cbmcp-bad-search-");
+    fs.mkdirSync(path.join(repoPath, "src"), { recursive: true });
+    fs.writeFileSync(path.join(repoPath, "src", "a.ts"), "export function alpha() {}", "utf-8");
+    const { dataset, pluginPerQuery } = fixture();
+
+    const summary = await runCodebaseMemoryMcpRepeat({
+      repoPath,
+      dataset,
+      pluginPerQuery,
+      repeat: 1,
+      artifactPath: path.join(tempDir("cross-repo-cbmcp-bad-search-artifact-"), "repeat-1.json"),
+      executor: async (_executable: string, args: string[]) => {
+        if (args[3] === "index_repository") {
+          return { stdout: JSON.stringify({ project: "demo-project" }) };
+        }
+
+        return { stdout: JSON.stringify({ total: 0, results: "bad" }) };
+      },
+    });
+
+    expect(summary.status).toBe("disqualified");
+    expect(summary.error).toContain("Malformed codebase-memory-mcp query output: results must be an array");
+
+    const artifact = JSON.parse(fs.readFileSync(summary.artifactPath, "utf-8")) as {
+      status: string;
+      error: string;
+      queries: Array<{ id: string; error?: string }>;
+      comparison?: unknown;
+    };
+
+    expect(artifact.status).toBe("disqualified");
+    expect(artifact.error).toContain("Malformed codebase-memory-mcp query output: results must be an array");
+    expect(artifact.queries[0]!.error).toContain("Malformed codebase-memory-mcp query output: results must be an array");
+    expect(artifact.comparison).toBeUndefined();
   });
 });

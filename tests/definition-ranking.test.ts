@@ -84,6 +84,46 @@ describe("definition ranking helpers", () => {
     expect(ranked[0]?.score).toBe(0.995);
   });
 
+  it("prefers same-name exact candidates whose module path matches the requested identifier", () => {
+    const matchesModule = candidate("module", "examples/error/index.js", "error", "function_declaration", 0.5);
+    const matchesDifferentModule = candidate("other", "lib/other/error-utils/index.ts", "error", "function_declaration", 0.9);
+
+    const ranked = buildDeterministicIdentifierPass(
+      "where is error implementation",
+      [matchesDifferentModule, matchesModule],
+      5,
+    );
+
+    expect(ranked.map((entry) => entry.id)).toEqual(["module", "other"]);
+  });
+
+  it("keeps explicit file-path-hinted candidates above module-affinity candidates", () => {
+    const hinted = candidate("hinted", "src/error/index.js", "error", "function_declaration", 0.2);
+    const sameNameWithAffinity = candidate("affine", "packages/error/utils/index.js", "error", "function_declaration", 0.95);
+
+    const ranked = buildDeterministicIdentifierPass(
+      "where is error implementation in src/error/index.js",
+      [sameNameWithAffinity, hinted],
+      5,
+    );
+
+    expect(ranked.map((entry) => entry.id)).toEqual(["hinted", "affine"]);
+    expect(ranked[0]?.score).toBe(0.995);
+  });
+
+  it("does not promote partial identifier matches above exact identifier matches", () => {
+    const exact = candidate("exact", "services/error.ts", "error", "function_declaration", 0.1);
+    const partial = candidate("partial", "examples/error/index.js", "errorCode", "function_declaration", 0.99);
+
+    const ranked = buildDeterministicIdentifierPass(
+      "where is error implementation",
+      [partial, exact],
+      5,
+    );
+
+    expect(ranked.map((entry) => entry.id)).toEqual(["exact", "partial"]);
+  });
+
   it("builds a definition lane from name and path identifier matches", () => {
     const ranked = buildIdentifierDefinitionLane(
       "find PaymentValidator implementation",

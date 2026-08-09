@@ -96,8 +96,8 @@ export interface EvalBudget {
 
 export interface EvalSearchResult {
   filePath: string;
-  startLine: number;
-  endLine: number;
+  startLine?: number;
+  endLine?: number;
   score: number;
   chunkType: string;
   name?: string;

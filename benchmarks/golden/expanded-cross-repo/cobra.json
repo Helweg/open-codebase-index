@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "name": "expanded-cobra-definitions",
+  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "queries": [
+    {
+      "id": "cobra-no-args",
+      "query": "where is NoArgs defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "NoArgs"
+      },
+      "expected": {
+        "filePath": "args.go",
+        "symbol": "NoArgs",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "cobra-minimum-n",
+      "query": "where is MinimumNArgs defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "MinimumNArgs"
+      },
+      "expected": {
+        "filePath": "args.go",
+        "symbol": "MinimumNArgs",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "cobra-exact-args",
+      "query": "where is ExactArgs defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "ExactArgs"
+      },
+      "expected": {
+        "filePath": "args.go",
+        "symbol": "ExactArgs",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "cobra-range-args",
+      "query": "where is RangeArgs defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "RangeArgs"
+      },
+      "expected": {
+        "filePath": "args.go",
+        "symbol": "RangeArgs",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "cobra-on-initialize",
+      "query": "where is OnInitialize defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "OnInitialize"
+      },
+      "expected": {
+        "filePath": "cobra.go",
+        "symbol": "OnInitialize",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}
