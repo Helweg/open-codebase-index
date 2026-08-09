@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "name": "expanded-ripgrep-definitions",
+  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "queries": [
+    {
+      "id": "ripgrep-glob-escape",
+      "query": "where is escape defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "escape"
+      },
+      "expected": {
+        "filePath": "crates/globset/src/lib.rs",
+        "symbol": "escape",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "ripgrep-interpolate",
+      "query": "where is interpolate defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "interpolate"
+      },
+      "expected": {
+        "filePath": "crates/matcher/src/interpolate.rs",
+        "symbol": "interpolate",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "ripgrep-stdout",
+      "query": "where is stdout defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "stdout"
+      },
+      "expected": {
+        "filePath": "crates/cli/src/wtr.rs",
+        "symbol": "stdout",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "ripgrep-hostname",
+      "query": "where is hostname defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "hostname"
+      },
+      "expected": {
+        "filePath": "crates/cli/src/hostname.rs",
+        "symbol": "hostname",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "ripgrep-human-size",
+      "query": "where is parse_human_readable_size defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "parse_human_readable_size"
+      },
+      "expected": {
+        "filePath": "crates/cli/src/human.rs",
+        "symbol": "parse_human_readable_size",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}

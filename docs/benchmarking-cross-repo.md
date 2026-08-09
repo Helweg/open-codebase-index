@@ -62,6 +62,16 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 ## Sampling and mutability notes
 
 - By default, generated datasets are written under each run output directory (`<run>/datasets/`) to keep committed benchmark inputs immutable.
+- To run reviewed, frozen inputs instead of generating candidates, pass one JSON file per repository basename with `--dataset-dir`:
+
+```bash
+npx tsx scripts/cross-repo-benchmark.ts \
+  --repos /path/to/axios,/path/to/express \
+  --dataset-dir benchmarks/golden/expanded-cross-repo \
+  --reindex --repeats 3 --skip-ripgrep --skip-sg --codegraph --codebase-memory-mcp
+```
+
+  The runner requires `<dataset-dir>/<repository-basename>.json` for every configured repository, validates all evidence paths against that repository, validates definition-comparator queries, and copies the exact inputs into the run artifacts. It fails a repository rather than silently generating a replacement dataset when an input is missing.
 - Persist generated datasets to `benchmarks/golden/cross-repo/` only when explicitly needed:
 
 ```bash

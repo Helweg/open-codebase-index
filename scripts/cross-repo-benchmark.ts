@@ -2150,16 +2150,20 @@ export async function runForRepo(
 
   try {
     const { parsedFiles, collection } = collectParsedFiles(repoPath, options.maxParseFiles);
-    const dataset = fixedDatasetPath && existsSync(fixedDatasetPath)
+    if (fixedDatasetPath && !existsSync(fixedDatasetPath)) {
+      throw new Error(`Fixed dataset not found for ${repoName}: ${fixedDatasetPath}`);
+    }
+
+    const dataset = fixedDatasetPath
       ? (() => {
-        const loaded = loadFixedDataset(fixedDatasetPath, repoPath);
-        ensureDir(path.dirname(datasetPath));
-        copyFileSync(fixedDatasetPath, datasetPath);
-        return loaded;
-      })()
+          const loaded = loadFixedDataset(fixedDatasetPath, repoPath);
+          ensureDir(path.dirname(datasetPath));
+          copyFileSync(fixedDatasetPath, datasetPath);
+          return loaded;
+        })()
       : buildGoldenDataset(repoName, repoPath, parsedFiles);
 
-    if (!fixedDatasetPath || !existsSync(fixedDatasetPath)) {
+    if (!fixedDatasetPath) {
       writeDataset(datasetPath, dataset);
     }
     if (options.persistDatasets) {

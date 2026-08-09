@@ -1,0 +1,43 @@
+{
+  "version": "1.0.0",
+  "name": "expanded-cross-repo-definition-pilot",
+  "description": "Reviewed exact-definition queries for a frozen, local-only cross-repository comparison cohort.",
+  "queryCountPerRepository": 5,
+  "repositories": [
+    {
+      "name": "axios",
+      "url": "https://github.com/axios/axios.git",
+      "revision": "d8233d9e8e9a64bfba9bbe01d475ba417510b82b",
+      "language": "JavaScript",
+      "dataset": "axios.json"
+    },
+    {
+      "name": "express",
+      "url": "https://github.com/expressjs/express.git",
+      "revision": "2cd372e34cd6613f4d00836c2ee122f28bddfcb3",
+      "language": "JavaScript",
+      "dataset": "express.json"
+    },
+    {
+      "name": "click",
+      "url": "https://github.com/pallets/click.git",
+      "revision": "00e592cea702e0b2caa0dee42489fdb1c22cd845",
+      "language": "Python",
+      "dataset": "click.json"
+    },
+    {
+      "name": "cobra",
+      "url": "https://github.com/spf13/cobra.git",
+      "revision": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+      "language": "Go",
+      "dataset": "cobra.json"
+    },
+    {
+      "name": "ripgrep",
+      "url": "https://github.com/BurntSushi/ripgrep.git",
+      "revision": "3fce3b5bb0236da2df6d99672afb8a719642eca7",
+      "language": "Rust",
+      "dataset": "ripgrep.json"
+    }
+  ]
+}

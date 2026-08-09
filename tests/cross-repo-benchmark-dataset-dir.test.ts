@@ -279,7 +279,7 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     expect(vi.mocked(runner.runEvaluation).mock.calls[0]?.[0].datasetPath).toBe(result.datasetPath);
   });
 
-  it("falls back to generation when fixed dataset is absent for repo", async () => {
+  it("reports an error when a fixed dataset is absent for a repository", async () => {
     const repoPath = process.cwd();
     const fixedDir = tempDir("cross-repo-benchmark-run-missing-");
     const runRoot = tempDir("cross-repo-benchmark-run-generated-artifacts-");
@@ -324,9 +324,8 @@ describe("cross-repo benchmark dataset-dir flag", () => {
       path.join(runRoot, "persist")
     );
 
-    expect(result.error).toBeUndefined();
-    const generated = JSON.parse(fs.readFileSync(result.datasetPath, "utf-8")) as { name: string };
-    expect(generated.name).toBe(`cross-repo-${path.basename(repoPath)}`);
-    expect(generated.name).not.toBe("wrong-repo");
+    expect(result.error).toContain(`Fixed dataset not found for ${path.basename(repoPath)}`);
+    expect(fs.existsSync(expectedRunDatasetPath)).toBe(false);
+    expect(runner.runEvaluation).not.toHaveBeenCalled();
   });
 });

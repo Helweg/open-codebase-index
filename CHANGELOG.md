@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Expanded cross-repo benchmark pilot**: Added a frozen, Claude-free 25-query definition cohort across JavaScript, Python, Go, and Rust, plus reproducible three-way results for the plugin, CodeGraph, and codebase-memory-mcp.
+
+### Fixed
+
+- **Frozen benchmark inputs**: `cross-repo-benchmark --dataset-dir` now requires a validated dataset for every requested repository instead of silently mixing reviewed inputs with generated candidates.
+
 ## [0.22.4] - 2026-08-07
 
 ### Added

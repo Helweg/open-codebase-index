@@ -1,0 +1,77 @@
+{
+  "version": "1.0.0",
+  "name": "expanded-click-definitions",
+  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "queries": [
+    {
+      "id": "click-echo",
+      "query": "where is echo defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "echo"
+      },
+      "expected": {
+        "filePath": "src/click/utils.py",
+        "symbol": "echo",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "click-prompt",
+      "query": "where is prompt defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "prompt"
+      },
+      "expected": {
+        "filePath": "src/click/termui.py",
+        "symbol": "prompt",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "click-confirm",
+      "query": "where is confirm defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "confirm"
+      },
+      "expected": {
+        "filePath": "src/click/termui.py",
+        "symbol": "confirm",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "click-style",
+      "query": "where is style defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "style"
+      },
+      "expected": {
+        "filePath": "src/click/termui.py",
+        "symbol": "style",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "click-option",
+      "query": "where is option defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "option"
+      },
+      "expected": {
+        "filePath": "src/click/decorators.py",
+        "symbol": "option",
+        "expectedRoute": "definition"
+      }
+    }
+  ]
+}
