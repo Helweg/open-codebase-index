@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Frozen cross-repo definition benchmark**: Reject contradictory exact-symbol targets in reviewed fixed datasets, and replace the ambiguous duplicate Express `error` query with an unambiguous `GithubView` lookup.
+
 ## [0.22.5] - 2026-08-09
 
 ### Added
