@@ -13,7 +13,6 @@ import {
   EmbeddingProviderInterface,
   CustomProviderNonRetryableError,
 } from "../embeddings/provider.js";
-import { createReranker, RerankerInterface } from "../rerank/index.js";
 import { collectFiles, SkippedFile } from "../utils/files.js";
 import { createCostEstimate, CostEstimate } from "../utils/cost.js";
 import { Logger, initializeLogger } from "../utils/logger.js";
@@ -1132,7 +1131,6 @@ export class Indexer {
   private database: Database | null = null;
   private provider: EmbeddingProviderInterface | null = null;
   private configuredProviderInfo: ConfiguredProviderInfo | null = null;
-  private reranker: RerankerInterface | null = null;
   private fileHashCache: Map<string, string> = new Map();
   private fileHashCachePath: string = "";
   private failedBatchesPath: string = "";
@@ -1325,7 +1323,6 @@ export class Indexer {
     this.database = null;
     this.provider = null;
     this.configuredProviderInfo = null;
-    this.reranker = null;
     this.indexCompatibility = null;
     this.initializationMode = "none";
     this.readIssues = [];
@@ -2986,16 +2983,6 @@ export class Indexer {
     });
 
     this.provider = createEmbeddingProvider(this.configuredProviderInfo);
-
-    if (this.config.reranker?.enabled) {
-      this.reranker = createReranker(this.config.reranker);
-      if (this.reranker.isAvailable()) {
-        this.logger.info("Reranker initialized", {
-          model: this.config.reranker.model,
-          baseUrl: this.config.reranker.baseUrl,
-        });
-      }
-    }
 
     const dimensions = this.configuredProviderInfo.modelInfo.dimensions;
     const storePath = path.join(this.indexPath, "vectors");
@@ -6201,7 +6188,6 @@ export class Indexer {
     this.store = null;
     this.invertedIndex = null;
     this.provider = null;
-    this.reranker = null;
     this.configuredProviderInfo = null;
     this.indexCompatibility = null;
     this.initializationMode = "none";
