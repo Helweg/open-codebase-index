@@ -60,16 +60,16 @@
       }
     },
     {
-      "id": "express-web-error",
-      "query": "where is error defined",
+      "id": "express-github-view",
+      "query": "where is GithubView defined",
       "queryType": "definition",
       "retrievalMode": "context",
       "args": {
-        "symbol": "error"
+        "symbol": "GithubView"
       },
       "expected": {
-        "filePath": "examples/web-service/index.js",
-        "symbol": "error",
+        "filePath": "examples/view-constructor/github-view.js",
+        "symbol": "GithubView",
         "expectedRoute": "definition"
       }
     }
