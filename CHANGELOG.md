@@ -7,13 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.5] - 2026-08-09
+
 ### Added
 
+- **codebase-memory-mcp comparator**: Added an opt-in, fixed-version fair comparator to the cross-repository benchmark runner. It uses repeat-local source copies and cache state, retains raw artifacts, and disqualifies malformed or unsafe results rather than scoring them as misses.
 - **Expanded cross-repo benchmark pilot**: Added a frozen 25-query definition cohort across JavaScript, Python, Go, and Rust, plus reproducible three-way results for the plugin, CodeGraph, and codebase-memory-mcp.
 
 ### Fixed
 
 - **Frozen benchmark inputs**: `cross-repo-benchmark --dataset-dir` now requires a validated dataset for every requested repository instead of silently mixing reviewed inputs with generated candidates.
+- **Exact definition ranking**: Prefer same-module results for duplicate exact definition names while preserving explicit file hints and exact-match safety.
+- **Cross-repository comparator isolation**: Exclude existing `.opencode` data from comparator source copies and tolerate codebase-memory-mcp file-level results that omit source lines without accepting unusable paths.
 
 ## [0.22.4] - 2026-08-07
 
