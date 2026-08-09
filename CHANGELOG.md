@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Expanded cross-repo benchmark pilot**: Added a frozen, Claude-free 25-query definition cohort across JavaScript, Python, Go, and Rust, plus reproducible three-way results for the plugin, CodeGraph, and codebase-memory-mcp.
+- **Expanded cross-repo benchmark pilot**: Added a frozen 25-query definition cohort across JavaScript, Python, Go, and Rust, plus reproducible three-way results for the plugin, CodeGraph, and codebase-memory-mcp.
 
 ### Fixed
 

@@ -1,13 +1,13 @@
 # Expanded cross-repo definition benchmark pilot
 
-This is a reproducible, Claude-free comparison of exact-definition retrieval across five public repositories. It expands the earlier Axios and Express check to JavaScript, Python, Go, and Rust.
+This is a reproducible comparison of exact-definition retrieval across five public repositories. It expands the earlier Axios and Express check to JavaScript, Python, Go, and Rust.
 
 ## Cohort and protocol
 
 - **Inputs:** [`benchmarks/golden/expanded-cross-repo/`](../../benchmarks/golden/expanded-cross-repo/), five reviewed definition queries per repository, 25 queries total.
 - **Pinned revisions:** recorded in [`cohort.json`](../../benchmarks/golden/expanded-cross-repo/cohort.json).
 - **Repositories:** Axios, Express, Click, Cobra, and ripgrep.
-- **Plugin embeddings:** local Ollama with `nomic-embed-text`. No Claude or other paid model was used.
+- **Plugin embeddings:** local Ollama with `nomic-embed-text`.
 - **Comparators:** `@colbymchenry/codegraph@1.5.0` and `codebase-memory-mcp@0.8.1`.
 - **Execution:** three repeats per repository, median per repository, then average across repositories. Reindexing was applied only to the first repeat.
 - **Fair scope:** all 25 frozen queries are exact-definition queries with `expected.symbol`. Plugin metrics are recomputed on exactly the query IDs passed to each comparator.
