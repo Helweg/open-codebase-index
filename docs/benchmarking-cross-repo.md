@@ -80,6 +80,16 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 
 - File parsing is capped (`--max-parse-files`, default `2500`). Reports include whether truncation occurred.
 
+## Lightweight CI integrity gate
+
+The main CI workflow runs the following no-model check on every pull request. It validates frozen dataset shape, input loading, and the CodeGraph and codebase-memory-mcp comparator contracts without cloning external repositories, invoking Ollama, or running an expensive comparison.
+
+```bash
+npm run benchmark:cross-repo:check
+```
+
+Run the full local benchmark manually or from a scheduled quality workflow when a retrieval change needs measured quality results.
+
 ## Optional baseline toggles
 
 ```bash

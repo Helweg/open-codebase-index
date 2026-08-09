@@ -1,8 +1,8 @@
 {
-  "version": "1.1.0",
-  "name": "expanded-cross-repo-mixed-intent-pilot",
-  "description": "Reviewed definition and keyword-heavy queries for a frozen, local-only cross-repository comparison cohort.",
-  "queryCountPerRepository": 7,
+  "version": "1.2.0",
+  "name": "expanded-cross-repo-mixed-intent-pilot-v2",
+  "description": "Reviewed definition, keyword-heavy, implementation-intent, and conceptual queries for a frozen, local-only cross-repository comparison cohort.",
+  "queryCountPerRepository": 9,
   "repositories": [
     {
       "name": "axios",

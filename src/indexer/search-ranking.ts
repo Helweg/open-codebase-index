@@ -260,7 +260,11 @@ export function rankHybridResults(
     }
   }
 
-  const overfetchLimit = Math.max(options.limit * 4, options.limit);
+  // Identifier-rich source queries often match many test assertions before their
+  // implementation declarations. Keep a wider fused pool so intent-aware
+  // reranking can prefer the production evidence rather than losing it early.
+  const overfetchFactor = prioritizeSourcePaths ? 12 : 4;
+  const overfetchLimit = Math.max(options.limit * overfetchFactor, options.limit);
   const fused = options.fusionStrategy === "rrf"
     ? fuseResultsRrf(semanticResults, keywordResults, options.rrfK, overfetchLimit)
     : fuseResultsWeighted(semanticResults, keywordResults, options.hybridWeight, overfetchLimit);

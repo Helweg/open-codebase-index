@@ -128,9 +128,9 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     };
 
     expect(cohort).toMatchObject({
-      version: "1.1.0",
-      name: "expanded-cross-repo-mixed-intent-pilot",
-      queryCountPerRepository: 7,
+      version: "1.2.0",
+      name: "expanded-cross-repo-mixed-intent-pilot-v2",
+      queryCountPerRepository: 9,
     });
     expect(cohort.repositories).toHaveLength(5);
 
@@ -146,13 +146,22 @@ describe("cross-repo benchmark dataset-dir flag", () => {
       };
       const definitions = dataset.queries.filter((query) => query.queryType === "definition");
       const keywordHeavy = dataset.queries.filter((query) => query.queryType === "keyword-heavy");
+      const implementation = dataset.queries.filter((query) => query.queryType === "implementation-intent");
+      const conceptual = dataset.queries.filter((query) => query.queryType === "conceptual");
 
-      expect(dataset.version).toBe("1.1.0");
-      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(7);
+      expect(dataset.version).toBe("1.2.0");
+      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(9);
       expect(definitions).toHaveLength(5);
       expect(keywordHeavy).toHaveLength(2);
+      expect(implementation).toHaveLength(1);
+      expect(conceptual).toHaveLength(1);
       for (const query of keywordHeavy) {
         expect(query.retrievalMode).toBe("search");
+        expect(query.expected.expectedRoute).toBe("search");
+        expect(query.expected.gradedEvidence?.length).toBeGreaterThan(0);
+      }
+      for (const query of [...implementation, ...conceptual]) {
+        expect(query.retrievalMode).toBe("context");
         expect(query.expected.expectedRoute).toBe("search");
         expect(query.expected.gradedEvidence?.length).toBeGreaterThan(0);
       }

@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
-  "name": "expanded-axios-definitions",
-  "description": "Hand-curated definition and keyword-heavy queries for pinned axios revision d8233d9e8e9a64bfba9bbe01d475ba417510b82b.",
+  "version": "1.2.0",
+  "name": "expanded-axios-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for pinned axios revision d8233d9e8e9a64bfba9bbe01d475ba417510b82b.",
   "queries": [
     {
       "id": "axios-build-url",
@@ -120,6 +120,60 @@
           },
           {
             "path": "lib/core/mergeConfig.js",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "axios-request-dispatch-implementation",
+      "query": "implementation that prepares request data applies transforms flattens headers and invokes the configured adapter",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": [
+        "implementation",
+        "request-lifecycle",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/core/dispatchRequest.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/core/transformData.js",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "axios-config-merge-concept",
+      "query": "combine default request configuration with request-specific values and select property merge strategies",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": [
+        "conceptual",
+        "configuration",
+        "merge-strategy"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/core/mergeConfig.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/axios.js",
             "relevance": 1
           }
         ]

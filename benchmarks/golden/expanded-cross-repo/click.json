@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
-  "name": "expanded-click-definitions",
-  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
+  "version": "1.2.0",
+  "name": "expanded-click-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "click-echo",
@@ -131,6 +131,60 @@
           },
           {
             "path": "src/click/types.py",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "click-command-invocation-implementation",
+      "query": "implementation that parses command line arguments invokes command callbacks and formats command errors",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "python",
+      "difficulty": "medium",
+      "tags": [
+        "implementation",
+        "command-lifecycle",
+        "errors"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "src/click/core.py",
+            "relevance": 3
+          },
+          {
+            "path": "src/click/exceptions.py",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "click-shell-completion-concept",
+      "query": "resolve shell completion context and produce completion items for command line arguments",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "python",
+      "difficulty": "medium",
+      "tags": [
+        "conceptual",
+        "shell-completion",
+        "arguments"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "src/click/shell_completion.py",
+            "relevance": 3
+          },
+          {
+            "path": "src/click/core.py",
             "relevance": 2
           }
         ]

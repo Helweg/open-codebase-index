@@ -231,6 +231,37 @@ describe("retrieval ranking", () => {
     expect(reranked[0]?.id).toBe("srcImpl");
   });
 
+  it("keeps production evidence in the fused pool for identifier-rich keyword searches", () => {
+    const testCandidates: Candidate[] = Array.from({ length: 60 }, (_value, index) => ({
+      id: `test-${index}`,
+      score: 1 - index / 1000,
+      metadata: meta({
+        filePath: `/repo/flag_groups_test_${index}.go`,
+        name: `TestValidateFlagGroups${index}`,
+        chunkType: "function_declaration",
+      }),
+    }));
+    const source: Candidate = {
+      id: "source",
+      score: 0.5,
+      metadata: meta({
+        filePath: "/repo/flag_groups.go",
+        name: "ValidateFlagGroups",
+        chunkType: "function_declaration",
+      }),
+    };
+    const candidates = [...testCandidates, source];
+
+    const ranked = rankHybridResults(
+      "MarkFlagsRequiredTogether MarkFlagsOneRequired ValidateFlagGroups",
+      candidates,
+      candidates,
+      { fusionStrategy: "rrf", rrfK: 60, rerankTopN: 100, limit: 10, hybridWeight: 0.5 },
+    );
+
+    expect(ranked[0]?.id).toBe("source");
+  });
+
   it("does not force src priority for doc/test-intent queries", () => {
     const candidates: Candidate[] = [
       { id: "srcImpl", score: 0.92, metadata: meta({ filePath: "/repo/stacks/indexer/index.ts", name: "rankHybridResults", chunkType: "function" }) },
