@@ -4,7 +4,7 @@ This is a reproducible comparison of exact-definition retrieval across five publ
 
 ## Cohort and protocol
 
-- **Inputs:** [`benchmarks/golden/expanded-cross-repo/`](../../benchmarks/golden/expanded-cross-repo/), five reviewed definition queries per repository, 25 queries total.
+- **Inputs:** [`benchmarks/golden/expanded-cross-repo/`](../../benchmarks/golden/expanded-cross-repo/), five reviewed definition queries per repository, 25 queries total. Fixed definition datasets reject conflicting targets for the same exact symbol.
 - **Pinned revisions:** recorded in [`cohort.json`](../../benchmarks/golden/expanded-cross-repo/cohort.json).
 - **Repositories:** Axios, Express, Click, Cobra, and ripgrep.
 - **Plugin embeddings:** local Ollama with `nomic-embed-text`.
@@ -25,19 +25,21 @@ npx tsx scripts/cross-repo-benchmark.ts \
 
 ## Result
 
-Local artifact retained at `benchmarks/results/cross-repo/2026-08-09T08-05-15-123Z/report.md`.
+Local artifact retained at `benchmarks/results/cross-repo/2026-08-09T14-39-08-723Z/report.md`.
 
 Every comparator repeat was valid: **3/3 for every repository**. External CLI startup makes latency incomparable, so the comparator tables intentionally omit it.
 
 | Metric | Plugin | CodeGraph | codebase-memory-mcp |
 |---|---:|---:|---:|
-| Hit@1 | **92.00%** | 88.00% | 72.00% |
+| Hit@1 | **96.00%** | 92.00% | 72.00% |
 | Hit@3 | **100.00%** | **100.00%** | 96.00% |
 | Hit@5 | **100.00%** | **100.00%** | **100.00%** |
-| MRR@10 | **0.9600** | 0.9400 | 0.8347 |
-| nDCG@10 | **0.9705** | 0.9557 | 0.8764 |
+| MRR@10 | **0.9800** | 0.9600 | 0.8413 |
+| nDCG@10 | **0.9852** | 0.9705 | 0.8817 |
 
 The plugin ties CodeGraph at Hit@5, leads it by one query at Hit@1, and leads codebase-memory-mcp at Hit@1 and Hit@3. By repository, the plugin leads CodeGraph only on ripgrep at Hit@1 (80% versus 60%), ties it on the other four repositories, and leads or ties codebase-memory-mcp on every repository.
+
+The original pilot had two indistinguishable `error` lookups in Express with conflicting expected files. The fixed-dataset validator now rejects that invalid comparison shape, and the rerun replaces one of them with the unambiguous `GithubView` definition. The corrected metrics above must be compared only with the corrected frozen inputs.
 
 ## Interpretation and limits
 

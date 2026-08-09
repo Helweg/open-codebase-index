@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Mixed-intent cross-repo benchmark pilot**: Expanded the frozen five-repository cohort from 25 exact-definition queries to 35 reviewed queries by adding keyword-heavy production retrieval coverage across JavaScript, Python, Go, and Rust. The report keeps CodeGraph and codebase-memory-mcp comparison scoped to their shared 25-query exact-definition interface.
+
+### Fixed
+
+- **Frozen cross-repo definition benchmark**: Reject contradictory exact-symbol targets in reviewed fixed datasets, and replace the ambiguous duplicate Express `error` query with an unambiguous `GithubView` lookup.
+
 ## [0.22.5] - 2026-08-09
 
 ### Added

@@ -118,6 +118,47 @@ function withRunEvaluationMock(result: Awaited<ReturnType<typeof runner.runEvalu
 }
 
 describe("cross-repo benchmark dataset-dir flag", () => {
+  it("keeps the expanded frozen cohort balanced between definition and keyword-heavy retrieval", () => {
+    const cohortDir = path.join(process.cwd(), "benchmarks", "golden", "expanded-cross-repo");
+    const cohort = JSON.parse(fs.readFileSync(path.join(cohortDir, "cohort.json"), "utf-8")) as {
+      version: string;
+      name: string;
+      queryCountPerRepository: number;
+      repositories: Array<{ dataset: string }>;
+    };
+
+    expect(cohort).toMatchObject({
+      version: "1.1.0",
+      name: "expanded-cross-repo-mixed-intent-pilot",
+      queryCountPerRepository: 7,
+    });
+    expect(cohort.repositories).toHaveLength(5);
+
+    for (const repository of cohort.repositories) {
+      const dataset = JSON.parse(fs.readFileSync(path.join(cohortDir, repository.dataset), "utf-8")) as {
+        version: string;
+        queries: Array<{
+          id: string;
+          queryType: string;
+          retrievalMode?: string;
+          expected: { expectedRoute?: string; gradedEvidence?: unknown[] };
+        }>;
+      };
+      const definitions = dataset.queries.filter((query) => query.queryType === "definition");
+      const keywordHeavy = dataset.queries.filter((query) => query.queryType === "keyword-heavy");
+
+      expect(dataset.version).toBe("1.1.0");
+      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(7);
+      expect(definitions).toHaveLength(5);
+      expect(keywordHeavy).toHaveLength(2);
+      for (const query of keywordHeavy) {
+        expect(query.retrievalMode).toBe("search");
+        expect(query.expected.expectedRoute).toBe("search");
+        expect(query.expected.gradedEvidence?.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
   it("parses --dataset-dir in CLI args", () => {
     const repoPath = tempDir("cross-repo-benchmark-cli-repo-");
     const datasetDir = tempDir("cross-repo-benchmark-cli-fixed-");
@@ -217,6 +258,90 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     });
 
     expect(() => loadFixedDataset(fixedPath, repoPath)).toThrow(/outside repository/);
+  });
+
+  it("validates fixed definition comparator queries for consistent symbol file targets", () => {
+    const repoPath = tempDir("cross-repo-benchmark-fixed-symbol-validator-repo-");
+    const fixedDir = tempDir("cross-repo-benchmark-fixed-symbol-validator-");
+    const repoName = path.basename(repoPath);
+    fs.mkdirSync(path.join(repoPath, "lib"), { recursive: true });
+    fs.writeFileSync(path.join(repoPath, "lib", "a.ts"), "export function token() {}", "utf-8");
+    fs.writeFileSync(path.join(repoPath, "lib", "b.ts"), "export function token() {}", "utf-8");
+
+    const datasetPath = datasetPathForRepo(fixedDir, repoName);
+    writeJson(datasetPath, {
+      version: "1.0.0",
+      name: "symbol-target-validation",
+      queries: [
+        {
+          id: "good-1",
+          query: "where is token defined",
+          queryType: "definition",
+          retrievalMode: "context",
+          args: {
+            symbol: "token",
+          },
+          expected: {
+            filePath: "lib/a.ts",
+            symbol: "token",
+            expectedRoute: "definition",
+          },
+        },
+        {
+          id: "good-2",
+          query: "where is token defined",
+          queryType: "definition",
+          retrievalMode: "context",
+          args: {
+            symbol: "token",
+          },
+          expected: {
+            filePath: "lib/a.ts",
+            symbol: "token",
+            expectedRoute: "definition",
+          },
+        },
+      ],
+    });
+
+    writeJson(datasetPath, {
+      version: "1.0.0",
+      name: "symbol-target-validation-conflict",
+      queries: [
+        {
+          id: "conflict-1",
+          query: "where is token defined",
+          queryType: "definition",
+          retrievalMode: "context",
+          args: {
+            symbol: "token",
+          },
+          expected: {
+            filePath: "lib/a.ts",
+            symbol: "token",
+            expectedRoute: "definition",
+          },
+        },
+        {
+          id: "conflict-2",
+          query: "where is token defined",
+          queryType: "definition",
+          retrievalMode: "context",
+          args: {
+            symbol: "token",
+          },
+          expected: {
+            filePath: "lib/b.ts",
+            symbol: "token",
+            expectedRoute: "definition",
+          },
+        },
+      ],
+    });
+
+    expect(() => loadFixedDataset(datasetPath, repoPath)).toThrow(
+      /Conflicting fixed-definition dataset target/
+    );
   });
 
   it("uses fixed dataset file when present and copies it to run artifacts", async () => {

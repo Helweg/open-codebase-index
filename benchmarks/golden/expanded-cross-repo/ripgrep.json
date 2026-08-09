@@ -1,7 +1,7 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "expanded-ripgrep-definitions",
-  "description": "Hand-curated exact definition queries for the pinned expanded public benchmark cohort.",
+  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "ripgrep-glob-escape",
@@ -71,6 +71,70 @@
         "filePath": "crates/cli/src/human.rs",
         "symbol": "parse_human_readable_size",
         "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "ripgrep-preprocessor-decompression",
+      "query": "preprocessor_globs should_preprocess search_preprocessor search_zip DecompressionReaderBuilder passthru",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "preprocessing",
+        "decompression",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "crates/core/search.rs",
+            "relevance": 3
+          },
+          {
+            "path": "crates/cli/src/decompress.rs",
+            "relevance": 2
+          },
+          {
+            "path": "crates/core/flags/hiargs.rs",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "ripgrep-json-printer-events",
+      "query": "JSONSink Begin Match Context End submatches binary_offset stats",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "rust",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "json-lines",
+        "printer",
+        "serialization"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "crates/printer/src/json.rs",
+            "relevance": 3
+          },
+          {
+            "path": "crates/printer/src/jsont.rs",
+            "relevance": 2
+          },
+          {
+            "path": "crates/printer/src/stats.rs",
+            "relevance": 1
+          }
+        ]
       }
     }
   ]

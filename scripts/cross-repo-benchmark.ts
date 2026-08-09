@@ -445,6 +445,44 @@ export function validateDefinitionComparatorQueries(dataset: GoldenDataset): voi
   }
 }
 
+function validateFixedDefinitionComparatorQueries(dataset: GoldenDataset): void {
+  const expectedPathsBySymbol = new Map<string, { queryId: string; filePath: string }>();
+
+  for (const query of dataset.queries) {
+    if (query.queryType !== "definition") {
+      continue;
+    }
+
+    if (!query.args?.symbol) {
+      throw new Error(`Definition dataset query ${query.id} missing args.symbol`);
+    }
+
+    const normalizedSymbol = normalizeDefinitionSymbol(query.args.symbol);
+    const expectedFilePath = query.expected.filePath;
+    if (!expectedFilePath) {
+      continue;
+    }
+
+    const normalizedFilePath = normalizePathForMatch(expectedFilePath);
+    const prior = expectedPathsBySymbol.get(normalizedSymbol);
+    if (prior === undefined) {
+      expectedPathsBySymbol.set(normalizedSymbol, { queryId: query.id, filePath: normalizedFilePath });
+      continue;
+    }
+
+    if (prior.filePath !== normalizedFilePath) {
+      throw new Error(
+        `Conflicting fixed-definition dataset target for args.symbol '${query.args.symbol}'. ` +
+          `Query ${prior.queryId} points to '${prior.filePath}' and query ${query.id} points to '${normalizedFilePath}'.`,
+      );
+    }
+  }
+}
+
+function normalizeDefinitionSymbol(value: string): string {
+  return value.trim();
+}
+
 export function loadFixedDataset(datasetPath: string, repoPath: string): GoldenDataset {
   const rawText = readFileSync(datasetPath, "utf-8");
 
@@ -459,6 +497,7 @@ export function loadFixedDataset(datasetPath: string, repoPath: string): GoldenD
   const dataset = parseGoldenDataset(raw, datasetPath);
   validateDatasetEvidencePaths(dataset, repoPath);
   validateDefinitionComparatorQueries(dataset);
+  validateFixedDefinitionComparatorQueries(dataset);
   return dataset;
 }
 

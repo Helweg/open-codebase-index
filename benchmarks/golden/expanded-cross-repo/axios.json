@@ -1,1 +1,129 @@
-{"version":"1.0.0","name":"expanded-axios-definitions","description":"Hand-curated exact definition queries for pinned axios revision d8233d9e8e9a64bfba9bbe01d475ba417510b82b.","queries":[{"id":"axios-build-url","query":"where is buildURL defined","queryType":"definition","retrievalMode":"context","args":{"symbol":"buildURL"},"expected":{"filePath":"lib/helpers/buildURL.js","symbol":"buildURL","expectedRoute":"definition"}},{"id":"axios-to-form-data","query":"where is toFormData defined","queryType":"definition","retrievalMode":"context","args":{"symbol":"toFormData"},"expected":{"filePath":"lib/helpers/toFormData.js","symbol":"toFormData","expectedRoute":"definition"}},{"id":"axios-throttle","query":"where is throttle defined","queryType":"definition","retrievalMode":"context","args":{"symbol":"throttle"},"expected":{"filePath":"lib/helpers/throttle.js","symbol":"throttle","expectedRoute":"definition"}},{"id":"axios-spread","query":"where is spread defined","queryType":"definition","retrievalMode":"context","args":{"symbol":"spread"},"expected":{"filePath":"lib/helpers/spread.js","symbol":"spread","expectedRoute":"definition"}},{"id":"axios-create-instance","query":"where is createInstance defined","queryType":"definition","retrievalMode":"context","args":{"symbol":"createInstance"},"expected":{"filePath":"lib/axios.js","symbol":"createInstance","expectedRoute":"definition"}}]}
+{
+  "version": "1.1.0",
+  "name": "expanded-axios-definitions",
+  "description": "Hand-curated definition and keyword-heavy queries for pinned axios revision d8233d9e8e9a64bfba9bbe01d475ba417510b82b.",
+  "queries": [
+    {
+      "id": "axios-build-url",
+      "query": "where is buildURL defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "buildURL"
+      },
+      "expected": {
+        "filePath": "lib/helpers/buildURL.js",
+        "symbol": "buildURL",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-to-form-data",
+      "query": "where is toFormData defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "toFormData"
+      },
+      "expected": {
+        "filePath": "lib/helpers/toFormData.js",
+        "symbol": "toFormData",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-throttle",
+      "query": "where is throttle defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "throttle"
+      },
+      "expected": {
+        "filePath": "lib/helpers/throttle.js",
+        "symbol": "throttle",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-spread",
+      "query": "where is spread defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "spread"
+      },
+      "expected": {
+        "filePath": "lib/helpers/spread.js",
+        "symbol": "spread",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-create-instance",
+      "query": "where is createInstance defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "createInstance"
+      },
+      "expected": {
+        "filePath": "lib/axios.js",
+        "symbol": "createInstance",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "axios-config-merge-strategies",
+      "query": "merge config url method data baseURL validateStatus caseless headers defaultToConfig2 mergeDirectKeys",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "javascript",
+      "difficulty": "easy",
+      "tags": [
+        "keyword",
+        "configuration",
+        "merge-strategy"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/core/mergeConfig.js",
+            "relevance": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "axios-node-http-transport-controls",
+      "query": "maxRedirects beforeRedirect setProxy socketPath maxBodyLength maxContentLength decompress createUnzip",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "node-http",
+        "redirects",
+        "limits",
+        "compression"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/adapters/http.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/core/mergeConfig.js",
+            "relevance": 1
+          }
+        ]
+      }
+    }
+  ]
+}
