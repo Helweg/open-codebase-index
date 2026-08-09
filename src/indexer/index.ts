@@ -4701,6 +4701,7 @@ export class Indexer {
     const filterByBranch = options?.filterByBranch ?? true;
     const sourceIntent = options?.definitionIntent === true || classifyQueryIntentRaw(query) === "source";
     const identifierHints = extractIdentifierHints(query);
+    const candidateLimit = maxResults * (sourceIntent ? 12 : 4);
 
     this.logger.search("debug", "Starting search", {
       query,
@@ -4743,7 +4744,7 @@ export class Indexer {
       ? this.searchSemanticCandidates(
           store,
           embedding,
-          maxResults * 4,
+          candidateLimit,
           branchChunkIds,
           shouldPrefilterByBranch,
         )
@@ -4753,7 +4754,7 @@ export class Indexer {
     const keywordStartTime = performance.now();
     const keywordCandidates = await this.keywordSearch(
       query,
-      maxResults * 4,
+      candidateLimit,
       store,
       invertedIndex,
       branchChunkIds,

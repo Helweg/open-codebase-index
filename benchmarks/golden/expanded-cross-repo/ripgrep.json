@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
-  "name": "expanded-ripgrep-definitions",
-  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
+  "version": "1.2.0",
+  "name": "expanded-ripgrep-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "ripgrep-glob-escape",
@@ -133,6 +133,56 @@
           {
             "path": "crates/printer/src/stats.rs",
             "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "ripgrep-search-worker-implementation",
+      "query": "implementation that configures search workers prints matches and handles search failures",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "medium",
+      "tags": [
+        "implementation",
+        "search",
+        "worker"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "crates/core/search.rs",
+            "relevance": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "ripgrep-ignore-filtering-concept",
+      "query": "parse ignore files apply overrides and decide whether a file path should be filtered",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "rust",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "ignore",
+        "path-filtering"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "crates/ignore/src/dir.rs",
+            "relevance": 3
+          },
+          {
+            "path": "crates/ignore/src/overrides.rs",
+            "relevance": 2
           }
         ]
       }

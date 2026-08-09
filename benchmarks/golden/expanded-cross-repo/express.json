@@ -1,7 +1,7 @@
 {
-  "version": "1.1.0",
-  "name": "expanded-express-definitions",
-  "description": "Hand-curated definition and keyword-heavy queries for the pinned expanded public benchmark cohort.",
+  "version": "1.2.0",
+  "name": "expanded-express-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for the pinned expanded public benchmark cohort.",
   "queries": [
     {
       "id": "express-create-application",
@@ -117,6 +117,60 @@
         "response",
         "file-transfer",
         "streaming"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/response.js",
+            "relevance": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "express-view-rendering-implementation",
+      "query": "implementation that resolves a view renders a response and propagates rendering callback errors",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "medium",
+      "tags": [
+        "implementation",
+        "rendering",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/application.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/view.js",
+            "relevance": 3
+          },
+          {
+            "path": "lib/response.js",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "express-file-transfer-concept",
+      "query": "send response files safely with root containment range support headers and transfer callbacks",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "javascript",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "response",
+        "file-transfer"
       ],
       "expected": {
         "expectedRoute": "search",
