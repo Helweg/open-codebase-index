@@ -1,9 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-
 import { FileSnapshotReconciler } from "../src/watcher/snapshot-reconciler.js";
+
+const readdirPermissionOverrides = new Map<string, string>();
+
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
+
+  return {
+    ...actual,
+    readdir: async (directoryPath: string | URL, options: any) => {
+      const resolvedPath = path.resolve(String(directoryPath));
+      const permissionCode = readdirPermissionOverrides.get(resolvedPath);
+      if (permissionCode) {
+        const permissionError = new Error("Permission denied") as NodeJS.ErrnoException;
+        permissionError.code = permissionCode;
+        throw permissionError;
+      }
+
+      return actual.readdir(directoryPath, options);
+    },
+  };
+});
 
 describe("watcher snapshot reconciler", () => {
   let projectRoot: string;
@@ -154,5 +174,50 @@ describe("watcher snapshot reconciler", () => {
     await expect(reconciler.reconcile()).rejects.toThrow(
       "FileSnapshotReconciler is not initialized. Call initialize() before reconcile().",
     );
+  });
+
+  it("preserves tracked files under unreadable directories during full reconciliation", async () => {
+    const visibleFile = path.join(projectRoot, "visible.ts");
+    const unreadableDirectory = path.join(projectRoot, "private");
+    const unreadableFile = path.join(unreadableDirectory, "secret.ts");
+
+    fs.writeFileSync(visibleFile, "export const visible = 1;");
+    fs.mkdirSync(unreadableDirectory, { recursive: true });
+    fs.writeFileSync(unreadableFile, "export const secret = 1;");
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    fs.unlinkSync(visibleFile);
+
+    readdirPermissionOverrides.set(unreadableDirectory, "EACCES");
+    try {
+      const changes = await reconciler.reconcile();
+      expect(changes).toEqual([{ path: visibleFile, type: "unlink" }]);
+    } finally {
+      readdirPermissionOverrides.delete(unreadableDirectory);
+    }
+  });
+
+  it("keeps scope-limited reconciliations scoped and preserves unreadable scope roots", async () => {
+    const scopeDirectory = path.join(projectRoot, "private");
+    const visibleFile = path.join(projectRoot, "visible.ts");
+    const unreadableFile = path.join(scopeDirectory, "secret.ts");
+
+    fs.mkdirSync(scopeDirectory, { recursive: true });
+    fs.writeFileSync(visibleFile, "export const visible = 1;");
+    fs.writeFileSync(unreadableFile, "export const secret = 1;");
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    readdirPermissionOverrides.set(scopeDirectory, "EPERM");
+    fs.writeFileSync(visibleFile, "export const visible = 2;");
+    try {
+      const scopedChanges = await reconciler.reconcile([scopeDirectory]);
+      expect(scopedChanges).toEqual([]);
+    } finally {
+      readdirPermissionOverrides.delete(scopeDirectory);
+    }
   });
 });
