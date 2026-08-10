@@ -226,8 +226,7 @@ function printResult(result: WatcherBenchmarkResult): void {
 const options = parseOptions(process.argv.slice(2));
 run(options)
   .then(printResult)
-  .catch((error: unknown) => {
-    const message = error instanceof Error ? error.stack ?? error.message : String(error);
-    console.error(message);
+  .catch(() => {
+    console.error("Watcher benchmark failed");
     process.exitCode = 1;
   });
