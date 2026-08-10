@@ -12,10 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mixed-intent cross-repo benchmark pilot**: Expanded the frozen five-repository cohort from 25 exact-definition queries to 35 reviewed queries by adding keyword-heavy production retrieval coverage across JavaScript, Python, Go, and Rust. The report keeps CodeGraph and codebase-memory-mcp comparison scoped to their shared 25-query exact-definition interface.
 - **Mixed-intent benchmark coverage and CI gate**: Expanded the frozen cohort to 45 queries with implementation-intent and conceptual coverage, and added a no-model cross-repo benchmark contract check to pull-request CI.
 
+### Changed
+
+- **Serialized watcher replacement**: On OpenCode plugin reloads, the next project watcher is only created after the previous one has fully stopped, so concurrent reloads cannot leak or double-start watchers.
+
 ### Fixed
 
 - **Frozen cross-repo definition benchmark**: Reject contradictory exact-symbol targets in reviewed fixed datasets, and replace the ambiguous duplicate Express `error` query with an unambiguous `GithubView` lookup.
 - **Source-intent keyword retrieval**: Recognize Go, Rust, and Python test filenames and retain a wider candidate pool for identifier-rich source queries, so related test assertions do not displace production evidence before reranking.
+- **MCP server clean shutdown**: `opencode-codebase-index-mcp` now terminates its file watcher, auto-index coordination, and stdio transport on stdin EOF, protocol close, or `SIGHUP`/`SIGINT`/`SIGTERM`, exiting 0 instead of leaving persistent watcher processes and file descriptors behind after the host disappears.
 
 ## [0.22.5] - 2026-08-09
 

@@ -37,15 +37,38 @@ import { isGitRepo } from "../git/index.js";
 import type { CombinedWatcher } from "../watcher/index.js";
 
 const activeWatchers = new Map<string, CombinedWatcher>();
+const watcherReplacementChains = new Map<string, Promise<void>>();
 
-function replaceActiveWatcher(projectRoot: string, nextWatcher: CombinedWatcher | null): void {
-  const existing = activeWatchers.get(projectRoot);
-  if (existing) {
-    existing.stop();
-    activeWatchers.delete(projectRoot);
-  }
-  if (nextWatcher) {
-    activeWatchers.set(projectRoot, nextWatcher);
+async function replaceActiveWatcher(
+  projectRoot: string,
+  createNextWatcher: (() => CombinedWatcher) | null,
+): Promise<void> {
+  const chain = (watcherReplacementChains.get(projectRoot) ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(async () => {
+      const existing = activeWatchers.get(projectRoot);
+      if (existing) {
+        try {
+          await existing.stop();
+        } catch (error) {
+          console.error("[codebase-index] Failed to stop replaced watcher:", error);
+          throw error;
+        }
+        if (activeWatchers.get(projectRoot) === existing) {
+          activeWatchers.delete(projectRoot);
+        }
+      }
+      if (createNextWatcher) {
+        activeWatchers.set(projectRoot, createNextWatcher());
+      }
+    });
+  watcherReplacementChains.set(projectRoot, chain);
+  try {
+    await chain;
+  } finally {
+    if (watcherReplacementChains.get(projectRoot) === chain) {
+      watcherReplacementChains.delete(projectRoot);
+    }
   }
 }
 
@@ -130,9 +153,12 @@ const plugin: Plugin = async ({ directory, worktree }) => {
     }
 
     if (config.indexing.watchFiles && isValidProject) {
-      replaceActiveWatcher(projectRoot, createWatcherWithIndexer(getProjectIndexer, projectRoot, config, "opencode"));
+      await replaceActiveWatcher(
+        projectRoot,
+        () => createWatcherWithIndexer(getProjectIndexer, projectRoot, config, "opencode"),
+      );
     } else {
-      replaceActiveWatcher(projectRoot, null);
+      await replaceActiveWatcher(projectRoot, null);
     }
 
     return {
