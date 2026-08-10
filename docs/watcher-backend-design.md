@@ -78,7 +78,7 @@ Before the native backend can become the default:
 
 ## Current prototype
 
-The native path is currently **opt-in only** with `CODEBASE_INDEX_EXPERIMENTAL_NATIVE_WATCHER=true`. It is used only when every project configuration path is under the project root. External or inherited worktree configuration continues to use Chokidar. If native startup, runtime watching, or reconciliation fails, the watcher closes it and falls back to Chokidar.
+The native path is the default when every project configuration path is under the project root. External or inherited worktree configuration continues to use Chokidar. A runtime native startup, watcher, or reconciliation failure closes the native watcher and falls back to Chokidar. The internal `FileWatcherOptions.backend` override keeps focused recovery tests and future host-specific fallbacks explicit.
 
 The prototype uses the reconciler for every native notification. It does not rely on Node's `rename` or `change` event label. The benchmark reports file-descriptor deltas on macOS and Linux, and process-handle deltas through PowerShell on Windows.
 

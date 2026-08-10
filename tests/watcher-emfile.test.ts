@@ -33,7 +33,7 @@ describe("FileWatcher EMFILE recovery", () => {
       return this === addSpy.mock.instances[0] ? nativeClose : pollingClose;
     });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode");
+    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
 
     watcher.start(vi.fn());
 
@@ -78,7 +78,7 @@ describe("FileWatcher EMFILE recovery", () => {
     });
     vi.spyOn(FSWatcher.prototype, "close").mockResolvedValue(undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode");
+    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
 
     watcher.start(vi.fn());
     const nativeWatcher = addSpy.mock.instances[0] as FSWatcher;
@@ -116,7 +116,7 @@ describe("FileWatcher EMFILE recovery", () => {
     });
     const firstHandler = vi.fn();
     const secondHandler = vi.fn();
-    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode");
+    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
 
     watcher.start(firstHandler);
     (addSpy.mock.instances[0] as FSWatcher).emit("ready");
@@ -162,7 +162,7 @@ describe("FileWatcher EMFILE recovery", () => {
     });
     vi.spyOn(FSWatcher.prototype, "close").mockResolvedValue(undefined);
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode");
+    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
 
     watcher.start(vi.fn());
 

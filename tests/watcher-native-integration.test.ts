@@ -18,25 +18,28 @@ async function waitForChange(
   }, { timeout: EVENT_TIMEOUT_MS, interval: 25 });
 }
 
-describe.runIf(process.platform === "darwin")("experimental native FileWatcher", () => {
+describe("native FileWatcher", () => {
   let projectRoot: string;
   let watcher: FileWatcher | undefined;
 
   beforeEach(() => {
     projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "native-file-watcher-"));
-    vi.stubEnv("CODEBASE_INDEX_EXPERIMENTAL_NATIVE_WATCHER", "true");
   });
 
   afterEach(async () => {
     await watcher?.stop();
-    vi.unstubAllEnvs();
     fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
   it("reconciles native notifications into add, change, and unlink events", async () => {
     const changes: FileChange[] = [];
     const filePath = path.join(projectRoot, "observed.ts");
-    watcher = new FileWatcher(projectRoot, parseConfig({ include: ["**/*.ts"] }), "codex");
+    watcher = new FileWatcher(
+      projectRoot,
+      parseConfig({ include: ["**/*.ts"] }),
+      "codex",
+      { backend: "native" },
+    );
 
     watcher.start(async (batch) => {
       changes.push(...batch);
@@ -58,7 +61,12 @@ describe.runIf(process.platform === "darwin")("experimental native FileWatcher",
   it("tracks hidden project configuration files outside source include patterns", async () => {
     const changes: FileChange[] = [];
     const configPath = path.join(projectRoot, ".codebase-index", "config.json");
-    watcher = new FileWatcher(projectRoot, parseConfig({ include: ["**/*.ts"] }), "codex");
+    watcher = new FileWatcher(
+      projectRoot,
+      parseConfig({ include: ["**/*.ts"] }),
+      "codex",
+      { backend: "native" },
+    );
 
     watcher.start(async (batch) => {
       changes.push(...batch);
