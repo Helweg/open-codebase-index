@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import type { FileSnapshotEntry, FileSnapshotMap } from "../src/watcher/snapshot.js";
-import { diffFileSnapshots } from "../src/watcher/snapshot.js";
+import type { FileSnapshotEntry, FileSnapshotMap, FileSnapshotScan } from "../src/watcher/snapshot.js";
+import { completeFileSnapshot, diffFileSnapshots } from "../src/watcher/snapshot.js";
 
 describe("watcher snapshot diff", () => {
   it("reports add, change, and unlink operations", () => {
@@ -62,5 +62,62 @@ describe("watcher snapshot diff", () => {
       "add:delta.ts",
       "unlink:gamma.ts",
     ]);
+  });
+});
+
+describe("watcher snapshot completion", () => {
+  it("preserves previous entries under unreadable prefixes", () => {
+    const previous: FileSnapshotMap = new Map<string, FileSnapshotEntry>([
+      ["/abs/a/x.ts", { size: 4, mtimeMs: 100 }],
+      ["/abs/a/y.ts", { size: 5, mtimeMs: 110 }],
+      ["/abs/b/z.ts", { size: 6, mtimeMs: 120 }],
+    ]);
+
+    const scan: FileSnapshotScan = {
+      entries: new Map<string, FileSnapshotEntry>([["/abs/b/z.ts", { size: 6, mtimeMs: 120 }]]),
+      unreadablePrefixes: new Set(["/abs/a"]),
+    };
+
+    const completed = completeFileSnapshot(previous, scan);
+
+    expect(completed).toEqual(previous);
+    expect(completed.has("/abs/a/x.ts")).toBe(true);
+    expect(completed.has("/abs/a/y.ts")).toBe(true);
+    expect(diffFileSnapshots(previous, completed)).toEqual([]);
+  });
+
+  it("compares normally once an unreadable zone becomes readable", () => {
+    const previous: FileSnapshotMap = new Map<string, FileSnapshotEntry>([
+      ["/abs/a/x.ts", { size: 4, mtimeMs: 100 }],
+      ["/abs/a/y.ts", { size: 5, mtimeMs: 110 }],
+    ]);
+
+    const scan: FileSnapshotScan = {
+      entries: new Map<string, FileSnapshotEntry>([["/abs/a/x.ts", { size: 9, mtimeMs: 200 }]]),
+      unreadablePrefixes: new Set(),
+    };
+
+    const completed = completeFileSnapshot(previous, scan);
+
+    expect(diffFileSnapshots(previous, completed)).toEqual([
+      { path: "/abs/a/x.ts", type: "change" },
+      { path: "/abs/a/y.ts", type: "unlink" },
+    ]);
+  });
+
+  it("returns a copy of the scan entries when previous is null", () => {
+    const scan: FileSnapshotScan = {
+      entries: new Map<string, FileSnapshotEntry>([["/abs/b/z.ts", { size: 6, mtimeMs: 120 }]]),
+      unreadablePrefixes: new Set(["/abs/a"]),
+    };
+
+    const completed = completeFileSnapshot(null, scan);
+
+    expect(completed).toEqual(scan.entries);
+    expect(completed).not.toBe(scan.entries);
+
+    const mutable = completed as Map<string, FileSnapshotEntry>;
+    mutable.set("/abs/added.ts", { size: 1, mtimeMs: 1 });
+    expect(scan.entries.has("/abs/added.ts")).toBe(false);
   });
 });

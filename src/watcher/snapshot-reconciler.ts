@@ -1,9 +1,14 @@
-import type { CodebaseIndexConfig } from "../config/schema.js";
 import type { FileChange } from "./file-watcher.js";
 
-import { buildFileSnapshot, diffFileSnapshots, type FileSnapshotMap } from "./snapshot.js";
+import {
+  buildFileSnapshot,
+  completeFileSnapshot,
+  diffFileSnapshots,
+  type FileSnapshotMap,
+  type SnapshotFilterConfig,
+} from "./snapshot.js";
 
-export type SnapshotFilterConfig = Pick<CodebaseIndexConfig, "include" | "additionalInclude" | "exclude">;
+export { type SnapshotFilterConfig } from "./snapshot.js";
 
 export class FileSnapshotReconciler {
   private snapshot: FileSnapshotMap | null = null;
@@ -16,7 +21,7 @@ export class FileSnapshotReconciler {
   ) {}
 
   async initialize(): Promise<void> {
-    this.snapshot = await buildFileSnapshot(this.projectRoot, this.config, this.configPaths);
+    this.snapshot = (await buildFileSnapshot(this.projectRoot, this.config, this.configPaths)).entries;
   }
 
   async reconcile(): Promise<FileChange[]> {
@@ -30,9 +35,10 @@ export class FileSnapshotReconciler {
         throw new Error("FileSnapshotReconciler is not initialized. Call initialize() before reconcile().");
       }
 
-      const nextSnapshot = await buildFileSnapshot(this.projectRoot, this.config, this.configPaths);
-      const changes = diffFileSnapshots(previousSnapshot, nextSnapshot);
-      this.snapshot = nextSnapshot;
+      const scan = await buildFileSnapshot(this.projectRoot, this.config, this.configPaths);
+      const completedSnapshot = completeFileSnapshot(previousSnapshot, scan);
+      const changes = diffFileSnapshots(previousSnapshot, completedSnapshot);
+      this.snapshot = completedSnapshot;
       return changes;
     });
     this.reconciliationTail = reconciliation.then(

@@ -15,16 +15,28 @@ export interface FileSnapshotEntry {
 
 export type FileSnapshotMap = ReadonlyMap<string, FileSnapshotEntry>;
 
+export type SnapshotFilterConfig = Pick<
+  CodebaseIndexConfig,
+  "include" | "additionalInclude" | "exclude" | "indexing"
+>;
+
+export interface FileSnapshotScan {
+  entries: FileSnapshotMap;
+  unreadablePrefixes: ReadonlySet<string>;
+}
+
 export async function buildFileSnapshot(
   projectRoot: string,
-  config: Pick<CodebaseIndexConfig, "include" | "additionalInclude" | "exclude">,
+  config: SnapshotFilterConfig,
   configPaths: string[] = [],
-): Promise<FileSnapshotMap> {
+): Promise<FileSnapshotScan> {
   const normalizedProjectRoot = path.resolve(projectRoot);
   const ignoreFilter = createIgnoreFilter(normalizedProjectRoot);
   const includePatterns = [...config.include, ...(config.additionalInclude ?? [])];
+  const maxDepth = config.indexing?.maxDepth ?? -1;
 
   const snapshot = new Map<string, FileSnapshotEntry>();
+  const unreadablePrefixes = new Set<string>();
 
   const includeFile = async (filePath: string): Promise<void> => {
     const normalizedPath = path.resolve(filePath);
@@ -38,7 +50,7 @@ export async function buildFileSnapshot(
       return;
     }
 
-    const stat = await readStatIfFile(normalizedPath);
+    const stat = await readStatIfFile(normalizedPath, unreadablePrefixes);
     if (!stat) return;
 
     snapshot.set(normalizedPath, {
@@ -47,12 +59,16 @@ export async function buildFileSnapshot(
     });
   };
 
-  const walk = async (directoryPath: string): Promise<void> => {
+  const walk = async (directoryPath: string, depth: number): Promise<void> => {
     let entries: Dirent[];
     try {
       entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
     } catch (error) {
-      if (isIgnorableFsError(error)) {
+      if (isMissingFsError(error)) {
+        return;
+      }
+      if (isPermissionFsError(error)) {
+        unreadablePrefixes.add(path.resolve(directoryPath));
         return;
       }
       throw error;
@@ -71,7 +87,9 @@ export async function buildFileSnapshot(
           continue;
         }
 
-        await walk(fullPath);
+        if (maxDepth === -1 || depth < maxDepth) {
+          await walk(fullPath, depth + 1);
+        }
         continue;
       }
 
@@ -81,21 +99,22 @@ export async function buildFileSnapshot(
     }
   };
 
-  await walk(normalizedProjectRoot);
+  await walk(normalizedProjectRoot, 0);
 
-  await includeExplicitConfigPaths(snapshot, configPaths);
-  return snapshot;
+  await includeExplicitConfigPaths(snapshot, unreadablePrefixes, configPaths);
+  return { entries: snapshot, unreadablePrefixes };
 }
 
 async function includeExplicitConfigPaths(
   snapshot: Map<string, FileSnapshotEntry>,
+  unreadablePrefixes: Set<string>,
   configPaths: string[],
 ): Promise<void> {
   const explicitConfigPaths = [...new Set(configPaths.map((configPath) => path.resolve(configPath)))]
     .filter((configPath) => !snapshot.has(configPath));
 
   for (const configPath of explicitConfigPaths) {
-    const stat = await readStatIfFile(configPath);
+    const stat = await readStatIfFile(configPath, unreadablePrefixes);
     if (!stat) {
       continue;
     }
@@ -107,12 +126,16 @@ async function includeExplicitConfigPaths(
   }
 }
 
-async function readStatIfFile(filePath: string): Promise<Stats | null> {
+async function readStatIfFile(filePath: string, unreadablePrefixes: Set<string>): Promise<Stats | null> {
   try {
     const stat = await fsPromises.stat(filePath);
     return stat.isFile() ? stat : null;
   } catch (error) {
-    if (isIgnorableFsError(error)) {
+    if (isMissingFsError(error)) {
+      return null;
+    }
+    if (isPermissionFsError(error)) {
+      unreadablePrefixes.add(path.resolve(filePath));
       return null;
     }
 
@@ -120,12 +143,42 @@ async function readStatIfFile(filePath: string): Promise<Stats | null> {
   }
 }
 
-function isIgnorableFsError(error: unknown): error is NodeJS.ErrnoException {
+function isMissingFsError(error: unknown): error is NodeJS.ErrnoException {
   if (!(error instanceof Error)) {
     return false;
   }
 
-  return ["ENOENT", "ENOTDIR", "EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "");
+  return ["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? "");
+}
+
+function isPermissionFsError(error: unknown): error is NodeJS.ErrnoException {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return ["EACCES", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "");
+}
+
+export function completeFileSnapshot(
+  previous: FileSnapshotMap | null,
+  scan: FileSnapshotScan,
+): FileSnapshotMap {
+  const completed = new Map(scan.entries);
+  if (previous === null) {
+    return completed;
+  }
+
+  for (const unreadablePrefix of scan.unreadablePrefixes) {
+    for (const [entryPath, entry] of previous) {
+      if (entryPath === unreadablePrefix || entryPath.startsWith(unreadablePrefix + path.sep)) {
+        if (!completed.has(entryPath)) {
+          completed.set(entryPath, entry);
+        }
+      }
+    }
+  }
+
+  return completed;
 }
 
 const diffTypeOrder: Record<FileChangeType, number> = {

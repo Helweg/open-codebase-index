@@ -1,5 +1,8 @@
 import { FSWatcher } from "chokidar";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import { parseConfig } from "../src/config/schema.js";
 import { FileWatcher } from "../src/watcher/file-watcher.js";
@@ -104,6 +107,7 @@ describe("FileWatcher EMFILE recovery", () => {
 
   it("preserves a new start while an older stop is still closing", async () => {
     vi.useFakeTimers();
+    const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "watcher-emfile-restart-"));
     let resolveFirstClose: (() => void) | null = null;
     const firstClose = new Promise<void>((resolve) => {
       resolveFirstClose = resolve;
@@ -116,7 +120,7 @@ describe("FileWatcher EMFILE recovery", () => {
     });
     const firstHandler = vi.fn();
     const secondHandler = vi.fn();
-    const watcher = new FileWatcher("/tmp/project", parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
+    const watcher = new FileWatcher(projectRoot, parseConfig({ include: ["**/*.ts"] }), "opencode", { backend: "chokidar" });
 
     watcher.start(firstHandler);
     (addSpy.mock.instances[0] as FSWatcher).emit("ready");
@@ -126,9 +130,13 @@ describe("FileWatcher EMFILE recovery", () => {
 
     const firstWatcher = addSpy.mock.instances[0] as FSWatcher;
     const secondWatcher = addSpy.mock.instances[1] as FSWatcher;
-    firstWatcher.emit("add", "/tmp/project/src/stale.ts");
+    firstWatcher.emit("add", path.join(projectRoot, "src", "stale.ts"));
     await vi.advanceTimersByTimeAsync(1000);
     expect(secondHandler).not.toHaveBeenCalled();
+
+    const restartedPath = path.join(projectRoot, "src", "restarted.ts");
+    fs.mkdirSync(path.dirname(restartedPath), { recursive: true });
+    fs.writeFileSync(restartedPath, "export const restarted = true;\n");
 
     let secondReady = false;
     const secondReadyPromise = watcher.waitUntilReady().then(() => {
@@ -141,13 +149,14 @@ describe("FileWatcher EMFILE recovery", () => {
 
     secondWatcher.emit("ready");
     await secondReadyPromise;
-    secondWatcher.emit("add", "/tmp/project/src/restarted.ts");
+    secondWatcher.emit("add", restartedPath);
     await vi.advanceTimersByTimeAsync(1000);
     expect(firstHandler).not.toHaveBeenCalled();
     expect(secondHandler).toHaveBeenCalledWith([
-      { type: "add", path: "/tmp/project/src/restarted.ts" },
+      { type: "add", path: restartedPath },
     ]);
     await watcher.stop();
+    fs.rmSync(projectRoot, { recursive: true, force: true });
   });
 
   it("forces polling for recovery when the environment disables it", async () => {

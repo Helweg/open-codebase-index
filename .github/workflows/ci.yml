@@ -34,8 +34,20 @@ jobs:
       - name: Record recursive native watcher capability
         run: npx vitest run tests/watcher-platform-capability.test.ts
 
-      - name: Measure native watcher behavior
-        run: npm run benchmark:watcher
+      - name: Run watcher backend and reconciler contracts
+        run: npx vitest run tests/snapshot.test.ts tests/watcher-snapshot.test.ts tests/watcher-snapshot-reconciler.test.ts tests/watcher/native-recursive-watcher.test.ts tests/watcher-backend-handoff.test.ts
+
+      - name: Run real cross-platform watcher contracts
+        run: npx vitest run tests/watcher-native-integration.test.ts
+
+      - name: Benchmark watcher chokidar baseline (2000 files)
+        run: npm run benchmark:watcher -- --mode chokidar
+
+      - name: Benchmark watcher polling fallback (2000 files)
+        run: npm run benchmark:watcher -- --mode polling --idle-ms 1000
+
+      - name: Benchmark native watcher resource gate (2000 files)
+        run: npm run benchmark:watcher -- --mode native --iterations 3 --idle-ms 1000 --max-resource-delta 32
 
   test:
     timeout-minutes: 45

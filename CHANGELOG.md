@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Mixed-intent cross-repo benchmark pilot**: Expanded the frozen five-repository cohort from 25 exact-definition queries to 35 reviewed queries by adding keyword-heavy production retrieval coverage across JavaScript, Python, Go, and Rust. The report keeps CodeGraph and codebase-memory-mcp comparison scoped to their shared 25-query exact-definition interface.
 - **Mixed-intent benchmark coverage and CI gate**: Expanded the frozen cohort to 45 queries with implementation-intent and conceptual coverage, and added a no-model cross-repo benchmark contract check to pull-request CI.
 
+### Changed
+
+- **Low-descriptor project watcher**: The file watcher now uses one recursive `node:fs.watch` per watch root (project root plus the nearest existing directory of each external or inherited config path) instead of one Chokidar watch per entry, with the on-disk snapshot diff as the sole authority for add/change/unlink. Chokidar remains the explicit startup and runtime fallback, `polling` is available as a forced backend, and a reproducible benchmark gates the native backend on resource deltas across macOS, Linux, and Windows.
+
 ### Fixed
 
 - **Frozen cross-repo definition benchmark**: Reject contradictory exact-symbol targets in reviewed fixed datasets, and replace the ambiguous duplicate Express `error` query with an unambiguous `GithubView` lookup.
