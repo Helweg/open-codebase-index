@@ -87,6 +87,83 @@ export async function buildFileSnapshot(
   return snapshot;
 }
 
+export async function buildFileSnapshotForPath(
+  projectRoot: string,
+  config: Pick<CodebaseIndexConfig, "include" | "additionalInclude" | "exclude">,
+  configPaths: string[],
+  targetPath: string,
+): Promise<FileSnapshotMap> {
+  const normalizedProjectRoot = path.resolve(projectRoot);
+  const normalizedTargetPath = path.resolve(targetPath);
+  if (!isWithinPath(normalizedProjectRoot, normalizedTargetPath)) {
+    return new Map();
+  }
+
+  const ignoreFilter = createIgnoreFilter(normalizedProjectRoot);
+  const includePatterns = [...config.include, ...(config.additionalInclude ?? [])];
+  const explicitConfigPaths = new Set(configPaths.map((configPath) => path.resolve(configPath)));
+  const snapshot = new Map<string, FileSnapshotEntry>();
+
+  const includeFile = async (filePath: string): Promise<void> => {
+    const normalizedPath = path.resolve(filePath);
+    if (
+      !explicitConfigPaths.has(normalizedPath)
+      && !shouldIncludeFile(
+        normalizedPath,
+        normalizedProjectRoot,
+        includePatterns,
+        config.exclude,
+        ignoreFilter,
+      )
+    ) {
+      return;
+    }
+
+    const stat = await readStatIfFile(normalizedPath);
+    if (!stat) return;
+
+    snapshot.set(normalizedPath, {
+      size: stat.size,
+      mtimeMs: stat.mtimeMs,
+    });
+  };
+
+  const walk = async (directoryPath: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
+    } catch (error) {
+      if (isIgnorableFsError(error)) return;
+      throw error;
+    }
+
+    for (const entry of entries) {
+      const fullPath = path.join(directoryPath, entry.name);
+      const relativePath = path.relative(normalizedProjectRoot, fullPath);
+
+      if (entry.isDirectory()) {
+        if (hasFilteredPathSegment(relativePath, path.sep) || isRestrictedDirectory(relativePath, path.sep)) {
+          continue;
+        }
+        if (ignoreFilter.ignores(relativePath)) continue;
+        await walk(fullPath);
+      } else if (entry.isFile()) {
+        await includeFile(fullPath);
+      }
+    }
+  };
+
+  const targetStat = await readStatIfFile(normalizedTargetPath);
+  if (targetStat) {
+    await includeFile(normalizedTargetPath);
+  } else {
+    await walk(normalizedTargetPath);
+  }
+
+  await includeExplicitConfigPathsInPath(snapshot, configPaths, normalizedTargetPath);
+  return snapshot;
+}
+
 async function includeExplicitConfigPaths(
   snapshot: Map<string, FileSnapshotEntry>,
   configPaths: string[],
@@ -105,6 +182,20 @@ async function includeExplicitConfigPaths(
       mtimeMs: stat.mtimeMs,
     });
   }
+}
+
+async function includeExplicitConfigPathsInPath(
+  snapshot: Map<string, FileSnapshotEntry>,
+  configPaths: string[],
+  targetPath: string,
+): Promise<void> {
+  const configPathsInTarget = configPaths.filter((configPath) => isWithinPath(targetPath, path.resolve(configPath)));
+  await includeExplicitConfigPaths(snapshot, configPathsInTarget);
+}
+
+export function isWithinPath(parentPath: string, childPath: string): boolean {
+  const relativePath = path.relative(parentPath, childPath);
+  return relativePath === "" || (!relativePath.startsWith(`..${path.sep}`) && relativePath !== ".." && !path.isAbsolute(relativePath));
 }
 
 async function readStatIfFile(filePath: string): Promise<Stats | null> {

@@ -45,6 +45,7 @@ export class FileWatcher {
   private nativeSetupGeneration = 0;
   private nativeStarting = false;
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
+  private nativeInvalidatedPaths: Set<string | null> = new Set();
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -215,7 +216,7 @@ export class FileWatcher {
 
       const watcher = new NativeRecursiveWatcher(
         this.projectRoot,
-        () => this.scheduleNativeReconciliation(generation),
+        (filePath) => this.scheduleNativeReconciliation(generation, filePath),
         { onError: (error) => void this.fallbackFromNativeWatcher(generation, error) },
       );
       watcher.start();
@@ -251,24 +252,28 @@ export class FileWatcher {
     return this.nativeSetupGeneration === generation && this.onChanges !== null;
   }
 
-  private scheduleNativeReconciliation(generation: number): void {
+  private scheduleNativeReconciliation(generation: number, filePath: string | null): void {
     if (!this.isCurrentNativeSetup(generation)) return;
+
+    this.nativeInvalidatedPaths.add(filePath);
 
     if (this.nativeReconcileTimer) {
       clearTimeout(this.nativeReconcileTimer);
     }
     this.nativeReconcileTimer = setTimeout(() => {
       this.nativeReconcileTimer = null;
-      void this.reconcileNativeWatcher(generation);
+      const invalidatedPaths = [...this.nativeInvalidatedPaths];
+      this.nativeInvalidatedPaths.clear();
+      void this.reconcileNativeWatcher(generation, invalidatedPaths);
     }, 100);
   }
 
-  private async reconcileNativeWatcher(generation: number): Promise<void> {
+  private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly (string | null)[]): Promise<void> {
     if (!this.isCurrentNativeSetup(generation) || !this.nativeReconciler) return;
 
     try {
       const reconciler = this.nativeReconciler;
-      const changes = await reconciler.reconcile();
+      const changes = await reconciler.reconcile(invalidatedPaths);
       if (!this.isCurrentNativeSetup(generation) || this.nativeReconciler !== reconciler) return;
 
       this.recordChanges(changes);
@@ -289,6 +294,7 @@ export class FileWatcher {
       clearTimeout(this.nativeReconcileTimer);
       this.nativeReconcileTimer = null;
     }
+    this.nativeInvalidatedPaths.clear();
 
     console.warn("[codebase-index] Native recursive watcher failed; using Chokidar fallback.", error);
     await watcher?.stop();
@@ -405,6 +411,7 @@ export class FileWatcher {
       clearTimeout(this.nativeReconcileTimer);
       this.nativeReconcileTimer = null;
     }
+    this.nativeInvalidatedPaths.clear();
 
     const watcher = this.watcher;
     const nativeWatcher = this.nativeWatcher;

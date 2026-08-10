@@ -96,6 +96,59 @@ describe("watcher snapshot reconciler", () => {
     expect(second).toEqual([]);
   });
 
+  it("reconciles only the invalidated file path", async () => {
+    const observedFile = path.join(projectRoot, "observed.ts");
+    const unrelatedFile = path.join(projectRoot, "unrelated.ts");
+    fs.writeFileSync(observedFile, "export const observed = 1;");
+    fs.writeFileSync(unrelatedFile, "export const unrelated = 1;");
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    fs.writeFileSync(observedFile, "export const observed = 2;");
+    fs.writeFileSync(unrelatedFile, "export const unrelated = 2;");
+
+    expect(await reconciler.reconcile([observedFile])).toEqual([
+      { path: observedFile, type: "change" },
+    ]);
+    expect(await reconciler.reconcile()).toEqual([
+      { path: unrelatedFile, type: "change" },
+    ]);
+  });
+
+  it("removes every tracked descendant when an invalidated directory was deleted", async () => {
+    const removedDirectory = path.join(projectRoot, "removed");
+    const firstFile = path.join(removedDirectory, "first.ts");
+    const secondFile = path.join(removedDirectory, "nested", "second.ts");
+    fs.mkdirSync(path.dirname(secondFile), { recursive: true });
+    fs.writeFileSync(firstFile, "export const first = 1;");
+    fs.writeFileSync(secondFile, "export const second = 2;");
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    fs.rmSync(removedDirectory, { recursive: true });
+
+    expect(await reconciler.reconcile([removedDirectory])).toEqual([
+      { path: firstFile, type: "unlink" },
+      { path: secondFile, type: "unlink" },
+    ]);
+  });
+
+  it("uses a full reconciliation when native watcher supplies no path hint", async () => {
+    const trackedFile = path.join(projectRoot, "tracked.ts");
+    fs.writeFileSync(trackedFile, "export const tracked = 1;");
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    fs.writeFileSync(trackedFile, "export const tracked = 2;");
+
+    expect(await reconciler.reconcile([null])).toEqual([
+      { path: trackedFile, type: "change" },
+    ]);
+  });
+
   it("throws before initialization", async () => {
     const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
     await expect(reconciler.reconcile()).rejects.toThrow(
