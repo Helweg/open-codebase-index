@@ -66,10 +66,10 @@ describe.each(["native", "chokidar"] as const)("real %s FileWatcher backend", (b
   afterEach(async () => {
     await watcher?.stop();
     for (const dir of externalDirs) {
-      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
     externalDirs.length = 0;
-    fs.rmSync(projectRoot, { recursive: true, force: true });
+    fs.rmSync(projectRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   });
 
   it("delivers add, change, and unlink across three rounds", async () => {
@@ -127,7 +127,7 @@ describe.each(["native", "chokidar"] as const)("real %s FileWatcher backend", (b
     while (Date.now() - renameStartedAt < EVENT_TIMEOUT_MS) {
       // Reset to the pre-rename state, then rename again so every retry emits a
       // fresh unlink/add pair for the moved files.
-      fs.rmSync(renamedDir, { recursive: true, force: true });
+      fs.rmSync(renamedDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       fs.mkdirSync(sourceDir, { recursive: true });
       fs.writeFileSync(sourceFiles[0], `export const a = ${renameAttempt};\n`);
       fs.writeFileSync(sourceFiles[1], `export const b = ${renameAttempt};\n`);
@@ -173,7 +173,7 @@ describe.each(["native", "chokidar"] as const)("real %s FileWatcher backend", (b
       fs.mkdirSync(deletedDir, { recursive: true });
       fs.writeFileSync(deletedFiles[0], `export const a = ${deletionAttempt};\n`);
       fs.writeFileSync(deletedFiles[1], `export const b = ${deletionAttempt};\n`);
-      fs.rmSync(deletedDir, { recursive: true });
+      fs.rmSync(deletedDir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
       deletionAttempt += 1;
       const remainingMs = EVENT_TIMEOUT_MS - (Date.now() - deletionStartedAt);
       try {
