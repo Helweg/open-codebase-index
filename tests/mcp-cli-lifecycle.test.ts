@@ -199,6 +199,35 @@ describe("MCP CLI shutdown lifecycle", () => {
     expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:1"]);
   });
 
+  it("handles SIGINT while MCP transport startup is still pending", async () => {
+    const connectGate = createDeferred<void>();
+    server.connect = vi.fn(() => connectGate.promise);
+    lifecycleMocks.createMcpServer.mockReturnValue(server);
+
+    const cliPromise = runMcpCli([
+      "node",
+      "dist/cli.js",
+      "--host",
+      "jcode",
+      "--project",
+      tempDir,
+      "--config",
+      path.join(tempDir, "config.json"),
+    ]);
+    await Promise.resolve();
+
+    process.emit("SIGINT");
+    connectGate.resolve();
+    await cliPromise;
+
+    await vi.waitFor(() => {
+      expect(lifecycleMocks.exit).toHaveBeenCalledWith(0);
+    });
+    expect(watcher.stop).not.toHaveBeenCalled();
+    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
+    expect(server.close).toHaveBeenCalledOnce();
+  });
+
   it("runs teardown when the MCP server closes", async () => {
     await startCli();
 
