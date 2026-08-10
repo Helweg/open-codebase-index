@@ -6,7 +6,7 @@ import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-function runCliCommand(args, { killAfterMs = null, action = null } = {}) {
+function runCliCommand(args, { killAfterMs = null, action = null, actionDelayMs = 1_000 } = {}) {
   return new Promise((resolve, reject) => {
     const command = [cliPath, ...args];
     const child = spawn(process.execPath, command, {
@@ -36,7 +36,7 @@ function runCliCommand(args, { killAfterMs = null, action = null } = {}) {
     const actionTimer = action
       ? setTimeout(() => {
         action(child);
-      }, 250)
+      }, actionDelayMs)
       : null;
 
     child.once("exit", (code, signal) => {

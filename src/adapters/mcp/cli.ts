@@ -249,23 +249,7 @@ export async function runMcpCli(argv: string[]): Promise<void> {
 
   const server = createMcpServer(args.project, config, args.host);
   const transport = new StdioServerTransport();
-
-  await server.connect(transport);
-
   let watcher: CombinedWatcher | null = null;
-  const isHomeDir = isHomeDirectory(args.project);
-  const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(args.project));
-
-  if (config.indexing.watchFiles && isValidProject) {
-    watcher = createWatcherWithIndexer(
-      () => getIndexerForProject(args.project, args.host),
-      args.project,
-      config,
-      args.host,
-      args.config ? { configPath: args.config } : {},
-    );
-  }
-
   let shutdownPromise: Promise<void> | undefined;
   const onServerClose = server.server.onclose;
 
@@ -320,6 +304,22 @@ export async function runMcpCli(argv: string[]): Promise<void> {
   if (process.platform !== "win32") {
     process.once("SIGHUP", requestShutdown);
     process.once("SIGTERM", requestShutdown);
+  }
+
+  await server.connect(transport);
+  if (shutdownPromise) return;
+
+  const isHomeDir = isHomeDirectory(args.project);
+  const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(args.project));
+
+  if (config.indexing.watchFiles && isValidProject) {
+    watcher = createWatcherWithIndexer(
+      () => getIndexerForProject(args.project, args.host),
+      args.project,
+      config,
+      args.host,
+      args.config ? { configPath: args.config } : {},
+    );
   }
 }
 
