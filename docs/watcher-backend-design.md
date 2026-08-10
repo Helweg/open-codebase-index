@@ -76,6 +76,12 @@ Before the native backend can become the default:
 5. The MCP built-CLI signal and shutdown smoke test must pass.
 6. Native and fallback implementations must pass the same contract suite. Platform-specific results must be recorded instead of inferred.
 
+## Current prototype
+
+The native path is currently **opt-in only** with `CODEBASE_INDEX_EXPERIMENTAL_NATIVE_WATCHER=true`. It is used only when every project configuration path is under the project root. External or inherited worktree configuration continues to use Chokidar. If native startup, runtime watching, or reconciliation fails, the watcher closes it and falls back to Chokidar.
+
+The prototype uses the reconciler for every native notification. It does not rely on Node's `rename` or `change` event label.
+
 ## Implementation sequence
 
 1. Extract eligibility and snapshot-diff logic with direct unit tests.
