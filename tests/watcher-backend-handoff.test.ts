@@ -46,6 +46,7 @@ vi.mock("chokidar", () => {
 
     once(event: string, cb: () => void): this {
       this.callbacks.once[event] = cb;
+      this.callbacks.on[event] = cb;
       return this;
     }
 
@@ -134,7 +135,7 @@ describe("FileWatcher native-to-chokidar handoff", () => {
     // reconciliation has not run, so the in-flight mutation is not delivered.
     expect(changes).not.toContainEqual({ type: "add", path: mutationPath });
 
-    fakes.fswatchers[0].callbacks.once["ready"]();
+    fakes.fswatchers[0].callbacks.on["ready"]();
     await vi.waitFor(
       () => {
         expect(changes).toContainEqual({ type: "add", path: mutationPath });
@@ -185,7 +186,7 @@ describe("FileWatcher native-to-chokidar handoff", () => {
 
     // Complete the fallback startup; the handoff reconciliation finishes and
     // waitUntilReady resolves.
-    fakes.fswatchers[0].callbacks.once["ready"]();
+    fakes.fswatchers[0].callbacks.on["ready"]();
     await watcher.waitUntilReady();
     expect(fakes.fswatchers.length).toBe(1);
 
@@ -220,7 +221,7 @@ describe("FileWatcher native-to-chokidar handoff", () => {
     await vi.waitFor(() => {
       expect(fakes.fswatchers.length).toBe(1);
     });
-    fakes.fswatchers[0].callbacks.once["ready"]();
+    fakes.fswatchers[0].callbacks.on["ready"]();
     await watcher.waitUntilReady();
 
     await watcher.stop();

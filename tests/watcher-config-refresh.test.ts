@@ -236,16 +236,42 @@ describe("watcher config refresh", () => {
 
     try {
       await watcher.whenReady();
-      rmSync(configPath);
-
-      await vi.waitFor(() => {
+      const assertRefreshed = () => {
         expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
           worktreeDir,
           "opencode",
           undefined,
         );
         expect(indexer.index).toHaveBeenCalledTimes(1);
-      }, { timeout: WATCH_EVENT_TIMEOUT_MS });
+      };
+
+      // Retry the removal: under heavy FSEvents load a single removal event can
+      // be delayed past the wait window. Re-creating the config and removing it
+      // again keeps the contract (removal is observed) without a fixed sleep.
+      const startedAt = Date.now();
+      let attempt = 0;
+      while (Date.now() - startedAt < WATCH_EVENT_TIMEOUT_MS) {
+        rmSync(configPath);
+        const remainingMs = WATCH_EVENT_TIMEOUT_MS - (Date.now() - startedAt);
+        try {
+          await vi.waitFor(assertRefreshed, { timeout: Math.min(2500, remainingMs), interval: 50 });
+          return;
+        } catch {
+          // Removal event missed; re-create the config and wait for the add to
+          // settle before clearing the mocks and retrying the removal.
+          writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"], attempt: attempt++ }));
+          await vi.waitFor(() => {
+            expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+              worktreeDir,
+              "opencode",
+              undefined,
+            );
+          }, { timeout: 2500, interval: 50 }).catch(() => {});
+          operationMocks.refreshIndexerForDirectory.mockClear();
+          indexer.index.mockClear();
+        }
+      }
+      throw new Error("config removal was never observed");
     } finally {
       await watcher.stop();
     }

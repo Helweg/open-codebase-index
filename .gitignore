@@ -63,3 +63,4 @@ benchmarks/results/
 # Local agent/workspace scratch (not part of the package)
 .omo/
 AGENTS.original.md
+scripts-tmp/

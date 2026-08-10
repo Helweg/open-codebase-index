@@ -183,7 +183,7 @@ export class FileWatcher {
       watcher = new FSWatcher(watcherOptions);
     }
     this.watcher = watcher;
-    watcher.once("ready", () => {
+    watcher.on("ready", () => {
       if (this.watcher !== watcher) return;
       void (async () => {
         await this.waitForReconcilerInitialized(reconciler);

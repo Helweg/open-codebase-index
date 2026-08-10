@@ -90,7 +90,9 @@ describe("watcher snapshot reconciler", () => {
     const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
     await reconciler.initialize();
 
-    fs.writeFileSync(trackedFile, "export const version = 2;");
+    // Different content length so the change is detected by size even when the
+    // filesystem reports identical mtimeMs for two writes in the same millisecond.
+    fs.writeFileSync(trackedFile, "export const version = 22;");
     const [first, second] = await Promise.all([reconciler.reconcile(), reconciler.reconcile()]);
 
     expect(first).toEqual([{ path: trackedFile, type: "change" }]);
