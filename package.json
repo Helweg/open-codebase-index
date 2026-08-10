@@ -55,6 +55,7 @@
     "eval:compare": "npx tsx src/cli.ts eval compare",
     "eval:effectiveness": "npx tsx scripts/effectiveness-report.ts",
     "benchmark:indexing-memory": "npx tsx benchmarks/indexing-memory.ts",
+    "benchmark:watcher": "npx tsx benchmarks/watcher.ts",
     "benchmark:cross-repo:check": "npx vitest run tests/cross-repo-benchmark-dataset-dir.test.ts tests/cross-repo-codegraph.test.ts tests/cross-repo-codebase-memory.test.ts",
     "dev:link-mcp": "node scripts/link-local-mcp-bin.mjs",
     "test": "vitest",
