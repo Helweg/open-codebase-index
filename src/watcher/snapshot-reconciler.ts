@@ -1,15 +1,17 @@
-import type { CodebaseIndexConfig } from "../config/schema.js";
 import type { FileChange } from "./file-watcher.js";
 
 import {
-  buildFileSnapshot,
-  buildFileSnapshotForPath,
+  buildFileSnapshotScan,
+  buildFileSnapshotForPathScan,
+  completeFileSnapshot,
   diffFileSnapshots,
   isWithinPath,
   type FileSnapshotMap,
+  type FileSnapshotScan,
+  type SnapshotFilterConfig,
 } from "./snapshot.js";
 
-export type SnapshotFilterConfig = Pick<CodebaseIndexConfig, "include" | "additionalInclude" | "exclude">;
+export type { SnapshotFilterConfig } from "./snapshot.js";
 
 export class FileSnapshotReconciler {
   private snapshot: FileSnapshotMap | null = null;
@@ -22,7 +24,7 @@ export class FileSnapshotReconciler {
   ) {}
 
   async initialize(): Promise<void> {
-    this.snapshot = await buildFileSnapshot(this.projectRoot, this.config, this.configPaths);
+    this.snapshot = (await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)).entries;
   }
 
   async reconcile(invalidatedPaths: readonly (string | null)[] = []): Promise<FileChange[]> {
@@ -37,46 +39,37 @@ export class FileSnapshotReconciler {
       }
 
       const scopedPaths = invalidatedPaths.filter((filePath): filePath is string => filePath !== null);
-      const nextSnapshot = scopedPaths.length === 0 || scopedPaths.length !== invalidatedPaths.length
-        ? await buildFileSnapshot(this.projectRoot, this.config, this.configPaths)
+      const scan = scopedPaths.length === 0 || scopedPaths.length !== invalidatedPaths.length
+        ? await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)
         : await this.reconcilePaths(previousSnapshot, scopedPaths);
+      const nextSnapshot = completeFileSnapshot(previousSnapshot, scan);
       const changes = diffFileSnapshots(previousSnapshot, nextSnapshot);
       this.snapshot = nextSnapshot;
       return changes;
     });
-    this.reconciliationTail = reconciliation.then(
-      () => undefined,
-      () => undefined,
-    );
+    this.reconciliationTail = reconciliation.then(() => undefined, () => undefined);
     return reconciliation;
   }
 
   private async reconcilePaths(
     previousSnapshot: FileSnapshotMap,
     invalidatedPaths: readonly string[],
-  ): Promise<FileSnapshotMap> {
+  ): Promise<FileSnapshotScan> {
     const scopes = this.getScopes(invalidatedPaths);
-    const nextSnapshot = new Map(previousSnapshot);
+    const entries = new Map(previousSnapshot);
+    const unreadablePrefixes = new Set<string>();
 
     for (const scope of scopes) {
-      for (const previousPath of nextSnapshot.keys()) {
-        if (isWithinPath(scope, previousPath)) {
-          nextSnapshot.delete(previousPath);
-        }
+      for (const previousPath of entries.keys()) {
+        if (isWithinPath(scope, previousPath)) entries.delete(previousPath);
       }
 
-      const scopedSnapshot = await buildFileSnapshotForPath(
-        this.projectRoot,
-        this.config,
-        this.configPaths,
-        scope,
-      );
-      for (const [filePath, entry] of scopedSnapshot) {
-        nextSnapshot.set(filePath, entry);
-      }
+      const scopedScan = await buildFileSnapshotForPathScan(this.projectRoot, this.config, this.configPaths, scope);
+      for (const [filePath, entry] of scopedScan.entries) entries.set(filePath, entry);
+      for (const unreadablePrefix of scopedScan.unreadablePrefixes) unreadablePrefixes.add(unreadablePrefix);
     }
 
-    return nextSnapshot;
+    return { entries, unreadablePrefixes };
   }
 
   private getScopes(invalidatedPaths: readonly string[]): string[] {

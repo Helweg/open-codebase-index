@@ -91,4 +91,55 @@ describe("watcher snapshot builder", () => {
       fs.rmSync(outsideRoot, { recursive: true, force: true });
     }
   });
+
+  it("limits traversal depth using config.indexing.maxDepth", async () => {
+    const rootFile = path.join(projectRoot, "root.ts");
+    const nestedLevelOne = path.join(projectRoot, "level-one", "nested.ts");
+    const nestedLevelTwo = path.join(projectRoot, "level-one", "level-two", "deeper.ts");
+
+    fs.mkdirSync(path.dirname(nestedLevelOne), { recursive: true });
+    fs.mkdirSync(path.dirname(nestedLevelTwo), { recursive: true });
+    fs.writeFileSync(rootFile, "export const root = 1;");
+    fs.writeFileSync(nestedLevelOne, "export const one = 1;");
+    fs.writeFileSync(nestedLevelTwo, "export const two = 1;");
+
+    const limitedDepth = await buildFileSnapshot(
+      projectRoot,
+      {
+        include: ["**/*.ts"],
+        additionalInclude: [],
+        exclude: [],
+        indexing: {
+          maxDepth: 1,
+        },
+      },
+      [],
+    );
+
+    expect(Array.from(limitedDepth.keys()).sort()).toEqual([rootFile, nestedLevelOne].sort());
+  });
+
+  it("preserves unlimited traversal when indexing.maxDepth is absent", async () => {
+    const rootFile = path.join(projectRoot, "root.ts");
+    const nestedLevelOne = path.join(projectRoot, "level-one", "nested.ts");
+    const nestedLevelTwo = path.join(projectRoot, "level-one", "level-two", "deeper.ts");
+
+    fs.mkdirSync(path.dirname(nestedLevelOne), { recursive: true });
+    fs.mkdirSync(path.dirname(nestedLevelTwo), { recursive: true });
+    fs.writeFileSync(rootFile, "export const root = 1;");
+    fs.writeFileSync(nestedLevelOne, "export const one = 1;");
+    fs.writeFileSync(nestedLevelTwo, "export const two = 1;");
+
+    const unlimitedDepth = await buildFileSnapshot(
+      projectRoot,
+      {
+        include: ["**/*.ts"],
+        additionalInclude: [],
+        exclude: [],
+      },
+      [],
+    );
+
+    expect(Array.from(unlimitedDepth.keys()).sort()).toEqual([rootFile, nestedLevelOne, nestedLevelTwo].sort());
+  });
 });
