@@ -81,6 +81,16 @@ function countOpenFileDescriptors(): number | null {
     return result.stdout.split("\n").filter((line) => line.startsWith("f")).length;
   }
 
+  if (process.platform === "win32") {
+    const result = spawnSync(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-Command", `(Get-Process -Id ${process.pid}).HandleCount`],
+      { encoding: "utf8" },
+    );
+    const handles = Number.parseInt(result.stdout.trim(), 10);
+    return result.status === 0 && Number.isSafeInteger(handles) ? handles : null;
+  }
+
   return null;
 }
 
@@ -190,6 +200,7 @@ async function run(options: BenchmarkOptions): Promise<WatcherBenchmarkResult> {
 }
 
 function printResult(result: WatcherBenchmarkResult): void {
+  const resourceLabel = process.platform === "win32" ? "Process handle delta" : "File descriptor delta";
   console.log(
     `Watcher fixture: ${result.tree.files} TypeScript files in ${result.tree.directories} directories `
       + `on ${result.platform} (${result.node})`,
@@ -199,10 +210,10 @@ function printResult(result: WatcherBenchmarkResult): void {
   console.log(`| Startup duration | ${result.startup.durationMs.toFixed(1)} ms |`);
   console.log(`| Startup CPU | ${result.startup.cpuMs.toFixed(1)} ms |`);
   console.log(
-    `| File descriptor delta | ${result.startup.fileDescriptorDelta === null ? "unavailable" : result.startup.fileDescriptorDelta} |`,
+    `| ${resourceLabel} | ${result.startup.fileDescriptorDelta === null ? "unavailable" : result.startup.fileDescriptorDelta} |`,
   );
   console.log(
-    `| File descriptor delta after stop | ${result.startup.fileDescriptorDeltaAfterStop === null
+    `| ${resourceLabel} after stop | ${result.startup.fileDescriptorDeltaAfterStop === null
       ? "unavailable"
       : result.startup.fileDescriptorDeltaAfterStop} |`,
   );
