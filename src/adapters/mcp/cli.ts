@@ -16,7 +16,7 @@ import { getIndexerForProject } from "../../tools/operations.js";
 import { initializeTools } from "../../tools/operation-runtime.js";
 import { executeIndexCodebase } from "../../tools/execute-common.js";
 import { hasProjectMarker } from "../../utils/files.js";
-import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
+import { isHomeDirectory } from "../../utils/auto-index.js";
 import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
 import { attachRecentActivity } from "../../tools/visualize/activity.js";
 import { generateVisualizationHtml, transformForVisualization } from "../../tools/visualize/index.js";
@@ -266,23 +266,55 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     );
   }
 
-  let shuttingDown = false;
-  const shutdown = async (): Promise<void> => {
-    if (shuttingDown) return;
-    shuttingDown = true;
+  let shutdownPromise: Promise<void> | undefined;
+  const onServerClose = server.server.onclose;
+
+  const shutdown = (): Promise<void> => {
+    if (shutdownPromise) return shutdownPromise;
+    process.stdin.removeListener("end", requestShutdown);
+    process.stdin.removeListener("close", requestShutdown);
+    process.removeListener("SIGHUP", requestShutdown);
+    process.removeListener("SIGINT", requestShutdown);
+    process.removeListener("SIGTERM", requestShutdown);
+    server.server.onclose = onServerClose;
+    shutdownPromise = (async (): Promise<void> => {
+      let exitCode = 0;
+      try {
+        await watcher?.stop();
+      } catch (error) {
+        exitCode = 1;
+        console.error("Failed to stop MCP file watcher cleanly:", error);
+      }
+      try {
+        await server.close();
+      } catch (error) {
+        exitCode = 1;
+        console.error("Failed to close MCP server cleanly:", error);
+      }
+      process.exit(exitCode);
+    })();
+    return shutdownPromise;
+  };
+
+  const requestShutdown = (): void => {
+    void shutdown();
+  };
+
+  server.server.onclose = () => {
     try {
-      await watcher?.stop();
-      await stopAutoIndex(args.project, args.host);
-      await server.close();
-      process.exit(0);
-    } catch (error) {
-      console.error("Failed to stop MCP server cleanly:", error);
-      process.exit(1);
+      onServerClose?.();
+    } finally {
+      requestShutdown();
     }
   };
 
-  process.on("SIGINT", () => { void shutdown(); });
-  process.on("SIGTERM", () => { void shutdown(); });
+  process.stdin.once("end", requestShutdown);
+  process.stdin.once("close", requestShutdown);
+  process.once("SIGINT", requestShutdown);
+  if (process.platform !== "win32") {
+    process.once("SIGHUP", requestShutdown);
+    process.once("SIGTERM", requestShutdown);
+  }
 }
 
 interface CliIndexCommandDeps {

@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-function runCliCommand(args, { killAfterMs = null } = {}) {
+function runCliCommand(args, { killAfterMs = null, action = null } = {}) {
   return new Promise((resolve, reject) => {
     const command = [cliPath, ...args];
     const child = spawn(process.execPath, command, {
@@ -26,32 +29,71 @@ function runCliCommand(args, { killAfterMs = null } = {}) {
 
     const cleanupTimer = killAfterMs
       ? setTimeout(() => {
-        child.kill("SIGTERM");
+        child.kill("SIGKILL");
       }, killAfterMs)
+      : null;
+
+    const actionTimer = action
+      ? setTimeout(() => {
+        action(child);
+      }, 250)
       : null;
 
     child.once("exit", (code, signal) => {
       if (cleanupTimer !== null) {
         clearTimeout(cleanupTimer);
       }
-      resolve({ code, signal, stdout, stderr, survived: signal === "SIGTERM" });
+      if (actionTimer !== null) {
+        clearTimeout(actionTimer);
+      }
+      resolve({ code, signal, stdout, stderr });
     });
   });
 }
 
 const cliPath = process.argv[2] ?? "dist/cli.js";
+const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-smoke-"));
+try {
+  const configPath = path.join(tempDir, "config.json");
+  writeFileSync(
+    configPath,
+    JSON.stringify({ indexing: { autoIndex: false, watchFiles: true, requireProjectMarker: false } }),
+  );
+  const projectArgs = ["--host", "jcode", "--project", tempDir, "--config", configPath];
 
-const mcpStartup = await runCliCommand(["--host", "jcode"], { killAfterMs: 2_000 });
-if (!mcpStartup.survived && mcpStartup.code !== 0) {
-  throw new Error(`Built ESM CLI failed in MCP startup mode with exit code ${mcpStartup.code}:\n${mcpStartup.stderr}`);
-}
+  const mcpStartup = await runCliCommand(projectArgs, { killAfterMs: 2_000 });
+  if (mcpStartup.signal === null && mcpStartup.code !== 0) {
+    throw new Error(`Built ESM CLI failed in MCP startup mode with exit code ${mcpStartup.code}:\n${mcpStartup.stderr}`);
+  }
 
-const indexHelp = await runCliCommand(["index", "--help"]);
-if (indexHelp.code !== 0 || !indexHelp.stderr.includes("Usage:")) {
-  throw new Error(`Built ESM CLI failed in index mode:\n${indexHelp.stderr}`);
-}
+  const indexHelp = await runCliCommand(["index", "--help"]);
+  if (indexHelp.code !== 0 || !indexHelp.stderr.includes("Usage:")) {
+    throw new Error(`Built ESM CLI failed in index mode:\n${indexHelp.stderr}`);
+  }
 
-const cjsModule = require("../dist/index.cjs");
-if (typeof cjsModule.default !== "function") {
-  throw new Error("Built CommonJS entry point is missing its default plugin export");
+  const cjsModule = require("../dist/index.cjs");
+  if (typeof cjsModule.default !== "function") {
+    throw new Error("Built CommonJS entry point is missing its default plugin export");
+  }
+
+  const shutdownScenarios = [
+    { name: "stdin EOF", action: (child) => { child.stdin.end(); } },
+  ];
+  if (process.platform !== "win32") {
+    shutdownScenarios.push(
+      { name: "SIGINT", action: (child) => { child.kill("SIGINT"); } },
+      { name: "SIGTERM", action: (child) => { child.kill("SIGTERM"); } },
+      { name: "SIGHUP", action: (child) => { child.kill("SIGHUP"); } },
+    );
+  }
+  for (const scenario of shutdownScenarios) {
+    const result = await runCliCommand(projectArgs, { killAfterMs: 5_000, action: scenario.action });
+    if (result.code !== 0 || result.signal !== null) {
+      throw new Error(
+        `Built ESM CLI did not shut down cleanly on ${scenario.name} (code=${result.code}, signal=${result.signal}):\n${result.stderr}`,
+      );
+    }
+  }
+} finally {
+  rmSync(tempDir, { recursive: true, force: true });
 }

@@ -109,6 +109,14 @@ import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/u
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";
 
+function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T | PromiseLike<T>) => void } {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 describe("plugin routing hint hook selection", () => {
   beforeEach(() => {
     mockState.config = {
@@ -209,15 +217,14 @@ describe("plugin routing hint hook selection", () => {
     expect(new Set(Object.keys(runtime.tool ?? {})).size).toBe(OPENCODE_TOOL_NAMES.length);
   });
 
-  it("reloads without waiting for a stuck watcher or starting a redundant index", async () => {
+  it("waits for the previous watcher to stop before creating the next one", async () => {
     mockState.config.indexing.autoIndex = true;
     mockState.config.indexing.watchFiles = true;
-    let resolveIndex: (() => void) | undefined;
-    mockState.indexer.index.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveIndex = () => resolve({});
-    }));
+    const indexGate = createDeferred<{}>();
+    mockState.indexer.index.mockImplementationOnce(() => indexGate.promise);
+    const stopGate = createDeferred<void>();
     const firstWatcher = {
-      stop: vi.fn(() => new Promise<void>(() => {})),
+      stop: vi.fn(() => stopGate.promise),
     };
     const secondWatcher = { stop: vi.fn().mockResolvedValue(undefined) };
     mockState.createWatcherWithIndexer
@@ -227,12 +234,86 @@ describe("plugin routing hint hook selection", () => {
     await plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0]);
     await vi.waitFor(() => expect(mockState.indexer.index).toHaveBeenCalledOnce());
 
-    await expect(plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0])).resolves.toBeDefined();
+    const secondReload = plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0]);
+    await vi.waitFor(() => expect(firstWatcher.stop).toHaveBeenCalledOnce());
+    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
 
-    expect(firstWatcher.stop).toHaveBeenCalledOnce();
+    stopGate.resolve();
+    await secondReload;
+
+    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(2);
     expect(mockState.indexer.index).toHaveBeenCalledOnce();
-    resolveIndex?.();
+    indexGate.resolve({});
     await vi.waitFor(() => expect(mockState.indexer.getStatus).toHaveBeenCalled());
+  });
+
+  it("does not create a second watcher when stopping the previous one fails", async () => {
+    mockState.config.indexing.watchFiles = true;
+    const stopError = new Error("stop failed");
+    const firstWatcher = {
+      stop: vi.fn()
+        .mockRejectedValueOnce(stopError)
+        .mockResolvedValue(undefined),
+    };
+    mockState.createWatcherWithIndexer.mockReturnValue(firstWatcher);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const projectRoot = "/tmp/stop-failure-project";
+
+    try {
+      await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
+      const failedReload = await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
+
+      expect(failedReload.tool).toBeUndefined();
+      expect(firstWatcher.stop).toHaveBeenCalledOnce();
+      expect(error).toHaveBeenCalledWith("[codebase-index] Failed to stop replaced watcher:", stopError);
+      expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
+    } finally {
+      mockState.config.indexing.watchFiles = false;
+      await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
+      error.mockRestore();
+    }
+  });
+
+  it("serializes concurrent reloads while replaced watcher shutdowns are pending", async () => {
+    mockState.config.indexing.watchFiles = true;
+    const firstStopGate = createDeferred<void>();
+    const secondStopGate = createDeferred<void>();
+    const firstWatcher = { stop: vi.fn(() => firstStopGate.promise) };
+    const secondWatcher = { stop: vi.fn(() => secondStopGate.promise) };
+    const finalWatcher = { stop: vi.fn().mockResolvedValue(undefined) };
+    mockState.createWatcherWithIndexer
+      .mockReturnValueOnce(firstWatcher)
+      .mockReturnValueOnce(secondWatcher)
+      .mockReturnValueOnce(finalWatcher);
+
+    const projectRoot = "/tmp/concurrent-reload-project";
+    const reloads = [
+      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
+      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
+      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
+    ];
+
+    await vi.waitFor(() => expect(firstWatcher.stop).toHaveBeenCalledOnce());
+    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
+    expect(secondWatcher.stop).not.toHaveBeenCalled();
+
+    firstStopGate.resolve();
+    await vi.waitFor(() => expect(secondWatcher.stop).toHaveBeenCalledOnce());
+    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(2);
+    expect(finalWatcher.stop).not.toHaveBeenCalled();
+
+    secondStopGate.resolve();
+    await Promise.all(reloads);
+
+    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(3);
+    expect(firstWatcher.stop).toHaveBeenCalledOnce();
+    expect(secondWatcher.stop).toHaveBeenCalledOnce();
+    expect(finalWatcher.stop).not.toHaveBeenCalled();
+
+    mockState.config.indexing.watchFiles = false;
+    await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
+
+    expect(finalWatcher.stop).toHaveBeenCalledOnce();
   });
 
   it("injects hints through system transform when role is system", async () => {
