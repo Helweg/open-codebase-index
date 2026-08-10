@@ -79,6 +79,28 @@ describe("NativeRecursiveWatcher", () => {
     expect(() => watcher.start()).toThrow(expectedError);
   });
 
+  it("forwards current watcher errors and ignores stale error callbacks", async () => {
+    const root = path.join(os.tmpdir(), "codebase-index-root-errors");
+    let capturedErrorListener: ((error: Error) => void) | null = null;
+    const watcherHandle = {
+      close: vi.fn(),
+      on: vi.fn((_event: "error", listener: (error: Error) => void) => {
+        capturedErrorListener = listener;
+      }),
+    };
+    const onError = vi.fn();
+    const watchFactory: NativeRecursiveWatcherFactory = vi.fn(() => watcherHandle);
+    const watcher = new NativeRecursiveWatcher(root, vi.fn(), { onError, watchFactory });
+
+    watcher.start();
+    capturedErrorListener!(new Error("current watcher error"));
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: "current watcher error" }));
+
+    await watcher.stop();
+    capturedErrorListener!(new Error("stale watcher error"));
+    expect(onError).toHaveBeenCalledTimes(1);
+  });
+
   it("suppresses callbacks after stop", async () => {
     const root = path.join(os.tmpdir(), "codebase-index-root-4");
     let capturedListener: NativeFsWatchListener | null = null;

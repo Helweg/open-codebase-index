@@ -10,6 +10,7 @@ export type NativeFsWatchListener = (
 
 type NativeFsWatcherHandle = {
   close(): void | Promise<void>;
+  on?(event: "error", listener: (error: Error) => void): void;
 };
 
 export type NativeRecursiveWatcherFactory = (
@@ -19,6 +20,7 @@ export type NativeRecursiveWatcherFactory = (
 ) => NativeFsWatcherHandle;
 
 export interface NativeRecursiveWatcherOptions {
+  onError?: (error: Error) => void;
   watchFactory?: NativeRecursiveWatcherFactory;
 }
 
@@ -27,6 +29,7 @@ export class NativeRecursiveWatcher {
   private listenerToken = 0;
 
   private readonly watchFactory: NativeRecursiveWatcherFactory;
+  private readonly onError: ((error: Error) => void) | undefined;
 
   constructor(
     private readonly root: string,
@@ -34,6 +37,7 @@ export class NativeRecursiveWatcher {
     options: NativeRecursiveWatcherOptions = {},
   ) {
     this.watchFactory = options.watchFactory ?? this.defaultWatchFactory;
+    this.onError = options.onError;
   }
 
   start(): void {
@@ -53,10 +57,16 @@ export class NativeRecursiveWatcher {
       }
     };
 
-    this.watcher = this.watchFactory(this.root, listener, {
+    const watcher = this.watchFactory(this.root, listener, {
       persistent: true,
       recursive: true,
     });
+    watcher.on?.("error", (error) => {
+      if (this.watcher === watcher && this.listenerToken === token) {
+        this.onError?.(error);
+      }
+    });
+    this.watcher = watcher;
   }
 
   async stop(): Promise<void> {
