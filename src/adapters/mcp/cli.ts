@@ -16,7 +16,7 @@ import { getIndexerForProject } from "../../tools/operations.js";
 import { initializeTools } from "../../tools/operation-runtime.js";
 import { executeIndexCodebase } from "../../tools/execute-common.js";
 import { hasProjectMarker } from "../../utils/files.js";
-import { isHomeDirectory } from "../../utils/auto-index.js";
+import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
 import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
 import { attachRecentActivity } from "../../tools/visualize/activity.js";
 import { generateVisualizationHtml, transformForVisualization } from "../../tools/visualize/index.js";
@@ -284,6 +284,12 @@ export async function runMcpCli(argv: string[]): Promise<void> {
       } catch (error) {
         exitCode = 1;
         console.error("Failed to stop MCP file watcher cleanly:", error);
+      }
+      try {
+        await stopAutoIndex(args.project, args.host);
+      } catch (error) {
+        exitCode = 1;
+        console.error("Failed to stop automatic indexing cleanly:", error);
       }
       try {
         await server.close();

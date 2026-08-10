@@ -7,11 +7,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const lifecycleMocks = vi.hoisted(() => ({
   createMcpServer: vi.fn(),
   createWatcherWithIndexer: vi.fn(),
+  isHomeDirectory: vi.fn(() => false),
+  stopAutoIndex: vi.fn(),
   exit: vi.fn(),
 }));
 
 vi.mock("../src/mcp-server.js", () => ({
   createMcpServer: lifecycleMocks.createMcpServer,
+}));
+
+vi.mock("../src/utils/auto-index.js", () => ({
+  isHomeDirectory: lifecycleMocks.isHomeDirectory,
+  stopAutoIndex: lifecycleMocks.stopAutoIndex,
 }));
 
 vi.mock("../src/watcher/index.js", () => ({
@@ -62,6 +69,7 @@ describe("MCP CLI shutdown lifecycle", () => {
 
     lifecycleMocks.createMcpServer.mockReset();
     lifecycleMocks.createWatcherWithIndexer.mockReset();
+    lifecycleMocks.stopAutoIndex.mockReset();
     lifecycleMocks.exit.mockReset();
     vi.spyOn(process, "exit").mockImplementation(((code?: number | string) => {
       events.push(`exit:${String(code)}`);
@@ -73,6 +81,9 @@ describe("MCP CLI shutdown lifecycle", () => {
         events.push("watcher.stop");
       }),
     };
+    lifecycleMocks.stopAutoIndex.mockImplementation(async () => {
+      events.push("autoIndex.stop");
+    });
     server = {
       close: vi.fn(async () => {
         events.push("server.close");
@@ -114,6 +125,7 @@ describe("MCP CLI shutdown lifecycle", () => {
       expect(lifecycleMocks.exit).toHaveBeenCalledWith(0);
     });
     expect(watcher.stop).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
     expect(server.close).toHaveBeenCalledOnce();
   }
 
@@ -135,7 +147,7 @@ describe("MCP CLI shutdown lifecycle", () => {
 
     stopGate.resolve();
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["watcher.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
   });
 
   it("runs teardown when stdin closes without an end event", async () => {
@@ -144,7 +156,7 @@ describe("MCP CLI shutdown lifecycle", () => {
     process.stdin.emit("close");
 
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["watcher.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
   });
 
   it("still closes the server when watcher teardown fails", async () => {
@@ -164,7 +176,27 @@ describe("MCP CLI shutdown lifecycle", () => {
     });
     expect(server.close).toHaveBeenCalledOnce();
     expect(error).toHaveBeenCalledWith("Failed to stop MCP file watcher cleanly:", stopError);
-    expect(events).toEqual(["watcher.stop", "server.close", "exit:1"]);
+    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:1"]);
+  });
+
+  it("still closes the server when auto-index shutdown fails", async () => {
+    const stopError = new Error("auto-index stop failed");
+    lifecycleMocks.stopAutoIndex.mockImplementation(async () => {
+      events.push("autoIndex.stop");
+      throw stopError;
+    });
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    await startCli();
+
+    process.stdin.emit("close");
+
+    await vi.waitFor(() => {
+      expect(lifecycleMocks.exit).toHaveBeenCalledWith(1);
+    });
+    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
+    expect(server.close).toHaveBeenCalledOnce();
+    expect(error).toHaveBeenCalledWith("Failed to stop automatic indexing cleanly:", stopError);
+    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:1"]);
   });
 
   it("runs teardown when the MCP server closes", async () => {
@@ -173,7 +205,7 @@ describe("MCP CLI shutdown lifecycle", () => {
     server.server.onclose?.();
 
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["server.onclose", "watcher.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["server.onclose", "watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
   });
 
   if (process.platform !== "win32") {
@@ -183,7 +215,7 @@ describe("MCP CLI shutdown lifecycle", () => {
       process.emit(signal);
 
       await expectSuccessfulShutdown();
-      expect(events).toEqual(["watcher.stop", "server.close", "exit:0"]);
+      expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
     });
   }
 
