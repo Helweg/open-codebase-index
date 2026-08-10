@@ -254,10 +254,10 @@ describe("watcher config refresh", () => {
   it("refreshes a linked worktree when a local project override file appears after watcher ready", async () => {
     const { indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
     const localConfigPath = path.join(worktreeDir, ".opencode", "codebase-index.json");
+    mkdirSync(path.dirname(localConfigPath), { recursive: true });
 
     try {
       await watcher.whenReady();
-      mkdirSync(path.dirname(localConfigPath), { recursive: true });
       await writeUntilObserved(
         (attempt) => writeFileSync(
           localConfigPath,

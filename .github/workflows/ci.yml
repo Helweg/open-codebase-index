@@ -31,6 +31,12 @@ jobs:
       - name: Test canonical path semantics
         run: npx vitest run tests/canonical-path.test.ts
 
+      - name: Record recursive native watcher capability
+        run: npx vitest run tests/watcher-platform-capability.test.ts
+
+      - name: Measure native watcher behavior
+        run: npm run benchmark:watcher
+
   test:
     timeout-minutes: 45
     runs-on: ubuntu-latest
