@@ -18,8 +18,10 @@ export interface FileChange {
 }
 
 export type ChangeHandler = (changes: FileChange[]) => Promise<void>;
+export type FileWatcherBackend = "auto" | "chokidar" | "native";
 
 export interface FileWatcherOptions {
+  backend?: FileWatcherBackend;
   configPath?: string;
 }
 
@@ -28,6 +30,7 @@ export class FileWatcher {
   private projectRoot: string;
   private config: CodebaseIndexConfig;
   private configPath: string | undefined;
+  private backend: FileWatcherBackend;
   private projectConfigPaths: string[];
   private pendingChanges: Map<string, FileChangeType> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
@@ -46,6 +49,7 @@ export class FileWatcher {
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
     this.config = config;
+    this.backend = options.backend ?? "auto";
     this.configPath = options.configPath;
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
@@ -60,7 +64,7 @@ export class FileWatcher {
     this.onChanges = handler;
     this.pollingFallbackAttempted = false;
     this.resetReady();
-    if (this.shouldUseExperimentalNativeWatcher()) {
+    if (this.shouldUseNativeWatcher()) {
       this.nativeStarting = true;
       void this.createNativeWatcher();
       return;
@@ -190,8 +194,8 @@ export class FileWatcher {
     watcher.add(watchTargets);
   }
 
-  private shouldUseExperimentalNativeWatcher(): boolean {
-    if (process.env.CODEBASE_INDEX_EXPERIMENTAL_NATIVE_WATCHER !== "true") {
+  private shouldUseNativeWatcher(): boolean {
+    if (this.backend === "chokidar") {
       return false;
     }
 

@@ -34,9 +34,7 @@ jobs:
       - name: Record recursive native watcher capability
         run: npx vitest run tests/watcher-platform-capability.test.ts
 
-      - name: Measure experimental native watcher behavior
-        env:
-          CODEBASE_INDEX_EXPERIMENTAL_NATIVE_WATCHER: "true"
+      - name: Measure native watcher behavior
         run: npm run benchmark:watcher
 
   test:
