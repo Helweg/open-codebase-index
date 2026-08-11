@@ -319,6 +319,31 @@ describe("watcher config refresh", () => {
     }
   });
 
+  it("reconciles an inherited config created between Chokidar ready events", async () => {
+    const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir, false);
+    const chokidarWatcher = watcher.fileWatcher as unknown as {
+      watcher: { emit(event: string): boolean; removeAllListeners(event?: string): unknown } | null;
+    };
+
+    try {
+      await watcher.whenReady();
+      chokidarWatcher.watcher?.removeAllListeners("add");
+      writeFileSync(configPath, JSON.stringify({ include: ["created-during-ready/**/*.ts"] }));
+      chokidarWatcher.watcher?.emit("ready");
+
+      await vi.waitFor(() => {
+        expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
+          worktreeDir,
+          "opencode",
+          undefined,
+        );
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      }, { timeout: WATCH_EVENT_TIMEOUT_MS });
+    } finally {
+      await watcher.stop();
+    }
+  });
+
   it("refreshes from explicit config path when configured", async () => {
     const projectRoot = path.join(tempDir, "project");
     mkdirSync(projectRoot, { recursive: true });
