@@ -49,6 +49,7 @@ export class FileWatcher {
   private nativeReconciler: FileSnapshotReconciler | null = null;
   private nativeSetupGeneration = 0;
   private nativeStarting = false;
+  private nativeInitializing = false;
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
   private nativeInvalidatedPaths: Map<string | null, boolean> = new Map();
   private configPathStates: Map<string, ConfigPathState> = new Map();
@@ -217,33 +218,37 @@ export class FileWatcher {
   private async createNativeWatcher(): Promise<void> {
     const generation = ++this.nativeSetupGeneration;
     const reconciler = new FileSnapshotReconciler(this.projectRoot, this.config, this.projectConfigPaths);
+    const watcher = new NativeRecursiveWatcher(
+      this.projectRoot,
+      (filePath) => this.scheduleNativeReconciliation(generation, filePath),
+      { onError: (error) => void this.fallbackFromNativeWatcher(generation, error) },
+    );
+
+    this.nativeReconciler = reconciler;
+    this.nativeWatcher = watcher;
+    this.nativeInitializing = true;
 
     try {
-      await reconciler.initialize();
-      if (!this.isCurrentNativeSetup(generation)) return;
-
-      const watcher = new NativeRecursiveWatcher(
-        this.projectRoot,
-        (filePath) => this.scheduleNativeReconciliation(generation, filePath),
-        { onError: (error) => void this.fallbackFromNativeWatcher(generation, error) },
-      );
       watcher.start();
       if (!this.isCurrentNativeSetup(generation)) {
         await watcher.stop();
         return;
       }
 
-      this.nativeWatcher = watcher;
-      this.nativeReconciler = reconciler;
-      this.nativeStarting = false;
-      const initialChanges = await reconciler.reconcile();
-      if (!this.isCurrentNativeSetup(generation) || this.nativeWatcher !== watcher) return;
+      await reconciler.initialize();
+      if (!this.isCurrentNativeSetup(generation) || this.nativeWatcher !== watcher) {
+        await watcher.stop();
+        return;
+      }
 
-      this.recordChanges(initialChanges);
+      this.nativeStarting = false;
+      this.nativeInitializing = false;
+      await this.reconcileNativeWatcherWithPendingInvalidations(generation);
       this.resolveReady?.();
       this.resolveReady = null;
     } catch (error) {
       if (!this.isCurrentNativeSetup(generation)) return;
+      this.nativeInitializing = false;
       if (this.nativeWatcher) {
         await this.fallbackFromNativeWatcher(generation, error);
         return;
@@ -272,12 +277,17 @@ export class FileWatcher {
     }
     this.nativeReconcileTimer = setTimeout(() => {
       this.nativeReconcileTimer = null;
-      const invalidatedPaths: SnapshotInvalidation[] = [...this.nativeInvalidatedPaths].map(
-        ([invalidatedPath, forceChange]) => ({ path: invalidatedPath, forceChange }),
-      );
-      this.nativeInvalidatedPaths.clear();
-      void this.reconcileNativeWatcher(generation, invalidatedPaths);
+      void this.reconcileNativeWatcherFromQueue(generation);
     }, 100);
+  }
+
+  private reconcileNativeWatcherFromQueue(generation: number): void {
+    if (!this.isCurrentNativeSetup(generation) || this.nativeInitializing) return;
+
+    const invalidatedPaths = this.popNativeInvalidations();
+    if (invalidatedPaths.length === 0) return;
+
+    void this.reconcileNativeWatcher(generation, invalidatedPaths);
   }
 
   private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly SnapshotInvalidation[]): Promise<void> {
@@ -294,6 +304,24 @@ export class FileWatcher {
     }
   }
 
+  private async reconcileNativeWatcherWithPendingInvalidations(generation: number): Promise<void> {
+    const invalidatedPaths = this.popNativeInvalidations();
+    if (invalidatedPaths.length === 0) return;
+
+    await this.reconcileNativeWatcher(generation, invalidatedPaths);
+  }
+
+  private popNativeInvalidations(): SnapshotInvalidation[] {
+    if (this.nativeInvalidatedPaths.size === 0) return [];
+
+    const invalidations = [...this.nativeInvalidatedPaths].map(([invalidatedPath, forceChange]) => ({
+      path: invalidatedPath,
+      forceChange,
+    }));
+    this.nativeInvalidatedPaths.clear();
+    return invalidations;
+  }
+
   private async fallbackFromNativeWatcher(generation: number, error: unknown): Promise<void> {
     if (!this.isCurrentNativeSetup(generation)) return;
 
@@ -301,6 +329,7 @@ export class FileWatcher {
     this.nativeWatcher = null;
     this.nativeReconciler = null;
     this.nativeStarting = false;
+    this.nativeInitializing = false;
     this.nativeSetupGeneration += 1;
     if (this.nativeReconcileTimer) {
       clearTimeout(this.nativeReconcileTimer);
@@ -481,6 +510,7 @@ export class FileWatcher {
     this.nativeWatcher = null;
     this.nativeReconciler = null;
     this.nativeStarting = false;
+    this.nativeInitializing = false;
     this.nativeSetupGeneration += 1;
     this.pendingClose = null;
     this.resolveReady = null;
