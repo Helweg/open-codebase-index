@@ -45,10 +45,12 @@ export class FileWatcher {
   private resolveReady: (() => void) | null = null;
   private pollingFallbackAttempted = false;
   private pendingClose: Promise<void> | null = null;
+  private startupReadySignals = 1;
   private nativeWatcher: NativeRecursiveWatcher | null = null;
   private nativeReconciler: FileSnapshotReconciler | null = null;
   private nativeSetupGeneration = 0;
   private nativeStarting = false;
+  private nativeInitializing = false;
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
   private nativeInvalidatedPaths: Map<string | null, boolean> = new Map();
   private configPathStates: Map<string, ConfigPathState> = new Map();
@@ -72,6 +74,10 @@ export class FileWatcher {
     this.pollingFallbackAttempted = false;
     this.resetReady();
     if (this.shouldUseNativeWatcher()) {
+      if (this.hasExternalConfigWatchTarget()) {
+        this.setStartupReadySignals(2);
+        this.startExternalConfigWatcher();
+      }
       this.nativeStarting = true;
       void this.createNativeWatcher();
       return;
@@ -83,28 +89,44 @@ export class FileWatcher {
     this.readyPromise = new Promise<void>((resolve) => {
       this.resolveReady = resolve;
     });
+    this.startupReadySignals = 1;
   }
 
-  private createWatcher(usePolling = false): void {
+  private setStartupReadySignals(expectedSignals: number): void {
+    if (!this.readyPromise) {
+      return;
+    }
+
+    this.startupReadySignals = Math.max(0, expectedSignals);
+  }
+
+  private reportStartupReadySignal(): void {
+    if (!this.readyPromise || !this.resolveReady) {
+      return;
+    }
+
+    if (this.startupReadySignals <= 0) {
+      return;
+    }
+
+    this.startupReadySignals -= 1;
+    if (this.startupReadySignals !== 0) {
+      return;
+    }
+
+    this.resolveReady();
+    this.resolveReady = null;
+  }
+
+  private createWatcher(
+    watchTargets?: string | string[],
+    usePolling = false,
+    reportsStartupReady = true,
+  ): void {
+    let reportedStartupReady = false;
     this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
-    let watchTargets: string | string[] = this.projectRoot;
-    if (this.configPath) {
-      watchTargets = [this.projectRoot, this.configPath];
-    } else {
-      const externalConfigTargets = this.projectConfigPaths
-        .filter((projectConfigPath) => {
-          const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
-          return this.isOutsideProjectPath(relativeConfigPath);
-        })
-        .map((projectConfigPath) => existsSync(projectConfigPath)
-          ? projectConfigPath
-          : this.getNearestExistingDirectory(path.dirname(projectConfigPath)));
-      const uniqueExternalConfigTargets = [...new Set(externalConfigTargets)];
-      if (uniqueExternalConfigTargets.length > 0) {
-        watchTargets = [this.projectRoot, ...uniqueExternalConfigTargets];
-      }
-    }
+    const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
 
     const watcherOptions = {
       ignored: (filePath: string) => {
@@ -161,8 +183,10 @@ export class FileWatcher {
     watcher.on("ready", () => {
       if (this.watcher !== watcher) return;
       this.reconcileConfigPathStates();
-      this.resolveReady?.();
-      this.resolveReady = null;
+      if (reportsStartupReady) {
+        this.reportStartupReadySignal();
+        reportedStartupReady = true;
+      }
     });
 
     watcher.on("error", (error: unknown) => {
@@ -184,10 +208,13 @@ export class FileWatcher {
           console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
         });
         if (this.onChanges) {
+          const replacementReportsStartupReady = reportsStartupReady || reportedStartupReady;
           if (!this.resolveReady) {
             this.resetReady();
+          } else if (reportedStartupReady) {
+            this.startupReadySignals += 1;
           }
-          this.createWatcher(true);
+          this.createWatcher(resolvedWatchTargets, true, replacementReportsStartupReady);
         } else {
           this.watcher = null;
         }
@@ -200,7 +227,7 @@ export class FileWatcher {
     watcher.on("add", (filePath) => this.handleChange(watcher, "add", filePath));
     watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
     watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
-    watcher.add(watchTargets);
+    watcher.add(resolvedWatchTargets);
   }
 
   private shouldUseNativeWatcher(): boolean {
@@ -208,50 +235,96 @@ export class FileWatcher {
       return false;
     }
 
-    return this.projectConfigPaths.every((configPath) => {
-      const relativePath = path.relative(this.projectRoot, configPath);
-      return !this.isOutsideProjectPath(relativePath);
-    });
+    return true;
+  }
+
+  private getFullChokidarWatchTargets(): string | string[] {
+    if (this.configPath) {
+      return [this.projectRoot, this.configPath];
+    }
+
+    const externalConfigTargets = this.getExternalConfigWatchTargets();
+    if (externalConfigTargets.length === 0) {
+      return this.projectRoot;
+    }
+
+    return [this.projectRoot, ...externalConfigTargets];
+  }
+
+  private getExternalConfigWatchTargets(): string[] {
+    return [...new Set(this.projectConfigPaths
+      .filter((projectConfigPath) => {
+        const relativeConfigPath = path.relative(this.projectRoot, projectConfigPath);
+        return this.isOutsideProjectPath(relativeConfigPath);
+      })
+      .map((projectConfigPath) => {
+        if (existsSync(projectConfigPath)) {
+          return projectConfigPath;
+        }
+
+        return this.getNearestExistingDirectory(path.dirname(projectConfigPath));
+      }),
+    )];
+  }
+
+  private hasExternalConfigWatchTarget(): boolean {
+    return this.getExternalConfigWatchTargets().length > 0;
+  }
+
+  private startExternalConfigWatcher(usePolling = false): void {
+    const externalTargets = this.getExternalConfigWatchTargets();
+    if (externalTargets.length === 0) {
+      return;
+    }
+
+    this.createWatcher(externalTargets, usePolling);
   }
 
   private async createNativeWatcher(): Promise<void> {
     const generation = ++this.nativeSetupGeneration;
     const reconciler = new FileSnapshotReconciler(this.projectRoot, this.config, this.projectConfigPaths);
+    const watcher = new NativeRecursiveWatcher(
+      this.projectRoot,
+      (filePath) => this.scheduleNativeReconciliation(generation, filePath),
+      { onError: (error) => void this.fallbackFromNativeWatcher(generation, error) },
+    );
+
+    this.nativeReconciler = reconciler;
+    this.nativeWatcher = watcher;
+    this.nativeInitializing = true;
 
     try {
-      await reconciler.initialize();
-      if (!this.isCurrentNativeSetup(generation)) return;
-
-      const watcher = new NativeRecursiveWatcher(
-        this.projectRoot,
-        (filePath) => this.scheduleNativeReconciliation(generation, filePath),
-        { onError: (error) => void this.fallbackFromNativeWatcher(generation, error) },
-      );
       watcher.start();
       if (!this.isCurrentNativeSetup(generation)) {
         await watcher.stop();
         return;
       }
 
-      this.nativeWatcher = watcher;
-      this.nativeReconciler = reconciler;
-      this.nativeStarting = false;
-      const initialChanges = await reconciler.reconcile();
-      if (!this.isCurrentNativeSetup(generation) || this.nativeWatcher !== watcher) return;
+      await reconciler.initialize();
+      if (!this.isCurrentNativeSetup(generation) || this.nativeWatcher !== watcher) {
+        await watcher.stop();
+        return;
+      }
 
-      this.recordChanges(initialChanges);
-      this.resolveReady?.();
-      this.resolveReady = null;
+      this.nativeStarting = false;
+      this.nativeInitializing = false;
+      await this.reconcileNativeWatcherWithPendingInvalidations(generation);
+      this.reportStartupReadySignal();
     } catch (error) {
       if (!this.isCurrentNativeSetup(generation)) return;
+      this.nativeInitializing = false;
       if (this.nativeWatcher) {
         await this.fallbackFromNativeWatcher(generation, error);
         return;
       }
 
       this.nativeStarting = false;
+      const externalWatcher = this.watcher;
+      this.watcher = null;
       this.nativeReconciler = null;
+      await externalWatcher?.close();
       console.warn("[codebase-index] Native recursive watcher unavailable; using Chokidar fallback.", error);
+      this.setStartupReadySignals(1);
       this.createWatcher();
     }
   }
@@ -272,12 +345,17 @@ export class FileWatcher {
     }
     this.nativeReconcileTimer = setTimeout(() => {
       this.nativeReconcileTimer = null;
-      const invalidatedPaths: SnapshotInvalidation[] = [...this.nativeInvalidatedPaths].map(
-        ([invalidatedPath, forceChange]) => ({ path: invalidatedPath, forceChange }),
-      );
-      this.nativeInvalidatedPaths.clear();
-      void this.reconcileNativeWatcher(generation, invalidatedPaths);
+      void this.reconcileNativeWatcherFromQueue(generation);
     }, 100);
+  }
+
+  private reconcileNativeWatcherFromQueue(generation: number): void {
+    if (!this.isCurrentNativeSetup(generation) || this.nativeInitializing) return;
+
+    const invalidatedPaths = this.popNativeInvalidations();
+    if (invalidatedPaths.length === 0) return;
+
+    void this.reconcileNativeWatcher(generation, invalidatedPaths);
   }
 
   private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly SnapshotInvalidation[]): Promise<void> {
@@ -294,22 +372,45 @@ export class FileWatcher {
     }
   }
 
+  private async reconcileNativeWatcherWithPendingInvalidations(generation: number): Promise<void> {
+    const invalidatedPaths = this.popNativeInvalidations();
+    if (invalidatedPaths.length === 0) return;
+
+    await this.reconcileNativeWatcher(generation, invalidatedPaths);
+  }
+
+  private popNativeInvalidations(): SnapshotInvalidation[] {
+    if (this.nativeInvalidatedPaths.size === 0) return [];
+
+    const invalidations = [...this.nativeInvalidatedPaths].map(([invalidatedPath, forceChange]) => ({
+      path: invalidatedPath,
+      forceChange,
+    }));
+    this.nativeInvalidatedPaths.clear();
+    return invalidations;
+  }
+
   private async fallbackFromNativeWatcher(generation: number, error: unknown): Promise<void> {
     if (!this.isCurrentNativeSetup(generation)) return;
 
     const watcher = this.nativeWatcher;
+    const externalWatcher = this.watcher;
     this.nativeWatcher = null;
+    this.watcher = null;
     this.nativeReconciler = null;
     this.nativeStarting = false;
+    this.nativeInitializing = false;
     this.nativeSetupGeneration += 1;
     if (this.nativeReconcileTimer) {
       clearTimeout(this.nativeReconcileTimer);
       this.nativeReconcileTimer = null;
     }
     this.nativeInvalidatedPaths.clear();
+    this.setStartupReadySignals(1);
 
     console.warn("[codebase-index] Native recursive watcher failed; using Chokidar fallback.", error);
     await watcher?.stop();
+    await externalWatcher?.close();
     if (this.onChanges) {
       this.createWatcher();
     }
@@ -481,6 +582,7 @@ export class FileWatcher {
     this.nativeWatcher = null;
     this.nativeReconciler = null;
     this.nativeStarting = false;
+    this.nativeInitializing = false;
     this.nativeSetupGeneration += 1;
     this.pendingClose = null;
     this.resolveReady = null;

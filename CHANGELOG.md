@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Large-project watcher startup**: Avoid a redundant native snapshot at startup and retain low-descriptor native project watching when a worktree configuration is inherited from outside the project, using Chokidar only for the external configuration target.
 - **Watcher reconciliation correctness**: Reconcile native watcher path hints selectively, respect `indexing.maxDepth`, and retain prior entries below temporarily unreadable paths rather than emitting false `unlink` events.
 - **Frozen cross-repo definition benchmark**: Reject contradictory exact-symbol targets in reviewed fixed datasets, and replace the ambiguous duplicate Express `error` query with an unambiguous `GithubView` lookup.
 - **Source-intent keyword retrieval**: Recognize Go, Rust, and Python test filenames and retain a wider candidate pool for identifier-rich source queries, so related test assertions do not displace production evidence before reranking.
