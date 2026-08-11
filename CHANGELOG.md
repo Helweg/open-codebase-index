@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-08-11
+
 ### Added
 
 - **Low-descriptor native file watching**: On platforms that support it, file watching now uses one native recursive watcher and deterministic snapshot reconciliation for `add`, `change`, and `unlink` events, with automatic Chokidar fallback when native watching is unavailable.
