@@ -1,10 +1,10 @@
 {
-  "generatedAt": "2026-03-22T11:52:53.465Z",
+  "generatedAt": "2026-08-11T12:31:31.757Z",
   "projectRoot": ".",
   "datasetPath": "benchmarks/golden/small.json",
   "datasetName": "small",
   "datasetVersion": "1.0.0",
-  "datasetFingerprint": "054eccab2ca1480b532cbe5a87ad078a88597d8f832237719b3e07c65aeaf6e5",
+  "datasetFingerprint": "45db44e118b518ab5135d28d82b5abd8de0c8a8f257ac18193d42e01a2db2633",
   "queryCount": 4,
   "topK": 10,
   "searchConfig": {
@@ -14,32 +14,49 @@
     "rerankTopN": 20
   },
   "metrics": {
-    "hitAt1": 0.75,
-    "hitAt3": 1,
-    "hitAt5": 1,
+    "hitAt1": 0.5,
+    "hitAt3": 0.75,
+    "hitAt5": 0.75,
     "hitAt10": 1,
-    "mrrAt10": 0.875,
-    "ndcgAt10": 0.9127302324517832,
+    "mrrAt10": 0.6607142857142857,
+    "ndcgAt10": 0.7410657717261977,
+    "routeAccuracy": 0,
+    "outcomeAccuracy": 0,
+    "recoveryAccuracy": 0,
+    "graphNeighborRecall": 0,
     "distinctTop3Ratio": 1,
-    "rawDistinctTop3Ratio": 1,
+    "rawDistinctTop3Ratio": 0.8333333333333333,
     "latencyMs": {
-      "p50": 26.173166000000037,
-      "p95": 52.931082999999944,
-      "p99": 52.931082999999944
+      "p50": 7.0530834999954095,
+      "p95": 22.50668394999156,
+      "p99": 24.615703989990138
     },
     "tokenEstimate": {
       "queryTokens": 43,
-      "embeddingTokensUsed": 1760
+      "embeddingTokensUsed": 1020072
     },
     "embedding": {
-      "callCount": 5,
+      "callCount": 146,
       "estimatedCostUsd": 0,
       "costPer1MTokensUsd": 0
+    },
+    "contextEfficiency": {
+      "queryCount": 0,
+      "responseTokens": {
+        "total": 0,
+        "average": 0,
+        "p95": 0,
+        "max": 0
+      },
+      "duplicateCandidateRatio": 0,
+      "selectedFileRatio": 0,
+      "hitAt5Per1kResponseTokens": 0,
+      "mrrAt10Per1kResponseTokens": 0
     },
     "failureBuckets": {
       "wrong-file": 1,
       "wrong-symbol": 0,
-      "docs-tests-outranking-source": 0,
+      "docs-tests-outranking-source": 1,
       "no-relevant-hit-top-k": 0
     }
   }
