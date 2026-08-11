@@ -118,7 +118,12 @@ export class FileWatcher {
     this.resolveReady = null;
   }
 
-  private createWatcher(watchTargets?: string | string[], usePolling = false): void {
+  private createWatcher(
+    watchTargets?: string | string[],
+    usePolling = false,
+    reportsStartupReady = true,
+  ): void {
+    let reportedStartupReady = false;
     this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
@@ -178,7 +183,10 @@ export class FileWatcher {
     watcher.on("ready", () => {
       if (this.watcher !== watcher) return;
       this.reconcileConfigPathStates();
-      this.reportStartupReadySignal();
+      if (reportsStartupReady) {
+        this.reportStartupReadySignal();
+        reportedStartupReady = true;
+      }
     });
 
     watcher.on("error", (error: unknown) => {
@@ -200,10 +208,13 @@ export class FileWatcher {
           console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
         });
         if (this.onChanges) {
+          const replacementReportsStartupReady = reportsStartupReady || reportedStartupReady;
           if (!this.resolveReady) {
             this.resetReady();
+          } else if (reportedStartupReady) {
+            this.startupReadySignals += 1;
           }
-          this.createWatcher(resolvedWatchTargets, true);
+          this.createWatcher(resolvedWatchTargets, true, replacementReportsStartupReady);
         } else {
           this.watcher = null;
         }
