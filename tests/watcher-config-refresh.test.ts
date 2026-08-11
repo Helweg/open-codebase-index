@@ -210,6 +210,23 @@ describe("watcher config refresh", () => {
     await watcher.stop();
   });
 
+  it("uses native project watching alongside a lightweight external config watcher for linked worktrees", async () => {
+    const { watcher } = createLinkedWorktreeWatcher(tempDir);
+    const internals = watcher.fileWatcher as unknown as {
+      nativeWatcher: unknown;
+      watcher: unknown;
+    };
+
+    try {
+      await watcher.whenReady();
+
+      expect(internals.nativeWatcher).not.toBeNull();
+      expect(internals.watcher).not.toBeNull();
+    } finally {
+      await watcher.stop();
+    }
+  });
+
   it("refreshes a linked worktree when its inherited project config changes", async () => {
     const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir);
 
