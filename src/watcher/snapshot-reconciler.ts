@@ -13,6 +13,11 @@ import {
 
 export type { SnapshotFilterConfig } from "./snapshot.js";
 
+export type SnapshotInvalidation = string | null | {
+  path: string | null;
+  forceChange?: boolean;
+};
+
 export class FileSnapshotReconciler {
   private snapshot: FileSnapshotMap | null = null;
   private reconciliationTail: Promise<void> = Promise.resolve();
@@ -27,7 +32,7 @@ export class FileSnapshotReconciler {
     this.snapshot = (await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)).entries;
   }
 
-  async reconcile(invalidatedPaths: readonly (string | null)[] = []): Promise<FileChange[]> {
+  async reconcile(invalidations: readonly SnapshotInvalidation[] = []): Promise<FileChange[]> {
     if (this.snapshot === null) {
       throw new Error("FileSnapshotReconciler is not initialized. Call initialize() before reconcile().");
     }
@@ -38,12 +43,22 @@ export class FileSnapshotReconciler {
         throw new Error("FileSnapshotReconciler is not initialized. Call initialize() before reconcile().");
       }
 
-      const scopedPaths = invalidatedPaths.filter((filePath): filePath is string => filePath !== null);
-      const scan = scopedPaths.length === 0 || scopedPaths.length !== invalidatedPaths.length
+      const normalizedInvalidations = invalidations.map((invalidation) => typeof invalidation === "string" || invalidation === null
+        ? { path: invalidation, forceChange: false }
+        : { path: invalidation.path, forceChange: invalidation.forceChange === true });
+      const scopedPaths = normalizedInvalidations
+        .map((invalidation) => invalidation.path)
+        .filter((filePath): filePath is string => filePath !== null);
+      const scan = scopedPaths.length === 0 || scopedPaths.length !== normalizedInvalidations.length
         ? await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)
         : await this.reconcilePaths(previousSnapshot, scopedPaths);
       const nextSnapshot = completeFileSnapshot(previousSnapshot, scan);
-      const changes = diffFileSnapshots(previousSnapshot, nextSnapshot);
+      const forcedChanges = new Set(normalizedInvalidations
+        .filter((invalidation): invalidation is { path: string; forceChange: true } => (
+          invalidation.path !== null && invalidation.forceChange
+        ))
+        .map((invalidation) => invalidation.path));
+      const changes = diffFileSnapshots(previousSnapshot, nextSnapshot, forcedChanges);
       this.snapshot = nextSnapshot;
       return changes;
     });

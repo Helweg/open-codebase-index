@@ -136,6 +136,23 @@ describe("watcher snapshot reconciler", () => {
     ]);
   });
 
+  it("reports a forced invalidation when content is rewritten with identical metadata", async () => {
+    const trackedFile = path.join(projectRoot, "tracked.ts");
+    fs.writeFileSync(trackedFile, "export const value = 1;");
+    const initialStat = fs.statSync(trackedFile);
+
+    const reconciler = new FileSnapshotReconciler(projectRoot, reconcileConfig, []);
+    await reconciler.initialize();
+
+    fs.writeFileSync(trackedFile, "export const value = 2;");
+    fs.utimesSync(trackedFile, initialStat.atimeMs / 1_000, initialStat.mtimeMs / 1_000);
+    expect(fs.statSync(trackedFile).mtimeMs).toBeCloseTo(initialStat.mtimeMs, 2);
+
+    expect(await reconciler.reconcile([{ path: trackedFile, forceChange: true }])).toEqual([
+      { path: trackedFile, type: "change" },
+    ]);
+  });
+
   it("removes every tracked descendant when an invalidated directory was deleted", async () => {
     const removedDirectory = path.join(projectRoot, "removed");
     const firstFile = path.join(removedDirectory, "first.ts");

@@ -215,12 +215,20 @@ function isPermissionFsError(error: unknown): error is NodeJS.ErrnoException {
 
 const diffTypeOrder: Record<FileChangeType, number> = { add: 0, change: 1, unlink: 2 };
 
-export function diffFileSnapshots(previous: FileSnapshotMap, current: FileSnapshotMap): FileChange[] {
+export function diffFileSnapshots(
+  previous: FileSnapshotMap,
+  current: FileSnapshotMap,
+  forcedChanges: ReadonlySet<string> = new Set(),
+): FileChange[] {
   const changes: FileChange[] = [];
   for (const [filePath, previousEntry] of previous) {
     const currentEntry = current.get(filePath);
     if (!currentEntry) changes.push({ type: "unlink", path: filePath });
-    else if (currentEntry.size !== previousEntry.size || currentEntry.mtimeMs !== previousEntry.mtimeMs) {
+    else if (
+      forcedChanges.has(filePath)
+      || currentEntry.size !== previousEntry.size
+      || currentEntry.mtimeMs !== previousEntry.mtimeMs
+    ) {
       changes.push({ type: "change", path: filePath });
     }
   }

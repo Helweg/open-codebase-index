@@ -8,7 +8,7 @@ import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
-import { FileSnapshotReconciler } from "./snapshot-reconciler.js";
+import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
 
 export type FileChangeType = "add" | "change" | "unlink";
 
@@ -45,7 +45,7 @@ export class FileWatcher {
   private nativeSetupGeneration = 0;
   private nativeStarting = false;
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
-  private nativeInvalidatedPaths: Set<string | null> = new Set();
+  private nativeInvalidatedPaths: Map<string | null, boolean> = new Map();
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -255,20 +255,24 @@ export class FileWatcher {
   private scheduleNativeReconciliation(generation: number, filePath: string | null): void {
     if (!this.isCurrentNativeSetup(generation)) return;
 
-    this.nativeInvalidatedPaths.add(filePath);
+    const requiresFullReconciliation = filePath === path.join(this.projectRoot, ".gitignore");
+    const invalidatedPath = requiresFullReconciliation ? null : filePath;
+    this.nativeInvalidatedPaths.set(invalidatedPath, invalidatedPath !== null);
 
     if (this.nativeReconcileTimer) {
       clearTimeout(this.nativeReconcileTimer);
     }
     this.nativeReconcileTimer = setTimeout(() => {
       this.nativeReconcileTimer = null;
-      const invalidatedPaths = [...this.nativeInvalidatedPaths];
+      const invalidatedPaths: SnapshotInvalidation[] = [...this.nativeInvalidatedPaths].map(
+        ([invalidatedPath, forceChange]) => ({ path: invalidatedPath, forceChange }),
+      );
       this.nativeInvalidatedPaths.clear();
       void this.reconcileNativeWatcher(generation, invalidatedPaths);
     }, 100);
   }
 
-  private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly (string | null)[]): Promise<void> {
+  private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly SnapshotInvalidation[]): Promise<void> {
     if (!this.isCurrentNativeSetup(generation) || !this.nativeReconciler) return;
 
     try {
