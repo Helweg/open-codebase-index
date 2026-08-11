@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
 
@@ -25,6 +25,11 @@ export interface FileWatcherOptions {
   configPath?: string;
 }
 
+interface ConfigPathState {
+  mtimeMs: number;
+  size: number;
+}
+
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private projectRoot: string;
@@ -46,6 +51,7 @@ export class FileWatcher {
   private nativeStarting = false;
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
   private nativeInvalidatedPaths: Map<string | null, boolean> = new Map();
+  private configPathStates: Map<string, ConfigPathState> = new Map();
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -80,6 +86,7 @@ export class FileWatcher {
   }
 
   private createWatcher(usePolling = false): void {
+    this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     let watchTargets: string | string[] = this.projectRoot;
     if (this.configPath) {
@@ -151,8 +158,9 @@ export class FileWatcher {
       watcher = new FSWatcher(watcherOptions);
     }
     this.watcher = watcher;
-    watcher.once("ready", () => {
+    watcher.on("ready", () => {
       if (this.watcher !== watcher) return;
+      this.reconcileConfigPathStates();
       this.resolveReady?.();
       this.resolveReady = null;
     });
@@ -313,6 +321,7 @@ export class FileWatcher {
     }
 
     if (this.isProjectConfigPath(filePath)) {
+      this.updateConfigPathState(filePath);
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
       return;
@@ -376,6 +385,53 @@ export class FileWatcher {
     return this.projectConfigPaths.map(
       (configPath) => path.normalize(path.relative(this.projectRoot, configPath)),
     );
+  }
+
+  private getConfigPathStates(): Map<string, ConfigPathState> {
+    const states = new Map<string, ConfigPathState>();
+    for (const configPath of this.projectConfigPaths) {
+      const state = this.getConfigPathState(configPath);
+      if (state) states.set(configPath, state);
+    }
+    return states;
+  }
+
+  private getConfigPathState(configPath: string): ConfigPathState | undefined {
+    try {
+      const stats = statSync(configPath);
+      return stats.isFile() ? { mtimeMs: stats.mtimeMs, size: stats.size } : undefined;
+    } catch (error: unknown) {
+      // A config file may disappear between the watch event and this stat.
+      void error;
+      return undefined;
+    }
+  }
+
+  private updateConfigPathState(configPath: string): void {
+    const state = this.getConfigPathState(configPath);
+    if (state) {
+      this.configPathStates.set(configPath, state);
+    } else {
+      this.configPathStates.delete(configPath);
+    }
+  }
+
+  private reconcileConfigPathStates(): void {
+    const nextStates = this.getConfigPathStates();
+    const changes: FileChange[] = [];
+    for (const configPath of this.projectConfigPaths) {
+      const previous = this.configPathStates.get(configPath);
+      const next = nextStates.get(configPath);
+      if (!previous && next) {
+        changes.push({ path: configPath, type: "add" });
+      } else if (previous && !next) {
+        changes.push({ path: configPath, type: "unlink" });
+      } else if (previous && next && (previous.size !== next.size || previous.mtimeMs !== next.mtimeMs)) {
+        changes.push({ path: configPath, type: "change" });
+      }
+    }
+    this.configPathStates = nextStates;
+    this.recordChanges(changes);
   }
 
   private scheduleFlush(): void {
