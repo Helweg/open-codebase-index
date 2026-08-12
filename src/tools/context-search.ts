@@ -121,6 +121,9 @@ interface SearchContextOperations {
     limit: number,
     scope: SearchScope,
     trace?: (trace: SearchTrace) => void,
+    searchOptions?: {
+      prioritizeSourcePaths?: boolean;
+    },
   ): Promise<SearchResult[]>;
 }
 
@@ -407,13 +410,20 @@ export async function resolveSearchContext(
     searchQuery: string,
     scope: SearchScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
+    prioritizeSourcePaths: boolean,
   ): Promise<SearchResult[]> => {
     return recordAttempt(
       "conceptual",
       searchQuery,
       scope,
       relaxedFieldsForAttempt,
-      (trace) => operations.search(searchQuery, MAX_CONTEXT_RESULT_LIMIT, scope, input.diagnostic ? trace : undefined),
+      (trace) => operations.search(
+        searchQuery,
+        MAX_CONTEXT_RESULT_LIMIT,
+        scope,
+        input.diagnostic ? trace : undefined,
+        { prioritizeSourcePaths },
+      ),
     );
   };
 
@@ -557,10 +567,12 @@ export async function resolveSearchContext(
   }
 
   for (const attempt of conceptualAttemptPlan) {
+    const attemptIntent = analyzeQueryIntent(attempt.queryText);
+    const prioritizeSourcePaths = attemptIntent.primary !== "docs" && attemptIntent.primary !== "test";
     if (inferredSymbol && attempt.queryText === inferredSymbol && attempt.queryText !== query) {
       decisions.fallbackFromOriginalConceptualToInferred = true;
     }
-    const results = await tryConceptualSearch(attempt.queryText, attempt.scope, attempt.relaxed);
+    const results = await tryConceptualSearch(attempt.queryText, attempt.scope, attempt.relaxed, prioritizeSourcePaths);
     if (results.length > 0) {
       const heading = buildPackHeading("conceptual", decisions);
       const intent = analyzeQueryIntent(attempt.queryText);

@@ -248,6 +248,7 @@ describe("native OpenCode codebase_context", () => {
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
+      prioritizeSourcePaths: expect.any(Boolean),
     });
     expect(result).toContain("Codebase evidence");
     expect(result).toContain("2 additional results excluded by result limit");
@@ -464,6 +465,7 @@ describe("native OpenCode codebase_context", () => {
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
+      prioritizeSourcePaths: expect.any(Boolean),
     });
   });
 
@@ -501,6 +503,7 @@ describe("native OpenCode codebase_context", () => {
         fileType: "ts",
         directory: "src",
         metadataOnly: true,
+        prioritizeSourcePaths: expect.any(Boolean),
       });
     }
   });
@@ -531,6 +534,7 @@ describe("native OpenCode codebase_context", () => {
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
+      prioritizeSourcePaths: expect.any(Boolean),
     });
     expect(result).toContain("src/fallback.ts:1-4");
   });
@@ -566,8 +570,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" }, undefined);
-    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined }, undefined);
+    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" }, undefined, { prioritizeSourcePaths: true });
+    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
     expect(result.details?.recovery?.attempts).toEqual([
       {
         kind: "conceptual",
@@ -619,8 +623,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined }, undefined);
-    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined);
+    expect(search).toHaveBeenNthCalledWith(1, "where is `getStatus` defined", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
     expect(result.text).toContain("src/auth.ts:1-8");
     expect(result.text).toContain("Recovery: inferred definition missed; inferred-symbol query tried.");
     expect(result.text.indexOf("Recovery:")).toBeLessThan(result.text.indexOf("[1]"));
@@ -683,8 +687,8 @@ describe("native OpenCode codebase_context", () => {
     );
 
     expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" }, undefined);
-    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined);
+    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" }, undefined, { prioritizeSourcePaths: true });
+    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
     expect(result.details?.recovery?.attempts).toHaveLength(3);
     expect(new Set(result.details?.recovery?.attempts.map((attempt) => JSON.stringify(attempt))).size)
       .toBe(3);
@@ -782,10 +786,10 @@ describe("native OpenCode codebase_context", () => {
     });
 
     expect(search.mock.calls).toEqual([
-      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }, undefined],
-      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }, undefined],
-      ["where is `getStatus` defined", 100, {}, undefined],
-      ["getStatus", 100, {}, undefined],
+      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }, undefined, { prioritizeSourcePaths: true }],
+      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }, undefined, { prioritizeSourcePaths: true }],
+      ["where is `getStatus` defined", 100, {}, undefined, { prioritizeSourcePaths: true }],
+      ["getStatus", 100, {}, undefined, { prioritizeSourcePaths: true }],
     ]);
     const recoveryLine = result.text.split("\n").find((line) => line.startsWith("Recovery:"));
     expect(recoveryLine).toBe("Recovery: inferred definition missed; inferred-symbol query tried; directory filter removed; file-type filter removed.");
@@ -827,6 +831,47 @@ describe("native OpenCode codebase_context", () => {
     expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
   });
 
+  it("prefers source paths for conceptual code queries but not documentation queries", async () => {
+    const sourceSearch = vi.fn().mockResolvedValue([{
+      filePath: "src/index.ts",
+      startLine: 1,
+      endLine: 2,
+      chunkType: "function",
+      content: "export function search() {}",
+      score: 0.9,
+    }]);
+    const docsSearch = vi.fn().mockResolvedValue([{
+      filePath: "docs/search.md",
+      startLine: 1,
+      endLine: 2,
+      chunkType: "markdown",
+      content: "# Search",
+      score: 0.9,
+    }]);
+
+    await resolveSearchContext({
+      query: "find code that combines semantic and keyword rankings",
+    }, { lookup: vi.fn(), search: sourceSearch });
+    await resolveSearchContext({
+      query: "find documentation for configuring search",
+    }, { lookup: vi.fn(), search: docsSearch });
+
+    expect(sourceSearch).toHaveBeenCalledWith(
+      "find code that combines semantic and keyword rankings",
+      100,
+      {},
+      undefined,
+      { prioritizeSourcePaths: true },
+    );
+    expect(docsSearch).toHaveBeenCalledWith(
+      "find documentation for configuring search",
+      100,
+      {},
+      undefined,
+      { prioritizeSourcePaths: false },
+    );
+  });
+
   it("captures search and context-pack traces when diagnostic flag is set", async () => {
     const search = vi.fn().mockImplementation(async (_query: string, _limit: number, _scope: unknown, trace?: (trace: SearchTrace) => void) => {
       trace?.({
@@ -863,7 +908,13 @@ describe("native OpenCode codebase_context", () => {
       search,
     });
 
-    expect(search).toHaveBeenCalledWith("where is traceTarget defined", 100, {}, expect.any(Function));
+    expect(search).toHaveBeenCalledWith(
+      "where is traceTarget defined",
+      100,
+      {},
+      expect.any(Function),
+      { prioritizeSourcePaths: true },
+    );
     expect(result.details?.diagnostic).toMatchObject({
       route: "conceptual",
       searchQuery: expect.any(String),

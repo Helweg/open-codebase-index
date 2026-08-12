@@ -345,6 +345,10 @@ function scoreCandidate(query: string, intent: QueryIntentProfile, candidate: Ra
 
   if (intent.primary === "conceptual") {
     boost += Math.min(0.14, overlap * 0.14);
+    if (intent.preferSourcePaths) {
+      boost += implementationPath ? 0.32 : 0;
+      if (testPath || fixturePath || docsPath) boost -= 0.35;
+    }
     if (generatedOrVendor) boost -= 0.18;
     if (importChunk || weakContainer) boost -= 0.04;
   } else if (intent.primary === "test") {

@@ -595,6 +595,7 @@ describe("Pi adapter conformance", () => {
         fileType: undefined,
         directory: undefined,
         metadataOnly: true,
+        prioritizeSourcePaths: true,
       },
     );
     expect(result?.content[0]?.text).toContain("Codebase evidence");
@@ -630,6 +631,7 @@ describe("Pi adapter conformance", () => {
       fileType: "ts",
       directory: "src",
       metadataOnly: true,
+      prioritizeSourcePaths: true,
     });
     expect(result?.content[0]?.text).toContain("Codebase evidence");
     expect(result?.content[0]?.text).not.toContain("validation helper");
@@ -664,6 +666,7 @@ describe("Pi adapter conformance", () => {
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
+      prioritizeSourcePaths: true,
     });
   });
 

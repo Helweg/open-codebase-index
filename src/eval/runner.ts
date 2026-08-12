@@ -307,12 +307,13 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
             fileType: scope.fileType,
             directory: scope.directory,
           }),
-          search: (searchQuery, limit, scope) => indexer.search(searchQuery, limit, {
+          search: (searchQuery, limit, scope, _trace, searchOptions) => indexer.search(searchQuery, limit, {
             metadataOnly: true,
             filterByBranch: !!query.expected.branch,
             definitionIntent: false,
             fileType: scope.fileType,
             directory: scope.directory,
+            prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
           }),
         })
         : undefined;

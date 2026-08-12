@@ -396,6 +396,8 @@ interface SearchOptions {
   filterByBranch?: boolean;
   metadataOnly?: boolean;
   definitionIntent?: boolean;
+  /** Soft ranking preference for context retrieval. Unlike definitionIntent, this never filters candidates. */
+  prioritizeSourcePaths?: boolean;
   blameAuthor?: string;
   blameSha?: string;
   blameSince?: string;
@@ -4699,8 +4701,9 @@ export class Indexer {
     const rerankTopN = this.config.search.rerankTopN;
     const filterByBranch = options?.filterByBranch ?? true;
     const sourceIntent = options?.definitionIntent === true || classifyQueryIntentRaw(query) === "source";
+    const prioritizeSourcePaths = sourceIntent || options?.prioritizeSourcePaths === true;
     const identifierHints = extractIdentifierHints(query);
-    const candidateLimit = maxResults * (sourceIntent ? 12 : 4);
+    const candidateLimit = maxResults * (prioritizeSourcePaths ? 12 : 4);
 
     this.logger.search("debug", "Starting search", {
       query,
@@ -4784,7 +4787,7 @@ export class Indexer {
       rerankTopN,
       limit: maxResults,
       hybridWeight: rankingHybridWeight,
-      prioritizeSourcePaths: sourceIntent,
+      prioritizeSourcePaths,
     });
     const rerankedCombined = await this.rerankCandidatesWithApi(query, combined, {
       definitionIntent: options?.definitionIntent === true,

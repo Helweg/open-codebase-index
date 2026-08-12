@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Conceptual context retrieval**: Prefer implementation paths over tests and documentation for code-focused `codebase_context` searches, without applying a hard source-only filter or changing documentation and test queries.
 - **Scoped definition lookup**: Allow explicit definition searches constrained to a file type or directory to return matching declarations in fixtures and test paths without weakening source-first ranking for ordinary searches.
 
 ## [0.23.0] - 2026-08-11

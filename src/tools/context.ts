@@ -133,12 +133,13 @@ async function resolveCodebaseContextUnmeasured(
       directory: scope.directory,
       trace,
     }),
-    search: (queryText, retrievalLimit, scope, trace) => searchCodebase(projectRoot, host, queryText, {
+    search: (queryText, retrievalLimit, scope, trace, searchOptions) => searchCodebase(projectRoot, host, queryText, {
       limit: retrievalLimit,
       fileType: scope.fileType,
       directory: scope.directory,
       metadataOnly: true,
       trace,
+      prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
     }),
   });
 }
