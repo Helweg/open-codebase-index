@@ -5,6 +5,8 @@ import {
   getProviderDisplayName,
   tryDetectProvider,
 } from "../src/embeddings/detector.js";
+import { EMBEDDING_MODELS } from "../src/config/constants.js";
+import { GoogleEmbeddingProvider } from "../src/embeddings/providers/google.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -13,10 +15,6 @@ afterEach(() => {
 
 describe("embeddings detector", () => {
   describe("getProviderDisplayName", () => {
-    it("should return 'GitHub Copilot' for github-copilot", () => {
-      expect(getProviderDisplayName("github-copilot")).toBe("GitHub Copilot");
-    });
-
     it("should return 'OpenAI' for openai", () => {
       expect(getProviderDisplayName("openai")).toBe("OpenAI");
     });
@@ -226,6 +224,28 @@ describe("embeddings detector", () => {
 
       await expect(detectEmbeddingProvider("ollama", "ambiguous"))
         .rejects.toThrow("not installed or is not embedding-capable");
+    });
+  });
+});
+
+describe("GoogleEmbeddingProvider", () => {
+  it("uses Gemini Embeddings 2 code-retrieval formatting", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response(JSON.stringify({
+      embeddings: [{ values: [0.1, 0.2] }],
+    })));
+    const provider = new GoogleEmbeddingProvider(
+      { provider: "google", baseUrl: "https://example.test", apiKey: "test" },
+      EMBEDDING_MODELS.google["gemini-embedding-2"],
+    );
+
+    await provider.embedQuery("find the indexer");
+    await provider.embedDocument("export class Indexer {}");
+
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)).requests[0]).toMatchObject({
+      content: { parts: [{ text: "task: code retrieval | query: find the indexer" }] },
+    });
+    expect(JSON.parse(String(fetchSpy.mock.calls[1][1]?.body)).requests[0]).toMatchObject({
+      content: { parts: [{ text: "title: none | text: export class Indexer {}" }] },
     });
   });
 });

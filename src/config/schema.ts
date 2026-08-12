@@ -282,6 +282,13 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   let embeddingModel: EmbeddingModelName | undefined;
   let customProvider: CustomProviderConfig | undefined;
   let reranker: RerankerConfig | undefined;
+
+  const githubCopilotDeprecationMessage =
+    "`embeddingProvider: \"github-copilot\"` is deprecated and no longer available. " +
+    "Migrate existing configs to `embeddingProvider: \"google\"` and select an explicit Google model. " +
+    "For existing indexes, run `index_codebase` with `force: true` after changing to `gemini-embedding-001` " +
+    "or `gemini-embedding-2` to rebuild embeddings. See docs/configuration.md for details.";
+
   if (embeddingProviderValue === 'custom') {
     embeddingProvider = 'custom';
     const rawCustom = (input.customProvider && typeof input.customProvider === 'object' ? input.customProvider : null) as Record<string, unknown> | null;
@@ -330,6 +337,8 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     } else if (rawEmbeddingModel) {
       embeddingModel = DEFAULT_PROVIDER_MODELS[embeddingProvider];
     }
+  } else if (embeddingProviderValue === 'github-copilot') {
+    throw new Error(githubCopilotDeprecationMessage);
   } else {
     embeddingProvider = 'auto';
   }
@@ -420,9 +429,17 @@ export interface BaseModelInfo {
   costPer1MTokens: number;
 }
 
+export interface GoogleEmbeddingModelInfo extends BaseModelInfo {
+  provider: "google";
+  taskAble: boolean;
+  promptStyle?: "embedding-2";
+}
+
 export type EmbeddingProviderModelInfo = {
   [P in EmbeddingProvider]: P extends "ollama"
     ? BaseModelInfo & { provider: "ollama" }
+    : P extends "google"
+      ? GoogleEmbeddingModelInfo
     : (typeof EMBEDDING_MODELS)[P][keyof (typeof EMBEDDING_MODELS)[P]]
 }
 

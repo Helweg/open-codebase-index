@@ -1,6 +1,5 @@
 import { type ConfiguredProviderInfo } from "./detector.js";
 import { CustomEmbeddingProvider } from "./providers/custom.js";
-import { GitHubCopilotEmbeddingProvider } from "./providers/github-copilot.js";
 import { GoogleEmbeddingProvider } from "./providers/google.js";
 import { OllamaEmbeddingProvider } from "./providers/ollama.js";
 import { OpenAIEmbeddingProvider } from "./providers/openai.js";
@@ -17,8 +16,6 @@ export function createEmbeddingProvider(
   configuredProviderInfo: ConfiguredProviderInfo,
 ): import("./provider-types.js").EmbeddingProviderInterface {
   switch (configuredProviderInfo.provider) {
-    case "github-copilot":
-      return new GitHubCopilotEmbeddingProvider(configuredProviderInfo.credentials, configuredProviderInfo.modelInfo);
     case "openai":
       return new OpenAIEmbeddingProvider(configuredProviderInfo.credentials, configuredProviderInfo.modelInfo);
     case "google":

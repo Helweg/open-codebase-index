@@ -33,7 +33,6 @@ Supported values:
 
 - `auto`
 - `ollama`
-- `github-copilot`
 - `openai`
 - `google`
 - `custom`
@@ -41,9 +40,8 @@ Supported values:
 Automatic detection order:
 
 1. Ollama
-2. GitHub Copilot
-3. OpenAI
-4. Google
+2. OpenAI
+3. Google
 
 ### Ollama
 
@@ -73,15 +71,11 @@ export OPENAI_API_KEY=...
 
 For Google, use `embeddingProvider: "google"` and configure the Google API credentials expected by your environment.
 
-### GitHub Copilot
+`github-copilot` is no longer supported for embeddings because GitHub Models retired its inference API. Migrate to OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint, then force-rebuild the index.
 
-```json
-{
-  "embeddingProvider": "github-copilot"
-}
-```
+### Google models
 
-Copilot can be auto-detected from supported host authentication state.
+`gemini-embedding-2` is available with Google's recommended code-retrieval query and document formatting. The default remains `gemini-embedding-001` until retrieval benchmarking supports changing it.
 
 ### Custom OpenAI-compatible endpoint
 

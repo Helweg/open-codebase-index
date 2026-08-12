@@ -18,8 +18,15 @@ export class GoogleEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   public async embedQuery(query: string): Promise<EmbeddingResult> {
-    const taskType = this.modelInfo.taskAble ? "CODE_RETRIEVAL_QUERY" : undefined;
-    const result = await this.embedWithTaskType([query], taskType);
+    const taskType = this.modelInfo.model === "gemini-embedding-001" && this.modelInfo.taskAble
+      ? "CODE_RETRIEVAL_QUERY"
+      : undefined;
+    const texts = [
+      this.modelInfo.model === "gemini-embedding-2"
+        ? `task: code retrieval | query: ${query}`
+        : query,
+    ];
+    const result = await this.embedWithTaskType(texts, taskType);
     return {
       embedding: result.embeddings[0],
       tokensUsed: result.totalTokensUsed,
@@ -27,8 +34,12 @@ export class GoogleEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   public async embedDocument(document: string): Promise<EmbeddingResult> {
-    const taskType = this.modelInfo.taskAble ? "RETRIEVAL_DOCUMENT" : undefined;
-    const result = await this.embedWithTaskType([document], taskType);
+    const taskType = this.modelInfo.model === "gemini-embedding-001" && this.modelInfo.taskAble
+      ? "RETRIEVAL_DOCUMENT"
+      : undefined;
+    const result = await this.embedWithTaskType([
+      this.modelInfo.model === "gemini-embedding-2" ? `title: none | text: ${document}` : document,
+    ], taskType);
     return {
       embedding: result.embeddings[0],
       tokensUsed: result.totalTokensUsed,
@@ -36,8 +47,14 @@ export class GoogleEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   public async embedBatch(texts: string[]): Promise<EmbeddingBatchResult> {
-    const taskType = this.modelInfo.taskAble ? "RETRIEVAL_DOCUMENT" : undefined;
-    return this.embedWithTaskType(texts, taskType);
+    const taskType = this.modelInfo.model === "gemini-embedding-001" && this.modelInfo.taskAble
+      ? "RETRIEVAL_DOCUMENT"
+      : undefined;
+    const formattedTexts = this.modelInfo.model === "gemini-embedding-2"
+      ? texts.map((text) => `title: none | text: ${text}`)
+      : texts;
+
+    return this.embedWithTaskType(formattedTexts, taskType);
   }
 
   private async embedWithTaskType(

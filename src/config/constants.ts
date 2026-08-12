@@ -58,6 +58,17 @@ export const EMBEDDING_MODELS = {
       costPer1MTokens: 0.15,
       taskAble: true,
     },
+    "gemini-embedding-2": {
+      provider: "google",
+      model: "gemini-embedding-2",
+      // Keep a conservative, testable default embedding dimension. Gemini Embedding 2 supports
+      // flexible dimensions via outputDimensionality.
+      dimensions: 1536,
+      maxTokens: 8192,
+      costPer1MTokens: 0.15,
+      taskAble: false,
+      promptStyle: "embedding-2",
+    },
   },
   "openai": {
     "text-embedding-3-small": {
@@ -91,19 +102,9 @@ export const EMBEDDING_MODELS = {
       costPer1MTokens: 0.00,
     },
   },
-  "github-copilot": {
-    "text-embedding-3-small": {
-      provider: "github-copilot",
-      model: "text-embedding-3-small",
-      dimensions: 1536,
-      maxTokens: 8191,
-      costPer1MTokens: 0.00,
-    },
-  },
 } as const;
 
 export const DEFAULT_PROVIDER_MODELS = {
-  "github-copilot": "text-embedding-3-small",
   "openai": "text-embedding-3-small",
   "google": "gemini-embedding-001",
   "ollama": "nomic-embed-text",
@@ -111,7 +112,6 @@ export const DEFAULT_PROVIDER_MODELS = {
 
 export const AUTO_DETECT_PROVIDER_ORDER = [
   "ollama",
-  "github-copilot",
   "openai",
   "google",
 ] as const;
