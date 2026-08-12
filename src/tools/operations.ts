@@ -229,6 +229,7 @@ export async function searchCodebase(
     contextLines?: number;
     metadataOnly?: boolean;
     definitionIntent?: boolean;
+    prioritizeSourcePaths?: boolean;
     blameAuthor?: string;
     blameSha?: string;
     blameSince?: string;
@@ -244,6 +245,7 @@ export async function searchCodebase(
     contextLines: options.contextLines,
     metadataOnly: options.metadataOnly,
     definitionIntent: options.definitionIntent,
+    prioritizeSourcePaths: options.prioritizeSourcePaths,
     blameAuthor: options.blameAuthor,
     blameSha: options.blameSha,
     blameSince: options.blameSince,
