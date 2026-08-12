@@ -345,6 +345,8 @@ export interface IndexerRuntimeOptions {
   indexPath?: string;
   /** Internal test and benchmark override. Production uses the fixed limits. */
   fileBatchLimits?: FileBatchLimits;
+  /** Internal test and benchmark override. Production uses a fixed default. */
+  checkpointIntervalChunks?: number;
 }
 
 export interface BranchIndexResult {
@@ -1154,6 +1156,7 @@ export class Indexer {
   private writerArtifactFingerprint: ReaderArtifactFingerprint | null = null;
   private readerArtifactRetryAfter = new Map<IndexReadIssue["component"], number>();
   private readonly fileBatchLimits?: FileBatchLimits;
+  private readonly checkpointIntervalChunks?: number;
 
   constructor(
     projectRoot: string,
@@ -1172,6 +1175,7 @@ export class Indexer {
     this.expectedCommitOverride = runtimeOptions.expectedCommit?.toLowerCase();
     this.indexPathOverride = runtimeOptions.indexPath;
     this.fileBatchLimits = runtimeOptions.fileBatchLimits;
+    this.checkpointIntervalChunks = runtimeOptions.checkpointIntervalChunks;
     this.config = config;
     this.host = host;
     if (isGitRepo(this.materializedProjectRoot)) {
@@ -2047,6 +2051,45 @@ export class Indexer {
 
     state.writer.cleanup();
     this.clearFailedBatchState();
+  }
+
+  private checkpointIndexRun(
+    database: Database,
+    store: VectorStore,
+    invertedIndex: InvertedIndex,
+    failedProcessing: { state: FailedBatchWriteState; latestById: Map<string, FailedChunkRecordMetadata> },
+    currentFileHashes: Map<string, string>,
+    committedFilePaths: Set<string>,
+    scopedRoots: string[] | null,
+    configuredProviderInfo: ConfiguredProviderInfo,
+    indexedCommit: string | null,
+  ): void {
+    database.commitWriteTransaction();
+    database.beginWriteTransaction();
+    if (!this.hasProjectForceReembedPending()) {
+      this.saveIndexMetadata(configuredProviderInfo);
+      this.saveBranchCommit(database, indexedCommit);
+      this.indexCompatibility = { compatible: true };
+    }
+    store.save();
+    this.saveInvertedIndex(invertedIndex);
+    if (failedProcessing.state.recordsWritten > 0) {
+      failedProcessing.state.writer.commit();
+      failedProcessing.state = this.createFailedBatchWriteState();
+    }
+    const partialHashes = new Map<string, string>();
+    for (const filePath of committedFilePaths) {
+      const hash = currentFileHashes.get(filePath);
+      if (hash !== undefined) {
+        partialHashes.set(filePath, hash);
+      }
+    }
+    if (scopedRoots) {
+      this.replaceScopedFileHashCache(partialHashes, scopedRoots);
+    } else {
+      this.fileHashCache = partialHashes;
+      this.saveFileHashCache();
+    }
   }
 
   private clearFailedBatchState(): void {
@@ -3829,9 +3872,12 @@ export class Indexer {
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles && path.extname(storedPath).toLowerCase() === ".metal";
+      const inMigrationScope =
+        forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
       if (
         cachedHashMatches &&
+        !inMigrationScope &&
         !needsCallGraphRefresh &&
         !requiresSwiftParserUpgrade &&
         !requiresMetalParserUpgrade &&
@@ -3980,6 +4026,8 @@ export class Indexer {
       }
 
       let processedChangedFiles = 0;
+      let lastCheckpointChunks = 0;
+      const committedFilePaths = new Set<string>(unchangedFilePaths);
       for (const descriptorBatch of iterateOrderedFileBatches(
         changedFileDescriptors,
         (descriptor) => descriptor.sourceBytes,
@@ -4227,6 +4275,28 @@ export class Indexer {
               failedForcedChunkIds.add(chunkId);
             }
           }
+        }
+
+        for (const descriptor of descriptorBatch) {
+          committedFilePaths.add(descriptor.storedPath);
+        }
+        const checkpointInterval = Math.max(
+          this.checkpointIntervalChunks ?? 2000,
+          Math.floor(stats.totalChunks / 10),
+        );
+        if (stats.totalChunks - lastCheckpointChunks >= checkpointInterval) {
+          lastCheckpointChunks = stats.totalChunks;
+          this.checkpointIndexRun(
+            database,
+            store,
+            invertedIndex,
+            failedProcessing,
+            currentFileHashes,
+            committedFilePaths,
+            scopedRoots,
+            configuredProviderInfo,
+            indexedCommit,
+          );
         }
       }
 
@@ -5414,9 +5484,16 @@ export class Indexer {
     }
 
     if (roots && succeeded > 0 && remaining === 0 && this.hasProjectForceReembedPending()) {
-      database.deleteMetadata(this.getProjectForceReembedMetadataKey());
-      this.saveIndexMetadata(configuredProviderInfo);
-      this.indexCompatibility = { compatible: true };
+      const storedProvider = database.getMetadata("index.embeddingProvider");
+      const storedModel = database.getMetadata("index.embeddingModel");
+      const migrationCommitted =
+        storedProvider === configuredProviderInfo.provider &&
+        storedModel === configuredProviderInfo.modelInfo.model;
+      if (migrationCommitted) {
+        database.deleteMetadata(this.getProjectForceReembedMetadataKey());
+        this.saveIndexMetadata(configuredProviderInfo);
+        this.indexCompatibility = { compatible: true };
+      }
     }
 
     return { succeeded, failed, remaining };
