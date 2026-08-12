@@ -47,6 +47,7 @@
     "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
     "eval:pre-edit": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/pre-edit-context.json",
     "eval:representative": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/representative.json",
+    "eval:representative:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-full-config.json --reindex --dataset benchmarks/golden/representative.json --budget benchmarks/budgets/representative.json",
     "eval:agent:ci": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json --reindex --ci --budget benchmarks/budgets/agent-context.json",
     "eval:pre-edit:ci": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/pre-edit-context.json --ci --budget benchmarks/budgets/pre-edit.json",
     "eval:smoke": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/small.json",

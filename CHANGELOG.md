@@ -7,10 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an Ollama-only representative retrieval evaluation command with expanded coverage for embedding failure recovery, index-lock recovery, and duplicate-definition path disambiguation.
+
 ### Changed
 
 - Retired the unavailable `github-copilot` embedding provider with an actionable migration error. GitHub Models retired its inference API.
 - Added Google `gemini-embedding-2` support with its recommended code-retrieval formatting.
+
+### Fixed
+
+- **Scoped definition lookup**: Allow explicit definition searches constrained to a file type or directory to return matching declarations in fixtures and test paths without weakening source-first ranking for ordinary searches.
 
 ## [0.23.0] - 2026-08-11
 

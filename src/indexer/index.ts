@@ -746,7 +746,8 @@ export function buildSymbolDefinitionLane(
   branchSymbolIds: Set<string> | null,
   limit: number,
   fallbackCandidates: RankedCandidate[],
-  prioritizeSourcePaths: boolean = classifyQueryIntentRaw(query) === "source"
+  prioritizeSourcePaths: boolean = classifyQueryIntentRaw(query) === "source",
+  allowNonSourcePaths: boolean = false,
 ): RankedCandidate[] {
   if (!prioritizeSourcePaths) {
     return [];
@@ -777,7 +778,7 @@ export function buildSymbolDefinitionLane(
       return false;
     }
 
-    if (!isLikelyImplementationPath(chunk.filePath)) {
+    if (!allowNonSourcePaths && !isLikelyImplementationPath(chunk.filePath)) {
       return false;
     }
 
@@ -858,7 +859,7 @@ export function buildSymbolDefinitionLane(
         foundCoveringChunk = upsertChunkCandidate(chunk, identifier, normalizedIdentifier) || foundCoveringChunk;
       }
 
-      if (foundCoveringChunk || !isLikelyImplementationPath(symbol.filePath)) {
+      if (foundCoveringChunk || (!allowNonSourcePaths && !isLikelyImplementationPath(symbol.filePath))) {
         continue;
       }
 
@@ -921,7 +922,7 @@ export function buildSymbolDefinitionLane(
   if (ranked.length === 0) {
     const implementationFallback = fallbackCandidates.filter((candidate) =>
       isImplementationChunkType(candidate.metadata.chunkType) &&
-      isLikelyImplementationPath(candidate.metadata.filePath)
+      (allowNonSourcePaths || isLikelyImplementationPath(candidate.metadata.filePath))
     );
 
     for (const candidate of implementationFallback) {
@@ -4824,7 +4825,11 @@ export class Indexer {
       branchSymbolIds,
       maxResults,
       union,
-      sourceIntent
+      sourceIntent,
+      options?.definitionIntent === true && (
+        (options.directory?.trim().length ?? 0) > 0 ||
+        (options.fileType?.trim().length ?? 0) > 0
+      ),
     );
 
     const prePrimaryLane = mergeTieredResults(deterministicIdentifierLane, identifierLane, maxResults * 4);

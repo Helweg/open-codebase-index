@@ -35,6 +35,14 @@ Run the hand-labeled representative retrieval kernel:
 npm run eval:representative
 ```
 
+Run the same representative kernel against a local Ollama `nomic-embed-text` model without paid credentials:
+
+```bash
+npm run eval:representative:ollama
+```
+
+This command force-rebuilds the full local evaluation index and writes timestamped artifacts. It requires a running Ollama instance with `nomic-embed-text` installed. It is intentionally not a paid-provider comparison. Run OpenAI or Google comparisons only with explicit credentials, a defined spend cap, and approval before reindexing.
+
 `benchmarks/golden/representative.json` is a compact, versioned quality set for
 exact and nested definitions, conceptual source discovery, TypeScript, Rust,
 Swift, and PHP, scoped file and directory filters, filter-relaxation recovery,
@@ -240,6 +248,12 @@ If you do not have OpenAI API access, run the quality gate locally with Ollama:
 
 - Config: `.github/eval-ollama-config.json`
 - Command: `npm run eval:ci:ollama`
+
+For a representative-only local check with the same installed `nomic-embed-text` model:
+
+```bash
+npm run eval:representative:ollama
+```
 
 Prerequisites:
 
