@@ -178,6 +178,19 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     expect(parseCliArgs(["--repos", repoPath]).datasetDir).toBeUndefined();
   });
 
+  it("parses a selected Ollama embedding model and retains the Nomic default", () => {
+    const repoPath = tempDir("cross-repo-benchmark-cli-model-");
+
+    expect(parseCliArgs(["--repos", repoPath]).embeddingModel).toBe("nomic-embed-text");
+    expect(
+      parseCliArgs(["--repos", repoPath, "--embedding-model", " embeddinggemma "])
+        .embeddingModel
+    ).toBe("embeddinggemma");
+    expect(() => parseCliArgs(["--repos", repoPath, "--embedding-model", " "])).toThrow(
+      "--embedding-model requires a model name"
+    );
+  });
+
   it("loads a fixed dataset with all supported evidence path fields", () => {
     const repoPath = tempDir("cross-repo-benchmark-fixed-load-repo-");
     const fixedDir = tempDir("cross-repo-benchmark-fixed-load-");
@@ -394,6 +407,7 @@ describe("cross-repo benchmark dataset-dir flag", () => {
       skipSg: true,
       codegraph: false,
       codebaseMemoryMcp: false,
+      embeddingModel: "embeddinggemma",
     };
 
     const result = await runForRepo(
@@ -411,6 +425,14 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     const copied = JSON.parse(fs.readFileSync(result.datasetPath, "utf-8")) as { name: string; queries: unknown[] };
     expect(copied).toEqual(dataset);
     expect(vi.mocked(runner.runEvaluation).mock.calls[0]?.[0].datasetPath).toBe(result.datasetPath);
+    expect(
+      JSON.parse(
+        fs.readFileSync(path.join(runRoot, "eval-configs", `${repoName}-benchmark.json`), "utf-8")
+      )
+    ).toMatchObject({
+      embeddingProvider: "ollama",
+      embeddingModel: "embeddinggemma",
+    });
   });
 
   it("reports an error when a fixed dataset is absent for a repository", async () => {
@@ -445,6 +467,7 @@ describe("cross-repo benchmark dataset-dir flag", () => {
       skipSg: true,
       codegraph: false,
       codebaseMemoryMcp: false,
+      embeddingModel: "nomic-embed-text",
     };
 
     const expectedRunDatasetPath = path.join(runRoot, "datasets", `${path.basename(repoPath)}.json`);

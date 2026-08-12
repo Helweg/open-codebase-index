@@ -94,6 +94,7 @@ export interface CliOptions {
   skipSg: boolean;
   codegraph: boolean;
   codebaseMemoryMcp: boolean;
+  embeddingModel: string;
 }
 
 interface FileCollectionResult {
@@ -337,12 +338,13 @@ interface RipgrepJsonEvent {
 
 function printUsage(): void {
   console.log(`Usage:
-npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--dataset-dir /path/to/golden] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph] [--codebase-memory-mcp]
+npx tsx scripts/cross-repo-benchmark.ts [--repos /path/a,/path/b] [--dataset-dir /path/to/golden] [--embedding-model MODEL] [--output benchmarks/results/cross-repo] [--reindex|--no-reindex] [--repeats N] [--max-parse-files N] [--persist-datasets] [--skip-ripgrep] [--skip-sg] [--codegraph] [--codebase-memory-mcp]
 
 Defaults:
   repos: none (required via --repos or BENCHMARK_REPOS)
   output: benchmarks/results/cross-repo
   dataset-dir: none
+  embedding-model: ${CROSS_REPO_OLLAMA_MODEL}
   reindex: false
   repeats: 1
   max-parse-files: 2500
@@ -513,14 +515,17 @@ export function controlledEvalConfigPath(runDir: string, repoName: string): stri
   return path.join(runDir, "eval-configs", `${repoName}-benchmark.json`);
 }
 
-export function writeControlledEvalConfig(configPath: string): string {
+export function writeControlledEvalConfig(
+  configPath: string,
+  embeddingModel = CROSS_REPO_OLLAMA_MODEL,
+): string {
   const content = {
     indexing: {
       maxFileSize: MAX_FILE_SIZE_BYTES,
       maxChunksPerFile: MAX_CHUNKS_PER_FILE,
     },
     embeddingProvider: "ollama",
-    embeddingModel: CROSS_REPO_OLLAMA_MODEL,
+    embeddingModel,
   } satisfies ControlledEvalConfigArtifact;
 
   ensureDir(path.dirname(configPath));
@@ -581,6 +586,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
   let skipSg = false;
   let codegraph = false;
   let codebaseMemoryMcp = false;
+  let embeddingModel = CROSS_REPO_OLLAMA_MODEL;
 
   const envRepos = process.env.BENCHMARK_REPOS;
   if (envRepos && envRepos.trim().length > 0) {
@@ -685,6 +691,17 @@ export function parseCliArgs(argv: string[]): CliOptions {
       continue;
     }
 
+    if (arg === "--embedding-model") {
+      const value = argv[i + 1];
+      const normalizedValue = value?.trim();
+      if (!normalizedValue) {
+        throw new Error("--embedding-model requires a model name");
+      }
+      embeddingModel = normalizedValue;
+      i += 1;
+      continue;
+    }
+
     if (arg === "--codegraph") {
       codegraph = true;
       continue;
@@ -714,6 +731,7 @@ export function parseCliArgs(argv: string[]): CliOptions {
     skipSg,
     codegraph,
     codebaseMemoryMcp,
+    embeddingModel,
   };
 }
 
@@ -1945,6 +1963,7 @@ export function buildReportMarkdown(
   lines.push("");
   lines.push(`- Generated at: ${runAt}`);
   lines.push(`- Output directory: ${runDir}`);
+  lines.push(`- Ollama embedding model: ${options.embeddingModel}`);
   lines.push(`- Reindex: ${options.reindex}`);
   lines.push(
     `- Reindex application in repeats: ${options.reindex ? "applied on repeat #1 only" : "disabled"}`
@@ -2224,7 +2243,8 @@ export async function runForRepo(
       reindexApplied: boolean;
     }> = [];
     const controlledEvalConfigArtifactPath = writeControlledEvalConfig(
-      controlledEvalConfigPath(runDir, repoName)
+      controlledEvalConfigPath(runDir, repoName),
+      options.embeddingModel,
     );
     let lastPluginResult: Awaited<ReturnType<typeof runEvaluation>> | null = null;
     let lastRipgrepQueryCount = 0;
@@ -2424,7 +2444,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await ensureLocalOllamaForCrossRepoBenchmark();
+  await ensureLocalOllamaForCrossRepoBenchmark(options.embeddingModel);
 
   const runTimestamp = timestampForDir();
   const runDir = path.join(options.outputRoot, runTimestamp);
@@ -2475,6 +2495,7 @@ async function main(): Promise<void> {
     options: {
       repos: resolvedRepos,
       outputRoot: options.outputRoot,
+      embeddingModel: options.embeddingModel,
       reindex: options.reindex,
       repeats: options.repeats,
       maxParseFiles: options.maxParseFiles,
