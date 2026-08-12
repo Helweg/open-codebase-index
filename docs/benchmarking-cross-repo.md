@@ -19,7 +19,8 @@ Metrics reported per repo and aggregated:
 
 - Built project dependencies (`npm install`)
 - Local Ollama daemon reachable at `OLLAMA_HOST` (default `http://localhost:11434`)
-- Installed Ollama embedding model `nomic-embed-text`
+- Installed Ollama embedding model `nomic-embed-text`, or the model passed to
+  `--embedding-model`
 - `rg` installed
 - `sg` installed (`brew install ast-grep` on macOS)
 - `npx` (for opt-in CodeGraph and `codebase-memory-mcp` execution)
@@ -58,6 +59,25 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 # Repeat runs for stable medians (recommended)
 npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --repeats 20
 ```
+
+## Embedding model selection
+
+The benchmark uses local Ollama and defaults to `nomic-embed-text`. Select a
+different installed model with `--embedding-model`. The selected name is saved
+in the controlled eval config and both report formats.
+
+```bash
+ollama pull embeddinggemma
+npx tsx scripts/cross-repo-benchmark.ts \
+  --repos /path/to/repo1,/path/to/repo2 \
+  --embedding-model embeddinggemma \
+  --reindex
+```
+
+Use `--reindex` whenever the model differs from the model used to create an
+existing index. This keeps the benchmark from measuring incompatible or stale
+vectors. The [local model comparison](benchmarks/2026-08-12-local-embedding-model-comparison.md)
+describes the tested options and their trade-offs.
 
 ## Sampling and mutability notes
 

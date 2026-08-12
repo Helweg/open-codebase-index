@@ -55,6 +55,44 @@ ollama pull nomic-embed-text
 }
 ```
 
+#### Choosing an Ollama embedding model
+
+`nomic-embed-text` remains the default local model. It is the smallest tested
+option and is a good starting point for most projects:
+
+```bash
+ollama pull nomic-embed-text
+```
+
+For a quality-focused local index, set `embeddingModel` explicitly. The
+following models were measured locally on the representative and frozen
+cross-repository cohorts:
+
+| Goal | Model | Trade-off |
+|---|---|---|
+| Small, fast default | `nomic-embed-text` | Lowest storage and latency among the tested models |
+| Balanced quality | `embeddinggemma` | Higher ranking quality with moderately higher latency and storage |
+| Maximum tested local quality | `qwen3-embedding:0.6b` | Best measured cross-repository nDCG, with higher latency and storage |
+
+For example, to use the balanced option:
+
+```bash
+ollama pull embeddinggemma
+```
+
+```json
+{
+  "embeddingProvider": "ollama",
+  "embeddingModel": "embeddinggemma"
+}
+```
+
+Changing an embedding model requires a force rebuild of its index. Check the
+current state with `index_status`, then run `index_codebase` with `force: true`.
+Keep the default when the additional local model download and query latency are
+not worthwhile for your project. See the [local model comparison](benchmarks/2026-08-12-local-embedding-model-comparison.md)
+for the methodology and measured results.
+
 ### OpenAI and Google
 
 Set the provider and corresponding environment credentials:
