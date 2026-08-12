@@ -106,10 +106,10 @@ describe("cost utilities", () => {
   describe("estimateCost", () => {
     it("should calculate cost for free provider", () => {
       const modelInfo = {
-        provider: "github-copilot",
-        model: "text-embedding-3-small",
-        dimensions: 1536,
-        maxTokens: 8191,
+        provider: "ollama",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        maxTokens: 2048,
         costPer1MTokens: 0,
       } as const;
 

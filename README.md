@@ -128,9 +128,8 @@ Read [Architecture](ARCHITECTURE.md) for the detailed data flow and design decis
 With `embeddingProvider: "auto"`, providers are tried in this order:
 
 1. Ollama
-2. GitHub Copilot
-3. OpenAI
-4. Google
+2. OpenAI
+3. Google
 
 Ollama is the simplest local option:
 

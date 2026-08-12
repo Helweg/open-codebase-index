@@ -2163,8 +2163,6 @@ export class Indexer {
     maxRetryMs: number;
   } {
     switch (provider) {
-      case "github-copilot":
-        return { concurrency: 1, intervalMs: 4000, minRetryMs: 5000, maxRetryMs: 60000 };
       case "openai":
         return { concurrency: 3, intervalMs: 500, minRetryMs: 1000, maxRetryMs: 30000 };
       case "google":

@@ -30,20 +30,12 @@ export type ConfiguredProviderInfo = {
   modelInfo: CustomModelInfo;
 }
 
-interface OpenCodeAuthOAuth {
-  type: "oauth";
-  refresh: string;
-  access: string;
-  expires: number;
-  enterpriseUrl?: string;
-}
-
 interface OpenCodeAuthAPI {
   type: "api";
   key: string;
 }
 
-type OpenCodeAuth = OpenCodeAuthOAuth | OpenCodeAuthAPI;
+type OpenCodeAuth = OpenCodeAuthAPI;
 
 function getOpenCodeAuthPath(): string {
   return path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
@@ -129,8 +121,6 @@ async function getProviderCredentials(
   provider: EmbeddingProvider
 ): Promise<ProviderCredentials | null> {
   switch (provider) {
-    case "github-copilot":
-      return getGitHubCopilotCredentials();
     case "openai":
       return getOpenAICredentials();
     case "google":
@@ -142,29 +132,6 @@ async function getProviderCredentials(
   }
 }
 
-function getGitHubCopilotCredentials(): ProviderCredentials | null {
-  const authData = loadOpenCodeAuth();
-  const copilotAuth = authData["github-copilot"] || authData["github-copilot-enterprise"];
-
-  if (!copilotAuth || copilotAuth.type !== "oauth") {
-    return null;
-  }
-
-  // Use GitHub Models API for embeddings (models.github.ai)
-  // Enterprise uses different URL pattern
-  const auth = copilotAuth as OpenCodeAuthOAuth;
-  const baseUrl = auth.enterpriseUrl
-    ? `https://copilot-api.${auth.enterpriseUrl.replace(/^https?:\/\//, "").replace(/\/$/, "")}`
-    : "https://models.github.ai";
-
-  return {
-    provider: "github-copilot",
-    baseUrl,
-    refreshToken: copilotAuth.refresh,
-    accessToken: copilotAuth.access,
-    tokenExpires: copilotAuth.expires,
-  };
-}
 
 function getOpenAICredentials(): ProviderCredentials | null {
   const authData = loadOpenCodeAuth();
@@ -345,8 +312,6 @@ async function tryDetectOllamaProvider(): Promise<ConfiguredProviderInfo | null>
 
 export function getProviderDisplayName(provider: EmbeddingProvider | 'custom'): string {
   switch (provider) {
-    case "github-copilot":
-      return "GitHub Copilot";
     case "openai":
       return "OpenAI";
     case "google":
