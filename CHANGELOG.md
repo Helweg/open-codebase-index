@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added an Ollama-only representative retrieval evaluation command with expanded coverage for embedding failure recovery, index-lock recovery, and duplicate-definition path disambiguation.
+
 ### Changed
 
 - Retired the unavailable `github-copilot` embedding provider with an actionable migration error. GitHub Models retired its inference API.

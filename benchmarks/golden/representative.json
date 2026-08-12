@@ -1,7 +1,7 @@
 {
-  "version": "2.1.0",
+  "version": "2.2.0",
   "name": "representative-retrieval",
-  "description": "Hand-labeled retrieval kernel covering exact and nested definitions, conceptual source discovery, language and path filters, scoped recovery, graded multi-file evidence, similarity, keywords, and a negative filtered search.",
+  "description": "Hand-labeled retrieval kernel covering exact and nested definitions, conceptual source discovery, language and path filters, scoped recovery, graded multi-file evidence, similarity, keywords, error recovery, lock recovery, duplicate-symbol path disambiguation, and a negative filtered search.",
   "queries": [
     {
       "id": "ts-definition-top-level",
@@ -237,6 +237,60 @@
           { "path": "src/eval/runner-config.ts", "symbol": "resolveSearchConfig", "relevance": 2 },
           { "path": "src/eval/runner.ts", "symbol": "runSweep", "relevance": 1 },
           { "path": "src/eval/cli-parser.ts", "symbol": "hasSweepOptions", "relevance": 1 }
+        ]
+      }
+    },
+    {
+      "id": "embedding-failure-recovery-flow",
+      "query": "resume indexing after transient embedding API failures without losing failed chunks",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["implementation", "error-path", "embeddings", "multi-evidence"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/embedding-batches.ts", "symbol": "coalesceFailedBatches", "relevance": 3 },
+          { "path": "src/indexer/failed-state-persistence.ts", "symbol": "writeFailedBatchRecords", "relevance": 3 },
+          { "path": "src/indexer/failed-state-persistence.ts", "symbol": "readFailedBatchRecords", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "crashed-index-lock-recovery",
+      "query": "recover stale index lock artifacts after an indexing process crashes",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["implementation", "error-path", "concurrency", "lock-recovery"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/index-lock.ts", "symbol": "acquireIndexLock", "relevance": 3 },
+          { "path": "src/indexer/index-lock.ts", "symbol": "recoverLeaseArtifacts", "relevance": 3 },
+          { "path": "src/indexer/index-lock.ts", "symbol": "releaseIndexLock", "relevance": 2 }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-definition-path-disambiguation",
+      "query": "prefer a matching source filename when resolving duplicate definition names",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "typescript",
+      "difficulty": "hard",
+      "tags": ["conceptual", "definition", "ambiguity", "path-hint"],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          { "path": "src/indexer/definition-ranking.ts", "symbol": "extractFilePathHint", "relevance": 3 },
+          { "path": "src/indexer/definition-ranking.ts", "symbol": "pathMatchesHint", "relevance": 3 },
+          { "path": "src/indexer/definition-ranking.ts", "symbol": "buildIdentifierDefinitionLane", "relevance": 2 }
         ]
       }
     },
