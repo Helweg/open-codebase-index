@@ -1,4 +1,8 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { analyzeQueryIntent } from "../src/indexer/intent-aware-ranking.js";
+import { vi } from "vitest";
 import {
   buildDeterministicIdentifierPass,
   buildIdentifierDefinitionLane,
@@ -11,6 +15,8 @@ import {
   stripFilePathHint,
   tokenizeTextForRanking,
 } from "../src/indexer/definition-ranking.js";
+import { Indexer } from "../src/indexer/index.js";
+import { parseConfig } from "../src/config/schema.js";
 import type { RankedCandidate } from "../src/indexer/search-ranking.js";
 
 function candidate(
@@ -152,5 +158,71 @@ describe("definition ranking helpers", () => {
       candidate("test", "tests/payment.test.ts", "payment test"),
       analyzeQueryIntent("find payment tests"),
     )).toBe("test");
+  });
+
+  it("finds definition results in a scoped fixture directory when definitionIntent includes fileType and directory", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "definition-ranking-search-"));
+    const fixtureDir = path.join(__dirname, "fixtures", "call-graph");
+    const fixtureSource = path.join(fixtureDir, "php-simple-calls.php");
+    const targetFile = path.join(tempDir, "tests", "fixtures", "call-graph", "php-simple-calls.php");
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+    fs.copyFileSync(fixtureSource, targetFile);
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      const texts = Array.isArray(body.input) ? body.input : [];
+      const data = texts.map((text) => {
+        let seed = 0;
+        for (const ch of text) {
+          seed = (seed * 31 + ch.charCodeAt(0)) % 1000;
+        }
+
+        return {
+          embedding: Array.from({ length: 8 }, (_, idx) => ((seed + idx * 17) % 997) / 997),
+        };
+      });
+
+      return new Response(
+        JSON.stringify({
+          data,
+          usage: { total_tokens: Math.max(1, texts.length * 8) },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const indexer = new Indexer(tempDir, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      indexing: {
+        watchFiles: false,
+      },
+      search: {
+        maxResults: 10,
+        minScore: 0,
+      },
+    }), "opencode");
+
+    try {
+      await indexer.index();
+
+      const results = await indexer.search("where is helper definition", 10, {
+        definitionIntent: true,
+        directory: "tests/fixtures/call-graph",
+        fileType: "php",
+        metadataOnly: true,
+        filterByBranch: false,
+      });
+
+      expect(results.some((result) => result.filePath === targetFile && result.name === "helper")).toBe(true);
+    } finally {
+      await indexer.close();
+      fetchSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });
