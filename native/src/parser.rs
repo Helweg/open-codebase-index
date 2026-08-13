@@ -232,8 +232,13 @@ fn extract_semantic_nodes(
         let node_type = node.kind();
 
         let is_semantic = is_semantic_node(node_type, language);
+        // Ruby modules are containers rather than useful retrieval units. Emit
+        // their nested declarations, but not overlapping module chunks whose
+        // content duplicates those declarations.
+        let emit_semantic_chunk = is_semantic
+            && !(*language == Language::Ruby && node_type == "module");
 
-        if is_semantic {
+        if emit_semantic_chunk {
             let semantic_start_node = if *language == Language::Metal {
                 node.parent()
                     .filter(|parent| parent.kind() == "template_declaration")
@@ -300,13 +305,15 @@ fn extract_semantic_nodes(
                 node_type,
                 "class_specifier" | "struct_specifier" | "union_specifier"
             );
+        let descend_into_ruby_module = *language == Language::Ruby && node_type == "module";
         let descend_into_ts_abstract_class =
             matches!(language, Language::TypeScript | Language::TypeScriptTsx)
                 && node_type == "abstract_class_declaration";
         let should_descend = !is_semantic
             || *language == Language::Swift
             || descend_into_metal_type
-            || descend_into_ts_abstract_class;
+            || descend_into_ts_abstract_class
+            || descend_into_ruby_module;
         if should_descend && !skip_children && cursor.goto_first_child() {
             extract_semantic_nodes(cursor, source, language, chunks, depth + 1);
             cursor.goto_parent();
@@ -866,6 +873,7 @@ fn extract_name(
             || kind == "property_identifier"
             || kind == "property_name"
             || kind == "type_identifier"
+            || (kind == "constant" && *language == Language::Ruby)
             || kind == "namespace_identifier"
             || kind == "custom_operator"
             || kind == "name"
@@ -1658,6 +1666,39 @@ end
 
         let has_class = chunks.iter().any(|c| c.chunk_type == "class");
         assert!(has_class, "Should find class");
+    }
+
+    #[test]
+    fn test_parse_ruby_nested_modules_yields_nested_class_symbol_and_chunk() {
+        let content = r#"
+module Rack
+  module Protection
+    class ContentSecurityPolicy
+      def self.enabled?(env)
+        true
+      end
+    end
+  end
+end
+"#;
+
+        let (_, symbols) = parse_file_with_symbols_internal("rack/protection.rb", content)
+            .expect("should parse nested Ruby modules");
+        assert!(
+            symbols
+                .iter()
+                .any(|symbol| symbol.kind == "class" && symbol.name == "ContentSecurityPolicy"),
+            "Expected nested Ruby class symbol named ContentSecurityPolicy"
+        );
+
+        let chunks = parse_file_internal("rack/protection.rb", content)
+            .expect("should produce semantic chunks for nested Ruby class");
+        assert!(
+            chunks.iter().any(|chunk| {
+                chunk.chunk_type == "class" && chunk.name.as_deref() == Some("ContentSecurityPolicy")
+            }),
+            "Expected nested Ruby class chunk named ContentSecurityPolicy"
+        );
     }
 
     #[test]
