@@ -86,9 +86,10 @@ describes the tested options and their trade-offs.
 
   The expanded frozen cohort currently covers Axios, Express, Click, Cobra,
   ripgrep, Gson, Newtonsoft.Json, Symfony Console, and Sinatra. It contains
-  nine mixed-intent queries per repository, 81 total, across JavaScript,
-  Python, Go, Rust, Java, C#, PHP, and Ruby. Exact revisions are recorded in
-  `benchmarks/golden/expanded-cross-repo/cohort.json`.
+  100 mixed-intent queries across JavaScript, Python, Go, Rust, Java, C#, PHP,
+  and Ruby. Sinatra carries 19 hard routing, reloading, and security queries;
+  Newtonsoft.Json carries 18 serializer, converter, and metadata queries. Exact
+  revisions are recorded in `benchmarks/golden/expanded-cross-repo/cohort.json`.
 
 ```bash
 npx tsx scripts/cross-repo-benchmark.ts \
@@ -108,10 +109,16 @@ npx tsx scripts/cross-repo-benchmark.ts --repos /path/to/repo1,/path/to/repo2 --
 
 ## Lightweight CI integrity gate
 
-The main CI workflow runs the following no-model check on every pull request. It validates frozen dataset shape, input loading, and the CodeGraph and codebase-memory-mcp comparator contracts without cloning external repositories, invoking Ollama, or running an expensive comparison.
+The main CI workflow first runs a no-model contract check on every pull request. It validates frozen dataset shape, input loading, and the CodeGraph and codebase-memory-mcp comparator contracts without cloning external repositories, invoking Ollama, or running an expensive comparison.
 
 ```bash
 npm run benchmark:cross-repo:check
+```
+
+It then runs a deterministic source-evidence gate that fetches and checks out each pinned cohort revision, checks every expected and graded-evidence path, and confirms every definition symbol is present in its target file. It does not execute checked-out code or invoke an embedding provider.
+
+```bash
+npm run benchmark:cross-repo:sources:check
 ```
 
 Run the full local benchmark manually or from a scheduled quality workflow when a retrieval change needs measured quality results.

@@ -118,22 +118,23 @@ function withRunEvaluationMock(result: Awaited<ReturnType<typeof runner.runEvalu
 }
 
 describe("cross-repo benchmark dataset-dir flag", () => {
-  it("keeps the expanded frozen cohort balanced between definition and keyword-heavy retrieval", () => {
+  it("keeps the expanded frozen cohort balanced and source-evidenced across retrieval modes", () => {
     const cohortDir = path.join(process.cwd(), "benchmarks", "golden", "expanded-cross-repo");
     const cohort = JSON.parse(fs.readFileSync(path.join(cohortDir, "cohort.json"), "utf-8")) as {
       version: string;
       name: string;
-      queryCountPerRepository: number;
-      repositories: Array<{ dataset: string }>;
+      queryCount: number;
+      repositories: Array<{ name: string; dataset: string }>;
     };
 
     expect(cohort).toMatchObject({
-      version: "1.3.0",
-      name: "expanded-cross-repo-mixed-intent-pilot-v3",
-      queryCountPerRepository: 9,
+      version: "1.4.0",
+      name: "expanded-cross-repo-mixed-intent-cohort-v4",
+      queryCount: 100,
     });
     expect(cohort.repositories).toHaveLength(9);
 
+    let totalQueries = 0;
     for (const repository of cohort.repositories) {
       const dataset = JSON.parse(fs.readFileSync(path.join(cohortDir, repository.dataset), "utf-8")) as {
         version: string;
@@ -150,11 +151,18 @@ describe("cross-repo benchmark dataset-dir flag", () => {
       const conceptual = dataset.queries.filter((query) => query.queryType === "conceptual");
 
       expect(dataset.version).toBe("1.2.0");
-      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(9);
-      expect(definitions).toHaveLength(5);
-      expect(keywordHeavy).toHaveLength(2);
-      expect(implementation).toHaveLength(1);
-      expect(conceptual).toHaveLength(1);
+      expect(new Set(dataset.queries.map((query) => query.id)).size).toBe(dataset.queries.length);
+      totalQueries += dataset.queries.length;
+      const expectedCount = repository.name === "sinatra"
+        ? 19
+        : repository.name === "newtonsoft-json"
+          ? 18
+          : 9;
+      expect(dataset.queries).toHaveLength(expectedCount);
+      expect(definitions.length).toBeGreaterThanOrEqual(5);
+      expect(keywordHeavy.length).toBeGreaterThanOrEqual(2);
+      expect(implementation.length).toBeGreaterThanOrEqual(1);
+      expect(conceptual.length).toBeGreaterThanOrEqual(1);
       for (const query of keywordHeavy) {
         expect(query.retrievalMode).toBe("search");
         expect(query.expected.expectedRoute).toBe("search");
@@ -166,6 +174,8 @@ describe("cross-repo benchmark dataset-dir flag", () => {
         expect(query.expected.gradedEvidence?.length).toBeGreaterThan(0);
       }
     }
+
+    expect(totalQueries).toBe(cohort.queryCount);
   });
 
   it("parses --dataset-dir in CLI args", () => {
