@@ -128,6 +128,7 @@ export interface ControlledEvalConfigArtifact {
   indexing: {
     maxFileSize: number;
     maxChunksPerFile: number;
+    maxDepth: number;
   };
   embeddingProvider: "ollama";
   embeddingModel: string;
@@ -523,6 +524,7 @@ export function writeControlledEvalConfig(
     indexing: {
       maxFileSize: MAX_FILE_SIZE_BYTES,
       maxChunksPerFile: MAX_CHUNKS_PER_FILE,
+      maxDepth: -1,
     },
     embeddingProvider: "ollama",
     embeddingModel,

@@ -128,11 +128,11 @@ describe("cross-repo benchmark dataset-dir flag", () => {
     };
 
     expect(cohort).toMatchObject({
-      version: "1.2.0",
-      name: "expanded-cross-repo-mixed-intent-pilot-v2",
+      version: "1.3.0",
+      name: "expanded-cross-repo-mixed-intent-pilot-v3",
       queryCountPerRepository: 9,
     });
-    expect(cohort.repositories).toHaveLength(5);
+    expect(cohort.repositories).toHaveLength(9);
 
     for (const repository of cohort.repositories) {
       const dataset = JSON.parse(fs.readFileSync(path.join(cohortDir, repository.dataset), "utf-8")) as {
@@ -430,6 +430,9 @@ describe("cross-repo benchmark dataset-dir flag", () => {
         fs.readFileSync(path.join(runRoot, "eval-configs", `${repoName}-benchmark.json`), "utf-8")
       )
     ).toMatchObject({
+      indexing: {
+        maxDepth: -1,
+      },
       embeddingProvider: "ollama",
       embeddingModel: "embeddinggemma",
     });

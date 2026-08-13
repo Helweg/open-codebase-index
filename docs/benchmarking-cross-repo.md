@@ -84,6 +84,12 @@ describes the tested options and their trade-offs.
 - By default, generated datasets are written under each run output directory (`<run>/datasets/`) to keep committed benchmark inputs immutable.
 - To run reviewed, frozen inputs instead of generating candidates, pass one JSON file per repository basename with `--dataset-dir`:
 
+  The expanded frozen cohort currently covers Axios, Express, Click, Cobra,
+  ripgrep, Gson, Newtonsoft.Json, Symfony Console, and Sinatra. It contains
+  nine mixed-intent queries per repository, 81 total, across JavaScript,
+  Python, Go, Rust, Java, C#, PHP, and Ruby. Exact revisions are recorded in
+  `benchmarks/golden/expanded-cross-repo/cohort.json`.
+
 ```bash
 npx tsx scripts/cross-repo-benchmark.ts \
   --repos /path/to/axios,/path/to/express \

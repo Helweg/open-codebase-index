@@ -530,6 +530,7 @@ describe("cross-repo CodeGraph comparator", () => {
         indexing?: {
           maxFileSize?: number;
           maxChunksPerFile?: number;
+          maxDepth?: number;
         };
         embeddingProvider?: string;
         embeddingModel?: string;
@@ -540,6 +541,7 @@ describe("cross-repo CodeGraph comparator", () => {
         indexing: {
           maxFileSize: MAX_FILE_SIZE_BYTES,
           maxChunksPerFile: 100,
+          maxDepth: -1,
         },
         embeddingProvider: "ollama",
         embeddingModel: "nomic-embed-text",

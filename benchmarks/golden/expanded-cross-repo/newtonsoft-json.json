@@ -1,0 +1,180 @@
+{
+  "version": "1.2.0",
+  "name": "expanded-newtonsoft-json-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for Newtonsoft.Json at revision 13f774fa5a984374295c67bf5610e379135067db.",
+  "queries": [
+    {
+      "id": "newtonsoft-json-default-json-name-table",
+      "query": "where is DefaultJsonNameTable defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/DefaultJsonNameTable.cs",
+        "symbol": "DefaultJsonNameTable",
+        "expectedRoute": "definition"
+      },
+      "args": {
+        "symbol": "DefaultJsonNameTable"
+      }
+    },
+    {
+      "id": "newtonsoft-json-json-serializer",
+      "query": "where is JsonSerializer defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/JsonSerializer.cs",
+        "symbol": "JsonSerializer",
+        "expectedRoute": "definition"
+      },
+      "args": {
+        "symbol": "JsonSerializer"
+      }
+    },
+    {
+      "id": "newtonsoft-json-serializer-settings",
+      "query": "where is JsonSerializerSettings defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/JsonSerializerSettings.cs",
+        "symbol": "JsonSerializerSettings",
+        "expectedRoute": "definition"
+      },
+      "args": {
+        "symbol": "JsonSerializerSettings"
+      }
+    },
+    {
+      "id": "newtonsoft-json-json-text-reader",
+      "query": "where is JsonTextReader defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/JsonTextReader.cs",
+        "symbol": "JsonTextReader",
+        "expectedRoute": "definition"
+      },
+      "args": {
+        "symbol": "JsonTextReader"
+      }
+    },
+    {
+      "id": "newtonsoft-json-default-contract-resolver",
+      "query": "where is DefaultContractResolver defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/Serialization/DefaultContractResolver.cs",
+        "symbol": "DefaultContractResolver",
+        "expectedRoute": "definition"
+      },
+      "args": {
+        "symbol": "DefaultContractResolver"
+      }
+    },
+    {
+      "id": "newtonsoft-json-contract-resolver-keyword-heavy",
+      "query": "CreateProperties GetSerializableMembers NamingStrategy resolve contract properties",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "csharp",
+      "difficulty": "easy",
+      "tags": [
+        "keyword",
+        "contract-resolver",
+        "serialization"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/DefaultContractResolver.cs",
+            "relevance": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-jsonconvert-keyword-heavy",
+      "query": "SerializeObject DeserializeObject CreateDefault JsonSerializer settings converters",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "csharp",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "conversion",
+        "settings"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonConvert.cs",
+            "relevance": 3
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-implementation-intent",
+      "query": "implementation that creates default serializers, applies serializer settings, and dispatches deserialize/serialize through JsonSerializer internals",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "csharp",
+      "difficulty": "medium",
+      "tags": [
+        "implementation",
+        "pipeline",
+        "serializer"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonConvert.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/JsonSerializer.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonSerializerInternalReader.cs",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-conceptual",
+      "query": "conceptual view of how Newtonsoft.Json routes JSON text through converters, contract resolution, and the serializer read/write pipeline",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "serialization-pipeline"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonConvert.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/JsonSerializer.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/DefaultContractResolver.cs",
+            "relevance": 1
+          }
+        ]
+      }
+    }
+  ]
+}
