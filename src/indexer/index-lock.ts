@@ -28,6 +28,10 @@ export interface IndexLockOwner {
   startedAt: string;
   operation: IndexMutationOperation;
   token: string;
+  /** Originating project root for interrupted global clears (recovery scope). */
+  projectRoot?: string;
+  /** Originating scoped roots for interrupted global clears (recovery scope). */
+  scopedRoots?: string[];
 }
 
 export interface IndexLockRecovery {
@@ -100,6 +104,12 @@ function parseOwner(value: unknown): IndexLockOwner | null {
   if (typeof candidate.startedAt !== "string" || Number.isNaN(Date.parse(candidate.startedAt))) return null;
   if (typeof candidate.operation !== "string" || !VALID_OPERATIONS.has(candidate.operation as IndexMutationOperation)) return null;
   if (typeof candidate.token !== "string" || !UUID_PATTERN.test(candidate.token)) return null;
+  if (candidate.projectRoot !== undefined && typeof candidate.projectRoot !== "string") return null;
+  if (candidate.scopedRoots !== undefined) {
+    if (!Array.isArray(candidate.scopedRoots) || candidate.scopedRoots.some((root) => typeof root !== "string")) {
+      return null;
+    }
+  }
   return candidate as IndexLockOwner;
 }
 
@@ -222,6 +232,11 @@ function createOwner(operation: IndexMutationOperation): IndexLockOwner {
     operation,
     token: randomUUID(),
   };
+}
+
+export interface IndexLockRecoveryScope {
+  projectRoot: string;
+  scopedRoots: string[];
 }
 
 function recoveryMarkerPath(indexPath: string, owner: IndexLockOwner): string {
@@ -395,14 +410,24 @@ export function isTransientIndexLockContention(error: unknown): boolean {
   return error.reason === "active" || error.reason === "reclaiming";
 }
 
-export function acquireIndexLock(indexPath: string, operation: IndexMutationOperation): IndexLockLease {
+export function acquireIndexLock(
+  indexPath: string,
+  operation: IndexMutationOperation,
+  recoveryScope?: IndexLockRecoveryScope,
+): IndexLockLease {
   mkdirSync(indexPath, { recursive: true });
   const canonicalIndexPath = realpathSync.native(indexPath);
   const lockPath = path.join(canonicalIndexPath, "indexing.lock");
   cleanupDeadPublicationCandidates(canonicalIndexPath);
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const owner = createOwner(operation);
+    const owner = recoveryScope === undefined
+      ? createOwner(operation)
+      : {
+          ...createOwner(operation),
+          projectRoot: recoveryScope.projectRoot,
+          scopedRoots: recoveryScope.scopedRoots,
+        };
     if (publishJsonDirectory(lockPath, owner)) {
       const lease: IndexLockLease = {
         canonicalIndexPath,
@@ -482,9 +507,9 @@ export async function withIndexLock<T>(
   indexPath: string,
   operation: IndexMutationOperation,
   callback: (lease: IndexLockLease) => Promise<T> | T,
-  options: { completeRecoveries?: boolean } = {},
+  options: { completeRecoveries?: boolean; recoveryScope?: IndexLockRecoveryScope } = {},
 ): Promise<T> {
-  const lease = acquireIndexLock(indexPath, operation);
+  const lease = acquireIndexLock(indexPath, operation, options.recoveryScope);
   let result: T | undefined;
   let callbackError: unknown;
   let callbackFailed = false;

@@ -850,4 +850,177 @@ describe("indexer checkpoint resume", () => {
     const alphaOneOccurrences = (failedContent.match(/"name":"alphaOne"/g) ?? []).length;
     expect(alphaOneOccurrences).toBe(1);
   });
+
+  it("global lease recovery replays an interrupted clear against the originating project scope", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    // Simulate a crashed clear started by project A: the lease records the
+    // originating project scope so the recovery replays the clear against A
+    // instead of the project that reclaims the lease.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token: "11111111-1111-4111-8111-111111111111",
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+    }));
+
+    // Project B reclaims the lease. The recovery must clear A's data (and the
+    // shared knowledge base) while preserving B's checkpointed data. B's run
+    // only scans B and the knowledge base, so A's removal is observable in
+    // the shared database and hash cache, not in B's embedding calls.
+    const beforeCalls = fetchSpy.mock.calls.length;
+    const stats = await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    const resumeInputs = fetchSpy.mock.calls.slice(beforeCalls).flatMap((call) => {
+      const body = JSON.parse(String(call[1]?.body ?? "{}")) as { input?: string[] };
+      return body.input ?? [];
+    });
+    // B's checkpointed data is preserved: B's files are not re-embedded, and
+    // the shared knowledge base (cleared with A's scope) is re-cataloged by
+    // B's run (reusing the cached embeddings, so no new embedding calls).
+    expect(resumeInputs.some((text) => text.includes("betaOne"))).toBe(false);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getChunksByName("alphaOne").length).toBe(0);
+      expect(db.getChunksByName("betaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+    const fileHashes = JSON.parse(fs.readFileSync(path.join(indexDir, "file-hashes.json"), "utf-8")) as Record<string, string>;
+    expect(Object.keys(fileHashes).some((filePath) => filePath.includes("alpha.ts"))).toBe(false);
+    expect(Object.keys(fileHashes).some((filePath) => filePath.includes("beta.ts"))).toBe(true);
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("cross-project clear recovery preserves the reclaiming project branch catalog", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    // Simulate a crashed clear started by project A, reclaimed by project B
+    // through a retry run: the recovery must not remove the shared knowledge
+    // base entries from B's branch catalog, because B never re-scans them.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token: "11111111-1111-4111-8111-111111111111",
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+    }));
+
+    // B reclaims the lease through retryFailedBatches, which runs the
+    // recovery but never re-scans the knowledge base.
+    const retry = await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).retryFailedBatches();
+    expect(retry.remaining).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const branchKey = `${projectIdentityHash(projectBDir)}:default`;
+      const branchChunkIds = db.getBranchChunkIds(branchKey);
+      expect(branchChunkIds.length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("betaOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("recovery health check does not orphan checkpointed failed chunk rows", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    // Every project A file contains a failing chunk so whichever files are
+    // checkpointed before the interruption carry a persisted failure record
+    // with a committed SQLite chunk row.
+    const sourceFiles = [
+      path.join(projectDir, "src", "alpha.ts"),
+      path.join(projectDir, "src", "beta.ts"),
+      path.join(projectDir, "src", "gamma.ts"),
+    ];
+    for (const [fileIndex, filePath] of sourceFiles.entries()) {
+      writeSourceFile(
+        filePath,
+        ["first", "second", "triggerFailure", "fourth", "fifth", "sixth"].map((name) => `${name}${fileIndex}`),
+      );
+    }
+
+    failEmbeddingText = "triggerFailure";
+    await expect(createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === progress.totalFiles) {
+        throw new Error("simulated interruption after failed batch checkpoint");
+      }
+    })).rejects.toThrow("simulated interruption after failed batch checkpoint");
+    failEmbeddingText = null;
+
+    // Simulate a crashed indexing session: the recovery health check runs
+    // gcOrphanChunks() and deletes the committed rows of failed chunks that
+    // have no branch association yet.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "index",
+      token: "11111111-1111-4111-8111-111111111111",
+    }));
+
+    // The dedicated retry must restore the missing chunk rows before
+    // re-embedding, so the branch catalog never references a chunk without
+    // metadata.
+    const retry = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).retryFailedBatches();
+    expect(retry.remaining).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const branchKey = `${projectIdentityHash(projectDir)}:default`;
+      const branchChunkIds = db.getBranchChunkIds(branchKey);
+      expect(branchChunkIds.length).toBeGreaterThan(0);
+      for (const chunkId of branchChunkIds) {
+        expect(db.getChunk(chunkId)).not.toBeNull();
+      }
+      for (const filePath of ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"]) {
+        expect(db.getChunksByFile(path.join(projectDir, filePath)).length).toBeGreaterThan(0);
+      }
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
 });
