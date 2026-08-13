@@ -175,6 +175,215 @@
           }
         ]
       }
+    },
+    {
+      "id": "newtonsoft-json-json-converter-definition",
+      "query": "where is JsonConverter defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "JsonConverter"
+      },
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/JsonConverter.cs",
+        "symbol": "JsonConverter",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "newtonsoft-json-json-exception-definition",
+      "query": "where is JsonException defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "JsonException"
+      },
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/JsonException.cs",
+        "symbol": "JsonException",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "newtonsoft-json-camel-case-naming-definition",
+      "query": "where is CamelCaseNamingStrategy defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "CamelCaseNamingStrategy"
+      },
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/Serialization/CamelCaseNamingStrategy.cs",
+        "symbol": "CamelCaseNamingStrategy",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "newtonsoft-json-json-contract-definition",
+      "query": "where is JsonContract defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "JsonContract"
+      },
+      "expected": {
+        "filePath": "Src/Newtonsoft.Json/Serialization/JsonContract.cs",
+        "symbol": "JsonContract",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "newtonsoft-json-converter-keywords",
+      "query": "CanConvert ReadJson WriteJson existingValue serializer converter",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "converter",
+        "serialization",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonConverter.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/JsonConvert.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonSerializerInternalReader.cs",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-contract-keywords",
+      "query": "JsonContract CreatedType Converter IsReference ItemContract UnderlyingType",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "contract",
+        "metadata",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonContract.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/DefaultContractResolver.cs",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-converter-implementation",
+      "query": "implementation that selects a JsonConverter and uses it to read or write JSON values through the serializer pipeline",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "implementation-intent",
+        "implementation",
+        "converter"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonConverter.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonSerializerInternalReader.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonSerializerInternalWriter.cs",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-metadata-concept",
+      "query": "conceptual view of how contract resolution combines naming strategies, reflection metadata, and property serialization",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "conceptual",
+        "metadata"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/DefaultContractResolver.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonContract.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/CamelCaseNamingStrategy.cs",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "newtonsoft-json-json-reader-concept",
+      "query": "conceptual view of how a JsonReader token stream is validated and mapped into serializer contracts",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "csharp",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "conceptual",
+        "reader"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "Src/Newtonsoft.Json/JsonTextReader.cs",
+            "relevance": 3
+          },
+          {
+            "path": "Src/Newtonsoft.Json/JsonValidatingReader.cs",
+            "relevance": 2
+          },
+          {
+            "path": "Src/Newtonsoft.Json/Serialization/JsonSerializerInternalReader.cs",
+            "relevance": 2
+          }
+        ]
+      }
     }
   ]
 }

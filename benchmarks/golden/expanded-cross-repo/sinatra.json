@@ -195,6 +195,221 @@
           }
         ]
       }
+    },
+    {
+      "id": "sinatra-show-exceptions-definition",
+      "query": "where is ShowExceptions defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "ShowExceptions"
+      },
+      "expected": {
+        "filePath": "lib/sinatra/show_exceptions.rb",
+        "symbol": "ShowExceptions",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-session-hijacking-definition",
+      "query": "where is SessionHijacking defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "SessionHijacking"
+      },
+      "expected": {
+        "filePath": "rack-protection/lib/rack/protection/session_hijacking.rb",
+        "symbol": "SessionHijacking",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-content-security-policy-definition",
+      "query": "where is ContentSecurityPolicy defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "ContentSecurityPolicy"
+      },
+      "expected": {
+        "filePath": "rack-protection/lib/rack/protection/content_security_policy.rb",
+        "symbol": "ContentSecurityPolicy",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-host-authorization-definition",
+      "query": "where is HostAuthorization defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "HostAuthorization"
+      },
+      "expected": {
+        "filePath": "rack-protection/lib/rack/protection/host_authorization.rb",
+        "symbol": "HostAuthorization",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-reloader-watcher-definition",
+      "query": "where is Watcher defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Watcher"
+      },
+      "expected": {
+        "filePath": "sinatra-contrib/lib/sinatra/reloader.rb",
+        "symbol": "Watcher",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-reloader-keywords",
+      "query": "also_reload dont_reload watch reload! updated constant load dependency",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "reloader",
+        "development",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "sinatra-contrib/lib/sinatra/reloader.rb",
+            "relevance": 3
+          },
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-protection-headers-keywords",
+      "query": "content security policy nonce report only x frame options xss header referrer",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "security",
+        "headers",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "rack-protection/lib/rack/protection/content_security_policy.rb",
+            "relevance": 3
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/xss_header.rb",
+            "relevance": 2
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/frame_options.rb",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-reloader-implementation",
+      "query": "implementation that watches source files, reloads changed constants, and reruns the application",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "implementation-intent",
+        "implementation",
+        "reloader"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "sinatra-contrib/lib/sinatra/reloader.rb",
+            "relevance": 3
+          },
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-session-security-concept",
+      "query": "how rack protection detects session hijacking, validates remote tokens, and protects request state",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "security",
+        "session"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "rack-protection/lib/rack/protection/session_hijacking.rb",
+            "relevance": 3
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/remote_token.rb",
+            "relevance": 2
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/authenticity_token.rb",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-development-errors-concept",
+      "query": "how Sinatra wraps application failures to show exceptions, render stack traces, and negotiate error responses",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "errors",
+        "development"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/sinatra/show_exceptions.rb",
+            "relevance": 3
+          },
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 2
+          }
+        ]
+      }
     }
   ]
 }

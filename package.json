@@ -58,6 +58,7 @@
     "benchmark:indexing-memory": "npx tsx benchmarks/indexing-memory.ts",
     "benchmark:watcher": "npx tsx benchmarks/watcher.ts",
     "benchmark:cross-repo:check": "npx vitest run tests/cross-repo-benchmark-dataset-dir.test.ts tests/cross-repo-codegraph.test.ts tests/cross-repo-codebase-memory.test.ts",
+    "benchmark:cross-repo:sources:check": "npx tsx scripts/validate-cross-repo-cohort.ts --cohort-dir benchmarks/golden/expanded-cross-repo --work-dir ./.tmp/cross-repo-sources",
     "dev:link-mcp": "node scripts/link-local-mcp-bin.mjs",
     "test": "vitest",
     "pretest:run": "node scripts/run-build-native-with-rustflags.mjs && npm run build:ts",

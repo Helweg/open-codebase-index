@@ -96,6 +96,9 @@ jobs:
       - name: Validate frozen cross-repo benchmark inputs and comparator contracts
         run: npm run benchmark:cross-repo:check
 
+      - name: Validate frozen cross-repo source evidence against pinned revisions
+        run: npm run benchmark:cross-repo:sources:check
+
       - name: Run tests with coverage
         run: npm run test:coverage
 

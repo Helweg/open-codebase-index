@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an Ollama-only representative retrieval evaluation command with expanded coverage for embedding failure recovery, index-lock recovery, and duplicate-definition path disambiguation.
 - Added `--embedding-model` to the cross-repository benchmark runner, preserving `nomic-embed-text` as the default while recording the selected local Ollama model in its artifacts.
-- Expanded the frozen mixed-intent cross-repository cohort to 81 reviewed queries across JavaScript, Python, Go, Rust, Java, C#, PHP, and Ruby.
+- Expanded the frozen mixed-intent cross-repository cohort to 100 reviewed queries across JavaScript, Python, Go, Rust, Java, C#, PHP, and Ruby, with additional hard Ruby and C# cases.
+- Added a deterministic pull-request CI gate that clones each pinned cohort revision and validates every evidence path plus definition symbol without invoking embeddings.
 
 ### Changed
 
