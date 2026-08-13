@@ -430,6 +430,9 @@ describe("cross-repo benchmark dataset-dir flag", () => {
         fs.readFileSync(path.join(runRoot, "eval-configs", `${repoName}-benchmark.json`), "utf-8")
       )
     ).toMatchObject({
+      indexing: {
+        maxDepth: -1,
+      },
       embeddingProvider: "ollama",
       embeddingModel: "embeddinggemma",
     });

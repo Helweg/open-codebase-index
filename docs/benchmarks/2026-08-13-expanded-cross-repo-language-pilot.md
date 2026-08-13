@@ -26,13 +26,18 @@ and completed Gson, Symfony Console, Sinatra, and a corrected standalone
 Newtonsoft.Json run. The initial four-repository invocation exposed a missing
 `args.symbol` contract field in the C# definition queries. The dataset was
 corrected, and the standalone rerun completed successfully at 66.67% Hit@5.
+It also exposed that the runner's controlled config inherited the ordinary
+five-level traversal limit, which excluded Gson production source files below
+`gson/src/main/java`. The controlled benchmark config now sets `maxDepth: -1`
+while retaining its `maxParseFiles` cap. A forced-reindex Gson rerun then
+completed at 88.89% Hit@5.
 
 The early quality results are intentionally not treated as a product claim:
-Gson returned 0% Hit@5, Symfony Console 88.89%, and Sinatra 44.44% in this
-single local Nomic run. These results confirm the cohort distinguishes language
-and retrieval behavior rather than saturating at 100% Hit@5. They also identify
-Java and Ruby retrieval as candidates for separate diagnosis before making
-ranking claims.
+Gson reached 88.89% Hit@5 after the depth fix, Symfony Console reached 88.89%,
+and Sinatra reached 44.44% in the initial single local Nomic run. These results
+confirm the cohort distinguishes language and retrieval behavior rather than
+saturating at 100% Hit@5. They also identify Ruby retrieval as a candidate for
+separate diagnosis before making ranking claims.
 
 Reproduce the exercise with the checked-out pinned repositories:
 
