@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -330,6 +331,212 @@ describe("indexer checkpoint resume", () => {
     }
   });
 
+  it("interrupted run on an existing branch keeps checkpointed chunks in the branch catalog after resume", async () => {
+    const indexer = createIndexer(1);
+    const alphaFile = path.join(projectDir, "src", "alpha.ts");
+    writeSourceFile(alphaFile, ["alphaOne", "alphaTwo"]);
+
+    // Full initial index publishes the branch catalog.
+    await indexer.index();
+
+    // Add two new files and interrupt the run after the first checkpoint.
+    const betaFile = path.join(projectDir, "src", "beta.ts");
+    const gammaFile = path.join(projectDir, "src", "gamma.ts");
+    writeSourceFile(betaFile, ["betaOne", "betaTwo"]);
+    writeSourceFile(gammaFile, ["gammaOne", "gammaTwo"]);
+    await expect(indexer.index((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === progress.totalFiles) {
+        throw new Error("simulated interruption after new-file checkpoint");
+      }
+    })).rejects.toThrow("simulated interruption after new-file checkpoint");
+
+    // The checkpointed file's chunks must survive in the branch catalog after
+    // the resume, even though the file itself is skipped as unchanged.
+    const resumedStats = await indexer.index();
+    expect(resumedStats.failedChunks).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const branchChunkIds = new Set(db.getBranchChunkIds("default"));
+      for (const filePath of ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"]) {
+        const chunks = db.getChunksByFile(filePath);
+        expect(chunks.length).toBeGreaterThan(0);
+        for (const chunk of chunks) {
+          expect(branchChunkIds.has(chunk.chunkId)).toBe(true);
+        }
+      }
+      const branchSymbolIds = new Set(db.getBranchSymbolIds("default"));
+      for (const filePath of ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"]) {
+        for (const symbol of db.getSymbolsByFile(filePath)) {
+          expect(branchSymbolIds.has(symbol.id)).toBe(true);
+        }
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("interrupted run with a modified file re-processes it on resume", async () => {
+    const indexer = createIndexer(1);
+    const alphaFile = path.join(projectDir, "src", "alpha.ts");
+    writeSourceFile(alphaFile, ["alphaOne", "alphaTwo"]);
+
+    await indexer.index();
+
+    // Modify the file and add a new one; interrupt after the first checkpoint.
+    writeSourceFile(alphaFile, ["alphaOne", "alphaThree"]);
+    const betaFile = path.join(projectDir, "src", "beta.ts");
+    writeSourceFile(betaFile, ["betaOne", "betaTwo"]);
+    await expect(indexer.index((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === progress.totalFiles) {
+        throw new Error("simulated interruption after modified-file checkpoint");
+      }
+    })).rejects.toThrow("simulated interruption after modified-file checkpoint");
+
+    // A modified file with stale chunks to evict must not be checkpointed.
+    const fileHashesPath = path.join(indexDir, "file-hashes.json");
+    const partialHashes = JSON.parse(fs.readFileSync(fileHashesPath, "utf-8")) as Record<string, string>;
+    expect(partialHashes["src/alpha.ts"]).toBeUndefined();
+
+    // The resume re-processes it and evicts the removed chunk.
+    const resumedStats = await indexer.index();
+    expect(resumedStats.failedChunks).toBe(0);
+    expect(resumedStats.removedChunks).toBeGreaterThan(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const chunks = db.getChunksByFile("src/alpha.ts");
+      expect(chunks.some((chunk) => chunk.name === "alphaTwo")).toBe(false);
+      expect(chunks.some((chunk) => chunk.name === "alphaThree")).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("global lease recovery invalidates the hash cache after an interrupted clear", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    // Simulate a crashed clear: an orphaned lease owned by a dead pid.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token: "11111111-1111-4111-8111-111111111111",
+    }));
+
+    const fileHashesPath = path.join(indexDir, "file-hashes.json");
+    expect(fs.existsSync(fileHashesPath)).toBe(true);
+
+    // A crashed clear wipes the store and inverted index before the hash cache
+    // (clearIndexUnlocked order): simulate that partial state so the next run
+    // would otherwise skip every file against an empty store.
+    for (const artifact of ["vectors", "vectors.usearch", "vectors.meta.json", "inverted-index.json"]) {
+      fs.rmSync(path.join(indexDir, artifact), { recursive: true, force: true });
+    }
+
+    // The recovery must invalidate the cache after an interrupted clear so the
+    // next run re-embeds instead of skipping files against an empty store.
+    const beforeCalls = fetchSpy.mock.calls.length;
+    const stats = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    expect(fetchSpy.mock.calls.length).toBeGreaterThan(beforeCalls);
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("global lease recovery preserves the checkpointed hash cache", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    // Simulate a crashed indexing session: an orphaned lease owned by a dead pid.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "index",
+      token: "11111111-1111-4111-8111-111111111111",
+    }));
+
+    const fileHashesPath = path.join(indexDir, "file-hashes.json");
+    expect(fs.existsSync(fileHashesPath)).toBe(true);
+
+    // The recovery must keep the checkpointed hash cache: unchanged files are
+    // skipped instead of being re-parsed and re-embedded.
+    const beforeCalls = fetchSpy.mock.calls.length;
+    const stats = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    expect(fs.existsSync(fileHashesPath)).toBe(true);
+    expect(fetchSpy.mock.calls.length).toBe(beforeCalls);
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("retryFailedBatches does not close an interrupted strategy migration", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    const db = new Database(path.join(indexDir, "codebase.db"));
+    const projectAHash = projectIdentityHash(projectDir);
+    db.setMetadata(`index.embeddingStrategyVersion.${projectAHash}`, "1");
+
+    const resettingIndexer = createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir);
+    await resettingIndexer.clearIndex();
+    expect(db.getMetadata(`index.forceReembed.${projectAHash}`)).toBe("true");
+
+    // Interrupt the forced re-embed run after its first checkpoint, with a
+    // failing chunk so the run leaves failed batches behind.
+    failEmbeddingText = "One";
+    await expect(createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === 1) {
+        throw new Error("simulated interruption during forced re-embed");
+      }
+    })).rejects.toThrow("simulated interruption during forced re-embed");
+
+    // The retry recovers the failed chunks but must not close the migration:
+    // the main run never finished, so unprocessed scope files still hold old
+    // vectors.
+    failEmbeddingText = null;
+    const retry = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).retryFailedBatches();
+    expect(retry.remaining).toBe(0);
+    expect(db.getMetadata(`index.forceReembed.${projectAHash}`)).toBe("true");
+
+    // A full run completes the migration and clears the flag.
+    const stats = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    expect(db.getMetadata(`index.forceReembed.${projectAHash}`)).toBeNull();
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
   it("interrupted forced re-embed run keeps migration pending and re-embeds every scope file on resume", async () => {
     const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
     vi.stubEnv("HOME", tempHome);
@@ -407,5 +614,240 @@ describe("indexer checkpoint resume", () => {
     fs.rmSync(projectBDir, { recursive: true, force: true });
     fs.rmSync(kbDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("checkpoint preserves out-of-scope failed batches for later retries", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    // Project A leaves a failed batch behind.
+    failEmbeddingText = "One";
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    const failedBatchesPath = path.join(indexDir, "failed-batches.json");
+    expect(fs.existsSync(failedBatchesPath)).toBe(true);
+
+    // Project B's run checkpoints and must not drop A's failed batch.
+    failEmbeddingText = null;
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+    expect(fs.existsSync(failedBatchesPath)).toBe(true);
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("checkpoint preserves pending retries alongside new failures", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    // Project A leaves a failed batch behind.
+    failEmbeddingText = "One";
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+
+    // A second run checkpoints a new failure while the old retry is still
+    // pending: the retry must survive the checkpoint and be re-attempted.
+    writeSourceFile(path.join(kbDir, "docs", "shared.ts"), ["sharedOne", "sharedTwo", "sharedThree"]);
+    failEmbeddingText = "Three";
+    const beforeCalls = fetchSpy.mock.calls.length;
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    const retryInputs = fetchSpy.mock.calls.slice(beforeCalls).flatMap((call) => {
+      const body = JSON.parse(String(call[1]?.body ?? "{}")) as { input?: string[] };
+      return body.input ?? [];
+    });
+    expect(retryInputs.some((text) => text.includes("alphaOne"))).toBe(true);
+
+    // The resolved retry must not be republished in the final failed-batches
+    // file: only the new failure remains.
+    const persisted = fs.readFileSync(path.join(indexDir, "failed-batches.json"), "utf-8");
+    expect(persisted).toContain("sharedThree");
+    expect(persisted).not.toContain("alphaOne");
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("interrupted force-index run resumes from checkpoints instead of clearing", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    // The force-index clear phase completes, then the indexing phase is
+    // interrupted after the first file is checkpointed.
+    await expect(createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).forceIndex((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === 2) {
+        throw new Error("simulated interruption during force-index");
+      }
+    })).rejects.toThrow("simulated interruption during force-index");
+
+    // Simulate a crash during the indexing phase: an orphaned "force-index"
+    // lease with no clearing-phase marker left behind.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "force-index",
+      token: "11111111-1111-4111-8111-111111111111",
+    }));
+
+    // The recovery must not clear the checkpointed data: the next run resumes
+    // incrementally instead of re-embedding the already checkpointed file.
+    const beforeCalls = fetchSpy.mock.calls.length;
+    const stats = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    const resumeInputs = fetchSpy.mock.calls.slice(beforeCalls).flatMap((call) => {
+      const body = JSON.parse(String(call[1]?.body ?? "{}")) as { input?: string[] };
+      return body.input ?? [];
+    });
+    expect(resumeInputs.some((text) => text.includes("sharedOne"))).toBe(true);
+    expect(resumeInputs.some((text) => text.includes("alphaOne"))).toBe(false);
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("checkpoint persists the keyword index before vectors so a crash cannot orphan BM25 chunks", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    // Interrupt the first run between the vector store save and the keyword
+    // index save: with the keyword index persisted first, the store is not yet
+    // durable and the resume re-embeds, keeping BM25 complete.
+    const invertedSave = vi.spyOn(
+      Indexer.prototype as unknown as { saveInvertedIndex: () => void },
+      "saveInvertedIndex",
+    ).mockImplementation(() => {
+      throw new Error("simulated crash between artifact writes");
+    });
+    await expect(createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index()).rejects.toThrow(
+      "simulated crash between artifact writes",
+    );
+    invertedSave.mockRestore();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    const inverted = fs.readFileSync(path.join(indexDir, "inverted-index.json"), "utf-8");
+    expect(inverted).toContain("alphaone");
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("project-scope dead-lease recovery preserves checkpoints for incremental resume", async () => {
+    const projectOwnedIndex = path.join(projectDir, ".opencode", "index");
+    const sourceFiles = [
+      path.join(projectDir, "src", "alpha.ts"),
+      path.join(projectDir, "src", "beta.ts"),
+      path.join(projectDir, "src", "gamma.ts"),
+    ];
+    for (const [fileIndex, filePath] of sourceFiles.entries()) {
+      writeSourceFile(
+        filePath,
+        ["first", "second", "third", "fourth", "fifth", "sixth"].map((name) => `${name}${fileIndex}`),
+      );
+    }
+
+    // Interrupt after two files are checkpointed.
+    const indexer = createIndexer(1, projectOwnedIndex);
+    await expect(indexer.index((progress) => {
+      if (progress.phase === "embedding" && progress.filesProcessed === progress.totalFiles) {
+        throw new Error("simulated crash after checkpoint");
+      }
+    })).rejects.toThrow("simulated crash after checkpoint");
+
+    // Simulate a dead "index" lease (not "clear" or "force-index"): recovery
+    // must preserve checkpointed artifacts and resume incrementally.
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(projectOwnedIndex, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "index",
+      token: "22222222-2222-4222-8222-222222222222",
+    }));
+
+    const beforeCalls = fetchSpy.mock.calls.length;
+    const resumeIndexer = createIndexer(1, projectOwnedIndex);
+    const stats = await resumeIndexer.index();
+    expect(stats.failedChunks).toBe(0);
+
+    // Only the pending file was re-embedded: the two checkpointed files are
+    // preserved and skipped on resume.
+    const resumeInputs = fetchSpy.mock.calls.slice(beforeCalls).flatMap((call) => {
+      const body = JSON.parse(String(call[1]?.body ?? "{}")) as { input?: string[] };
+      return body.input ?? [];
+    });
+    expect(resumeInputs.some((text) => text.includes("first2"))).toBe(true);
+    expect(resumeInputs.some((text) => text.includes("first0"))).toBe(false);
+    expect(resumeInputs.some((text) => text.includes("first1"))).toBe(false);
+  });
+  it("checkpoint drops stale failures for files modified and reindexed successfully", async () => {
+    const alphaFile = path.join(projectDir, "src", "alpha.ts");
+    const gammaFile = path.join(projectDir, "src", "gamma.ts");
+    writeSourceFile(alphaFile, ["alphaOne", "alphaTwo"]);
+
+    // Run 1: alphaOne fails embedding, leaving a failed-batches record.
+    failEmbeddingText = "alphaOne";
+    const indexer1 = createIndexer(1);
+    await indexer1.index();
+    expect(fs.existsSync(path.join(indexDir, "failed-batches.json"))).toBe(true);
+    const failedContent1 = fs.readFileSync(path.join(indexDir, "failed-batches.json"), "utf-8");
+    expect(failedContent1).toContain("alphaOne");
+    failEmbeddingText = null;
+
+    // Run 2: alpha.ts is modified and reindexed successfully, while a new
+    // file gamma.ts has a chunk that fails — ensuring the checkpoint's
+    // failed-batches reconstruction path executes.
+    writeSourceFile(alphaFile, ["alphaOne", "alphaTwo", "alphaThree"]);
+    writeSourceFile(gammaFile, ["gammaOne"]);
+    failEmbeddingText = "gammaOne";
+    const indexer2 = createIndexer(1);
+    await indexer2.index();
+
+    // The old alphaOne failure must not survive: alpha.ts was modified and
+    // all its chunks embedded successfully. Only gammaOne should remain.
+    const failedContent2 = fs.readFileSync(path.join(indexDir, "failed-batches.json"), "utf-8");
+    expect(failedContent2).toContain("gammaOne");
+    expect(failedContent2).not.toContain("alphaOne");
+  });
+
+  it("checkpoint does not duplicate pending retry chunks across multiple checkpoints", async () => {
+    const alphaFile = path.join(projectDir, "src", "alpha.ts");
+    const betaFile = path.join(projectDir, "src", "beta.ts");
+    const gammaFile = path.join(projectDir, "src", "gamma.ts");
+    writeSourceFile(alphaFile, ["alphaOne", "alphaTwo"]);
+
+    // Run 1: alphaOne fails, leaving a failed-batches record.
+    failEmbeddingText = "alphaOne";
+    await createIndexer(1).index();
+    failEmbeddingText = null;
+
+    // Run 2: alpha.ts is unchanged (alphaOne stays in latestById for retry),
+    // while two new files beta.ts and gamma.ts each fail — triggering two
+    // separate checkpoints. Without deduplication, alphaOne would be
+    // re-written from latestById at every checkpoint, duplicating it.
+    writeSourceFile(betaFile, ["betaOne", "betaTwo"]);
+    writeSourceFile(gammaFile, ["gammaOne", "gammaTwo"]);
+    failEmbeddingText = "One";
+    await createIndexer(1).index();
+
+    // The failed-batches file should contain exactly one record for
+    // alphaOne, not one per checkpoint.
+    const failedContent = fs.readFileSync(path.join(indexDir, "failed-batches.json"), "utf-8");
+    const alphaOneOccurrences = (failedContent.match(/"name":"alphaOne"/g) ?? []).length;
+    expect(alphaOneOccurrences).toBe(1);
   });
 });
