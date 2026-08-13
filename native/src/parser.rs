@@ -235,8 +235,8 @@ fn extract_semantic_nodes(
         // Ruby modules are containers rather than useful retrieval units. Emit
         // their nested declarations, but not overlapping module chunks whose
         // content duplicates those declarations.
-        let emit_semantic_chunk = is_semantic
-            && !(*language == Language::Ruby && node_type == "module");
+        let emit_semantic_chunk =
+            is_semantic && !(*language == Language::Ruby && node_type == "module");
 
         if emit_semantic_chunk {
             let semantic_start_node = if *language == Language::Metal {
@@ -1695,7 +1695,8 @@ end
             .expect("should produce semantic chunks for nested Ruby class");
         assert!(
             chunks.iter().any(|chunk| {
-                chunk.chunk_type == "class" && chunk.name.as_deref() == Some("ContentSecurityPolicy")
+                chunk.chunk_type == "class"
+                    && chunk.name.as_deref() == Some("ContentSecurityPolicy")
             }),
             "Expected nested Ruby class chunk named ContentSecurityPolicy"
         );
