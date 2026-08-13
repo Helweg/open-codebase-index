@@ -1,0 +1,200 @@
+{
+  "version": "1.2.0",
+  "name": "expanded-sinatra-mixed-intent",
+  "description": "Hand-curated definition, keyword-heavy, implementation-intent, and conceptual queries for the pinned expanded public benchmark cohort.",
+  "queries": [
+    {
+      "id": "sinatra-not-found-definition",
+      "query": "where is NotFound defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "NotFound"
+      },
+      "expected": {
+        "filePath": "lib/sinatra/base.rb",
+        "symbol": "NotFound",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-indifferent-hash-definition",
+      "query": "where is IndifferentHash defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "IndifferentHash"
+      },
+      "expected": {
+        "filePath": "lib/sinatra/indifferent_hash.rb",
+        "symbol": "IndifferentHash",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-templates-definition",
+      "query": "where is Templates defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Templates"
+      },
+      "expected": {
+        "filePath": "lib/sinatra/base.rb",
+        "symbol": "Templates",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-frame-options-definition",
+      "query": "where is FrameOptions defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "FrameOptions"
+      },
+      "expected": {
+        "filePath": "rack-protection/lib/rack/protection/frame_options.rb",
+        "symbol": "FrameOptions",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-runner-definition",
+      "query": "where is Runner defined",
+      "queryType": "definition",
+      "retrievalMode": "context",
+      "args": {
+        "symbol": "Runner"
+      },
+      "expected": {
+        "filePath": "sinatra-contrib/lib/sinatra/runner.rb",
+        "symbol": "Runner",
+        "expectedRoute": "definition"
+      }
+    },
+    {
+      "id": "sinatra-route-dispatch-keywords",
+      "query": "route! dispatch! process_route filter! route_eval pass before after static!",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "keyword",
+        "routing",
+        "request-lifecycle",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 3
+          },
+          {
+            "path": "lib/sinatra/main.rb",
+            "relevance": 2
+          },
+          {
+            "path": "sinatra-contrib/lib/sinatra/namespace.rb",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-response-rendering-keywords",
+      "query": "send_file stream content_type template render attachment response body headers etag",
+      "queryType": "keyword-heavy",
+      "retrievalMode": "search",
+      "language": "ruby",
+      "difficulty": "medium",
+      "tags": [
+        "keyword",
+        "response",
+        "rendering",
+        "multi-evidence"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 3
+          },
+          {
+            "path": "sinatra-contrib/lib/sinatra/streaming.rb",
+            "relevance": 2
+          },
+          {
+            "path": "sinatra-contrib/lib/sinatra/respond_with.rb",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-route-request-implementation",
+      "query": "implementation that runs before filters, matches routes, invokes route handlers, and renders a response",
+      "queryType": "implementation-intent",
+      "retrievalMode": "context",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "implementation",
+        "routing",
+        "request-cycle"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "lib/sinatra/base.rb",
+            "relevance": 3
+          },
+          {
+            "path": "sinatra-contrib/lib/sinatra/namespace.rb",
+            "relevance": 2
+          }
+        ]
+      }
+    },
+    {
+      "id": "sinatra-protection-concept",
+      "query": "configure middleware protection with authenticity token host authorization frame options and origin validation",
+      "queryType": "conceptual",
+      "retrievalMode": "context",
+      "language": "ruby",
+      "difficulty": "hard",
+      "tags": [
+        "conceptual",
+        "security",
+        "middleware",
+        "rack-protection"
+      ],
+      "expected": {
+        "expectedRoute": "search",
+        "expectedOutcome": "results",
+        "gradedEvidence": [
+          {
+            "path": "rack-protection/lib/rack/protection.rb",
+            "relevance": 3
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/base.rb",
+            "relevance": 2
+          },
+          {
+            "path": "rack-protection/lib/rack/protection/authenticity_token.rb",
+            "relevance": 2
+          }
+        ]
+      }
+    }
+  ]
+}
