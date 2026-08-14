@@ -232,6 +232,37 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(results[0]?.endLine).toBeGreaterThanOrEqual(results[0]?.startLine ?? 0);
   });
 
+  it("keeps an exact large C# definition ahead of prefix matches", async () => {
+    const sourceFile = path.join(tempDir, "app", "indexer", "LargeDefinition.cs");
+    const noisyFile = path.join(tempDir, "app", "indexer", "LargeDefinitionProxy.cs");
+    fs.writeFileSync(
+      sourceFile,
+      `public class LargeDefinition {
+${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; set; }`).join("\n")}
+}
+`,
+      "utf-8",
+    );
+    fs.writeFileSync(noisyFile, "public class LargeDefinitionProxy { }\n", "utf-8");
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+      indexing: { watchFiles: false, maxChunksPerFile: 2, fallbackToTextOnMaxChunks: true },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
+    await indexer.index();
+
+    const results = await indexer.search("LargeDefinition", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+      definitionIntent: true,
+    });
+
+    expect(results[0]).toMatchObject({ filePath: sourceFile, name: "LargeDefinition" });
+  });
+
   it("returns nested class methods that are not standalone semantic chunks", async () => {
     const classFile = path.join(tempDir, "app", "indexer", "service.ts");
     fs.writeFileSync(classFile, `export class Service {
