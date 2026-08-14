@@ -4836,7 +4836,12 @@ export class Indexer {
     );
 
     const prePrimaryLane = mergeTieredResults(deterministicIdentifierLane, identifierLane, maxResults * 4);
-    const primaryLane = mergeTieredResults(prePrimaryLane, symbolLane, maxResults * 4);
+    // An explicit definition lookup can resolve to a symbol whose declaration
+    // spans more lines than any indexable chunk. Keep that exact symbol ahead
+    // of prefix and semantic matches so it is not pushed beyond maxResults.
+    const primaryLane = options?.definitionIntent === true
+      ? mergeTieredResults(symbolLane, prePrimaryLane, maxResults * 4)
+      : mergeTieredResults(prePrimaryLane, symbolLane, maxResults * 4);
     const tiered = mergeTieredResults(primaryLane, rescued, maxResults * 4);
     const hasCodeHints = extractCodeTermHints(query).length > 0 || identifierHints.length > 0;
 
