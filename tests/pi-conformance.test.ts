@@ -672,7 +672,7 @@ describe("Pi adapter conformance", () => {
     });
   });
 
-  it("injects client-neutral repository guidance on before_agent_start", async () => {
+  it("injects adaptive, compact Pi repository guidance on before_agent_start", async () => {
     const { beforeAgentStartHandlers } = await registerPiTools();
 
     const result = await beforeAgentStartHandlers[0]?.({ systemPrompt: "Base system prompt." });
@@ -680,7 +680,18 @@ describe("Pi adapter conformance", () => {
     expect(result).toMatchObject({
       systemPrompt: expect.stringContaining("Check index_status first"),
     });
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("codebase_context");
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
+      "Use codebase_context only when repository orientation is needed",
+    );
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain("tokenBudget: 600");
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain("limit: 5");
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
+      "inspect returned evidence before broad search/grep/bash/read-style reads",
+    );
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
+      "Avoid repeating broad reads when the compact evidence already answers the question",
+    );
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain("not mechanically for every task");
     expect((result as { systemPrompt?: string }).systemPrompt).toContain("implementation_lookup");
     expect((result as { systemPrompt?: string }).systemPrompt).toContain("call_graph");
   });

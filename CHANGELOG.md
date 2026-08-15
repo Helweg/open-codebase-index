@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pi now uses compact, adaptive repository-retrieval guidance: it recommends `codebase_context` for repository orientation rather than mechanically for every task, requests a small initial evidence pack, and avoids duplicate broad reads when that evidence is sufficient.
 - Retired the unavailable `github-copilot` embedding provider with an actionable migration error. GitHub Models retired its inference API.
 - Added Google `gemini-embedding-2` support with its recommended code-retrieval formatting.
 - Documented local Ollama model trade-offs and reproducible Nomic, EmbeddingGemma, and Qwen 0.6B comparison results.
