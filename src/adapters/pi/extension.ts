@@ -239,11 +239,16 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       verbose: Type.Optional(Type.Boolean({ default: false })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
-      if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
-      if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
-      if (result.kind === "message") return text(result.text);
-      return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
+      try {
+        const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
+        if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
+        if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
+        if (result.kind === "message") return text(result.text);
+        return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        return text(`index_codebase failed: ${message}`);
+      }
     },
   });
 
