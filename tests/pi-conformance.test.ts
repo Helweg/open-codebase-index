@@ -7,6 +7,7 @@ const operationMocks = vi.hoisted(() => ({
   getCallGraphData: vi.fn(),
   getCallGraphPath: vi.fn(),
   getIndexHealthCheck: vi.fn(),
+  runIndexCodebase: vi.fn(),
   runIndexHealthCheck: vi.fn(),
   searchCodebase: vi.fn(),
   searchCodebaseWithEffectiveness: vi.fn(),
@@ -26,13 +27,13 @@ vi.mock("../src/tools/operations.js", () => ({
   getCallGraphData: operationMocks.getCallGraphData,
   getCallGraphPath: operationMocks.getCallGraphPath,
   getIndexHealthCheck: operationMocks.getIndexHealthCheck,
+  runIndexCodebase: operationMocks.runIndexCodebase,
   getIndexMetrics: operationMocks.getIndexMetrics,
   getIndexStatus: vi.fn(),
   getPrImpact: vi.fn(),
   implementationLookup: operationMocks.implementationLookup,
   listKnowledgeBases: vi.fn(() => "No knowledge bases configured."),
   removeKnowledgeBase: vi.fn(() => "Removed knowledge base"),
-  runIndexCodebase: vi.fn(),
   runIndexHealthCheck: operationMocks.runIndexHealthCheck,
   searchCodebase: operationMocks.searchCodebase,
   searchCodebaseWithEffectiveness: operationMocks.searchCodebaseWithEffectiveness,
@@ -99,6 +100,7 @@ async function registerPiTools(): Promise<RegisteredPiRuntime> {
 
 describe("Pi adapter conformance", () => {
   beforeEach(() => {
+    operationMocks.runIndexCodebase.mockReset();
     operationMocks.getCallGraphData.mockReset();
     operationMocks.getCallGraphPath.mockReset();
     operationMocks.getIndexHealthCheck.mockReset();
@@ -702,5 +704,25 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("INDEX_BUSY");
     expect(result?.content[0]?.text).toContain("PID 4444");
     expect(result?.details).toEqual({ code: "INDEX_BUSY" });
+  });
+
+  it("returns a clear text failure when runIndexCodebase rejects with deprecated github-copilot config", async () => {
+    const errorMessage =
+      "`embeddingProvider: \"github-copilot\"` is deprecated and no longer available. " +
+      "Migrate existing configs to `embeddingProvider: \"google\"` and select an explicit Google model.";
+
+    operationMocks.runIndexCodebase.mockRejectedValue(new Error(errorMessage));
+    const { tools } = await registerPiTools();
+
+    const result = await tools.get("index_codebase")?.execute(
+      "tool-call",
+      { force: true },
+      new AbortController().signal,
+      () => {},
+      { cwd: "/repo" },
+    );
+
+    expect(result?.content[0]?.text).toContain("index_codebase failed:");
+    expect(result?.content[0]?.text).toContain(errorMessage);
   });
 });
