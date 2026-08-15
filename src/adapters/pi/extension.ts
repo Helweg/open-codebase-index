@@ -310,9 +310,12 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   pi.on("before_agent_start", (event) => ({
     systemPrompt:
       `${event.systemPrompt}\n\n` +
-      "Check index_status first when index readiness is unknown. For repository questions, call codebase_context before search/grep/bash/read-style broad reads. " +
-      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow. " +
-      "Avoid broad tool calls until semantic locations are known.",
+      "Check index_status first when index readiness is unknown. " +
+      "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
+      "not mechanically for every task. " +
+      "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
+      "Avoid repeating broad reads when the compact evidence already answers the question. " +
+      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.",
   }));
 
   pi.on("session_shutdown", async (_event, ctx) => {
