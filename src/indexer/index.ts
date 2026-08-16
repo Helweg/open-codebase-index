@@ -3816,7 +3816,22 @@ export class Indexer {
 
     for (const file of files) {
       const storedPath = this.toStoredFilePath(file.path);
-      const currentHash = hashFile(file.path);
+      let currentHash: string;
+      try {
+        currentHash = hashFile(file.path);
+      } catch (error) {
+        // A file that is unreadable at the OS level (e.g., an LSM denial that
+        // returns EPERM despite readable mode bits, or a permissions error)
+        // must not abort the whole index. The hash step opens the file; a bare
+        // throw here previously tore down the entire run. Skip the file and
+        // continue so the remaining files index.
+        stats.skippedFiles.push({ path: this.toCanonicalFilePath(file.path), reason: "unreadable" });
+        this.logger.warn("Skipped unreadable file during indexing", {
+          path: file.path,
+          error: getErrorMessage(error),
+        });
+        continue;
+      }
       currentFileHashes.set(storedPath, currentHash);
 
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
@@ -5071,7 +5086,20 @@ export class Indexer {
     );
     const currentFileHashes = new Map<string, string>();
     for (const file of files) {
-      currentFileHashes.set(this.toStoredFilePath(file.path), hashFile(file.path));
+      let hash: string;
+      try {
+        hash = hashFile(file.path);
+      } catch (error) {
+        // An unreadable file (OS-level EPERM/EACCES) makes freshness unknowable;
+        // treat the index as not-current so the next index_codebase run rebuilds
+        // (which skips unreadable files) instead of aborting here.
+        this.logger.warn("Skipped unreadable file during freshness check", {
+          path: file.path,
+          error: getErrorMessage(error),
+        });
+        return { readable: false, current: false, reason: "unreadable" };
+      }
+      currentFileHashes.set(this.toStoredFilePath(file.path), hash);
     }
 
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
