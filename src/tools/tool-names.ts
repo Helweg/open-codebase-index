@@ -86,4 +86,13 @@ export const PI_TOOL_NAMES = [
   TOOL_NAME.PI_KNOWLEDGE_BASE_REMOVE,
 ] as const;
 
-export const MCP_TOOL_NAMES = PORTABLE_TOOL_NAMES;
+// MCP clients expose the portable retrieval core plus the knowledge-base management tools.
+// Knowledge-base tools are intentionally NOT part of PORTABLE_TOOL_NAMES: that set is a Pi
+// contract (tests/pi-package.test.ts asserts Pi exposes every portable name), and Pi exposes
+// the knowledge-base tools under its own host-specific aliases (PI_KNOWLEDGE_BASE_*).
+export const MCP_TOOL_NAMES = [
+  ...PORTABLE_TOOL_NAMES,
+  TOOL_NAME.ADD_KNOWLEDGE_BASE,
+  TOOL_NAME.LIST_KNOWLEDGE_BASES,
+  TOOL_NAME.REMOVE_KNOWLEDGE_BASE,
+] as const;

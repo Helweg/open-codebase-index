@@ -460,7 +460,7 @@ describe("MCP server tools and prompts", () => {
     fs.rmSync(testMainRepo, { recursive: true, force: true });
   });
 
-  it("should register all 14 tools", async () => {
+  it("should register all 18 tools", async () => {
     const tools = await client.listTools();
 
     expect(tools.tools).toHaveLength(MCP_TOOL_NAMES.length);
