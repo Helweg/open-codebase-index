@@ -46,8 +46,11 @@ import {
 } from "../../tools/execute-common.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import {
+  addKnowledgeBase,
   findSimilarCode,
   getPrImpact,
+  listKnowledgeBases,
+  removeKnowledgeBase,
   searchCodebaseWithEffectiveness,
 } from "../../tools/operations.js";
 import type { McpServerRuntime } from "./shared.js";
@@ -55,6 +58,16 @@ import { TOOL_NAME } from "../../tools/tool-names.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
   return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;
+}
+
+// Knowledge-base operations report failures as plain strings prefixed with "Error: " (for
+// example a missing directory or a blocked sensitive directory) instead of throwing. Surface
+// those to MCP clients as isError so they can distinguish a refusal from success. Informational
+// results such as "Knowledge base already configured" or "Knowledge base not found" do not use
+// the prefix and remain successful results.
+function knowledgeBaseResult(text: string): { content: Array<{ type: "text"; text: string }>; isError?: true } {
+  const content = [{ type: "text" as const, text }];
+  return text.startsWith("Error: ") ? { content, isError: true } : { content };
 }
 
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
@@ -367,6 +380,51 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     async (args) => {
       const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args);
       return { content: [{ type: "text", text: result.text }] };
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.ADD_KNOWLEDGE_BASE,
+    "Add a folder as a knowledge base to the semantic search index. The folder is indexed "
+      + "alongside the project code on the next index run. Provide an absolute path or a path "
+      + "relative to the project root. The path is written to the project-local host config of "
+      + "this MCP server (under the server project root), not to a user-global config, and the "
+      + "index is refreshed. Git blame metadata is collected only for files in the project git "
+      + "repo; knowledge-base files outside the repo remain searchable by content but have no "
+      + "blame. A knowledge base that appears in list_knowledge_bases but was inherited from a "
+      + "global config cannot be removed by this tool.",
+    {
+      path: z.string().describe("Path to the folder to add as a knowledge base (absolute or relative to the project root)"),
+    },
+    async (args) => {
+      const result = addKnowledgeBase(runtime.projectRoot, runtime.host, args.path);
+      return knowledgeBaseResult(result);
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.LIST_KNOWLEDGE_BASES,
+    "List the configured knowledge base folders that the index includes alongside the project "
+      + "code. The list is the union of project-local and user-global knowledge bases; each entry "
+      + "shows the resolved path and whether it exists.",
+    {},
+    async () => {
+      const result = listKnowledgeBases(runtime.projectRoot, runtime.host);
+      return knowledgeBaseResult(result);
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.REMOVE_KNOWLEDGE_BASE,
+    "Remove a knowledge base folder from the semantic search index and refresh the index. The "
+      + "path must match a project-local configured path exactly. Knowledge bases inherited from "
+      + "a user-global config are not removable by this tool.",
+    {
+      path: z.string().describe("Path of the knowledge base to remove (must match a project-local configured path exactly)"),
+    },
+    async (args) => {
+      const result = removeKnowledgeBase(runtime.projectRoot, runtime.host, args.path.trim());
+      return knowledgeBaseResult(result);
     },
   );
 }

@@ -6,15 +6,16 @@ Tool availability depends on the host mode.
 
 | Host / integration | Tool surface | Additional capabilities |
 |---|---|---|
-| `opencode` (plugin) | 17 tools in total (13 portable MCP tools + 4 OpenCode-native tools) | Slash commands and native knowledge-base management |
-| MCP clients, including `codex`, `claude`, and `jcode` | 13 tools + 5 prompts | No OpenCode slash commands |
-| `pi` (Pi extension) | 16 tools total (13 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
+| `opencode` (plugin) | 19 tools in total (15 portable tools + 3 knowledge-base tools + 1 OpenCode-native tool) | Slash commands and `index_visualize` |
+| MCP clients, including `codex`, `claude`, and `jcode` | 18 tools + 5 prompts (15 portable tools + 3 knowledge-base tools) | Knowledge-base management for every MCP client; no OpenCode slash commands |
+| `pi` (Pi extension) | 18 tools total (15 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
 
-### Portable MCP core (13 tools)
+### Portable MCP core (15 tools)
 
 These tools are available through the MCP server and the OpenCode plugin.
 
 - `codebase_context`
+- `codebase_edit_context`
 - `codebase_search`
 - `codebase_peek`
 - `index_codebase`
@@ -27,6 +28,7 @@ These tools are available through the MCP server and the OpenCode plugin.
 - `call_graph`
 - `call_graph_path`
 - `pr_impact`
+- `code_communities`
 
 The MCP server also exposes five prompts:
 
@@ -36,26 +38,41 @@ The MCP server also exposes five prompts:
 - `index`
 - `status`
 
-### OpenCode-only tools and commands
+### Knowledge-base tools
 
-OpenCode adds four extra tools beyond the core MCP set.
+The MCP server and the OpenCode plugin expose the same three knowledge-base tools. The index is the union of the project code and the configured knowledge-base folders.
 
 - `add_knowledge_base`
 - `list_knowledge_bases`
 - `remove_knowledge_base`
+
+Notes for MCP clients:
+
+- `add_knowledge_base` writes the path to the **project-local** host config of the MCP server (for example `<repo>/.claude/codebase-index.json` for the `claude` host, or `<repo>/.codebase-index/config.json` for `codex`, `jcode`, and `pi`), and refreshes the index. It is not a user-global change.
+- The MCP server runs at a fixed project root (`process.cwd()` or `--project`) for its lifetime. Knowledge-base tools operate on that root and the server host config; they are not per-call worktree-aware. For worktree-local knowledge-base management, use OpenCode or Pi.
+- Different MCP hosts pointed at the same repository keep separate knowledge-base lists in separate host config files.
+- `list_knowledge_bases` shows the union of project-local and user-global knowledge bases. `remove_knowledge_base` edits only the project-local config, so a knowledge base inherited from a user-global config is not removable by this tool.
+- Git blame metadata is collected only for files in the project git repository. Knowledge-base files outside the repository remain searchable by content but have no blame, so `blameAuthor`, `blameSha`, and `blameSince` filters match only in-repo files.
+
+### OpenCode-only tools and commands
+
+OpenCode adds one extra tool beyond the shared MCP and OpenCode set:
+
 - `index_visualize`
+
+`index_visualize` generates an interactive HTML view of recent code movement and the call graph.
 
 OpenCode also exposes slash commands (see [OpenCode slash commands](#opencode-slash-commands)).
 
 ### Pi naming notes
 
-Pi does not expose the OpenCode-native knowledge-base names. It registers equivalent tools with host-specific names:
+Pi does not expose the shared knowledge-base names. It registers equivalent tools with host-specific names:
 
 - `knowledge_base_list`
 - `knowledge_base_add`
 - `knowledge_base_remove`
 
-Pi exposes all 13 portable tools, including `call_graph` and `call_graph_path`, plus its three host-specific knowledge-base aliases.
+Pi exposes all 15 portable tools, including `call_graph` and `call_graph_path`, plus its three host-specific knowledge-base aliases.
 
 ## Recommended selection order
 
@@ -146,11 +163,8 @@ Analyzes changed files, affected symbols, transitive dependencies, graph communi
 
 ## OpenCode-native tools
 
-OpenCode registers the 13 portable tools above plus:
+OpenCode registers the 15 portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:
 
-- `add_knowledge_base`
-- `list_knowledge_bases`
-- `remove_knowledge_base`
 - `index_visualize`
 
 `index_visualize` generates an interactive HTML view of recent code movement and the call graph.

@@ -176,7 +176,7 @@ The index stores reusable content by hash and maintains branch catalogs for chun
 
 ## Knowledge bases and reranking
 
-OpenCode and Pi can index additional directories as knowledge bases. Configure them with `knowledgeBases` or use the host-native knowledge-base tools where available.
+OpenCode, Pi, and every MCP client can index additional directories as knowledge bases. Configure them with `knowledgeBases`, or use the knowledge-base tools: `add_knowledge_base`, `list_knowledge_bases`, and `remove_knowledge_base` for MCP clients and OpenCode, and `knowledge_base_add`, `knowledge_base_list`, and `knowledge_base_remove` for Pi.
 
 Optional external reranking supports Cohere, Jina, and custom compatible endpoints. Local filtering and evidence classes are applied before external candidates are submitted.
 
