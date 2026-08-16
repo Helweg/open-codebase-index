@@ -166,6 +166,7 @@ export const codebase_peek: ToolDefinition = tool({
     blameAuthor: z.string().optional().describe("Filter by git blame author name or email"),
     blameSha: z.string().optional().describe("Filter by git blame commit SHA or prefix"),
     blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date (e.g., 2025-01-01)"),
+    blameUntil: z.string().optional().describe("Filter to chunks last changed on or before this date (e.g., 2025-01-31)"),
   },
   async execute(args, context) {
     return searchCodebaseWithEffectiveness(context?.worktree, DEFAULT_HOST, "peek", args.query, {
@@ -177,6 +178,7 @@ export const codebase_peek: ToolDefinition = tool({
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
+      blameUntil: args.blameUntil,
     }, (results) => {
       const text = formatCodebasePeek(results);
       return { output: text, text };
@@ -251,6 +253,8 @@ export const find_similar: ToolDefinition = tool({
     directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
     chunkType: z.enum(CHUNK_TYPE_VALUES).optional().describe("Filter by code chunk type"),
     excludeFile: z.string().optional().describe("Exclude results from this file path (useful when searching for duplicates of code from a specific file)"),
+    blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date (e.g., 2025-01-01)"),
+    blameUntil: z.string().optional().describe("Filter to chunks last changed on or before this date (e.g., 2025-01-31)"),
   },
   async execute(args, context) {
     const results = await findSimilarCode(context?.worktree, DEFAULT_HOST, args.code, {
@@ -259,6 +263,8 @@ export const find_similar: ToolDefinition = tool({
       directory: args.directory,
       chunkType: args.chunkType,
       excludeFile: args.excludeFile,
+      blameSince: args.blameSince,
+      blameUntil: args.blameUntil,
     });
 
     if (results.length === 0) {
@@ -282,6 +288,7 @@ export const codebase_search: ToolDefinition = tool({
     blameAuthor: z.string().optional().describe("Filter by git blame author name or email"),
     blameSha: z.string().optional().describe("Filter by git blame commit SHA or prefix"),
     blameSince: z.string().optional().describe("Filter to chunks last changed on or after this date (e.g., 2025-01-01)"),
+    blameUntil: z.string().optional().describe("Filter to chunks last changed on or before this date (e.g., 2025-01-31)"),
   },
   async execute(args, context) {
     return searchCodebaseWithEffectiveness(context?.worktree, DEFAULT_HOST, "search", args.query, {
@@ -293,6 +300,7 @@ export const codebase_search: ToolDefinition = tool({
       blameAuthor: args.blameAuthor,
       blameSha: args.blameSha,
       blameSince: args.blameSince,
+      blameUntil: args.blameUntil,
     }, (results) => {
       const text = results.length === 0
         ? "No matching code found. Try a different query or run index_codebase first."

@@ -61,6 +61,7 @@ const indexerMockState = vi.hoisted(() => ({
   instances: [] as Array<{
     initialize: ReturnType<typeof vi.fn>;
     search: ReturnType<typeof vi.fn>;
+    findSimilar: ReturnType<typeof vi.fn>;
     getStatus: ReturnType<typeof vi.fn>;
     getCallGraphSymbols: ReturnType<typeof vi.fn>;
     getCallersForSymbol: ReturnType<typeof vi.fn>;
@@ -148,6 +149,7 @@ vi.mock("../src/indexer/index.js", () => {
       indexerMockState.instances.push({
         initialize: this.initialize,
         search: this.search,
+        findSimilar: this.findSimilar,
         getStatus: this.getStatus,
         getCallGraphSymbols: this.getCallGraphSymbols,
         getCallersForSymbol: this.getCallersForSymbol,
@@ -566,6 +568,7 @@ describe("MCP server tools and prompts", () => {
         blameAuthor: null,
         blameSha: null,
         blameSince: null,
+        blameUntil: null,
       },
     });
 
@@ -575,6 +578,26 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 results");
     expect(content[0].text).toContain("validateToken");
+  });
+
+  it("should forward temporal bounds to search", async () => {
+    await client.callTool({
+      name: "codebase_search",
+      arguments: {
+        query: "test query",
+        blameSince: "2025-01-01",
+        blameUntil: "2025-01-31",
+      },
+    });
+
+    expect(indexerMockState.instances[0]?.search).toHaveBeenCalledWith(
+      "test query",
+      5,
+      expect.objectContaining({
+        blameSince: "2025-01-01",
+        blameUntil: "2025-01-31",
+      }),
+    );
   });
 
   it("should execute codebase_peek tool", async () => {
@@ -763,6 +786,7 @@ describe("MCP server tools and prompts", () => {
         blameAuthor: null,
         blameSha: null,
         blameSince: null,
+        blameUntil: null,
       },
     });
 
@@ -1279,6 +1303,39 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("Found 1 similar");
+  });
+
+  it("should execute find_similar with null temporal fields", async () => {
+    const result = await client.callTool({
+      name: "find_similar",
+      arguments: {
+        code: "function test() {}",
+        blameSince: null,
+        blameUntil: null,
+      },
+    });
+
+    expect(result.content).toBeDefined();
+  });
+
+  it("should forward temporal bounds to find_similar", async () => {
+    await client.callTool({
+      name: "find_similar",
+      arguments: {
+        code: "function test() {}",
+        blameSince: "2025-01-01",
+        blameUntil: "2025-01-31",
+      },
+    });
+
+    expect(indexerMockState.instances[0]?.findSimilar).toHaveBeenCalledWith(
+      "function test() {}",
+      10,
+      expect.objectContaining({
+        blameSince: "2025-01-01",
+        blameUntil: "2025-01-31",
+      }),
+    );
   });
 
   it("should execute implementation_lookup tool", async () => {

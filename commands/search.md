@@ -14,6 +14,7 @@ The first part is the search query. Look for optional parameters:
 - `author=X` or `blameAuthor=X` → set blameAuthor filter
 - `sha=X` or `blameSha=X` → set blameSha filter
 - `since=YYYY-MM-DD` or `blameSince=YYYY-MM-DD` → set blameSince filter
+- `until=YYYY-MM-DD` or `blameUntil=YYYY-MM-DD` → set blameUntil filter
 
 Call `codebase_search` with the parsed arguments.
 
@@ -21,7 +22,7 @@ Examples:
 - `/search authentication logic` → query="authentication logic"
 - `/search error handling limit=5` → query="error handling", limit=5
 - `/search validation functions` → query="validation", chunkType="function"
-- `/search auth logic author=jane@example.com since=2025-01-01` → query="auth logic", blameAuthor="jane@example.com", blameSince="2025-01-01"
+- `/search auth logic author=jane@example.com since=2025-01-01 until=2025-01-31` → query="auth logic", blameAuthor="jane@example.com", blameSince="2025-01-01", blameUntil="2025-01-31"
 
 If the index doesn't exist, run `index_codebase` first.
 

@@ -666,6 +666,45 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       });
       expect(sinceResults).toHaveLength(1);
       expect(sinceResults[0]?.filePath).toContain("payments.ts");
+
+      const untilResults = await indexer.search("session token payment flow", 5, {
+        metadataOnly: true,
+        filterByBranch: false,
+        blameUntil: "2025-03-14",
+      });
+      expect(untilResults).toHaveLength(1);
+      expect(untilResults[0]?.filePath).toContain("auth.ts");
+
+      const boundedResults = await indexer.search("session token payment flow", 5, {
+        metadataOnly: true,
+        filterByBranch: false,
+        blameSince: "2025-03-01T00:00:00Z",
+        blameUntil: "2025-03-31T23:59:59Z",
+      });
+      expect(boundedResults).toHaveLength(1);
+      expect(boundedResults[0]?.filePath).toContain("auth.ts");
+
+      const recentSimilar = await indexer.findSimilar(
+        `export function validateSession() { return "auth session token"; }`,
+        5,
+        {
+          filterByBranch: false,
+          blameSince: "2025-03-20T00:00:00Z",
+        },
+      );
+      expect(recentSimilar).toHaveLength(1);
+      expect(recentSimilar[0]?.filePath).toContain("payments.ts");
+
+      const olderSimilar = await indexer.findSimilar(
+        `export function chargeCard() { return "payment flow"; }`,
+        5,
+        {
+          filterByBranch: false,
+          blameUntil: "2025-03-14",
+        },
+      );
+      expect(olderSimilar).toHaveLength(1);
+      expect(olderSimilar[0]?.filePath).toContain("auth.ts");
     } finally {
       fs.rmSync(authoredDir, { recursive: true, force: true });
     }

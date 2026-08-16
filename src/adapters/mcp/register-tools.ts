@@ -138,6 +138,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
       blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
+      blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
     async (args) => {
       return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "search", args.query, {
@@ -149,6 +150,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
+        blameUntil: args.blameUntil,
       }, (results) => {
         const text = results.length === 0
           ? "No matching code found. Try a different query or run index_codebase first."
@@ -170,6 +172,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameAuthor: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame author name or email"),
       blameSha: allowNullAsUndefined(z.string().optional()).describe("Filter by git blame commit SHA or prefix"),
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
+      blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
     async (args) => {
       return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "peek", args.query, {
@@ -181,6 +184,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         blameAuthor: args.blameAuthor,
         blameSha: args.blameSha,
         blameSince: args.blameSince,
+        blameUntil: args.blameUntil,
       }, (results) => {
         const text = results.length === 0
           ? "No matching code found. Try a different query or run index_codebase first."
@@ -264,6 +268,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
       chunkType: allowNullAsUndefined(z.enum(CHUNK_TYPES).optional()).describe("Filter by code chunk type"),
       excludeFile: allowNullAsUndefined(z.string().optional()).describe("Exclude results from this file path"),
+      blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
+      blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
     async (args) => {
       const results = await findSimilarCode(runtime.projectRoot, runtime.host, args.code, {
@@ -272,6 +278,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         directory: args.directory,
         chunkType: args.chunkType,
         excludeFile: args.excludeFile,
+        blameSince: args.blameSince,
+        blameUntil: args.blameUntil,
       });
 
       if (results.length === 0) {

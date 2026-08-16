@@ -418,6 +418,18 @@ impl Database {
     }
 
     #[napi]
+    pub fn get_chunk_ids_by_blame_date(
+        &self,
+        since: Option<i64>,
+        until: Option<i64>,
+    ) -> Result<Vec<String>> {
+        self.with_conn(|conn| {
+            db::get_chunk_ids_by_blame_date(conn, since, until)
+                .map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
     pub fn get_branch_delta(&self, branch: String, base_branch: String) -> Result<BranchDelta> {
         self.with_conn(|conn| {
             let delta = db::get_branch_delta(conn, &branch, &base_branch)

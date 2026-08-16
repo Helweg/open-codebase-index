@@ -114,6 +114,19 @@ impl VectorStore {
     }
 
     #[napi]
+    pub fn search_filtered(
+        &self,
+        query_vector: Vec<f64>,
+        limit: u32,
+        allowed_ids: Vec<String>,
+    ) -> Result<Vec<SearchResult>> {
+        let query_f32: Vec<f32> = query_vector.iter().map(|&x| x as f32).collect();
+        self.inner
+            .search_filtered(&query_f32, limit as usize, &allowed_ids)
+            .map_err(|e| Error::from_reason(e.to_string()))
+    }
+
+    #[napi]
     pub fn remove(&mut self, id: String) -> Result<bool> {
         self.inner
             .remove(&id)

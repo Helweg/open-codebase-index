@@ -105,6 +105,7 @@ describe("native OpenCode codebase_context", () => {
       blameAuthor: undefined,
       blameSha: undefined,
       blameSince: undefined,
+      blameUntil: undefined,
     }, context);
     expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", "peek", "request routing", expect.objectContaining({
       metadataOnly: true,
@@ -120,6 +121,7 @@ describe("native OpenCode codebase_context", () => {
       blameAuthor: undefined,
       blameSha: undefined,
       blameSince: undefined,
+      blameUntil: undefined,
     }, context);
     expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenLastCalledWith(
       "/repo",
@@ -143,6 +145,7 @@ describe("native OpenCode codebase_context", () => {
       blameAuthor: undefined,
       blameSha: undefined,
       blameSince: undefined,
+      blameUntil: undefined,
     }, context);
     expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
     expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", expect.objectContaining({
@@ -174,6 +177,7 @@ describe("native OpenCode codebase_context", () => {
       blameAuthor: undefined,
       blameSha: undefined,
       blameSince: undefined,
+      blameUntil: undefined,
     }, context)).rejects.toThrow("OpenCode formatter failed");
     expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
     expect(operationMocks.recordToolEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", expect.objectContaining({

@@ -937,6 +937,31 @@ pub fn get_branch_chunk_ids(conn: &Connection, branch: &str) -> DbResult<Vec<Str
     Ok(results)
 }
 
+/// Get chunk IDs whose blame commit timestamp is within the inclusive bounds.
+/// A temporal filter excludes chunks without blame metadata.
+pub fn get_chunk_ids_by_blame_date(
+    conn: &Connection,
+    since: Option<i64>,
+    until: Option<i64>,
+) -> DbResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        r#"
+        SELECT chunk_id FROM chunks
+        WHERE blame_committed_at IS NOT NULL
+          AND (?1 IS NULL OR blame_committed_at >= ?1)
+          AND (?2 IS NULL OR blame_committed_at <= ?2)
+        ORDER BY chunk_id
+        "#,
+    )?;
+    let rows = stmt.query_map(params![since, until], |row| row.get::<_, String>(0))?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
 /// Get chunks that exist on branch A but not on branch B (delta)
 pub fn get_branch_delta(
     conn: &Connection,

@@ -35,13 +35,15 @@ export class VectorStore {
     this.inner.addBatch(ids, vectors, metadata);
   }
 
-  search(queryVector: number[], limit: number = 10): SearchResult[] {
+  search(queryVector: number[], limit: number = 10, allowedIds?: string[]): SearchResult[] {
     if (queryVector.length !== this.dimensions) {
       throw new Error(
         `Query vector dimension mismatch: expected ${this.dimensions}, got ${queryVector.length}`
       );
     }
-    const results = this.inner.search(queryVector, limit);
+    const results = allowedIds === undefined
+      ? this.inner.search(queryVector, limit)
+      : this.inner.searchFiltered(queryVector, limit, allowedIds);
     return results.map((r: any) => ({
       id: r.id,
       score: r.score,
