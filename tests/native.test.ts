@@ -865,6 +865,30 @@ const values = [1, 2].map(item => item * 2);
       expect(results[0].id).toBe("chunk1");
     });
 
+    it("should search only within allowed vector IDs", () => {
+      store.add("closest", [1, 0, 0], {
+        filePath: "closest.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "closest",
+      });
+      store.add("allowed", [0, 1, 0], {
+        filePath: "allowed.ts",
+        startLine: 1,
+        endLine: 5,
+        chunkType: "function",
+        language: "typescript",
+        hash: "allowed",
+      });
+
+      expect(store.search([1, 0, 0], 1)[0]?.id).toBe("closest");
+      expect(store.search([1, 0, 0], 1, ["allowed"])).toMatchObject([{ id: "allowed" }]);
+      expect(store.search([1, 0, 0], 1, [])).toEqual([]);
+      expect(store.search([1, 0, 0], 1, ["missing"])).toEqual([]);
+    });
+
     it("should remove vectors", () => {
       store.add("chunk1", [1, 0, 0], {
         filePath: "test.ts",

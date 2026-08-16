@@ -233,6 +233,7 @@ export async function searchCodebase(
     blameAuthor?: string;
     blameSha?: string;
     blameSince?: string;
+    blameUntil?: string;
     trace?: (trace: SearchTrace) => void;
   } = {},
 ): Promise<SearchResult[]> {
@@ -249,6 +250,7 @@ export async function searchCodebase(
     blameAuthor: options.blameAuthor,
     blameSha: options.blameSha,
     blameSince: options.blameSince,
+    blameUntil: options.blameUntil,
     trace: options.trace,
   });
 }
@@ -306,6 +308,8 @@ export async function findSimilarCode(
     directory?: string;
     chunkType?: string;
     excludeFile?: string;
+    blameSince?: string;
+    blameUntil?: string;
   } = {},
 ): Promise<Awaited<ReturnType<Indexer["findSimilar"]>>> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
@@ -315,6 +319,8 @@ export async function findSimilarCode(
     directory: options.directory,
     chunkType: options.chunkType,
     excludeFile: options.excludeFile,
+    blameSince: options.blameSince,
+    blameUntil: options.blameUntil,
   });
 }
 

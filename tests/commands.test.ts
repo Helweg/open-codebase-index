@@ -222,6 +222,8 @@ Final line.`;
       expect(searchCmd.template).toContain("blameAuthor");
       expect(searchCmd.template).toContain("blameSha");
       expect(searchCmd.template).toContain("blameSince");
+      expect(searchCmd.template).toContain("blameUntil");
+      expect(peekCmd.template).toContain("blameUntil");
     });
   });
 });

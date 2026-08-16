@@ -156,6 +156,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameAuthor: Type.Optional(Type.String({ description: "Filter by git blame author name or email" })),
       blameSha: Type.Optional(Type.String({ description: "Filter by git blame commit SHA or prefix" })),
       blameSince: Type.Optional(Type.String({ description: "Filter to chunks last changed on or after this date" })),
+      blameUntil: Type.Optional(Type.String({ description: "Filter to chunks last changed on or before this date" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "search", params.query, {
@@ -183,6 +184,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       blameAuthor: Type.Optional(Type.String()),
       blameSha: Type.Optional(Type.String()),
       blameSince: Type.Optional(Type.String()),
+      blameUntil: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "peek", params.query, {
@@ -206,6 +208,8 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       directory: Type.Optional(Type.String()),
       chunkType: Type.Optional(ChunkType),
       excludeFile: Type.Optional(Type.String()),
+      blameSince: Type.Optional(Type.String({ description: "Filter to chunks last changed on or after this date" })),
+      blameUntil: Type.Optional(Type.String({ description: "Filter to chunks last changed on or before this date" })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const results = await findSimilarCode(projectRoot(ctx), HOST, params.code, params);

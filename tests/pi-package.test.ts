@@ -60,10 +60,14 @@ describe("Pi package integration", () => {
 
     const searchParams = JSON.stringify(tools.find((tool) => tool.name === TOOL_NAME.CODEBASE_SEARCH)?.parameters);
     const peekParams = JSON.stringify(tools.find((tool) => tool.name === TOOL_NAME.CODEBASE_PEEK)?.parameters);
+    const similarParams = JSON.stringify(tools.find((tool) => tool.name === TOOL_NAME.FIND_SIMILAR)?.parameters);
     for (const params of [searchParams, peekParams]) {
       expect(params).toContain("blameAuthor");
       expect(params).toContain("blameSha");
       expect(params).toContain("blameSince");
+      expect(params).toContain("blameUntil");
     }
+    expect(similarParams).toContain("blameSince");
+    expect(similarParams).toContain("blameUntil");
   });
 });

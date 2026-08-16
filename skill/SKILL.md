@@ -77,14 +77,14 @@ Find code with full content. Use when you need to see implementation.
 
 ```
 codebase_search(query="error handling middleware", fileType="ts", contextLines=2)
-codebase_search(query="rate limiter", blameSince="2025-01-01")
+codebase_search(query="rate limiter", blameSince="2025-01-01", blameUntil="2025-01-31")
 ```
 
 ### `find_similar`
 Find code similar to a given snippet. Use for duplicate detection, pattern discovery, refactoring.
 
 ```
-find_similar(code="function validate(input) { return input.length > 0; }", excludeFile="src/current.ts")
+find_similar(code="function validate(input) { return input.length > 0; }", excludeFile="src/current.ts", blameSince="2025-01-01")
 ```
 
 ### `call_graph`
@@ -137,3 +137,4 @@ remove_knowledge_base(path="/path/to/docs")
 | `blameAuthor` | `"jane@example.com"` or `"Jane Doe"` |
 | `blameSha` | `"abc1234"` |
 | `blameSince` | `"2025-01-01"` |
+| `blameUntil` | `"2025-01-31"` |

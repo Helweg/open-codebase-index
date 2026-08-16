@@ -1,7 +1,7 @@
 use crate::{hasher::xxhash_file, SearchResult};
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -240,6 +240,32 @@ impl VectorStoreInner {
     }
 
     pub fn search(&self, query_vector: &[f32], limit: usize) -> Result<Vec<SearchResult>> {
+        self.search_with_allowed_keys(query_vector, limit, None)
+    }
+
+    pub fn search_filtered(
+        &self,
+        query_vector: &[f32],
+        limit: usize,
+        allowed_keys: &[String],
+    ) -> Result<Vec<SearchResult>> {
+        let allowed_ids = allowed_keys
+            .iter()
+            .filter_map(|key| self.stored.key_to_id.get(key).copied())
+            .collect::<HashSet<_>>();
+        if allowed_ids.is_empty() || limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        self.search_with_allowed_keys(query_vector, limit, Some(&allowed_ids))
+    }
+
+    fn search_with_allowed_keys(
+        &self,
+        query_vector: &[f32],
+        limit: usize,
+        allowed_ids: Option<&HashSet<u64>>,
+    ) -> Result<Vec<SearchResult>> {
         if query_vector.len() != self.dimensions {
             return Err(anyhow!(
                 "Query vector dimension mismatch: expected {}, got {}",
@@ -248,7 +274,12 @@ impl VectorStoreInner {
             ));
         }
 
-        let results = self.index.search(query_vector, limit)?;
+        let results = match allowed_ids {
+            Some(ids) => self
+                .index
+                .filtered_search(query_vector, limit, |id| ids.contains(&id))?,
+            None => self.index.search(query_vector, limit)?,
+        };
 
         let mut search_results = Vec::with_capacity(results.keys.len());
 
@@ -523,6 +554,26 @@ mod tests {
         let results = store.search(&[1.0, 0.0, 0.0], 2).unwrap();
         assert!(!results.is_empty());
         assert_eq!(results[0].id, "vec1");
+    }
+
+    #[test]
+    fn test_vector_store_filtered_search() {
+        let dir = tempdir().unwrap();
+        let index_path = dir.path().join("test.usearch");
+        let mut store = VectorStoreInner::new(index_path, 3).unwrap();
+
+        store.add("closest", &[1.0, 0.0, 0.0], "meta1").unwrap();
+        store.add("allowed", &[0.0, 1.0, 0.0], "meta2").unwrap();
+
+        let results = store
+            .search_filtered(&[1.0, 0.0, 0.0], 1, &["allowed".to_string()])
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].id, "allowed");
+        assert!(store
+            .search_filtered(&[1.0, 0.0, 0.0], 1, &[])
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

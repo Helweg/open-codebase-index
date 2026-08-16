@@ -401,6 +401,7 @@ interface SearchOptions {
   blameAuthor?: string;
   blameSha?: string;
   blameSince?: string;
+  blameUntil?: string;
   trace?: (trace: SearchTrace) => void;
 }
 
@@ -527,7 +528,17 @@ type SearchFilterOptions = {
   blameAuthor?: string;
   blameSha?: string;
   blameSince?: string;
+  blameUntil?: string;
 };
+
+function parseBlameTimestamp(value: string, endOfDay: boolean): number | null {
+  let timestampMs = Date.parse(value);
+  if (Number.isNaN(timestampMs)) return null;
+  if (endOfDay && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    timestampMs += 24 * 60 * 60 * 1000 - 1;
+  }
+  return Math.floor(timestampMs / 1000);
+}
 
 function metadataFromBlame(blame: GitBlameMetadata | undefined): Partial<ChunkMetadata> {
   if (!blame) {
@@ -1083,10 +1094,17 @@ function matchesHardSearchFilters(
   }
 
   if (options?.blameSince) {
-    const sinceMs = Date.parse(options.blameSince);
-    if (Number.isNaN(sinceMs)) return false;
+    const since = parseBlameTimestamp(options.blameSince, false);
+    if (since === null) return false;
     const committedAt = candidate.metadata.blameCommittedAt;
-    if (committedAt === undefined || committedAt < Math.floor(sinceMs / 1000)) return false;
+    if (committedAt === undefined || committedAt < since) return false;
+  }
+
+  if (options?.blameUntil) {
+    const until = parseBlameTimestamp(options.blameUntil, true);
+    if (until === null) return false;
+    const committedAt = candidate.metadata.blameCommittedAt;
+    if (committedAt === undefined || committedAt > until) return false;
   }
 
   return true;
@@ -4600,39 +4618,64 @@ export class Indexer {
     };
   }
 
-  private searchCandidatesWithBranchPrefilter<T>(
+  private searchCandidatesWithAllowedIds<T>(
     initialLimit: number,
     totalCount: number,
-    branchChunkIds: Set<string> | null,
-    shouldPrefilterByBranch: boolean,
+    allowedChunkIds: Set<string> | null,
+    shouldPrefilter: boolean,
     search: (limit: number) => T[],
     getChunkId: (candidate: T) => string,
   ): T[] {
     const normalizedLimit = Math.max(0, Math.floor(initialLimit));
     if (normalizedLimit === 0) return [];
-    if (!shouldPrefilterByBranch || !branchChunkIds) {
+    if (!shouldPrefilter || !allowedChunkIds) {
       return search(normalizedLimit);
     }
 
-    const targetCount = Math.min(normalizedLimit, branchChunkIds.size);
+    const targetCount = Math.min(normalizedLimit, allowedChunkIds.size);
     if (targetCount === 0 || totalCount === 0) return [];
 
     let requestedLimit = Math.min(normalizedLimit, totalCount);
     while (true) {
       const results = search(requestedLimit);
-      const branchResults = results.filter((candidate) => branchChunkIds.has(getChunkId(candidate)));
+      const allowedResults = results.filter((candidate) => allowedChunkIds.has(getChunkId(candidate)));
       if (
-        branchResults.length >= targetCount
+        allowedResults.length >= targetCount
         || results.length < requestedLimit
         || requestedLimit >= totalCount
       ) {
-        return branchResults;
+        return allowedResults;
       }
 
       const nextLimit = Math.min(totalCount, Math.max(requestedLimit + 1, requestedLimit * 2));
-      if (nextLimit === requestedLimit) return branchResults;
+      if (nextLimit === requestedLimit) return allowedResults;
       requestedLimit = nextLimit;
     }
+  }
+
+  private getTemporalChunkIds(
+    database: Database,
+    options: Pick<SearchFilterOptions, "blameSince" | "blameUntil"> | undefined,
+  ): Set<string> | null {
+    if (!options?.blameSince && !options?.blameUntil) return null;
+
+    const since = options.blameSince ? parseBlameTimestamp(options.blameSince, false) : undefined;
+    const until = options.blameUntil ? parseBlameTimestamp(options.blameUntil, true) : undefined;
+    if (since === null || until === null) {
+      return new Set();
+    }
+
+    return new Set(database.getChunkIdsByBlameDate(since, until));
+  }
+
+  private intersectChunkIdSets(
+    first: Set<string> | null,
+    second: Set<string> | null,
+  ): Set<string> | null {
+    if (first === null) return second;
+    if (second === null) return first;
+    const [smaller, larger] = first.size <= second.size ? [first, second] : [second, first];
+    return new Set(Array.from(smaller).filter((chunkId) => larger.has(chunkId)));
   }
 
   private buildCandidateSnapshot(candidate: RankedCandidate): CandidateSnapshot {
@@ -4657,13 +4700,17 @@ export class Indexer {
     initialLimit: number,
     branchChunkIds: Set<string> | null,
     shouldPrefilterByBranch: boolean,
+    temporalChunkIds: Set<string> | null,
   ): RankedCandidate[] {
-    return this.searchCandidatesWithBranchPrefilter(
-      initialLimit,
-      store.count(),
+    const availableCount = temporalChunkIds?.size ?? store.count();
+    if (availableCount === 0) return [];
+    const allowedIds = temporalChunkIds === null ? undefined : Array.from(temporalChunkIds);
+    return this.searchCandidatesWithAllowedIds(
+      Math.min(initialLimit, availableCount),
+      availableCount,
       branchChunkIds,
       shouldPrefilterByBranch,
-      (requestedLimit) => store.search(embedding, requestedLimit),
+      (requestedLimit) => store.search(embedding, requestedLimit, allowedIds),
       (candidate) => candidate.id,
     );
   }
@@ -4737,6 +4784,7 @@ export class Indexer {
       branchChunkIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchChunkIds(branchKey)));
       branchSymbolIds = new Set(branchCatalogKeys.flatMap((branchKey) => database.getBranchSymbolIds(branchKey)));
     }
+    const temporalChunkIds = this.getTemporalChunkIds(database, options);
     const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
       this.getBranchPrefilterState(database, branchChunkIds);
     const prefilterMs = performance.now() - prefilterStartTime;
@@ -4749,6 +4797,7 @@ export class Indexer {
           candidateLimit,
           branchChunkIds,
           shouldPrefilterByBranch,
+          temporalChunkIds,
         )
       : [];
     const vectorMs = performance.now() - vectorStartTime;
@@ -4761,6 +4810,7 @@ export class Indexer {
       invertedIndex,
       branchChunkIds,
       shouldPrefilterByBranch,
+      temporalChunkIds,
     );
     const keywordMs = performance.now() - keywordStartTime;
 
@@ -4968,15 +5018,20 @@ export class Indexer {
     invertedIndex: InvertedIndex,
     branchChunkIds: Set<string> | null = null,
     shouldPrefilterByBranch = false,
+    temporalChunkIds: Set<string> | null = null,
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const normalizedLimit = Math.max(0, Math.floor(limit));
     if (normalizedLimit === 0) return [];
 
-    const scoreEntries = this.searchCandidatesWithBranchPrefilter(
+    const allowedChunkIds = this.intersectChunkIdSets(
+      shouldPrefilterByBranch ? branchChunkIds : null,
+      temporalChunkIds,
+    );
+    const scoreEntries = this.searchCandidatesWithAllowedIds(
       normalizedLimit,
       invertedIndex.getDocumentCount(),
-      branchChunkIds,
-      shouldPrefilterByBranch,
+      allowedChunkIds,
+      allowedChunkIds !== null,
       (requestedLimit) => Array.from(invertedIndex.search(query, requestedLimit)),
       ([chunkId]) => chunkId,
     );
@@ -5497,6 +5552,8 @@ export class Indexer {
       chunkType?: string;
       excludeFile?: string;
       filterByBranch?: boolean;
+      blameSince?: string;
+      blameUntil?: string;
     }
   ): Promise<SearchResult[]> {
     const { store, provider, database, readIssues, compatibility } = await this.ensureInitialized();
@@ -5539,6 +5596,7 @@ export class Indexer {
         this.getBranchCatalogKeys().flatMap((branchKey) => database.getBranchChunkIds(branchKey))
       );
     }
+    const temporalChunkIds = this.getTemporalChunkIds(database, options);
     const { hasInitializedBranchCatalog, shouldPrefilterByBranch } =
       this.getBranchPrefilterState(database, branchChunkIds);
     const prefilterMs = performance.now() - prefilterStartTime;
@@ -5550,6 +5608,7 @@ export class Indexer {
       limit * 2,
       branchChunkIds,
       shouldPrefilterByBranch,
+      temporalChunkIds,
     );
     const vectorMs = performance.now() - vectorStartTime;
 

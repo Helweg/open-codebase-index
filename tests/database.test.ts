@@ -315,6 +315,20 @@ describe("Database", () => {
       expect(db.getChunk("chunk_abc123")).toBeNull();
       expect(db.getChunk("chunk_def456")).not.toBeNull();
     });
+
+    it("should return chunk IDs within inclusive blame date bounds", () => {
+      db.upsertChunksBatch([
+        { ...testChunk, chunkId: "older", blameCommittedAt: 100 },
+        { ...testChunk, chunkId: "middle", blameCommittedAt: 200 },
+        { ...testChunk, chunkId: "newer", blameCommittedAt: 300 },
+        { ...testChunk, chunkId: "untracked" },
+      ]);
+
+      expect(db.getChunkIdsByBlameDate(200)).toEqual(["middle", "newer"]);
+      expect(db.getChunkIdsByBlameDate(undefined, 200)).toEqual(["middle", "older"]);
+      expect(db.getChunkIdsByBlameDate(200, 200)).toEqual(["middle"]);
+      expect(db.getChunkIdsByBlameDate(301, 400)).toEqual([]);
+    });
   });
 
   describe("branch_chunks", () => {

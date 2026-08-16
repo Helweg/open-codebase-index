@@ -181,6 +181,11 @@ export class Database {
     return this.inner.getBranchChunkIds(branch);
   }
 
+  getChunkIdsByBlameDate(since?: number, until?: number): string[] {
+    this.throwIfClosed();
+    return this.inner.getChunkIdsByBlameDate(since, until);
+  }
+
   getBranchDelta(branch: string, baseBranch: string): BranchDelta {
     this.throwIfClosed();
     return this.inner.getBranchDelta(branch, baseBranch);
