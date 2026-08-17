@@ -1,6 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
+import { parseConfig } from "../../config/schema.js";
+import { loadMergedConfig } from "../../config/merger.js";
 import { formatCostEstimate } from "../../utils/cost.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import { formatCodeCommunities } from "../../tools/format-communities.js";
@@ -11,6 +13,7 @@ import {
   getIndexMetrics,
   getIndexStatus,
   getPrImpact,
+  getIndexerForProject,
   getCodeCommunities,
   implementationLookup,
   listKnowledgeBases,
@@ -39,7 +42,9 @@ import {
 } from "../../tools/context.js";
 import { resolveCodebaseEditContext } from "../../tools/edit-context.js";
 import { registerPiCallGraphTools } from "./call-graph.js";
-import { stopAutoIndex } from "../../utils/auto-index.js";
+import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
+import { hasProjectMarker } from "../../utils/files.js";
+import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
 import {
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
@@ -55,6 +60,7 @@ import {
 } from "../../tools/contracts.js";
 
 const HOST = "pi" as const;
+const activeWatchers = new Map<string, CombinedWatcher>();
 
 const ChunkType = Type.Union([
   Type.Literal("function"),
@@ -72,6 +78,34 @@ function text(text: string, details?: unknown) {
 
 function projectRoot(ctx: { cwd?: string } | undefined): string {
   return ctx?.cwd ?? process.cwd();
+}
+
+function isValidProject(projectRoot: string, requireProjectMarker: boolean): boolean {
+  return !isHomeDirectory(projectRoot) && (!requireProjectMarker || hasProjectMarker(projectRoot));
+}
+
+function ensureWatcher(projectRoot: string): void {
+  if (activeWatchers.has(projectRoot)) return;
+
+  const config = parseConfig(loadMergedConfig(projectRoot, HOST));
+  if (!config.indexing.watchFiles || !isValidProject(projectRoot, config.indexing.requireProjectMarker)) {
+    return;
+  }
+
+  activeWatchers.set(projectRoot, createWatcherWithIndexer(
+    () => getIndexerForProject(projectRoot, HOST),
+    projectRoot,
+    config,
+    HOST,
+  ));
+}
+
+async function stopWatcher(projectRoot: string): Promise<void> {
+  const watcher = activeWatchers.get(projectRoot);
+  if (!watcher) return;
+
+  activeWatchers.delete(projectRoot);
+  await watcher.stop();
 }
 
 export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
@@ -316,19 +350,23 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
 
   registerPiCallGraphTools(pi);
 
-  pi.on("before_agent_start", (event) => ({
-    systemPrompt:
-      `${event.systemPrompt}\n\n` +
-      "Check index_status first when index readiness is unknown. " +
-      "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
-      "not mechanically for every task. " +
-      "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
-      "Avoid repeating broad reads when the compact evidence already answers the question. " +
-      "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.",
-  }));
+  pi.on("before_agent_start", async (event, ctx) => {
+    ensureWatcher(projectRoot(ctx));
+    return {
+      systemPrompt:
+        `${event.systemPrompt}\n\n` +
+        "Check index_status first when index readiness is unknown. " +
+        "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
+        "not mechanically for every task. " +
+        "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
+        "Avoid repeating broad reads when the compact evidence already answers the question. " +
+        "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.",
+    };
+  });
 
   pi.on("session_shutdown", async (_event, ctx) => {
-    await stopAutoIndex(projectRoot(ctx), HOST);
+    const root = projectRoot(ctx);
+    await Promise.all([stopWatcher(root), stopAutoIndex(root, HOST)]);
   });
 
   pi.registerTool({

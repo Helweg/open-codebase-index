@@ -7,6 +7,7 @@ const operationMocks = vi.hoisted(() => ({
   getCallGraphData: vi.fn(),
   getCallGraphPath: vi.fn(),
   getIndexHealthCheck: vi.fn(),
+  getIndexerForProject: vi.fn(() => ({})),
   runIndexCodebase: vi.fn(),
   runIndexHealthCheck: vi.fn(),
   searchCodebase: vi.fn(),
@@ -18,7 +19,16 @@ const operationMocks = vi.hoisted(() => ({
 }));
 
 const autoIndexMocks = vi.hoisted(() => ({
+  isHomeDirectory: vi.fn(() => false),
   stopAutoIndex: vi.fn(async () => {}),
+}));
+
+const configMocks = vi.hoisted(() => ({
+  loadMergedConfig: vi.fn(() => ({ indexing: { watchFiles: false, requireProjectMarker: false } })),
+}));
+
+const watcherMocks = vi.hoisted(() => ({
+  createWatcherWithIndexer: vi.fn(),
 }));
 
 vi.mock("../src/tools/operations.js", () => ({
@@ -27,6 +37,7 @@ vi.mock("../src/tools/operations.js", () => ({
   getCallGraphData: operationMocks.getCallGraphData,
   getCallGraphPath: operationMocks.getCallGraphPath,
   getIndexHealthCheck: operationMocks.getIndexHealthCheck,
+  getIndexerForProject: operationMocks.getIndexerForProject,
   runIndexCodebase: operationMocks.runIndexCodebase,
   getIndexMetrics: operationMocks.getIndexMetrics,
   getIndexStatus: vi.fn(),
@@ -43,7 +54,16 @@ vi.mock("../src/tools/operations.js", () => ({
 }));
 
 vi.mock("../src/utils/auto-index.js", () => ({
+  isHomeDirectory: autoIndexMocks.isHomeDirectory,
   stopAutoIndex: autoIndexMocks.stopAutoIndex,
+}));
+
+vi.mock("../src/config/merger.js", () => ({
+  loadMergedConfig: configMocks.loadMergedConfig,
+}));
+
+vi.mock("../src/watcher/index.js", () => ({
+  createWatcherWithIndexer: watcherMocks.createWatcherWithIndexer,
 }));
 
 interface RegisteredTool {
@@ -67,7 +87,10 @@ interface RegisteredTool {
 
 interface RegisteredPiRuntime {
   tools: Map<string, RegisteredTool>;
-  beforeAgentStartHandlers: Array<(event: { systemPrompt: string }) => Promise<unknown> | unknown>;
+  beforeAgentStartHandlers: Array<(
+    event: { systemPrompt: string },
+    ctx: { cwd?: string },
+  ) => Promise<unknown> | unknown>;
   sessionShutdownHandlers: Array<(
     event: { type: "session_shutdown" },
     ctx: { cwd?: string },
@@ -76,7 +99,7 @@ interface RegisteredPiRuntime {
 
 async function registerPiTools(): Promise<RegisteredPiRuntime> {
   const tools = new Map<string, RegisteredTool>();
-  const beforeAgentStartHandlers: Array<(event: { systemPrompt: string }) => Promise<unknown> | unknown> = [];
+  const beforeAgentStartHandlers: RegisteredPiRuntime["beforeAgentStartHandlers"] = [];
   const sessionShutdownHandlers: RegisteredPiRuntime["sessionShutdownHandlers"] = [];
   const pi = {
     registerTool(tool) {
@@ -84,7 +107,7 @@ async function registerPiTools(): Promise<RegisteredPiRuntime> {
     },
     on(eventName, handler) {
       if (eventName === "before_agent_start") {
-        beforeAgentStartHandlers.push(handler as (event: { systemPrompt: string }) => Promise<unknown> | unknown);
+        beforeAgentStartHandlers.push(handler as RegisteredPiRuntime["beforeAgentStartHandlers"][number]);
       }
       if (eventName === "session_shutdown") {
         sessionShutdownHandlers.push(handler as RegisteredPiRuntime["sessionShutdownHandlers"][number]);
@@ -140,6 +163,51 @@ describe("Pi adapter conformance", () => {
     operationMocks.getIndexMetrics.mockClear();
     autoIndexMocks.stopAutoIndex.mockReset();
     autoIndexMocks.stopAutoIndex.mockResolvedValue(undefined);
+    autoIndexMocks.isHomeDirectory.mockReset();
+    autoIndexMocks.isHomeDirectory.mockReturnValue(false);
+    configMocks.loadMergedConfig.mockReset();
+    configMocks.loadMergedConfig.mockReturnValue({ indexing: { watchFiles: false, requireProjectMarker: false } });
+    watcherMocks.createWatcherWithIndexer.mockReset();
+    operationMocks.getIndexerForProject.mockReset();
+    operationMocks.getIndexerForProject.mockReturnValue({});
+  });
+
+  it("starts one filesystem watcher for an eligible Pi project and stops it at session shutdown", async () => {
+    const watcher = { stop: vi.fn(async () => {}) };
+    configMocks.loadMergedConfig.mockReturnValue({
+      indexing: { watchFiles: true, requireProjectMarker: false },
+    });
+    watcherMocks.createWatcherWithIndexer.mockReturnValue(watcher);
+
+    const { beforeAgentStartHandlers, sessionShutdownHandlers } = await registerPiTools();
+    const event = { systemPrompt: "base prompt" };
+    const ctx = { cwd: "/watched-project" };
+
+    await beforeAgentStartHandlers[0]?.(event, ctx);
+    await beforeAgentStartHandlers[0]?.(event, ctx);
+
+    expect(watcherMocks.createWatcherWithIndexer).toHaveBeenCalledOnce();
+    expect(watcherMocks.createWatcherWithIndexer).toHaveBeenCalledWith(
+      expect.any(Function),
+      "/watched-project",
+      expect.objectContaining({ indexing: expect.objectContaining({ watchFiles: true }) }),
+      "pi",
+    );
+
+    await sessionShutdownHandlers[0]?.({ type: "session_shutdown" }, ctx);
+    expect(watcher.stop).toHaveBeenCalledOnce();
+    expect(autoIndexMocks.stopAutoIndex).toHaveBeenCalledWith("/watched-project", "pi");
+  });
+
+  it("does not start a Pi watcher when watchFiles is disabled", async () => {
+    const { beforeAgentStartHandlers } = await registerPiTools();
+
+    await beforeAgentStartHandlers[0]?.(
+      { systemPrompt: "base prompt" },
+      { cwd: "/unwatched-project" },
+    );
+
+    expect(watcherMocks.createWatcherWithIndexer).not.toHaveBeenCalled();
   });
 
   it("awaits automatic indexing shutdown when the Pi session closes", async () => {
