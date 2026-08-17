@@ -103,4 +103,19 @@ describe("indexer skips unreadable files instead of aborting", () => {
     );
     expect(unreadableSkip).toBeDefined();
   });
+
+  // The same unreadable-file throw also runs through getIndexFreshness, which
+  // hashes every collected file to compare against the cached hashes. Before
+  // the guard, a single unreadable file rejected the freshness promise and
+  // aborted the check; the guard returns reason "unreadable" instead. The
+  // index must exist first, or getIndexFreshness returns "missing" before it
+  // reaches the hash loop, so index once, then check freshness.
+  it("reports the index as unreadable during the freshness check", async () => {
+    const indexer = createIndexer(tempDir);
+    await indexer.index();
+
+    const freshness = await indexer.getIndexFreshness();
+
+    expect(freshness).toEqual({ readable: false, current: false, reason: "unreadable" });
+  });
 });
