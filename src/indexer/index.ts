@@ -314,13 +314,17 @@ function getSafeEmbeddingChunkTokenLimit(provider: ConfiguredProviderInfo): numb
 const DEFAULT_OLLAMA_MAX_BATCH_ITEMS = 16;
 const DEFAULT_OLLAMA_MAX_BATCH_TOKENS = 65_536;
 
-function getDynamicBatchOptions(
+export function getDynamicBatchOptions(
   provider: ConfiguredProviderInfo,
   embeddingBatch?: EmbeddingBatchConfig,
 ): { maxBatchTokens?: number; maxBatchItems?: number } {
-  const base = provider.provider === "ollama"
-    ? { maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS, maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS }
-    : {};
+  // embedding.batch.* is documented as ollama-only. Non-ollama providers keep
+  // their existing (unbatched-by-this-layer) behavior, so return an empty
+  // options object regardless of any user-supplied batch config.
+  if (provider.provider !== "ollama") {
+    return {};
+  }
+  const base = { maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS, maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS };
   return {
     ...base,
     ...(typeof embeddingBatch?.maxBatchTokens === "number" ? { maxBatchTokens: embeddingBatch.maxBatchTokens } : {}),

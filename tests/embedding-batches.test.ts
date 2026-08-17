@@ -14,6 +14,8 @@ import {
   type FailedBatch,
   type PendingChunk,
 } from "../src/indexer/embedding-batches.js";
+import { getDynamicBatchOptions } from "../src/indexer/index.js";
+import type { ConfiguredProviderInfo } from "../src/embeddings/detector.js";
 
 function metadata(filePath = "src/example.ts"): ChunkMetadata {
   return {
@@ -141,5 +143,26 @@ describe("embedding batch helpers", () => {
     expect(hasAllEmbeddingParts(parts, 1)).toBe(false);
     expect(getPendingChunkFilePath(pendingChunk("path"))).toBe("src/path.ts");
     expect(getPendingChunkFilePath({ metadata: {} })).toBeNull();
+  });
+
+  it("applies embedding.batch.* only to the ollama provider", () => {
+    // getDynamicBatchOptions reads only provider.provider; the remaining fields
+    // are irrelevant to this gate, so a minimal cast is sufficient.
+    const ollama = { provider: "ollama", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    const openai = { provider: "openai", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    const google = { provider: "google", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    const custom = { provider: "custom", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+
+    // Ollama with no overrides gets the documented defaults.
+    expect(getDynamicBatchOptions(ollama)).toEqual({ maxBatchTokens: 65_536, maxBatchItems: 16 });
+    // Ollama honors user overrides.
+    expect(getDynamicBatchOptions(ollama, { maxBatchItems: 1, maxBatchTokens: 100 })).toEqual({ maxBatchTokens: 100, maxBatchItems: 1 });
+
+    // Non-ollama providers ignore embedding.batch.* entirely: an aggressive
+    // maxBatchItems: 1 must NOT split their requests into one-item batches.
+    const aggressiveBatch = { maxBatchItems: 1, maxBatchTokens: 1 };
+    expect(getDynamicBatchOptions(openai, aggressiveBatch)).toEqual({});
+    expect(getDynamicBatchOptions(google, aggressiveBatch)).toEqual({});
+    expect(getDynamicBatchOptions(custom, aggressiveBatch)).toEqual({});
   });
 });
