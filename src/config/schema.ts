@@ -228,7 +228,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     maxDepth: typeof rawIndexing.maxDepth === "number" ? (rawIndexing.maxDepth < -1 ? -1 : rawIndexing.maxDepth) : defaultIndexing.maxDepth,
     maxFilesPerDirectory: typeof rawIndexing.maxFilesPerDirectory === "number" ? Math.max(1, rawIndexing.maxFilesPerDirectory) : defaultIndexing.maxFilesPerDirectory,
     fallbackToTextOnMaxChunks: typeof rawIndexing.fallbackToTextOnMaxChunks === "boolean" ? rawIndexing.fallbackToTextOnMaxChunks : defaultIndexing.fallbackToTextOnMaxChunks,
-    linesPerChunk: typeof rawIndexing.linesPerChunk === "number" ? Math.max(1, Math.floor(rawIndexing.linesPerChunk)) : defaultIndexing.linesPerChunk,
+    linesPerChunk: typeof rawIndexing.linesPerChunk === "number" && Number.isFinite(rawIndexing.linesPerChunk) ? Math.max(1, Math.floor(rawIndexing.linesPerChunk)) : defaultIndexing.linesPerChunk,
     gitBlame: {
       enabled: rawIndexing.gitBlame && typeof rawIndexing.gitBlame === "object" && typeof (rawIndexing.gitBlame as Record<string, unknown>).enabled === "boolean"
         ? (rawIndexing.gitBlame as { enabled: boolean }).enabled

@@ -272,6 +272,10 @@ describe("config schema", () => {
         // Values below 1 are clamped to 1, and floats are floored.
         expect(parseConfig({ indexing: { linesPerChunk: 0 } }).indexing.linesPerChunk).toBe(1);
         expect(parseConfig({ indexing: { linesPerChunk: 7.9 } }).indexing.linesPerChunk).toBe(7);
+        // Non-finite numbers (NaN, Infinity) fall back to the default rather than leaking
+        // through to the native layer, where they would coerce to 0.
+        expect(parseConfig({ indexing: { linesPerChunk: NaN } }).indexing.linesPerChunk).toBe(30);
+        expect(parseConfig({ indexing: { linesPerChunk: Infinity } }).indexing.linesPerChunk).toBe(30);
       });
 
       it("should enforce minimum of 1 for gcIntervalDays", () => {

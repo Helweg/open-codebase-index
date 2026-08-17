@@ -1180,6 +1180,11 @@ fn chunk_by_lines(content: &str, language: &Language, lines_per_chunk: usize) ->
         return Vec::new();
     }
 
+    // Defense in depth: the config layer clamps linesPerChunk to >= 1, but this pub fn is
+    // also reachable through the napi API with an explicit 0, which would make step_size 0
+    // and hang the loop below. Treat anything below 1 as 1 (one line per chunk).
+    let lines_per_chunk = lines_per_chunk.max(1);
+
     // Cap the overlap so it stays at or below ~25% of the window. At the default
     // lines_per_chunk (30) the overlap is min(3, 7) = 3, which is bit-identical to
     // the previous hardcoded behavior. Smaller opt-in windows shrink the overlap so
@@ -1603,6 +1608,19 @@ class Greeter:
         for chunk in &chunks {
             let span = chunk.end_line - chunk.start_line + 1;
             assert_eq!(span, 1, "Each chunk should span exactly 1 line");
+        }
+    }
+
+    #[test]
+    fn test_chunk_by_lines_zero_clamped_to_one() {
+        // A window of 0 must be clamped to 1 rather than hang (step_size would otherwise
+        // be 0 and the loop would never advance). Behaves like a window of 1.
+        let content = "a\nb\nc";
+        let chunks = chunk_by_lines(content, &Language::Text, 0);
+
+        assert_eq!(chunks.len(), 3, "Zero window clamps to one line per chunk");
+        for chunk in &chunks {
+            assert_eq!(chunk.end_line - chunk.start_line + 1, 1);
         }
     }
 
