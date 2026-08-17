@@ -12,6 +12,20 @@ export interface CostEstimate {
   isFree: boolean;
 }
 
+// Result of a dry-run index_codebase pass: parse the real file set, build the
+// embedding text for every indexable chunk, and sum estimateTokens over those
+// texts without calling the embedding provider or writing to the index. The
+// token sum uses the exact same basis (estimateTokens = ceil(len/4)) the
+// provider reports as "Tokens used", so for a force index (cache bypassed) it
+// is the precise value "Tokens used" climbs to. For an incremental index it is
+// an upper bound: chunks already in the embedding cache are counted here but
+// are not re-embedded.
+export interface DryRunEstimate {
+  filesCount: number;
+  chunksCount: number;
+  tokensToEmbed: number;
+}
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
@@ -82,6 +96,21 @@ export function formatCostEstimate(estimate: CostEstimate): string {
 │  Cost:     ${costFormatted.padEnd(52)}│
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
+`;
+}
+
+export function formatDryRunEstimate(estimate: DryRunEstimate): string {
+  return `Dry run: parsed the file set to measure the embedding workload. No embeddings were written and the index was not changed.
+
+  Files to embed:   ${estimate.filesCount.toLocaleString()}
+  Chunks to embed:  ${estimate.chunksCount.toLocaleString()}
+  Tokens to embed:  ${estimate.tokensToEmbed.toLocaleString()}
+
+The "Tokens to embed" value uses the same estimateTokens(text) basis the embedding
+provider reports as "Tokens used", so a force index (cache bypassed) climbs to exactly
+this number. For an incremental index this is an upper bound: chunks already in the
+embedding cache are counted here but are not re-embedded, so "Tokens used" climbs to a
+lower value and a progress percent against this total tops out below 100%.
 `;
 }
 

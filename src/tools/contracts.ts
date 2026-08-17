@@ -63,6 +63,7 @@ export const DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 5 as const;
 export interface SharedIndexCodebaseArgs {
   force?: boolean;
   estimateOnly?: boolean;
+  dryRun?: boolean;
   verbose?: boolean;
 }
 

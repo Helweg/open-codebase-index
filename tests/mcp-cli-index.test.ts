@@ -24,6 +24,7 @@ describe("mcp cli index arg parsing", () => {
       config: undefined,
       force: false,
       estimateOnly: false,
+      dryRun: false,
       verbose: false,
     });
   });
@@ -50,7 +51,22 @@ describe("mcp cli index arg parsing", () => {
       config: path.join(tempDir, "my.config.json"),
       force: true,
       estimateOnly: true,
+      dryRun: false,
       verbose: true,
+    });
+  });
+
+  it("parses --dry-run as a parse-only flag", () => {
+    const result = parseIndexArgs(["--dry-run"], tempDir);
+
+    expect(result).toEqual({
+      project: tempDir,
+      host: "opencode",
+      config: undefined,
+      force: false,
+      estimateOnly: false,
+      dryRun: true,
+      verbose: false,
     });
   });
 
@@ -111,6 +127,7 @@ describe("mcp cli index command execution", () => {
     expect(runIndex).toHaveBeenCalledWith(tempDir, "opencode", {
       force: true,
       estimateOnly: true,
+      dryRun: false,
       verbose: true,
     }, expect.any(Function));
   });
@@ -194,7 +211,7 @@ describe("mcp cli index command execution", () => {
 
     expect(exitCode).toBe(0);
     expect(initialized).toEqual([{ projectRoot: tempDir, host: "opencode", provider: "custom" }]);
-    expect(runIndex).toHaveBeenCalledWith(tempDir, "opencode", { force: false, estimateOnly: false, verbose: false }, expect.any(Function));
+    expect(runIndex).toHaveBeenCalledWith(tempDir, "opencode", { force: false, estimateOnly: false, dryRun: false, verbose: false }, expect.any(Function));
     expect(stdout).toEqual(["ok"]);
     expect(stderr).toEqual([]);
   });

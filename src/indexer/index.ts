@@ -14,7 +14,7 @@ import {
   CustomProviderNonRetryableError,
 } from "../embeddings/provider.js";
 import { collectFiles, SkippedFile } from "../utils/files.js";
-import { createCostEstimate, CostEstimate } from "../utils/cost.js";
+import { createCostEstimate, CostEstimate, DryRunEstimate } from "../utils/cost.js";
 import { Logger, initializeLogger } from "../utils/logger.js";
 import {
   VectorStore,
@@ -4012,6 +4012,82 @@ export class Indexer {
     );
 
     return createCostEstimate(files, configuredProviderInfo);
+  }
+
+  // Dry-run counterpart to index()/forceIndex(): parse the real file set and sum
+  // estimateTokens over the embedding text of every indexable chunk, without
+  // calling the embedding provider or writing to the index. Read-only and
+  // lock-free (mirrors estimateCost). The token sum is the exact value "Tokens
+  // used" climbs to for a force index (cache bypassed); for an incremental it is
+  // an upper bound because cached chunks are counted here but not re-embedded.
+  // Used by index_codebase(dryRun:true) to give a stable, monotonic progress
+  // denominator that matches the live "Tokens used" basis.
+  async dryRunCost(): Promise<DryRunEstimate> {
+    const { configuredProviderInfo } = await this.ensureInitialized();
+    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
+    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
+    const { files } = await collectFiles(
+      this.materializedProjectRoot,
+      includePatterns,
+      this.config.exclude,
+      this.config.indexing.maxFileSize,
+      this.getMaterializedKnowledgeBases(),
+      { maxDepth: this.config.indexing.maxDepth, maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory },
+    );
+
+    let filesCount = 0;
+    let chunksCount = 0;
+    let tokensToEmbed = 0;
+    // Parse in the same ordered batches as index() (fileBatchLimits) so the
+    // memory profile matches a real run. For each file: read, parse, apply the
+    // same fallback-to-text + maxChunksPerFile cap + selectIndexableChunks path,
+    // then sum estimateTokens over the embedding text (createEmbeddingTexts)
+    // — the identical basis the provider reports as "Tokens used".
+    for (const batch of iterateOrderedFileBatches(files, (f) => f.size, this.fileBatchLimits)) {
+      const loadedFiles = await Promise.all(batch.map(async (f) => {
+        try {
+          return {
+            path: this.toStoredFilePath(f.path),
+            content: await fsPromises.readFile(f.path, "utf-8"),
+          };
+        } catch {
+          // Unreadable file: index() records a parse failure and skips it.
+          return null;
+        }
+      }));
+      const readable = loadedFiles.filter(
+        (f): f is { path: string; content: string } => f !== null,
+      );
+      filesCount += readable.length;
+      const contentByPath = new Map(readable.map((f) => [f.path, f.content]));
+      const parsedFiles = parseFiles(readable, this.config.indexing.linesPerChunk);
+      for (const parsed of parsedFiles) {
+        let chunksToProcess = parsed.chunks;
+        if (
+          this.config.indexing.fallbackToTextOnMaxChunks &&
+          chunksToProcess.length > this.config.indexing.maxChunksPerFile
+        ) {
+          const content = contentByPath.get(parsed.path);
+          if (content !== undefined) {
+            chunksToProcess = parseFileAsText(parsed.path, content, this.config.indexing.linesPerChunk);
+          }
+        }
+        chunksToProcess = selectIndexableChunks(
+          chunksToProcess,
+          this.config.indexing.maxChunksPerFile,
+          this.config.indexing.semanticOnly,
+        );
+        for (const chunk of chunksToProcess) {
+          const texts = createEmbeddingTexts(chunk, parsed.path, maxChunkTokens);
+          for (const text of texts) {
+            chunksCount += 1;
+            tokensToEmbed += estimateTokens(text);
+          }
+        }
+      }
+    }
+
+    return { filesCount, chunksCount, tokensToEmbed };
   }
 
   async index(onProgress?: ProgressCallback): Promise<IndexStats> {

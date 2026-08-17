@@ -3,7 +3,7 @@ import { Type } from "typebox";
 
 import { parseConfig } from "../../config/schema.js";
 import { loadMergedConfig } from "../../config/merger.js";
-import { formatCostEstimate } from "../../utils/cost.js";
+import { formatCostEstimate, formatDryRunEstimate } from "../../utils/cost.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import { formatCodeCommunities } from "../../tools/format-communities.js";
 import {
@@ -274,12 +274,14 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     parameters: Type.Object({
       force: Type.Optional(Type.Boolean({ default: false })),
       estimateOnly: Type.Optional(Type.Boolean({ default: false })),
+      dryRun: Type.Optional(Type.Boolean({ default: false })),
       verbose: Type.Optional(Type.Boolean({ default: false })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       try {
         const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
         if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
+        if (result.kind === "dryrun") return text(formatDryRunEstimate(result.dryrun), result.dryrun);
         if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
         if (result.kind === "message") return text(result.text);
         return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
