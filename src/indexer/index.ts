@@ -84,6 +84,8 @@ import {
   recoverLeaseArtifacts,
   releaseIndexLock,
   removeLeaseTemporaryPath,
+  setIndexLockClearRecoveryState,
+  type IndexLockClearRecoveryState,
   type IndexLockLease,
   type IndexLockOwner,
   type IndexMutationOperation,
@@ -1889,12 +1891,14 @@ export class Indexer {
     return false;
   }
 
-  private hasForeignScopedBranchData(projectRoot = this.projectRoot): boolean {
+  private hasForeignScopedBranchData(
+    projectRoot = this.projectRoot,
+    roots = this.getScopedRoots(projectRoot),
+  ): boolean {
     if (!this.database || this.config.scope !== "global") {
       return false;
     }
 
-    const roots = this.getScopedRoots(projectRoot);
     const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
     const { chunkIds: projectLocalChunkIds, symbolIds: projectLocalSymbolIds } = this.getProjectLocalScopedOwnershipIds(roots, projectRoot);
 
@@ -2025,24 +2029,50 @@ export class Indexer {
     };
   }
 
-  private getForceIndexPhaseMarkerPath(): string {
-    return path.join(this.indexPath, "force-index-phase");
-  }
-
-  private writeForceIndexPhaseMarker(): void {
-    writeFileSync(this.getForceIndexPhaseMarkerPath(), "clearing", { encoding: "utf-8" });
-  }
-
-  private removeForceIndexPhaseMarker(): void {
-    try {
-      unlinkSync(this.getForceIndexPhaseMarkerPath());
-    } catch {
-      // Best-effort cleanup.
+  private getCurrentClearRecoveryState(): IndexLockClearRecoveryState {
+    if (!this.configuredProviderInfo) {
+      throw new Error("Cannot persist clear recovery state before the embedding provider is initialized");
     }
+    const compatibility = this.checkCompatibility();
+    const compatibilityDecision = compatibility.compatible
+      ? "compatible"
+      : compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH
+        ? "embedding-strategy-mismatch"
+        : "incompatible";
+    return {
+      phase: "clearing",
+      embeddingProvider: this.configuredProviderInfo.provider,
+      embeddingModel: this.configuredProviderInfo.modelInfo.model,
+      embeddingDimensions: this.configuredProviderInfo.modelInfo.dimensions,
+      embeddingStrategyVersion: EMBEDDING_STRATEGY_VERSION,
+      compatibilityDecision,
+    };
   }
 
-  private hasForceIndexPhaseMarker(): boolean {
-    return existsSync(this.getForceIndexPhaseMarkerPath());
+  private beginClearRecoveryState(): IndexLockClearRecoveryState {
+    const recovery = this.getCurrentClearRecoveryState();
+    setIndexLockClearRecoveryState(this.requireActiveLease(), recovery);
+    return recovery;
+  }
+
+  private finishClearRecoveryState(): void {
+    setIndexLockClearRecoveryState(this.requireActiveLease(), null);
+  }
+
+  private matchesCurrentClearRecoveryConfiguration(recovery: IndexLockClearRecoveryState): boolean {
+    const configuredProviderInfo = this.configuredProviderInfo;
+    return configuredProviderInfo !== null
+      && recovery.embeddingProvider === configuredProviderInfo.provider
+      && recovery.embeddingModel === configuredProviderInfo.modelInfo.model
+      && recovery.embeddingDimensions === configuredProviderInfo.modelInfo.dimensions
+      && recovery.embeddingStrategyVersion === EMBEDDING_STRATEGY_VERSION;
+  }
+
+  private hasUnknownLegacyForceIndexClear(owner: IndexLockOwner): boolean {
+    return owner.operation === "force-index"
+      && owner.clearRecovery === undefined
+      && owner.recoveryProtocolVersion !== 1
+      && existsSync(path.join(this.indexPath, "force-index-phase"));
   }
 
   private async recoverFromInterruptedIndexingUnlocked(owners: readonly IndexLockOwner[]): Promise<void> {
@@ -2057,29 +2087,64 @@ export class Indexer {
     }
 
     if (this.config.scope === "global") {
-      const clearOwners = owners.filter(
-        (owner) => owner.operation === "clear" || (owner.operation === "force-index" && this.hasForceIndexPhaseMarker()),
-      );
-      if (clearOwners.length > 0) {
+      const clearScopes: Array<{
+        projectRoot: string;
+        scopedRoots: string[];
+        compatibilityDecision: IndexLockClearRecoveryState["compatibilityDecision"];
+      }> = [];
+      for (const owner of owners) {
+        if (this.hasUnknownLegacyForceIndexClear(owner)) {
+          throw new Error(
+            `Cannot automatically recover interrupted force-index ${owner.token}: ` +
+            "the legacy clearing phase ownership is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (
+          owner.operation === "clear"
+          && owner.clearRecovery === undefined
+          && owner.recoveryProtocolVersion !== 1
+        ) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the originating recovery state is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (owner.clearRecovery === undefined) continue;
+        if (!owner.projectRoot || !owner.scopedRoots || owner.scopedRoots.length === 0) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the originating project scope is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (!this.matchesCurrentClearRecoveryConfiguration(owner.clearRecovery)) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the current embedding configuration does not match the originating lease. " +
+            "The recovery marker was retained; retry from the originating project with matching settings."
+          );
+        }
+        clearScopes.push({
+          projectRoot: owner.projectRoot,
+          scopedRoots: owner.scopedRoots,
+          compatibilityDecision: owner.clearRecovery.compatibilityDecision,
+        });
+      }
+      if (clearScopes.length > 0) {
         // The scoped clear purges the file-hash cache entries of the
         // originating project: load the persisted cache first so the purge
         // is written back instead of being lost on an empty in-memory map.
         this.loadFileHashCache();
       }
-      for (const owner of clearOwners) {
+      for (const { projectRoot, scopedRoots, compatibilityDecision } of clearScopes) {
         // Re-apply the clear decision against the originating project scope:
         // a global clear only wipes the whole shared index when no foreign
         // project data is present, otherwise it stays scoped to the project
-        // that started the clear. Owners written before the recovery scope
-        // was persisted fall back to the current project.
-        this.clearGlobalIndexUnlocked(
-          owner.projectRoot ?? this.projectRoot,
-          owner.scopedRoots ?? this.getScopedRoots(),
-        );
+        // that started the clear.
+        this.clearGlobalIndexUnlocked(projectRoot, scopedRoots, compatibilityDecision);
       }
       await this.healthCheckUnlocked();
       this.logger.info(
-        clearOwners.length > 0
+        clearScopes.length > 0
           ? "Recovery complete, next index will rebuild all files"
           : "Recovery complete, next index will resume from the last checkpoint",
       );
@@ -3247,8 +3312,18 @@ export class Indexer {
         ]);
       }
       if (recoveredOwners.length > 0 && this.config.scope === "project") {
+        const unknownLegacyForceIndex = recoveredOwners.find(
+          (owner) => this.hasUnknownLegacyForceIndexClear(owner),
+        );
+        if (unknownLegacyForceIndex) {
+          throw new Error(
+            `Cannot automatically recover interrupted force-index ${unknownLegacyForceIndex.token}: ` +
+            "the legacy clearing phase ownership is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
         const shouldReset = recoveredOwners.some(
-          (owner) => owner.operation === "clear" || (owner.operation === "force-index" && this.hasForceIndexPhaseMarker()),
+          (owner) => owner.clearRecovery !== undefined
+            || (owner.operation === "clear" && owner.recoveryProtocolVersion !== 1),
         );
         if (shouldReset) {
           await this.resetLocalIndexArtifacts();
@@ -5480,11 +5555,9 @@ export class Indexer {
   async forceIndex(onProgress?: ProgressCallback): Promise<IndexStats> {
     return this.withIndexMutationLease("force-index", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
-      // Mark the clearing phase so recovery can distinguish a crash before
-      // the clear from a crash during indexing.
-      this.writeForceIndexPhaseMarker();
-      await this.clearIndexUnlocked();
-      this.removeForceIndexPhaseMarker();
+      const recovery = this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery.compatibilityDecision);
+      this.finishClearRecoveryState();
       return this.indexUnlocked(onProgress, [], true);
     });
   }
@@ -5492,7 +5565,8 @@ export class Indexer {
   async clearIndex(): Promise<void> {
     await this.withIndexMutationLease("clear", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
-      await this.clearIndexUnlocked();
+      const recovery = this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery.compatibilityDecision);
     });
   }
 
@@ -5527,21 +5601,32 @@ export class Indexer {
     this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
   }
 
-  private clearGlobalIndexUnlocked(projectRoot = this.projectRoot, roots = this.getScopedRoots()): void {
+  private clearGlobalIndexUnlocked(
+    projectRoot = this.projectRoot,
+    roots = this.getScopedRoots(),
+    recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
+  ): void {
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
     store.load();
     invertedIndex.load();
     this.loadFileHashCache();
     const compatibility = this.checkCompatibility();
+    const compatibilityDecision = recoveryDecision ?? (
+      compatibility.compatible
+        ? "compatible"
+        : compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH
+          ? "embedding-strategy-mismatch"
+          : "incompatible"
+    );
     const allMetadata = store.getAllMetadata();
     const hasForeignData =
       allMetadata.some(({ metadata }) => !this.isFileInCurrentScope(metadata.filePath, roots)) ||
-      this.hasForeignScopedBranchData(projectRoot) ||
+      this.hasForeignScopedBranchData(projectRoot, roots) ||
       this.hasForeignScopedFileHashData(roots) ||
       this.hasForeignScopedFailedBatches(roots);
 
-    if (!compatibility.compatible && hasForeignData) {
-      if (compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH) {
+    if (compatibilityDecision !== "compatible" && hasForeignData) {
+      if (compatibilityDecision === "embedding-strategy-mismatch") {
         this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
         this.clearScopedFileHashCache(roots);
         this.clearScopedFailedBatches(roots);
@@ -5549,7 +5634,9 @@ export class Indexer {
         database.setMetadata(this.getProjectForceReembedMetadataKey(projectIdentityHash), "true");
         database.deleteMetadata(this.getProjectEmbeddingStrategyMetadataKey(projectIdentityHash));
         database.deleteMetadata(this.getProjectMigrationFinalizedMetadataKey(projectIdentityHash));
-        this.indexCompatibility = { compatible: true };
+        if (projectRoot === this.projectRoot) {
+          this.indexCompatibility = { compatible: true };
+        }
         return;
       }
 
@@ -5568,14 +5655,18 @@ export class Indexer {
     this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
     this.clearScopedFileHashCache(roots);
     this.clearScopedFailedBatches(roots);
-    this.indexCompatibility = compatibility;
+    if (projectRoot === this.projectRoot) {
+      this.indexCompatibility = compatibility;
+    }
   }
 
-  private async clearIndexUnlocked(): Promise<void> {
+  private async clearIndexUnlocked(
+    recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
+  ): Promise<void> {
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
 
     if (this.config.scope === "global") {
-      this.clearGlobalIndexUnlocked();
+      this.clearGlobalIndexUnlocked(this.projectRoot, this.getScopedRoots(), recoveryDecision);
       return;
     }
 

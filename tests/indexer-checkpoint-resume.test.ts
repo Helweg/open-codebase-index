@@ -115,6 +115,27 @@ describe("indexer checkpoint resume", () => {
     return { projectBDir, kbDir };
   }
 
+  function getClearRecoveryState(
+    model = "checkpoint-test-model",
+    compatibilityDecision: "compatible" | "embedding-strategy-mismatch" | "incompatible" = "compatible",
+  ): {
+    phase: "clearing";
+    embeddingProvider: "custom";
+    embeddingModel: string;
+    embeddingDimensions: number;
+    embeddingStrategyVersion: string;
+    compatibilityDecision: "compatible" | "embedding-strategy-mismatch" | "incompatible";
+  } {
+    return {
+      phase: "clearing",
+      embeddingProvider: "custom",
+      embeddingModel: model,
+      embeddingDimensions: 8,
+      embeddingStrategyVersion: "2",
+      compatibilityDecision,
+    };
+  }
+
   beforeEach(() => {
     failEmbeddingText = null;
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-project-"));
@@ -432,6 +453,10 @@ describe("indexer checkpoint resume", () => {
       startedAt: new Date().toISOString(),
       operation: "clear",
       token: "11111111-1111-4111-8111-111111111111",
+      recoveryProtocolVersion: 1,
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+      clearRecovery: getClearRecoveryState(),
     }));
 
     const fileHashesPath = path.join(indexDir, "file-hashes.json");
@@ -872,8 +897,10 @@ describe("indexer checkpoint resume", () => {
       startedAt: new Date().toISOString(),
       operation: "clear",
       token: "11111111-1111-4111-8111-111111111111",
+      recoveryProtocolVersion: 1,
       projectRoot: projectDir,
       scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+      clearRecovery: getClearRecoveryState(),
     }));
 
     // Project B reclaims the lease. The recovery must clear A's data (and the
@@ -930,8 +957,10 @@ describe("indexer checkpoint resume", () => {
       startedAt: new Date().toISOString(),
       operation: "clear",
       token: "11111111-1111-4111-8111-111111111111",
+      recoveryProtocolVersion: 1,
       projectRoot: projectDir,
       scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+      clearRecovery: getClearRecoveryState(),
     }));
 
     // B reclaims the lease through retryFailedBatches, which runs the
@@ -1015,6 +1044,221 @@ describe("indexer checkpoint resume", () => {
       for (const filePath of ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"]) {
         expect(db.getChunksByFile(path.join(projectDir, filePath)).length).toBeGreaterThan(0);
       }
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("global recovery retains legacy clear markers when the originating state is unknown", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const token = "22222222-2222-4222-8222-222222222222";
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token,
+    }));
+
+    await expect(
+      createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).retryFailedBatches(),
+    ).rejects.toThrow("originating recovery state is unknown");
+
+    expect(fs.existsSync(path.join(indexDir, `indexing.lock.recovery.${token}`))).toBe(true);
+    expect(fs.existsSync(lockPath)).toBe(false);
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getChunksByName("alphaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("betaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("cross-project clear recovery rejects a different embedding configuration", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const token = "33333333-3333-4333-8333-333333333333";
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token,
+      recoveryProtocolVersion: 1,
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+      clearRecovery: getClearRecoveryState("originating-model"),
+    }));
+
+    await expect(
+      createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).retryFailedBatches(),
+    ).rejects.toThrow("embedding configuration does not match the originating lease");
+
+    expect(fs.existsSync(path.join(indexDir, `indexing.lock.recovery.${token}`))).toBe(true);
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getChunksByName("alphaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("betaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("cross-project clear recovery preserves the originating compatibility decision", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).index();
+
+    const projectAHash = projectIdentityHash(projectDir);
+    const writableDb = new Database(path.join(indexDir, "codebase.db"));
+    writableDb.setMetadata(`index.embeddingStrategyVersion.${projectAHash}`, "1");
+    writableDb.close();
+
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "clear",
+      token: "66666666-6666-4666-8666-666666666666",
+      recoveryProtocolVersion: 1,
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+      clearRecovery: getClearRecoveryState("checkpoint-test-model", "embedding-strategy-mismatch"),
+    }));
+
+    const retry = await createGlobalIndexer(projectBDir, "checkpoint-test-model", kbDir).retryFailedBatches();
+    expect(retry.remaining).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getMetadata(`index.forceReembed.${projectAHash}`)).toBe("true");
+      expect(db.getMetadata(`index.embeddingStrategyVersion.${projectAHash}`)).toBeNull();
+      expect(db.getChunksByName("alphaOne").length).toBe(0);
+      expect(db.getChunksByName("betaOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("stale force-index phase markers cannot clear another recovered owner", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    const beforeCalls = fetchSpy.mock.calls.length;
+
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "force-index",
+      token: "44444444-4444-4444-8444-444444444444",
+      recoveryProtocolVersion: 1,
+      projectRoot: projectDir,
+      scopedRoots: [canonicalPath(projectDir), canonicalPath(kbDir)],
+    }));
+    fs.writeFileSync(path.join(indexDir, "force-index-phase"), JSON.stringify({
+      phase: "clearing",
+      ownerToken: "55555555-5555-4555-8555-555555555555",
+    }));
+
+    const stats = await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+    expect(stats.failedChunks).toBe(0);
+    expect(countEmbeddedTexts(fetchSpy, beforeCalls)).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getChunksByName("alphaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+
+    fs.rmSync(projectBDir, { recursive: true, force: true });
+    fs.rmSync(kbDir, { recursive: true, force: true });
+    fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("legacy force-index phase markers fail closed when ownership is unknown", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-resume-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+
+    await createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index();
+
+    const deadProcess = spawnSync(process.execPath, ["-e", "process.exit(0)"]);
+    const token = "77777777-7777-4777-8777-777777777777";
+    const lockPath = path.join(indexDir, "indexing.lock");
+    fs.mkdirSync(lockPath, { recursive: true });
+    fs.writeFileSync(path.join(lockPath, "owner.json"), JSON.stringify({
+      pid: deadProcess.pid!,
+      hostname: os.hostname(),
+      startedAt: new Date().toISOString(),
+      operation: "force-index",
+      token,
+    }));
+    fs.writeFileSync(path.join(indexDir, "force-index-phase"), "clearing");
+
+    await expect(
+      createGlobalIndexer(projectDir, "checkpoint-test-model", kbDir).index(),
+    ).rejects.toThrow("legacy clearing phase ownership is unknown");
+
+    expect(fs.existsSync(path.join(indexDir, `indexing.lock.recovery.${token}`))).toBe(true);
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      expect(db.getChunksByName("alphaOne").length).toBeGreaterThan(0);
+      expect(db.getChunksByName("sharedOne").length).toBeGreaterThan(0);
     } finally {
       db.close();
     }
