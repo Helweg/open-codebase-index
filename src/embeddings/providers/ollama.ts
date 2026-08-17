@@ -33,6 +33,22 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
       || message.includes("context length exceeded");
   }
 
+  // True for a 404 from the newer /api/embed endpoint, i.e. an ollama version that
+  // does not provide it. embedBatch uses this to fall back to the legacy per-text
+  // /api/embeddings path so old ollama installs do not regress.
+  private isBatchEndpointUnavailableError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("Ollama /api/embed not available");
+  }
+
+  // True for a malformed /api/embed response (wrong vector count or a bad vector).
+  // embedBatch falls back to the per-text path on this so one bad vector fails only
+  // its own chunk instead of poisoning the whole batch.
+  private isBatchValidationError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes("invalid embedding batch");
+  }
+
   private buildTruncationCandidates(text: string): string[] {
     const baseMaxChars = Math.max(1, this.modelInfo.maxTokens * 4);
     const candidateLimits = new Set<number>();
@@ -155,9 +171,87 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     };
   }
 
-  public async embedBatch(texts: string[]): Promise<EmbeddingBatchResult> {
-    const results: Array<{ embedding: number[]; tokensUsed: number }> = [];
+  // Embeds many texts in one POST /api/embed request (input: string[]). Ollama
+  // encodes each input independently, so the model context length applies per input
+  // (the upstream splitter already bounds each input), not over the batch. This
+  // amortizes N HTTP round-trips into one.
+  private async embedMany(texts: string[]): Promise<EmbeddingBatchResult> {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS,
+    );
+    let response: Response;
+    try {
+      response = await fetch(`${this.credentials.baseUrl}/api/embed`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: this.modelInfo.model,
+          input: texts,
+          truncate: false,
+        }),
+        signal: controller.signal,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new Error(
+          `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
+        );
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
 
+    if (!response.ok) {
+      const error = (await response.text()).slice(0, 500);
+      if (response.status === 404) {
+        throw new Error(`Ollama /api/embed not available: ${response.status} - ${error}`);
+      }
+      throw new Error(`Ollama embedding API error: ${response.status} - ${error}`);
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = await response.json();
+    } catch {
+      // Invalid JSON (e.g. an empty or truncated 200 body) -> treat as a malformed
+      // batch so embedBatch falls back to the per-text path instead of propagating
+      // a parse error that skips the fallback.
+      throw new Error(
+        `Ollama returned an invalid embedding batch; expected ${texts.length} vectors of ${this.modelInfo.dimensions} finite dimensions`,
+      );
+    }
+    const data = (parsed && typeof parsed === "object" ? parsed : {}) as { embeddings?: unknown };
+    if (
+      !Array.isArray(data.embeddings)
+      || data.embeddings.length !== texts.length
+      || data.embeddings.some(
+        (value) =>
+          !Array.isArray(value)
+          || value.length !== this.modelInfo.dimensions
+          || value.some((v) => typeof v !== "number" || !Number.isFinite(v)),
+      )
+    ) {
+      throw new Error(
+        `Ollama returned an invalid embedding batch; expected ${texts.length} vectors of ${this.modelInfo.dimensions} finite dimensions`,
+      );
+    }
+
+    return {
+      embeddings: data.embeddings,
+      totalTokensUsed: texts.reduce((sum, text) => sum + this.estimateTokens(text), 0),
+    };
+  }
+
+  // Per-text /api/embeddings path shared by the single-text fast path and the
+  // batch fallback. Uses the legacy endpoint one text at a time, so each text gets
+  // its own truncation safety net and a vector validated on its own.
+  private async embedOneByOne(texts: string[]): Promise<EmbeddingBatchResult> {
+    const results: Array<{ embedding: number[]; tokensUsed: number }> = [];
     for (const text of texts) {
       results.push(await this.embedSingleWithFallback(text));
     }
@@ -166,5 +260,38 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
       embeddings: results.map((r) => r.embedding),
       totalTokensUsed: results.reduce((sum, r) => sum + r.tokensUsed, 0),
     };
+  }
+
+  public async embedBatch(texts: string[]): Promise<EmbeddingBatchResult> {
+    if (texts.length === 0) {
+      return { embeddings: [], totalTokensUsed: 0 };
+    }
+
+    // A single-text batch gets no batching benefit; send it to the legacy per-text
+    // path directly so its truncation/timeout/error behavior stays unchanged and no
+    // /api/embed probe runs (this also keeps old ollama installs on the legacy path
+    // for the common single-chunk case).
+    if (texts.length === 1) {
+      return this.embedOneByOne(texts);
+    }
+
+    try {
+      return await this.embedMany(texts);
+    } catch (error) {
+      // Fall back to the per-text /api/embeddings path when the batched endpoint is
+      // unavailable (old ollama, 404), a single input overflowed the model context
+      // length (per-text truncation net), or the batch response was malformed
+      // (per-chunk isolation: one bad vector fails only its own chunk instead of
+      // the whole batch). Other errors propagate for the indexer's pRetry to handle.
+      if (
+        !this.isContextLengthError(error)
+        && !this.isBatchEndpointUnavailableError(error)
+        && !this.isBatchValidationError(error)
+      ) {
+        throw error;
+      }
+
+      return this.embedOneByOne(texts);
+    }
   }
 }

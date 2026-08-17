@@ -146,11 +146,29 @@ export interface CustomProviderConfig {
   max_batch_size?: number;
 }
 
+export interface EmbeddingBatchConfig {
+  /** Max texts per embedding request. Default: provider-specific (ollama 16). */
+  maxBatchItems?: number;
+  /** Max total input tokens per embedding request. This is a request size/time guard,
+   * not a model context limit: ollama encodes each input independently, so the per-batch
+   * token sum is not bounded by the model context length. Default: provider-specific (ollama 65536).
+   * Raise together with maxBatchItems to pack more texts per request; lower it if a single
+   * request approaches the request timeout. */
+  maxBatchTokens?: number;
+}
+
+export interface EmbeddingConfig {
+  /** Embedding request batching options. Currently applied to the ollama provider. */
+  batch?: EmbeddingBatchConfig;
+}
+
 export interface CodebaseIndexConfig {
   embeddingProvider: EmbeddingProvider | 'custom' | 'auto';
   embeddingModel?: EmbeddingModelName;
   /** Configuration for custom OpenAI-compatible embedding providers (required when embeddingProvider is 'custom') */
   customProvider?: CustomProviderConfig;
+  /** Embedding request shape options (e.g. batch sizes). Currently applied to the ollama provider. */
+  embedding?: EmbeddingConfig;
   scope: IndexScope;
   indexing?: Partial<IndexingConfig>;
   search?: Partial<SearchConfig>;
@@ -177,6 +195,7 @@ export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
   reranker?: RerankerConfig;
   knowledgeBases: string[];
   additionalInclude: string[];
+  embedding: EmbeddingConfig;
 };
 
 export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
@@ -376,10 +395,30 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     };
   }
 
+  const rawEmbedding = (input.embedding && typeof input.embedding === "object" ? input.embedding : {}) as Record<string, unknown>;
+  const rawEmbeddingBatch = (rawEmbedding.batch && typeof rawEmbedding.batch === "object" ? rawEmbedding.batch : null) as Record<string, unknown> | null;
+  const embeddingMaxBatchItems = typeof rawEmbeddingBatch?.maxBatchItems === "number"
+    && Number.isFinite(rawEmbeddingBatch.maxBatchItems)
+    ? Math.max(1, Math.floor(rawEmbeddingBatch.maxBatchItems))
+    : undefined;
+  const embeddingMaxBatchTokens = typeof rawEmbeddingBatch?.maxBatchTokens === "number"
+    && Number.isFinite(rawEmbeddingBatch.maxBatchTokens)
+    ? Math.max(1, Math.floor(rawEmbeddingBatch.maxBatchTokens))
+    : undefined;
+  const embedding: EmbeddingConfig = (embeddingMaxBatchItems !== undefined || embeddingMaxBatchTokens !== undefined)
+    ? {
+        batch: {
+          ...(embeddingMaxBatchItems !== undefined ? { maxBatchItems: embeddingMaxBatchItems } : {}),
+          ...(embeddingMaxBatchTokens !== undefined ? { maxBatchTokens: embeddingMaxBatchTokens } : {}),
+        },
+      }
+    : {};
+
   return {
     embeddingProvider,
     embeddingModel,
     customProvider,
+    embedding,
     scope: isValidScope(scopeValue) ? scopeValue : "project",
     include: includeValue ?? DEFAULT_INCLUDE,
     exclude: excludeValue ?? DEFAULT_EXCLUDE,

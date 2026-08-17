@@ -93,6 +93,52 @@ Keep the default when the additional local model download and query latency are
 not worthwhile for your project. See the [local model comparison](benchmarks/2026-08-12-local-embedding-model-comparison.md)
 for the methodology and measured results.
 
+#### Batching Ollama embeddings
+
+The indexer sends multiple chunks to Ollama in one request. This decreases the
+number of HTTP requests and accelerates indexing against a remote Ollama host.
+The `/api/embed` endpoint accepts an array of texts and returns one vector per
+text. The indexer uses this endpoint for batches of two or more chunks. A
+single-chunk batch uses the legacy `/api/embeddings` endpoint.
+
+If the batched endpoint is not available, the indexer falls back to the legacy
+per-chunk endpoint. If one chunk exceeds the model context length, the indexer
+truncates and retries that chunk by itself. If the batch response is malformed,
+the indexer retries each chunk by itself so one bad vector fails only its chunk.
+
+Control the batch size with the `embedding.batch` section:
+
+```json
+{
+  "embedding": {
+    "batch": {
+      "maxBatchItems": 32,
+      "maxBatchTokens": 65536
+    }
+  }
+}
+```
+
+| Option | Ollama default | Purpose |
+|---|---:|---|
+| `maxBatchItems` | `16` | Maximum number of chunks in one request |
+| `maxBatchTokens` | `65536` | Maximum total estimated tokens in one request |
+
+Ollama encodes each text independently. The model context length applies to each
+text and not to the batch total. Set `maxBatchTokens` to bound the request size and
+the processing time. Set `maxBatchItems` to bound the number of texts. Both values
+are optional and must be at least 1. When you omit a value, the indexer uses the
+Ollama default. These knobs apply to any provider when you set them; the Ollama
+defaults apply only to the Ollama provider.
+
+The indexer runs up to five Ollama requests at the same time. Each request carries
+up to `maxBatchItems` chunks, so the worst case is five times `maxBatchItems` chunks
+in flight (80 chunks at the default 16). A remote or memory-limited Ollama host can
+run out of memory or exceed the 120-second request timeout when this number is too
+high. Lower `maxBatchItems` for a small or remote host. The Ollama concurrency is
+fixed at five and is not configurable; the custom provider exposes concurrency
+through `customProvider.concurrency`.
+
 ### OpenAI and Google
 
 Set the provider and corresponding environment credentials:
