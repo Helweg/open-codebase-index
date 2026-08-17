@@ -31,7 +31,7 @@ export function hasProjectMarker(projectRoot: string): boolean {
 
 export interface SkippedFile {
   path: string;
-  reason: "too_large" | "excluded" | "gitignore" | "no_match";
+  reason: "too_large" | "excluded" | "gitignore" | "no_match" | "unreadable";
 }
 
 export interface CollectFilesResult {
