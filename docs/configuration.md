@@ -95,16 +95,23 @@ for the methodology and measured results.
 
 #### Batching Ollama embeddings
 
-The indexer sends multiple chunks to Ollama in one request. This decreases the
-number of HTTP requests and accelerates indexing against a remote Ollama host.
+The indexer sends multiple embedding texts to Ollama in one request. This decreases
+the number of HTTP requests and accelerates indexing against a remote Ollama host.
 The `/api/embed` endpoint accepts an array of texts and returns one vector per
-text. The indexer uses this endpoint for batches of two or more chunks. A
-single-chunk batch uses the legacy `/api/embeddings` endpoint.
+text. The indexer uses this endpoint for batches of two or more texts. A single-text
+batch uses the legacy `/api/embeddings` endpoint. A chunk that the splitter divides
+into multiple parts sends one text per part, so a batch can carry several parts of
+the same chunk.
 
 If the batched endpoint is not available, the indexer falls back to the legacy
-per-chunk endpoint. If one chunk exceeds the model context length, the indexer
-truncates and retries that chunk by itself. If the batch response is malformed,
-the indexer retries each chunk by itself so one bad vector fails only its chunk.
+per-text endpoint and remembers the result, so later batches skip the probe. If one
+text exceeds the model context length, the indexer truncates and retries that text
+by itself. If the batch response is malformed, the indexer retries each text by
+itself so a bad batch response re-embeds each text cleanly. This is not in-run
+per-text isolation: if a text then hard-fails per-text, the whole request batch
+fails and is marked failed. The chunks in that batch recover on the next `index()`
+run, where the recovery path re-embeds one text per request so a persistently-failing
+text is isolated from healthy texts.
 
 Control the batch size with the `embedding.batch` section:
 
@@ -121,19 +128,20 @@ Control the batch size with the `embedding.batch` section:
 
 | Option | Ollama default | Purpose |
 |---|---:|---|
-| `maxBatchItems` | `16` | Maximum number of chunks in one request |
+| `maxBatchItems` | `16` | Maximum number of embedding texts in one request |
 | `maxBatchTokens` | `65536` | Maximum total estimated tokens in one request |
 
 Ollama encodes each text independently. The model context length applies to each
 text and not to the batch total. Set `maxBatchTokens` to bound the request size and
-the processing time. Set `maxBatchItems` to bound the number of texts. Both values
-are optional and must be at least 1. When you omit a value, the indexer uses the
-Ollama default. These knobs apply to any provider when you set them; the Ollama
-defaults apply only to the Ollama provider.
+the processing time. Set `maxBatchItems` to bound the number of texts (a chunk split
+into multiple parts counts as one text per part). Both values are optional and must
+be at least 1. When you omit a value, the indexer uses the Ollama default. These
+knobs apply only to the Ollama provider; OpenAI, Google, and custom providers ignore
+them and keep their existing request behavior.
 
 The indexer runs up to five Ollama requests at the same time. Each request carries
-up to `maxBatchItems` chunks, so the worst case is five times `maxBatchItems` chunks
-in flight (80 chunks at the default 16). A remote or memory-limited Ollama host can
+up to `maxBatchItems` texts, so the worst case is five times `maxBatchItems` texts
+in flight (80 texts at the default 16). A remote or memory-limited Ollama host can
 run out of memory or exceed the 120-second request timeout when this number is too
 high. Lower `maxBatchItems` for a small or remote host. The Ollama concurrency is
 fixed at five and is not configurable; the custom provider exposes concurrency

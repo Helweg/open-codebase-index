@@ -94,6 +94,33 @@ describe("OllamaEmbeddingProvider.embedBatch", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
   });
 
+  it("caches the 404 result so later multi-text batches skip the /api/embed probe", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/api/embed")) {
+        return new Response("not found", { status: 404 });
+      }
+      if (url.endsWith("/api/embeddings")) {
+        return new Response(JSON.stringify({ embedding: [0.1, 0.2, 0.3] }));
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    const provider = makeProvider();
+
+    // First multi-text batch: 1 batched attempt (404) + 2 per-text fallback = 3 calls.
+    await provider.embedBatch(["aaa", "bbb"]);
+    // Second multi-text batch: the 404 is cached, so it goes straight to the legacy
+    // path (2 per-text requests) and does NOT probe /api/embed again.
+    const result = await provider.embedBatch(["ccc", "ddd"]);
+
+    expect(result.embeddings).toEqual([[0.1, 0.2, 0.3], [0.1, 0.2, 0.3]]);
+    // 3 (first batch) + 2 (second batch, legacy only) = 5 total; only 1 hit /api/embed.
+    expect(fetchSpy).toHaveBeenCalledTimes(5);
+    const embedCalls = fetchSpy.mock.calls.filter((call) => String(call[0]).endsWith("/api/embed"));
+    expect(embedCalls).toHaveLength(1);
+  });
+
   it("falls back to per-text truncation when /api/embed signals a context-length error", async () => {
     const longText = "x".repeat(10_000); // exceeds maxTokens * 4 = 8192 chars
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {

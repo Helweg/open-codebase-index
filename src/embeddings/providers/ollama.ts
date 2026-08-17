@@ -7,6 +7,11 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   private static readonly MIN_TRUNCATION_CHARS = 512;
   private static readonly REQUEST_TIMEOUT_MS = 120_000;
 
+  // Set when /api/embed returns 404 so subsequent multi-text batches skip the
+  // batched endpoint and go straight to the legacy per-text path (one probe per
+  // old ollama install, not one probe per batch).
+  private batchEndpointUnavailable = false;
+
   public constructor(
     credentials: ProviderCredentials,
     modelInfo: EmbeddingProviderModelInfo["ollama"]
@@ -42,8 +47,9 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   // True for a malformed /api/embed response (wrong vector count or a bad vector).
-  // embedBatch falls back to the per-text path on this so one bad vector fails only
-  // its own chunk instead of poisoning the whole batch.
+  // embedBatch falls back to the per-text path on this so a bad batch response
+  // re-embeds each text cleanly. A text that then fails per-text is not isolated
+  // here; it is isolated on the recovery run, which re-embeds one text per request.
   private isBatchValidationError(error: unknown): boolean {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes("invalid embedding batch");
@@ -249,7 +255,9 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
 
   // Per-text /api/embeddings path shared by the single-text fast path and the
   // batch fallback. Uses the legacy endpoint one text at a time, so each text gets
-  // its own truncation safety net and a vector validated on its own.
+  // its own truncation safety net and a vector validated on its own. A text that
+  // hard-fails per-text throws here and fails the whole request batch; the recovery
+  // run re-embeds one text per request to isolate it.
   private async embedOneByOne(texts: string[]): Promise<EmbeddingBatchResult> {
     const results: Array<{ embedding: number[]; tokensUsed: number }> = [];
     for (const text of texts) {
@@ -269,9 +277,9 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
 
     // A single-text batch gets no batching benefit; send it to the legacy per-text
     // path directly so its truncation/timeout/error behavior stays unchanged and no
-    // /api/embed probe runs (this also keeps old ollama installs on the legacy path
-    // for the common single-chunk case).
-    if (texts.length === 1) {
+    // /api/embed probe runs. Once /api/embed is known unavailable, multi-text batches
+    // also skip the probe (see batchEndpointUnavailable).
+    if (texts.length === 1 || this.batchEndpointUnavailable) {
       return this.embedOneByOne(texts);
     }
 
@@ -280,12 +288,19 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     } catch (error) {
       // Fall back to the per-text /api/embeddings path when the batched endpoint is
       // unavailable (old ollama, 404), a single input overflowed the model context
-      // length (per-text truncation net), or the batch response was malformed
-      // (per-chunk isolation: one bad vector fails only its own chunk instead of
-      // the whole batch). Other errors propagate for the indexer's pRetry to handle.
+      // length (per-text truncation net), or the batch response was malformed (so a
+      // bad batch response re-embeds each text cleanly). This is not in-run per-text
+      // isolation: a text that hard-fails per-text throws and fails the whole request
+      // batch, and is isolated only on the recovery run, which re-embeds one text per
+      // request. Other errors propagate for the indexer's pRetry to handle.
+      if (this.isBatchEndpointUnavailableError(error)) {
+        // Old ollama without /api/embed: cache the result so later batches skip the probe.
+        this.batchEndpointUnavailable = true;
+        return this.embedOneByOne(texts);
+      }
+
       if (
         !this.isContextLengthError(error)
-        && !this.isBatchEndpointUnavailableError(error)
         && !this.isBatchValidationError(error)
       ) {
         throw error;

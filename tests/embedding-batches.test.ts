@@ -165,4 +165,17 @@ describe("embedding batch helpers", () => {
     expect(getDynamicBatchOptions(google, aggressiveBatch)).toEqual({});
     expect(getDynamicBatchOptions(custom, aggressiveBatch)).toEqual({});
   });
+
+  it("ignores non-finite embedding.batch.* values and falls back to the ollama defaults", () => {
+    const ollama = { provider: "ollama", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    // NaN, Infinity, and -Infinity are typeof "number" but must not poison the batch
+    // options; the documented defaults apply instead.
+    expect(getDynamicBatchOptions(ollama, { maxBatchItems: Number.NaN, maxBatchTokens: Number.NaN }))
+      .toEqual({ maxBatchTokens: 65_536, maxBatchItems: 16 });
+    expect(getDynamicBatchOptions(ollama, { maxBatchItems: Number.POSITIVE_INFINITY, maxBatchTokens: Number.NEGATIVE_INFINITY }))
+      .toEqual({ maxBatchTokens: 65_536, maxBatchItems: 16 });
+    // A finite override still wins; a non-finite sibling still falls back per-field.
+    expect(getDynamicBatchOptions(ollama, { maxBatchItems: 4, maxBatchTokens: Number.NaN }))
+      .toEqual({ maxBatchTokens: 65_536, maxBatchItems: 4 });
+  });
 });

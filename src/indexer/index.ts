@@ -310,7 +310,7 @@ function getSafeEmbeddingChunkTokenLimit(provider: ConfiguredProviderInfo): numb
 // token sum is not bounded by the model context). 65536 allows the default 16 items
 // (each input is split to <= ~1536 tokens) and is overridable via embedding.batch.
 // 16 (not 32) bounds the in-flight workload: ollama concurrency is fixed at 5, so the
-// worst case is 5 concurrent batches * 16 inputs (~80 chunks) rather than 160.
+// worst case is 5 concurrent batches * 16 inputs (~80 texts) rather than 160.
 const DEFAULT_OLLAMA_MAX_BATCH_ITEMS = 16;
 const DEFAULT_OLLAMA_MAX_BATCH_TOKENS = 65_536;
 
@@ -327,8 +327,8 @@ export function getDynamicBatchOptions(
   const base = { maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS, maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS };
   return {
     ...base,
-    ...(typeof embeddingBatch?.maxBatchTokens === "number" ? { maxBatchTokens: embeddingBatch.maxBatchTokens } : {}),
-    ...(typeof embeddingBatch?.maxBatchItems === "number" ? { maxBatchItems: embeddingBatch.maxBatchItems } : {}),
+    ...(typeof embeddingBatch?.maxBatchTokens === "number" && Number.isFinite(embeddingBatch.maxBatchTokens) ? { maxBatchTokens: embeddingBatch.maxBatchTokens } : {}),
+    ...(typeof embeddingBatch?.maxBatchItems === "number" && Number.isFinite(embeddingBatch.maxBatchItems) ? { maxBatchItems: embeddingBatch.maxBatchItems } : {}),
   };
 }
 
