@@ -504,6 +504,13 @@ interface FailedBatchWriteState {
   recordsWritten: number;
 }
 
+interface FailedBatchProcessingState {
+  state: FailedBatchWriteState;
+  latestById: Map<string, FailedChunkRecordMetadata>;
+  materializedRetryIds: Set<string>;
+  discardedExistingRecords: boolean;
+}
+
 interface EmbeddingRateLimitState {
   backoffMs: number;
 }
@@ -2227,12 +2234,13 @@ export class Indexer {
       if (retained.length > 0) {
         writeFailedBatchRecords(this.failedBatchesPath, retained);
       } else {
+        writeFailedBatchRecords(this.failedBatchesPath, []);
         this.clearFailedBatchState();
       }
       return;
     }
 
-    state.writer.cleanup();
+    state.writer.commit();
     this.clearFailedBatchState();
   }
 
@@ -2247,10 +2255,10 @@ export class Indexer {
     database: Database,
     store: VectorStore,
     invertedIndex: InvertedIndex,
-    failedProcessing: { state: FailedBatchWriteState; latestById: Map<string, FailedChunkRecordMetadata>; materializedRetryIds: Set<string> },
+    failedProcessing: FailedBatchProcessingState,
+    resolvedRetryChunkIds: ReadonlySet<string>,
     currentFileHashes: Map<string, string>,
     committedFilePaths: Set<string>,
-    unchangedFilePaths: Set<string>,
     scopedRoots: string[] | null,
     configuredProviderInfo: ConfiguredProviderInfo,
   ): void {
@@ -2266,7 +2274,11 @@ export class Indexer {
     // chunks whose vectors are already durable.
     this.saveInvertedIndex(invertedIndex);
     store.save();
-    if (failedProcessing.state.recordsWritten > 0 || failedProcessing.latestById.size > 0) {
+    if (
+      failedProcessing.state.recordsWritten > 0
+      || failedProcessing.latestById.size > 0
+      || failedProcessing.discardedExistingRecords
+    ) {
       // Persist the pending retries alongside the written records so a crash
       // after this checkpoint cannot lose them.
       for (const metadata of failedProcessing.latestById.values()) {
@@ -2288,20 +2300,17 @@ export class Indexer {
           }
         }
       }
-      failedProcessing.state.writer.commit();
+      this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
       failedProcessing.state = this.createFailedBatchWriteState();
+      failedProcessing.discardedExistingRecords = false;
       // Preserve the committed records (including out-of-scope projects'
-      // failed batches) so finalization never deletes them, but drop retries
-      // that were already completed during this run.
+      // failed batches) so finalization never deletes them.
       for (const record of this.loadSerializedFailedBatches()) {
         for (const rawChunk of record.chunks) {
           const chunkId = getPendingChunkId(rawChunk);
-          const filePath = getPendingChunkFilePath(rawChunk);
-          const inScope = scopedRoots === null || (filePath !== null && this.isFileInCurrentScope(filePath, scopedRoots));
-          const isPendingRetry = chunkId !== null && failedProcessing.latestById.has(chunkId);
-          const isCompletedRetry = !isPendingRetry && inScope && filePath !== null && unchangedFilePaths.has(filePath);
-          if (!isCompletedRetry) {
-            this.writeFailedBatchRecord(failedProcessing.state, { ...record, chunks: [rawChunk] });
+          this.writeFailedBatchRecord(failedProcessing.state, { ...record, chunks: [rawChunk] });
+          if (chunkId !== null) {
+            failedProcessing.materializedRetryIds.add(chunkId);
           }
         }
       }
@@ -2350,9 +2359,10 @@ export class Indexer {
   private prepareFailedBatchProcessing(
     roots: string[] | null,
     shouldProcess: (filePath: string | null) => boolean,
-  ): { state: FailedBatchWriteState; latestById: Map<string, FailedChunkRecordMetadata>; materializedRetryIds: Set<string> } {
+  ): FailedBatchProcessingState {
     const state = this.createFailedBatchWriteState();
     const latestById = new Map<string, FailedChunkRecordMetadata>();
+    let discardedExistingRecords = false;
 
     try {
       for (const batch of this.loadSerializedFailedBatches()) {
@@ -2364,11 +2374,13 @@ export class Indexer {
             continue;
           }
           if (!shouldProcess(filePath)) {
+            discardedExistingRecords = true;
             continue;
           }
 
           const chunkId = getPendingChunkId(rawChunk);
           if (!chunkId) {
+            discardedExistingRecords = true;
             continue;
           }
           const existing = latestById.get(chunkId);
@@ -2382,7 +2394,12 @@ export class Indexer {
           }
         }
       }
-      return { state, latestById, materializedRetryIds: new Set() };
+      return {
+        state,
+        latestById,
+        materializedRetryIds: new Set(),
+        discardedExistingRecords,
+      };
     } catch (error) {
       state.writer.cleanup();
       throw error;
@@ -4315,6 +4332,7 @@ export class Indexer {
       let processedChangedFiles = 0;
       let lastCheckpointChunks = 0;
       const committedFilePaths = new Set<string>(unchangedFilePaths);
+      const resolvedRetryChunkIds = new Set<string>();
       for (const descriptorBatch of iterateOrderedFileBatches(
         changedFileDescriptors,
         (descriptor) => descriptor.sourceBytes,
@@ -4588,16 +4606,15 @@ export class Indexer {
             store,
             invertedIndex,
             failedProcessing,
+            resolvedRetryChunkIds,
             currentFileHashes,
             committedFilePaths,
-            unchangedFilePaths,
             scopedRoots,
             configuredProviderInfo,
           );
         }
       }
 
-      const resolvedRetryChunkIds = new Set<string>();
       const retryableFailedChunks = this.iterateLatestFailedChunks(
         failedProcessing.latestById,
         scopedRoots,
@@ -4679,9 +4696,9 @@ export class Indexer {
             store,
             invertedIndex,
             failedProcessing,
+            resolvedRetryChunkIds,
             currentFileHashes,
             committedFilePaths,
-            unchangedFilePaths,
             scopedRoots,
             configuredProviderInfo,
           );
@@ -4727,13 +4744,6 @@ export class Indexer {
         if (removedStoredChunks) {
           this.saveInvertedIndex(invertedIndex);
         }
-        if (scopedRoots) {
-          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
-        } else {
-          this.fileHashCache = currentFileHashes;
-          this.saveFileHashCache();
-        }
-        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
@@ -4742,6 +4752,13 @@ export class Indexer {
         this.indexCompatibility = { compatible: true };
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
+        if (scopedRoots) {
+          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
+        } else {
+          this.fileHashCache = currentFileHashes;
+          this.saveFileHashCache();
+        }
         stats.durationMs = Date.now() - startTime;
         onProgress?.({
           phase: "complete",
@@ -4766,13 +4783,6 @@ export class Indexer {
         );
         store.save();
         this.saveInvertedIndex(invertedIndex);
-        if (scopedRoots) {
-          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
-        } else {
-          this.fileHashCache = currentFileHashes;
-          this.saveFileHashCache();
-        }
-        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
@@ -4781,6 +4791,13 @@ export class Indexer {
         this.indexCompatibility = { compatible: true };
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
+        if (scopedRoots) {
+          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
+        } else {
+          this.fileHashCache = currentFileHashes;
+          this.saveFileHashCache();
+        }
         stats.durationMs = Date.now() - startTime;
         onProgress?.({
           phase: "complete",
@@ -4818,16 +4835,15 @@ export class Indexer {
 
       store.save();
       this.saveInvertedIndex(invertedIndex);
+      database.commitWriteTransaction();
+      writeTransactionActive = false;
+      this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
       if (scopedRoots) {
         this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
       } else {
         this.fileHashCache = currentFileHashes;
         this.saveFileHashCache();
       }
-      this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
-
-      database.commitWriteTransaction();
-      writeTransactionActive = false;
 
       if (this.config.indexing.autoGc && stats.removedChunks > 0) {
         const gcReset = await this.maybeRunOrphanGc();

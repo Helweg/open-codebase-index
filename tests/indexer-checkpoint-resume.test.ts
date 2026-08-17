@@ -849,6 +849,58 @@ describe("indexer checkpoint resume", () => {
     expect(failedContent2).not.toContain("alphaOne");
   });
 
+  async function verifyEmptyFailureStateBeforeHash(checkpointIntervalChunks?: number): Promise<void> {
+    const alphaFile = path.join(projectDir, "src", "alpha.ts");
+    const failedBatchesPath = path.join(indexDir, "failed-batches.json");
+    writeSourceFile(alphaFile, ["alphaOne"]);
+
+    failEmbeddingText = "alphaOne";
+    await createIndexer(checkpointIntervalChunks).index();
+    expect(fs.readFileSync(failedBatchesPath, "utf-8")).toContain("alphaOne");
+    failEmbeddingText = null;
+
+    writeSourceFile(alphaFile, ["alphaReplacement"]);
+    const prototype = Indexer.prototype as unknown as {
+      saveFileHashCache(this: Indexer): void;
+    };
+    const saveFileHashCache = prototype.saveFileHashCache;
+    const hashSave = vi.spyOn(prototype, "saveFileHashCache").mockImplementation(function (this: Indexer) {
+      saveFileHashCache.call(this);
+      throw new Error("simulated interruption after empty failed-batch checkpoint");
+    });
+    try {
+      await expect(createIndexer(checkpointIntervalChunks).index()).rejects.toThrow(
+        "simulated interruption after empty failed-batch checkpoint",
+      );
+    } finally {
+      hashSave.mockRestore();
+    }
+
+    expect(fs.existsSync(failedBatchesPath)).toBe(false);
+    const beforeResumeCalls = fetchSpy.mock.calls.length;
+    await createIndexer(checkpointIntervalChunks).index();
+    expect(countEmbeddedTexts(fetchSpy, beforeResumeCalls)).toBe(0);
+
+    const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const branchChunkIds = new Set(db.getBranchChunkIds("default"));
+      const staleChunks = db.getChunksByName("alphaOne");
+      const currentChunks = db.getChunksByName("alphaReplacement");
+      expect(staleChunks.every((chunk) => !branchChunkIds.has(chunk.chunkId))).toBe(true);
+      expect(currentChunks.some((chunk) => branchChunkIds.has(chunk.chunkId))).toBe(true);
+    } finally {
+      db.close();
+    }
+  }
+
+  it("empty checkpoint state removes stale failures before persisting the new file hash", async () => {
+    await verifyEmptyFailureStateBeforeHash(1);
+  });
+
+  it("final empty failed-batch state is published before the new file hash", async () => {
+    await verifyEmptyFailureStateBeforeHash();
+  });
+
   it("checkpoint does not duplicate pending retry chunks across multiple checkpoints", async () => {
     const alphaFile = path.join(projectDir, "src", "alpha.ts");
     const betaFile = path.join(projectDir, "src", "beta.ts");
