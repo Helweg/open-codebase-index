@@ -133,6 +133,25 @@ const add = (a, b) => a + b;
       expect(chunks[0]?.chunkType).toBe("block");
     });
 
+    it("honors linesPerChunk for line-based (.jsonl) files", () => {
+      const lines = Array.from({ length: 20 }, (_, i) => `{"i":${i}}`);
+      const content = lines.join("\n");
+
+      const defaultChunks = parseFile("session.jsonl", content, 30);
+      const smallChunks = parseFile("session.jsonl", content, 5);
+
+      // Default window covers all 20 lines in one chunk.
+      expect(defaultChunks.length).toBe(1);
+      expect(defaultChunks[0].endLine - defaultChunks[0].startLine + 1).toBe(20);
+
+      // Window of 5 with overlap 1 (min(3, 5/4)) -> step 4 -> chunks at starts 1, 5, 9, 13, 17.
+      expect(smallChunks.length).toBe(5);
+      for (const chunk of smallChunks) {
+        expect(chunk.endLine - chunk.startLine + 1).toBeLessThanOrEqual(5);
+      }
+      expect(smallChunks[1].startLine - smallChunks[0].startLine).toBe(4);
+    });
+
     it("should parse PHP files", () => {
       const content = `
 <?php
@@ -760,6 +779,24 @@ const values = [1, 2].map(item => item * 2);
           }),
         ]),
       );
+    });
+
+    it("honors linesPerChunk across a batch of line-based files", () => {
+      const lines = Array.from({ length: 12 }, (_, i) => `line ${i}`);
+      const content = lines.join("\n");
+      const files = [
+        { path: "a.txt", content },
+        { path: "b.jsonl", content },
+      ];
+
+      const [a, b] = parseFiles(files, 4);
+
+      // Window of 4 with overlap 1 (min(3, 4/4)) -> step 3 -> starts 1, 4, 7, 10.
+      expect(a.chunks.length).toBe(4);
+      expect(b.chunks.length).toBe(4);
+      for (const chunk of a.chunks) {
+        expect(chunk.endLine - chunk.startLine + 1).toBeLessThanOrEqual(4);
+      }
     });
   });
 

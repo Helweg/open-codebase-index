@@ -24,19 +24,29 @@ pub use store::*;
 pub use types::*;
 
 #[napi]
-pub fn parse_file(file_path: String, content: String) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_internal(&file_path, &content).map_err(|e| Error::from_reason(e.to_string()))
-}
-
-#[napi]
-pub fn parse_file_as_text(file_path: String, content: String) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_as_text_internal(&file_path, &content)
+pub fn parse_file(
+    file_path: String,
+    content: String,
+    lines_per_chunk: Option<u32>,
+) -> Result<Vec<CodeChunk>> {
+    parser::parse_file_internal(&file_path, &content, lines_per_chunk.unwrap_or(30) as usize)
         .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
-pub fn parse_files(files: Vec<FileInput>) -> Result<Vec<ParsedFile>> {
-    parser::parse_files_parallel(files).map_err(|e| Error::from_reason(e.to_string()))
+pub fn parse_file_as_text(
+    file_path: String,
+    content: String,
+    lines_per_chunk: Option<u32>,
+) -> Result<Vec<CodeChunk>> {
+    parser::parse_file_as_text_internal(&file_path, &content, lines_per_chunk.unwrap_or(30) as usize)
+        .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+#[napi]
+pub fn parse_files(files: Vec<FileInput>, lines_per_chunk: Option<u32>) -> Result<Vec<ParsedFile>> {
+    parser::parse_files_parallel(files, lines_per_chunk.unwrap_or(30) as usize)
+        .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]

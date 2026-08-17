@@ -1,18 +1,18 @@
 import type { CallSiteData, CodeChunk, FileInput, ParsedFile, ParsedSymbol, ChunkType } from "./types.js";
 import { native } from "./binding.js";
 
-export function parseFile(filePath: string, content: string): CodeChunk[] {
-  const result = native.parseFile(filePath, content);
+export function parseFile(filePath: string, content: string, linesPerChunk?: number): CodeChunk[] {
+  const result = native.parseFile(filePath, content, linesPerChunk);
   return result.map(mapChunk);
 }
 
-export function parseFileAsText(filePath: string, content: string): CodeChunk[] {
-  const result = native.parseFileAsText(filePath, content);
+export function parseFileAsText(filePath: string, content: string, linesPerChunk?: number): CodeChunk[] {
+  const result = native.parseFileAsText(filePath, content, linesPerChunk);
   return result.map(mapChunk);
 }
 
-export function parseFiles(files: FileInput[]): ParsedFile[] {
-  const result = native.parseFiles(files);
+export function parseFiles(files: FileInput[], linesPerChunk?: number): ParsedFile[] {
+  const result = native.parseFiles(files, linesPerChunk);
   return result.map((f: any) => ({
     path: f.path,
     chunks: f.chunks.map(mapChunk),

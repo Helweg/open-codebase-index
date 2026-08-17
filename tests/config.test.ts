@@ -264,6 +264,16 @@ describe("config schema", () => {
         expect(parseConfig({ indexing: { maxChunksPerFile: -5 } }).indexing.maxChunksPerFile).toBe(1);
       });
 
+      it("should default linesPerChunk to 30 and honor explicit overrides", () => {
+        expect(parseConfig({}).indexing.linesPerChunk).toBe(30);
+        expect(parseConfig({ indexing: { linesPerChunk: 10 } }).indexing.linesPerChunk).toBe(10);
+        // Non-number falls back to the default.
+        expect(parseConfig({ indexing: { linesPerChunk: "small" } }).indexing.linesPerChunk).toBe(30);
+        // Values below 1 are clamped to 1, and floats are floored.
+        expect(parseConfig({ indexing: { linesPerChunk: 0 } }).indexing.linesPerChunk).toBe(1);
+        expect(parseConfig({ indexing: { linesPerChunk: 7.9 } }).indexing.linesPerChunk).toBe(7);
+      });
+
       it("should enforce minimum of 1 for gcIntervalDays", () => {
         expect(parseConfig({ indexing: { gcIntervalDays: 0 } }).indexing.gcIntervalDays).toBe(1);
         expect(parseConfig({ indexing: { gcIntervalDays: -1 } }).indexing.gcIntervalDays).toBe(1);
