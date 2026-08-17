@@ -28,6 +28,23 @@ export interface IndexLockOwner {
   startedAt: string;
   operation: IndexMutationOperation;
   token: string;
+  /** Recovery protocol written by owners that persist destructive phase state. */
+  recoveryProtocolVersion?: 1;
+  /** Originating project root for interrupted global clears (recovery scope). */
+  projectRoot?: string;
+  /** Originating scoped roots for interrupted global clears (recovery scope). */
+  scopedRoots?: string[];
+  /** Destructive clear state, present only while a clear is in progress. */
+  clearRecovery?: IndexLockClearRecoveryState;
+}
+
+export interface IndexLockClearRecoveryState {
+  phase: "clearing";
+  embeddingProvider: string;
+  embeddingModel: string;
+  embeddingDimensions: number;
+  embeddingStrategyVersion: string;
+  compatibilityDecision: "compatible" | "embedding-strategy-mismatch" | "incompatible";
 }
 
 export interface IndexLockRecovery {
@@ -100,6 +117,37 @@ function parseOwner(value: unknown): IndexLockOwner | null {
   if (typeof candidate.startedAt !== "string" || Number.isNaN(Date.parse(candidate.startedAt))) return null;
   if (typeof candidate.operation !== "string" || !VALID_OPERATIONS.has(candidate.operation as IndexMutationOperation)) return null;
   if (typeof candidate.token !== "string" || !UUID_PATTERN.test(candidate.token)) return null;
+  if (candidate.recoveryProtocolVersion !== undefined && candidate.recoveryProtocolVersion !== 1) return null;
+  if (candidate.projectRoot !== undefined && typeof candidate.projectRoot !== "string") return null;
+  if (candidate.scopedRoots !== undefined) {
+    if (!Array.isArray(candidate.scopedRoots) || candidate.scopedRoots.some((root) => typeof root !== "string")) {
+      return null;
+    }
+  }
+  if (candidate.clearRecovery !== undefined) {
+    const recovery = candidate.clearRecovery as Partial<IndexLockClearRecoveryState>;
+    if (
+      typeof recovery !== "object"
+      || recovery === null
+      || recovery.phase !== "clearing"
+      || typeof recovery.embeddingProvider !== "string"
+      || recovery.embeddingProvider.length === 0
+      || typeof recovery.embeddingModel !== "string"
+      || recovery.embeddingModel.length === 0
+      || !Number.isInteger(recovery.embeddingDimensions)
+      || (recovery.embeddingDimensions ?? 0) <= 0
+      || typeof recovery.embeddingStrategyVersion !== "string"
+      || recovery.embeddingStrategyVersion.length === 0
+      || (
+        recovery.compatibilityDecision !== "compatible"
+        && recovery.compatibilityDecision !== "embedding-strategy-mismatch"
+        && recovery.compatibilityDecision !== "incompatible"
+      )
+      || (candidate.operation !== "clear" && candidate.operation !== "force-index")
+    ) {
+      return null;
+    }
+  }
   return candidate as IndexLockOwner;
 }
 
@@ -222,6 +270,11 @@ function createOwner(operation: IndexMutationOperation): IndexLockOwner {
     operation,
     token: randomUUID(),
   };
+}
+
+export interface IndexLockRecoveryScope {
+  projectRoot: string;
+  scopedRoots: string[];
 }
 
 function recoveryMarkerPath(indexPath: string, owner: IndexLockOwner): string {
@@ -395,14 +448,25 @@ export function isTransientIndexLockContention(error: unknown): boolean {
   return error.reason === "active" || error.reason === "reclaiming";
 }
 
-export function acquireIndexLock(indexPath: string, operation: IndexMutationOperation): IndexLockLease {
+export function acquireIndexLock(
+  indexPath: string,
+  operation: IndexMutationOperation,
+  recoveryScope?: IndexLockRecoveryScope,
+): IndexLockLease {
   mkdirSync(indexPath, { recursive: true });
   const canonicalIndexPath = realpathSync.native(indexPath);
   const lockPath = path.join(canonicalIndexPath, "indexing.lock");
   cleanupDeadPublicationCandidates(canonicalIndexPath);
 
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const owner = createOwner(operation);
+    const owner = recoveryScope === undefined
+      ? createOwner(operation)
+      : {
+          ...createOwner(operation),
+          recoveryProtocolVersion: 1 as const,
+          projectRoot: recoveryScope.projectRoot,
+          scopedRoots: recoveryScope.scopedRoots,
+        };
     if (publishJsonDirectory(lockPath, owner)) {
       const lease: IndexLockLease = {
         canonicalIndexPath,
@@ -478,13 +542,46 @@ export function releaseIndexLock(lease: IndexLockLease): boolean {
   return true;
 }
 
+export function setIndexLockClearRecoveryState(
+  lease: IndexLockLease,
+  clearRecovery: IndexLockClearRecoveryState | null,
+): void {
+  const currentOwner = readDirectoryOwner(lease.lockPath);
+  if (!currentOwner || !sameOwner(currentOwner, lease.owner)) {
+    throw new Error(`Lost ownership of index mutation lease ${lease.owner.token}`);
+  }
+
+  const nextOwner: IndexLockOwner = { ...currentOwner };
+  if (clearRecovery === null) {
+    delete nextOwner.clearRecovery;
+  } else {
+    nextOwner.clearRecovery = clearRecovery;
+  }
+
+  const ownerPath = path.join(lease.lockPath, OWNER_FILE_NAME);
+  const temporaryPath = path.join(
+    lease.lockPath,
+    `${OWNER_FILE_NAME}.tmp.${lease.owner.pid}.${lease.owner.token}.${randomUUID()}`,
+  );
+  try {
+    writeFileSync(temporaryPath, JSON.stringify(nextOwner), {
+      encoding: "utf-8",
+      flag: "wx",
+      mode: 0o600,
+    });
+    retryTransientFilesystemOperation(() => renameSync(temporaryPath, ownerPath));
+  } finally {
+    if (existsSync(temporaryPath)) rmSync(temporaryPath, { force: true });
+  }
+}
+
 export async function withIndexLock<T>(
   indexPath: string,
   operation: IndexMutationOperation,
   callback: (lease: IndexLockLease) => Promise<T> | T,
-  options: { completeRecoveries?: boolean } = {},
+  options: { completeRecoveries?: boolean; recoveryScope?: IndexLockRecoveryScope } = {},
 ): Promise<T> {
-  const lease = acquireIndexLock(indexPath, operation);
+  const lease = acquireIndexLock(indexPath, operation, options.recoveryScope);
   let result: T | undefined;
   let callbackError: unknown;
   let callbackFailed = false;

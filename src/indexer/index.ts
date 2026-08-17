@@ -84,6 +84,8 @@ import {
   recoverLeaseArtifacts,
   releaseIndexLock,
   removeLeaseTemporaryPath,
+  setIndexLockClearRecoveryState,
+  type IndexLockClearRecoveryState,
   type IndexLockLease,
   type IndexLockOwner,
   type IndexMutationOperation,
@@ -102,6 +104,7 @@ import {
 import {
   createFailedBatchWriter,
   readFailedBatchRecords,
+  writeFailedBatchRecords,
   type FailedBatchRecordInput,
   type FailedBatchWriter,
 } from "./failed-state-persistence.js";
@@ -345,6 +348,8 @@ export interface IndexerRuntimeOptions {
   indexPath?: string;
   /** Internal test and benchmark override. Production uses the fixed limits. */
   fileBatchLimits?: FileBatchLimits;
+  /** Internal test and benchmark override. Production uses a fixed default. */
+  checkpointIntervalChunks?: number;
 }
 
 export interface BranchIndexResult {
@@ -491,11 +496,19 @@ interface FailedChunkRecordMetadata {
   attemptCount: number;
   error: string;
   lastAttempt: string;
+  chunks: unknown[];
 }
 
 interface FailedBatchWriteState {
   writer: FailedBatchWriter<unknown>;
   recordsWritten: number;
+}
+
+interface FailedBatchProcessingState {
+  state: FailedBatchWriteState;
+  latestById: Map<string, FailedChunkRecordMetadata>;
+  materializedRetryIds: Set<string>;
+  discardedExistingRecords: boolean;
 }
 
 interface EmbeddingRateLimitState {
@@ -1172,6 +1185,7 @@ export class Indexer {
   private writerArtifactFingerprint: ReaderArtifactFingerprint | null = null;
   private readerArtifactRetryAfter = new Map<IndexReadIssue["component"], number>();
   private readonly fileBatchLimits?: FileBatchLimits;
+  private readonly checkpointIntervalChunks?: number;
 
   constructor(
     projectRoot: string,
@@ -1180,7 +1194,7 @@ export class Indexer {
     runtimeOptions: IndexerRuntimeOptions = {},
   ) {
     this.projectRoot = projectRoot;
-    this.projectIdentityHash = hashContent(this.getCanonicalPath(projectRoot)).slice(0, 16);
+    this.projectIdentityHash = this.getProjectIdentityHash(projectRoot);
     this.materializedProjectRoot = runtimeOptions.materializedProjectRoot ?? projectRoot;
     this.branchNameOverride = runtimeOptions.branchName;
     this.catalogIdentityOverride = runtimeOptions.catalogIdentity;
@@ -1190,6 +1204,7 @@ export class Indexer {
     this.expectedCommitOverride = runtimeOptions.expectedCommit?.toLowerCase();
     this.indexPathOverride = runtimeOptions.indexPath;
     this.fileBatchLimits = runtimeOptions.fileBatchLimits;
+    this.checkpointIntervalChunks = runtimeOptions.checkpointIntervalChunks;
     this.config = config;
     this.host = host;
     if (isGitRepo(this.materializedProjectRoot)) {
@@ -1327,6 +1342,10 @@ export class Indexer {
     }
   }
 
+  private getProjectIdentityHash(projectRoot: string): string {
+    return hashContent(this.getCanonicalPath(projectRoot)).slice(0, 16);
+  }
+
   private isProjectOwnedIndexPath(): boolean {
     return isProjectIndexPathOwnedByProject(this.projectRoot, this.indexPath, this.host);
   }
@@ -1369,7 +1388,10 @@ export class Indexer {
     callback: (recoveredOwners: readonly IndexLockOwner[]) => Promise<T>,
   ): Promise<T> {
     this.refreshBranchInfo();
-    const lease = acquireIndexLock(this.indexPath, operation);
+    const lease = acquireIndexLock(this.indexPath, operation, {
+      projectRoot: this.projectRoot,
+      scopedRoots: this.getScopedRoots(),
+    });
     this.indexPath = lease.canonicalIndexPath;
     this.refreshRuntimeArtifactPaths();
     this.activeIndexLease = lease;
@@ -1427,6 +1449,7 @@ export class Indexer {
 
   private loadFileHashCache(): void {
     if (!existsSync(this.fileHashCachePath)) {
+      this.fileHashCache = new Map();
       return;
     }
 
@@ -1471,11 +1494,11 @@ export class Indexer {
     );
   }
 
-  private getScopedRoots(): string[] {
-    const roots = new Set<string>([this.getCanonicalPath(this.projectRoot)]);
+  private getScopedRoots(projectRoot = this.projectRoot): string[] {
+    const roots = new Set<string>([this.getCanonicalPath(projectRoot)]);
 
     for (const kbRoot of this.config.knowledgeBases) {
-      roots.add(this.getCanonicalPath(path.resolve(this.projectRoot, kbRoot)));
+      roots.add(this.getCanonicalPath(path.resolve(projectRoot, kbRoot)));
     }
 
     return Array.from(roots);
@@ -1577,16 +1600,20 @@ export class Indexer {
     return this.currentBranch || "default";
   }
 
-  private getLegacyMigrationMetadataKey(): string {
-    return `index.globalBranchMigration.${this.projectIdentityHash}`;
+  private getLegacyMigrationMetadataKey(projectIdentityHash = this.projectIdentityHash): string {
+    return `index.globalBranchMigration.${projectIdentityHash}`;
   }
 
-  private getProjectEmbeddingStrategyMetadataKey(): string {
-    return `index.embeddingStrategyVersion.${this.projectIdentityHash}`;
+  private getProjectEmbeddingStrategyMetadataKey(projectIdentityHash = this.projectIdentityHash): string {
+    return `index.embeddingStrategyVersion.${projectIdentityHash}`;
   }
 
-  private getProjectForceReembedMetadataKey(): string {
-    return `index.forceReembed.${this.projectIdentityHash}`;
+  private getProjectForceReembedMetadataKey(projectIdentityHash = this.projectIdentityHash): string {
+    return `index.forceReembed.${projectIdentityHash}`;
+  }
+
+  private getProjectMigrationFinalizedMetadataKey(projectIdentityHash = this.projectIdentityHash): string {
+    return `index.migrationFinalized.${projectIdentityHash}`;
   }
 
   private getBranchMigrationMetadataKey(
@@ -1743,7 +1770,7 @@ export class Indexer {
     return primary === legacy ? [primary] : [primary, legacy];
   }
 
-  private getProjectLocalScopedOwnershipIds(roots: string[]): {
+  private getProjectLocalScopedOwnershipIds(roots: string[], projectRoot = this.projectRoot): {
     chunkIds: Set<string>;
     symbolIds: Set<string>;
   } {
@@ -1755,12 +1782,12 @@ export class Indexer {
 
     const projectLocalFilePaths = new Set<string>([
       ...Array.from(this.fileHashCache.keys()).filter(
-        (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
+        (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath, projectRoot)
       ),
       ...(this.store?.getAllMetadata() ?? [])
         .map(({ metadata }) => metadata.filePath)
         .filter(
-          (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath)
+          (filePath) => this.isFileInCurrentScope(filePath, roots) && this.isFileInProjectRoot(filePath, projectRoot)
         ),
     ]);
 
@@ -1777,7 +1804,11 @@ export class Indexer {
     return { chunkIds, symbolIds };
   }
 
-  private getProjectScopedBranchCatalogCleanupKeys(projectChunkIds: string[], projectSymbolIds: string[]): string[] {
+  private getProjectScopedBranchCatalogCleanupKeys(
+    projectChunkIds: string[],
+    projectSymbolIds: string[],
+    projectRoot = this.projectRoot,
+  ): string[] {
     if (this.config.scope !== "global") {
       return this.getBranchCatalogCleanupKeys();
     }
@@ -1785,9 +1816,10 @@ export class Indexer {
     const keys = new Set<string>();
     const projectChunkIdSet = new Set(projectChunkIds);
     const projectSymbolIdSet = new Set(projectSymbolIds);
+    const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
 
     for (const branchKey of this.database?.getAllBranches() ?? []) {
-      if (branchKey.startsWith(`${this.projectIdentityHash}:`)) {
+      if (branchKey.startsWith(`${projectIdentityHash}:`)) {
         keys.add(branchKey);
         continue;
       }
@@ -1799,8 +1831,10 @@ export class Indexer {
       }
     }
 
-    for (const branchKey of this.getBranchCatalogCleanupKeys()) {
-      keys.add(branchKey);
+    if (projectRoot === this.projectRoot) {
+      for (const branchKey of this.getBranchCatalogCleanupKeys()) {
+        keys.add(branchKey);
+      }
     }
 
     return Array.from(keys);
@@ -1811,10 +1845,10 @@ export class Indexer {
     return roots.some((root) => isPathWithinRoot(canonicalFilePath, root));
   }
 
-  private isFileInProjectRoot(filePath: string): boolean {
+  private isFileInProjectRoot(filePath: string, projectRoot = this.projectRoot): boolean {
     return isPathWithinRoot(
       this.getCanonicalStoredFilePath(filePath),
-      this.getCanonicalPath(this.projectRoot),
+      this.getCanonicalPath(projectRoot),
     );
   }
 
@@ -1864,13 +1898,16 @@ export class Indexer {
     return false;
   }
 
-  private hasForeignScopedBranchData(): boolean {
+  private hasForeignScopedBranchData(
+    projectRoot = this.projectRoot,
+    roots = this.getScopedRoots(projectRoot),
+  ): boolean {
     if (!this.database || this.config.scope !== "global") {
       return false;
     }
 
-    const roots = this.getScopedRoots();
-    const { chunkIds: projectLocalChunkIds, symbolIds: projectLocalSymbolIds } = this.getProjectLocalScopedOwnershipIds(roots);
+    const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
+    const { chunkIds: projectLocalChunkIds, symbolIds: projectLocalSymbolIds } = this.getProjectLocalScopedOwnershipIds(roots, projectRoot);
 
     return this.database.getAllBranches().some(
       (branchKey) => {
@@ -1881,7 +1918,7 @@ export class Indexer {
           return false;
         }
 
-        if (branchKey.startsWith(`${this.projectIdentityHash}:`)) {
+        if (branchKey.startsWith(`${projectIdentityHash}:`)) {
           return false;
         }
 
@@ -1896,7 +1933,8 @@ export class Indexer {
     store: VectorStore,
     invertedIndex: InvertedIndex,
     database: Database,
-    roots: string[]
+    roots: string[],
+    projectRoot = this.projectRoot,
   ): { removedChunkIds: string[]; hasForeignData: boolean } {
     const allMetadata = store.getAllMetadata();
     const scopedEntries = allMetadata.filter(({ metadata }) => this.isFileInCurrentScope(metadata.filePath, roots));
@@ -1906,7 +1944,7 @@ export class Indexer {
     ]);
 
     const projectLocalFilePaths = new Set<string>(
-      Array.from(filePaths).filter((filePath) => this.isFileInProjectRoot(filePath))
+      Array.from(filePaths).filter((filePath) => this.isFileInProjectRoot(filePath, projectRoot))
     );
 
     const removedChunkIds = new Set<string>(scopedEntries.map(({ key }) => key));
@@ -1919,7 +1957,7 @@ export class Indexer {
 
     const projectLocalChunkIds = new Set<string>(
       scopedEntries
-        .filter(({ metadata }) => this.isFileInProjectRoot(metadata.filePath))
+        .filter(({ metadata }) => this.isFileInProjectRoot(metadata.filePath, projectRoot))
         .map(({ key }) => key)
     );
     for (const filePath of projectLocalFilePaths) {
@@ -1942,6 +1980,7 @@ export class Indexer {
     const branchCleanupKeys = this.getProjectScopedBranchCatalogCleanupKeys(
       Array.from(projectLocalChunkIds),
       Array.from(projectLocalSymbolIds),
+      projectRoot,
     );
     for (const branchKey of branchCleanupKeys) {
       database.deleteBranchChunksForBranch(branchKey, removedChunkIdList);
@@ -1984,13 +2023,63 @@ export class Indexer {
     database.gcOrphanEmbeddings();
     database.gcOrphanChunks();
 
-    store.save();
+    // Persist the keyword index before the vector store: a crash between the
+    // two leaves the store as the conservative resume authority, so the next
+    // run re-embeds and repopulates BM25 instead of skipping addChunk for
+    // chunks whose vectors are already durable.
     this.saveInvertedIndex(invertedIndex);
+    store.save();
 
     return {
       removedChunkIds: removedChunkIdList,
       hasForeignData: allMetadata.some(({ metadata }) => !this.isFileInCurrentScope(metadata.filePath, roots)),
     };
+  }
+
+  private getCurrentClearRecoveryState(): IndexLockClearRecoveryState {
+    if (!this.configuredProviderInfo) {
+      throw new Error("Cannot persist clear recovery state before the embedding provider is initialized");
+    }
+    const compatibility = this.checkCompatibility();
+    const compatibilityDecision = compatibility.compatible
+      ? "compatible"
+      : compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH
+        ? "embedding-strategy-mismatch"
+        : "incompatible";
+    return {
+      phase: "clearing",
+      embeddingProvider: this.configuredProviderInfo.provider,
+      embeddingModel: this.configuredProviderInfo.modelInfo.model,
+      embeddingDimensions: this.configuredProviderInfo.modelInfo.dimensions,
+      embeddingStrategyVersion: EMBEDDING_STRATEGY_VERSION,
+      compatibilityDecision,
+    };
+  }
+
+  private beginClearRecoveryState(): IndexLockClearRecoveryState {
+    const recovery = this.getCurrentClearRecoveryState();
+    setIndexLockClearRecoveryState(this.requireActiveLease(), recovery);
+    return recovery;
+  }
+
+  private finishClearRecoveryState(): void {
+    setIndexLockClearRecoveryState(this.requireActiveLease(), null);
+  }
+
+  private matchesCurrentClearRecoveryConfiguration(recovery: IndexLockClearRecoveryState): boolean {
+    const configuredProviderInfo = this.configuredProviderInfo;
+    return configuredProviderInfo !== null
+      && recovery.embeddingProvider === configuredProviderInfo.provider
+      && recovery.embeddingModel === configuredProviderInfo.modelInfo.model
+      && recovery.embeddingDimensions === configuredProviderInfo.modelInfo.dimensions
+      && recovery.embeddingStrategyVersion === EMBEDDING_STRATEGY_VERSION;
+  }
+
+  private hasUnknownLegacyForceIndexClear(owner: IndexLockOwner): boolean {
+    return owner.operation === "force-index"
+      && owner.clearRecovery === undefined
+      && owner.recoveryProtocolVersion !== 1
+      && existsSync(path.join(this.indexPath, "force-index-phase"));
   }
 
   private async recoverFromInterruptedIndexingUnlocked(owners: readonly IndexLockOwner[]): Promise<void> {
@@ -2000,18 +2089,76 @@ export class Indexer {
         hostname: owner.hostname,
         operation: owner.operation,
         startedAt: owner.startedAt,
+        projectRoot: owner.projectRoot,
       });
     }
 
     if (this.config.scope === "global") {
-      if (existsSync(this.fileHashCachePath)) {
-        unlinkSync(this.fileHashCachePath);
+      const clearScopes: Array<{
+        projectRoot: string;
+        scopedRoots: string[];
+        compatibilityDecision: IndexLockClearRecoveryState["compatibilityDecision"];
+      }> = [];
+      for (const owner of owners) {
+        if (this.hasUnknownLegacyForceIndexClear(owner)) {
+          throw new Error(
+            `Cannot automatically recover interrupted force-index ${owner.token}: ` +
+            "the legacy clearing phase ownership is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (
+          owner.operation === "clear"
+          && owner.clearRecovery === undefined
+          && owner.recoveryProtocolVersion !== 1
+        ) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the originating recovery state is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (owner.clearRecovery === undefined) continue;
+        if (!owner.projectRoot || !owner.scopedRoots || owner.scopedRoots.length === 0) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the originating project scope is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        if (!this.matchesCurrentClearRecoveryConfiguration(owner.clearRecovery)) {
+          throw new Error(
+            `Cannot automatically recover interrupted global clear ${owner.token}: ` +
+            "the current embedding configuration does not match the originating lease. " +
+            "The recovery marker was retained; retry from the originating project with matching settings."
+          );
+        }
+        clearScopes.push({
+          projectRoot: owner.projectRoot,
+          scopedRoots: owner.scopedRoots,
+          compatibilityDecision: owner.clearRecovery.compatibilityDecision,
+        });
       }
-
+      if (clearScopes.length > 0) {
+        // The scoped clear purges the file-hash cache entries of the
+        // originating project: load the persisted cache first so the purge
+        // is written back instead of being lost on an empty in-memory map.
+        this.loadFileHashCache();
+      }
+      for (const { projectRoot, scopedRoots, compatibilityDecision } of clearScopes) {
+        // Re-apply the clear decision against the originating project scope:
+        // a global clear only wipes the whole shared index when no foreign
+        // project data is present, otherwise it stays scoped to the project
+        // that started the clear.
+        this.clearGlobalIndexUnlocked(projectRoot, scopedRoots, compatibilityDecision);
+      }
       await this.healthCheckUnlocked();
+      this.logger.info(
+        clearScopes.length > 0
+          ? "Recovery complete, next index will rebuild all files"
+          : "Recovery complete, next index will resume from the last checkpoint",
+      );
+      return;
     }
 
-    this.logger.info("Recovery complete, next index will re-process all files");
+    this.logger.info("Recovery complete, next index will resume from the last checkpoint");
   }
 
   private *loadSerializedFailedBatches(): Generator<SerializedFailedBatch> {
@@ -2057,14 +2204,130 @@ export class Indexer {
     state.recordsWritten += record.chunks.length;
   }
 
-  private finalizeFailedBatchWriteState(state: FailedBatchWriteState): void {
+  private finalizeFailedBatchWriteState(
+    state: FailedBatchWriteState,
+    resolvedChunkIds: ReadonlySet<string> = new Set(),
+  ): void {
     if (state.recordsWritten > 0) {
-      state.writer.commit();
+      // Deduplicate by chunk ID and drop resolved retries. Process in reverse
+      // so the last-written record (highest attemptCount) wins; the
+      // checkpoint reconstruction loop and the retry phase can both
+      // materialize the same pending retry.
+      const seenChunkIds = new Set<string>();
+      const retained: FailedBatchRecordInput<unknown>[] = [];
+      const records = Array.from(readFailedBatchRecords<unknown>(state.writer.temporaryPath));
+      for (let i = records.length - 1; i >= 0; i--) {
+        const chunks = records[i].chunks.filter((rawChunk) => {
+          const chunkId = getPendingChunkId(rawChunk);
+          if (chunkId !== null) {
+            if (resolvedChunkIds.has(chunkId)) return false;
+            if (seenChunkIds.has(chunkId)) return false;
+            seenChunkIds.add(chunkId);
+          }
+          return true;
+        });
+        if (chunks.length > 0) {
+          retained.unshift({ ...records[i], chunks });
+        }
+      }
+      state.writer.cleanup();
+      if (retained.length > 0) {
+        writeFailedBatchRecords(this.failedBatchesPath, retained);
+      } else {
+        writeFailedBatchRecords(this.failedBatchesPath, []);
+        this.clearFailedBatchState();
+      }
       return;
     }
 
-    state.writer.cleanup();
+    state.writer.commit();
     this.clearFailedBatchState();
+  }
+
+  private getCheckpointIntervalChunks(totalChunks: number): number {
+    return Math.max(
+      this.checkpointIntervalChunks ?? 2000,
+      Math.floor(totalChunks / 10),
+    );
+  }
+
+  private checkpointIndexRun(
+    database: Database,
+    store: VectorStore,
+    invertedIndex: InvertedIndex,
+    failedProcessing: FailedBatchProcessingState,
+    resolvedRetryChunkIds: ReadonlySet<string>,
+    currentFileHashes: Map<string, string>,
+    committedFilePaths: Set<string>,
+    scopedRoots: string[] | null,
+    configuredProviderInfo: ConfiguredProviderInfo,
+  ): void {
+    if (!this.hasProjectForceReembedPending()) {
+      this.saveIndexMetadata(configuredProviderInfo);
+      this.indexCompatibility = { compatible: true };
+    }
+    database.commitWriteTransaction();
+    database.beginWriteTransaction();
+    // Persist the keyword index before the vector store: a crash between the
+    // two leaves the store as the conservative resume authority, so the next
+    // run re-embeds and repopulates BM25 instead of skipping addChunk for
+    // chunks whose vectors are already durable.
+    this.saveInvertedIndex(invertedIndex);
+    store.save();
+    if (
+      failedProcessing.state.recordsWritten > 0
+      || failedProcessing.latestById.size > 0
+      || failedProcessing.discardedExistingRecords
+    ) {
+      // Persist the pending retries alongside the written records so a crash
+      // after this checkpoint cannot lose them.
+      for (const metadata of failedProcessing.latestById.values()) {
+        const alreadyMaterialized = metadata.chunks.some((rawChunk) => {
+          const chunkId = getPendingChunkId(rawChunk);
+          return chunkId !== null && failedProcessing.materializedRetryIds.has(chunkId);
+        });
+        if (alreadyMaterialized) continue;
+        this.writeFailedBatchRecord(failedProcessing.state, {
+          chunks: metadata.chunks,
+          attemptCount: metadata.attemptCount,
+          error: metadata.error,
+          lastAttempt: metadata.lastAttempt,
+        });
+        for (const rawChunk of metadata.chunks) {
+          const chunkId = getPendingChunkId(rawChunk);
+          if (chunkId !== null) {
+            failedProcessing.materializedRetryIds.add(chunkId);
+          }
+        }
+      }
+      this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
+      failedProcessing.state = this.createFailedBatchWriteState();
+      failedProcessing.discardedExistingRecords = false;
+      // Preserve the committed records (including out-of-scope projects'
+      // failed batches) so finalization never deletes them.
+      for (const record of this.loadSerializedFailedBatches()) {
+        for (const rawChunk of record.chunks) {
+          const chunkId = getPendingChunkId(rawChunk);
+          this.writeFailedBatchRecord(failedProcessing.state, { ...record, chunks: [rawChunk] });
+          if (chunkId !== null) {
+            failedProcessing.materializedRetryIds.add(chunkId);
+          }
+        }
+      }
+    }
+    const partialHashes = new Map<string, string>();
+    for (const filePath of committedFilePaths) {
+      const hash = currentFileHashes.get(filePath);
+      if (hash !== undefined) {
+        partialHashes.set(filePath, hash);
+      }
+    }
+    if (scopedRoots) {
+      this.replaceScopedFileHashCache(partialHashes, scopedRoots);
+    } else {
+      this.fileHashCache = partialHashes;
+      this.saveFileHashCache();
+    }
   }
 
   private clearFailedBatchState(): void {
@@ -2096,9 +2359,10 @@ export class Indexer {
   private prepareFailedBatchProcessing(
     roots: string[] | null,
     shouldProcess: (filePath: string | null) => boolean,
-  ): { state: FailedBatchWriteState; latestById: Map<string, FailedChunkRecordMetadata> } {
+  ): FailedBatchProcessingState {
     const state = this.createFailedBatchWriteState();
     const latestById = new Map<string, FailedChunkRecordMetadata>();
+    let discardedExistingRecords = false;
 
     try {
       for (const batch of this.loadSerializedFailedBatches()) {
@@ -2110,11 +2374,13 @@ export class Indexer {
             continue;
           }
           if (!shouldProcess(filePath)) {
+            discardedExistingRecords = true;
             continue;
           }
 
           const chunkId = getPendingChunkId(rawChunk);
           if (!chunkId) {
+            discardedExistingRecords = true;
             continue;
           }
           const existing = latestById.get(chunkId);
@@ -2123,11 +2389,17 @@ export class Indexer {
               attemptCount: batch.attemptCount,
               error: batch.error,
               lastAttempt: batch.lastAttempt,
+              chunks: [rawChunk],
             });
           }
         }
       }
-      return { state, latestById };
+      return {
+        state,
+        latestById,
+        materializedRetryIds: new Set(),
+        discardedExistingRecords,
+      };
     } catch (error) {
       state.writer.cleanup();
       throw error;
@@ -2174,6 +2446,33 @@ export class Indexer {
           attemptCount: batch.attemptCount,
         };
       }
+    }
+  }
+
+  private restoreMissingChunkRows(database: Database, chunks: readonly PendingChunk[]): void {
+    const missing: ChunkData[] = [];
+    for (const chunk of chunks) {
+      if (database.getChunk(chunk.id)) {
+        continue;
+      }
+      missing.push({
+        chunkId: chunk.id,
+        contentHash: chunk.contentHash,
+        filePath: chunk.metadata.filePath,
+        startLine: chunk.metadata.startLine,
+        endLine: chunk.metadata.endLine,
+        nodeType: chunk.metadata.chunkType,
+        name: chunk.metadata.name,
+        language: chunk.metadata.language,
+        blameSha: chunk.metadata.blameSha,
+        blameAuthor: chunk.metadata.blameAuthor,
+        blameAuthorEmail: chunk.metadata.blameAuthorEmail,
+        blameCommittedAt: chunk.metadata.blameCommittedAt,
+        blameSummary: chunk.metadata.blameSummary,
+      });
+    }
+    if (missing.length > 0) {
+      database.upsertChunksBatch(missing);
     }
   }
 
@@ -3030,7 +3329,22 @@ export class Indexer {
         ]);
       }
       if (recoveredOwners.length > 0 && this.config.scope === "project") {
-        await this.resetLocalIndexArtifacts();
+        const unknownLegacyForceIndex = recoveredOwners.find(
+          (owner) => this.hasUnknownLegacyForceIndexClear(owner),
+        );
+        if (unknownLegacyForceIndex) {
+          throw new Error(
+            `Cannot automatically recover interrupted force-index ${unknownLegacyForceIndex.token}: ` +
+            "the legacy clearing phase ownership is unknown. The recovery marker was retained for manual inspection."
+          );
+        }
+        const shouldReset = recoveredOwners.some(
+          (owner) => owner.clearRecovery !== undefined
+            || (owner.operation === "clear" && owner.recoveryProtocolVersion !== 1),
+        );
+        if (shouldReset) {
+          await this.resetLocalIndexArtifacts();
+        }
       }
 
       this.store = new VectorStore(storePath, dimensions);
@@ -3862,9 +4176,12 @@ export class Indexer {
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles && path.extname(storedPath).toLowerCase() === ".metal";
+      const inMigrationScope =
+        forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
       if (
         cachedHashMatches &&
+        !inMigrationScope &&
         !needsCallGraphRefresh &&
         !requiresSwiftParserUpgrade &&
         !requiresMetalParserUpgrade &&
@@ -4013,6 +4330,9 @@ export class Indexer {
       }
 
       let processedChangedFiles = 0;
+      let lastCheckpointChunks = 0;
+      const committedFilePaths = new Set<string>(unchangedFilePaths);
+      const resolvedRetryChunkIds = new Set<string>();
       for (const descriptorBatch of iterateOrderedFileBatches(
         changedFileDescriptors,
         (descriptor) => descriptor.sourceBytes,
@@ -4206,6 +4526,10 @@ export class Indexer {
         }
         if (symbolBatch.length > 0) {
           database.upsertSymbolsBatch(symbolBatch);
+          database.addSymbolsToBranchBatch(
+            this.getBranchCatalogKey(),
+            symbolBatch.map((symbol) => symbol.id),
+          );
         }
         if (edgeBatch.length > 0) {
           database.upsertCallEdgesBatch(edgeBatch);
@@ -4243,6 +4567,12 @@ export class Indexer {
             forceReembed: forceScopedReembed,
             reuseCachedEmbeddings: true,
             incrementRepeatedFailures: true,
+            onSucceeded: (succeededChunks) => {
+              database.addChunksToBranchBatch(
+                this.getBranchCatalogKey(),
+                succeededChunks.map((chunk) => chunk.id),
+              );
+            },
             onProgress: (batchProgress) => onProgress?.({
               phase: "embedding",
               filesProcessed: unchangedFilePaths.size + processedChangedFiles,
@@ -4260,6 +4590,28 @@ export class Indexer {
               failedForcedChunkIds.add(chunkId);
             }
           }
+        }
+
+        for (const descriptor of descriptorBatch) {
+          const existingFileChunks = existingChunksByFile.get(descriptor.storedPath);
+          if (!existingFileChunks || existingFileChunks.size === 0) {
+            committedFilePaths.add(descriptor.storedPath);
+          }
+        }
+        const checkpointInterval = this.getCheckpointIntervalChunks(stats.totalChunks);
+        if (stats.totalChunks - lastCheckpointChunks >= checkpointInterval) {
+          lastCheckpointChunks = stats.totalChunks;
+          this.checkpointIndexRun(
+            database,
+            store,
+            invertedIndex,
+            failedProcessing,
+            resolvedRetryChunkIds,
+            currentFileHashes,
+            committedFilePaths,
+            scopedRoots,
+            configuredProviderInfo,
+          );
         }
       }
 
@@ -4282,6 +4634,12 @@ export class Indexer {
             retryableChunksWithExistingData.add(chunk.id);
           }
         }
+        // A failed chunk checkpointed before its embedding attempt has a
+        // committed SQLite row only when the parsing phase upserted it; a
+        // crash before that checkpoint can leave the row missing while the
+        // failed-batches record survives. Restore the row so the retry does
+        // not leave a branch reference without chunk metadata.
+        this.restoreMissingChunkRows(database, pendingChunks);
         stats.totalChunks += pendingChunks.length;
         onProgress?.({
           phase: "embedding",
@@ -4304,6 +4662,16 @@ export class Indexer {
           forceReembed: forceScopedReembed,
           reuseCachedEmbeddings: true,
           incrementRepeatedFailures: true,
+          onSucceeded: (succeededChunks) => {
+            database.addChunksToBranchBatch(
+              this.getBranchCatalogKey(),
+              succeededChunks.map((chunk) => chunk.id),
+            );
+            for (const chunk of succeededChunks) {
+              failedProcessing.latestById.delete(chunk.id);
+              resolvedRetryChunkIds.add(chunk.id);
+            }
+          },
           onProgress: (batchProgress) => onProgress?.({
             phase: "embedding",
             filesProcessed: files.length,
@@ -4320,6 +4688,20 @@ export class Indexer {
           if (forceScopedReembed) {
             failedForcedChunkIds.add(chunkId);
           }
+        }
+        if (stats.totalChunks - lastCheckpointChunks >= this.getCheckpointIntervalChunks(stats.totalChunks)) {
+          lastCheckpointChunks = stats.totalChunks;
+          this.checkpointIndexRun(
+            database,
+            store,
+            invertedIndex,
+            failedProcessing,
+            resolvedRetryChunkIds,
+            currentFileHashes,
+            committedFilePaths,
+            scopedRoots,
+            configuredProviderInfo,
+          );
         }
       }
 
@@ -4362,13 +4744,6 @@ export class Indexer {
         if (removedStoredChunks) {
           this.saveInvertedIndex(invertedIndex);
         }
-        if (scopedRoots) {
-          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
-        } else {
-          this.fileHashCache = currentFileHashes;
-          this.saveFileHashCache();
-        }
-        this.finalizeFailedBatchWriteState(failedProcessing.state);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
@@ -4377,6 +4752,13 @@ export class Indexer {
         this.indexCompatibility = { compatible: true };
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
+        if (scopedRoots) {
+          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
+        } else {
+          this.fileHashCache = currentFileHashes;
+          this.saveFileHashCache();
+        }
         stats.durationMs = Date.now() - startTime;
         onProgress?.({
           phase: "complete",
@@ -4401,13 +4783,6 @@ export class Indexer {
         );
         store.save();
         this.saveInvertedIndex(invertedIndex);
-        if (scopedRoots) {
-          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
-        } else {
-          this.fileHashCache = currentFileHashes;
-          this.saveFileHashCache();
-        }
-        this.finalizeFailedBatchWriteState(failedProcessing.state);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
@@ -4416,6 +4791,13 @@ export class Indexer {
         this.indexCompatibility = { compatible: true };
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
+        if (scopedRoots) {
+          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
+        } else {
+          this.fileHashCache = currentFileHashes;
+          this.saveFileHashCache();
+        }
         stats.durationMs = Date.now() - startTime;
         onProgress?.({
           phase: "complete",
@@ -4453,16 +4835,15 @@ export class Indexer {
 
       store.save();
       this.saveInvertedIndex(invertedIndex);
+      database.commitWriteTransaction();
+      writeTransactionActive = false;
+      this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
       if (scopedRoots) {
         this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
       } else {
         this.fileHashCache = currentFileHashes;
         this.saveFileHashCache();
       }
-      this.finalizeFailedBatchWriteState(failedProcessing.state);
-
-      database.commitWriteTransaction();
-      writeTransactionActive = false;
 
       if (this.config.indexing.autoGc && stats.removedChunks > 0) {
         const gcReset = await this.maybeRunOrphanGc();
@@ -4487,6 +4868,9 @@ export class Indexer {
       stats.durationMs = Date.now() - startTime;
       if (forceScopedReembed && failedForcedChunkIds.size === 0) {
         database.deleteMetadata(this.getProjectForceReembedMetadataKey());
+      }
+      if (forceScopedReembed) {
+        database.setMetadata(this.getProjectMigrationFinalizedMetadataKey(), "true");
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
@@ -5187,7 +5571,9 @@ export class Indexer {
   async forceIndex(onProgress?: ProgressCallback): Promise<IndexStats> {
     return this.withIndexMutationLease("force-index", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
-      await this.clearIndexUnlocked();
+      const recovery = this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery.compatibilityDecision);
+      this.finishClearRecoveryState();
       return this.indexUnlocked(onProgress, [], true);
     });
   }
@@ -5195,78 +5581,108 @@ export class Indexer {
   async clearIndex(): Promise<void> {
     await this.withIndexMutationLease("clear", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
-      await this.clearIndexUnlocked();
+      const recovery = this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery.compatibilityDecision);
     });
   }
 
-  private async clearIndexUnlocked(): Promise<void> {
+  private clearGlobalIndexDataUnlocked(projectRoot = this.projectRoot): void {
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
+    const clearedBranchKeys = database.getAllBranches();
+    store.clear();
+    store.save();
+    invertedIndex.clear();
+    this.saveInvertedIndex(invertedIndex);
 
-    if (this.config.scope === "global") {
-      store.load();
-      invertedIndex.load();
-      this.loadFileHashCache();
-      const roots = this.getScopedRoots();
-      const compatibility = this.checkCompatibility();
-      const allMetadata = store.getAllMetadata();
-      const hasForeignData =
-        allMetadata.some(({ metadata }) => !this.isFileInCurrentScope(metadata.filePath, roots)) ||
-        this.hasForeignScopedBranchData() ||
-        this.hasForeignScopedFileHashData(roots) ||
-        this.hasForeignScopedFailedBatches(roots);
+    this.fileHashCache.clear();
+    this.saveFileHashCache();
 
-      if (!compatibility.compatible && hasForeignData) {
-        if (compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH) {
-          this.clearSharedIndexProjectData(store, invertedIndex, database, roots);
-          this.clearScopedFileHashCache(roots);
-          this.clearScopedFailedBatches(roots);
-          database.setMetadata(this.getProjectForceReembedMetadataKey(), "true");
-          database.deleteMetadata(this.getProjectEmbeddingStrategyMetadataKey());
+    database.clearAllIndexedData();
+    this.deleteBranchCommitMetadata(database, clearedBranchKeys);
+    this.clearFailedBatchState();
+
+    database.deleteMetadata("index.version");
+    database.deleteMetadata("index.pathStorageVersion");
+    database.deleteMetadata("index.embeddingProvider");
+    database.deleteMetadata("index.embeddingModel");
+    database.deleteMetadata("index.embeddingDimensions");
+    database.deleteMetadata("index.embeddingStrategyVersion");
+    const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
+    database.deleteMetadata(this.getProjectEmbeddingStrategyMetadataKey(projectIdentityHash));
+    database.deleteMetadata(this.getProjectForceReembedMetadataKey(projectIdentityHash));
+    database.deleteMetadata(this.getLegacyMigrationMetadataKey(projectIdentityHash));
+    database.deleteMetadata("index.createdAt");
+    database.deleteMetadata("index.updatedAt");
+
+    this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
+  }
+
+  private clearGlobalIndexUnlocked(
+    projectRoot = this.projectRoot,
+    roots = this.getScopedRoots(),
+    recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
+  ): void {
+    const { store, invertedIndex, database } = this.requireLoadedIndexState();
+    store.load();
+    invertedIndex.load();
+    this.loadFileHashCache();
+    const compatibility = this.checkCompatibility();
+    const compatibilityDecision = recoveryDecision ?? (
+      compatibility.compatible
+        ? "compatible"
+        : compatibility.code === IncompatibilityCode.EMBEDDING_STRATEGY_MISMATCH
+          ? "embedding-strategy-mismatch"
+          : "incompatible"
+    );
+    const allMetadata = store.getAllMetadata();
+    const hasForeignData =
+      allMetadata.some(({ metadata }) => !this.isFileInCurrentScope(metadata.filePath, roots)) ||
+      this.hasForeignScopedBranchData(projectRoot, roots) ||
+      this.hasForeignScopedFileHashData(roots) ||
+      this.hasForeignScopedFailedBatches(roots);
+
+    if (compatibilityDecision !== "compatible" && hasForeignData) {
+      if (compatibilityDecision === "embedding-strategy-mismatch") {
+        this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
+        this.clearScopedFileHashCache(roots);
+        this.clearScopedFailedBatches(roots);
+        const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
+        database.setMetadata(this.getProjectForceReembedMetadataKey(projectIdentityHash), "true");
+        database.deleteMetadata(this.getProjectEmbeddingStrategyMetadataKey(projectIdentityHash));
+        database.deleteMetadata(this.getProjectMigrationFinalizedMetadataKey(projectIdentityHash));
+        if (projectRoot === this.projectRoot) {
           this.indexCompatibility = { compatible: true };
-          return;
         }
-
-        throw new Error(
-          `Global index compatibility reset is unsafe because the shared index contains files from other projects. ` +
-          `The current global index cannot be force-rebuilt for ${this.projectRoot} without deleting other repositories' indexed data. ` +
-          `Use scope="project" for isolated rebuilds, or manually delete the shared global index if you intend to rebuild all projects.`
-        );
-      }
-
-      if (!hasForeignData) {
-        const clearedBranchKeys = database.getAllBranches();
-        store.clear();
-        store.save();
-        invertedIndex.clear();
-        this.saveInvertedIndex(invertedIndex);
-
-        this.fileHashCache.clear();
-        this.saveFileHashCache();
-
-        database.clearAllIndexedData();
-        this.deleteBranchCommitMetadata(database, clearedBranchKeys);
-        this.clearFailedBatchState();
-
-        database.deleteMetadata("index.version");
-        database.deleteMetadata("index.pathStorageVersion");
-        database.deleteMetadata("index.embeddingProvider");
-        database.deleteMetadata("index.embeddingModel");
-        database.deleteMetadata("index.embeddingDimensions");
-        database.deleteMetadata("index.embeddingStrategyVersion");
-        database.deleteMetadata(this.getProjectEmbeddingStrategyMetadataKey());
-        database.deleteMetadata(this.getProjectForceReembedMetadataKey());
-        database.deleteMetadata(this.getLegacyMigrationMetadataKey());
-        database.deleteMetadata("index.createdAt");
-        database.deleteMetadata("index.updatedAt");
-
-        this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
         return;
       }
 
-      this.clearSharedIndexProjectData(store, invertedIndex, database, roots);
-      this.clearScopedFileHashCache(roots);
-      this.clearScopedFailedBatches(roots);
+      throw new Error(
+        `Global index compatibility reset is unsafe because the shared index contains files from other projects. ` +
+        `The current global index cannot be force-rebuilt for ${projectRoot} without deleting other repositories' indexed data. ` +
+        `Use scope="project" for isolated rebuilds, or manually delete the shared global index if you intend to rebuild all projects.`
+      );
+    }
+
+    if (!hasForeignData) {
+      this.clearGlobalIndexDataUnlocked(projectRoot);
+      return;
+    }
+
+    this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
+    this.clearScopedFileHashCache(roots);
+    this.clearScopedFailedBatches(roots);
+    if (projectRoot === this.projectRoot) {
       this.indexCompatibility = compatibility;
+    }
+  }
+
+  private async clearIndexUnlocked(
+    recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
+  ): Promise<void> {
+    const { store, invertedIndex, database } = this.requireLoadedIndexState();
+
+    if (this.config.scope === "global") {
+      this.clearGlobalIndexUnlocked(this.projectRoot, this.getScopedRoots(), recoveryDecision);
       return;
     }
 
@@ -5464,6 +5880,10 @@ export class Indexer {
       )) {
         const chunks = retryBatch.map(({ chunk }) => chunk);
         const attemptCounts = new Map(retryBatch.map(({ chunk, attemptCount }) => [chunk.id, attemptCount]));
+        // Restore chunk rows that a recovery health check may have collected
+        // as orphans: a failed chunk checkpointed before its embedding has a
+        // committed SQLite row but no branch association until it succeeds.
+        this.restoreMissingChunkRows(database, chunks);
         const batchResult = await this.processPendingChunkBatch(chunks, {
           store,
           provider,
@@ -5502,9 +5922,13 @@ export class Indexer {
     }
 
     if (roots && succeeded > 0 && remaining === 0 && this.hasProjectForceReembedPending()) {
-      database.deleteMetadata(this.getProjectForceReembedMetadataKey());
-      this.saveIndexMetadata(configuredProviderInfo);
-      this.indexCompatibility = { compatible: true };
+      const migrationFinalized =
+        database.getMetadata(this.getProjectMigrationFinalizedMetadataKey()) === "true";
+      if (migrationFinalized) {
+        database.deleteMetadata(this.getProjectForceReembedMetadataKey());
+        this.saveIndexMetadata(configuredProviderInfo);
+        this.indexCompatibility = { compatible: true };
+      }
     }
 
     return { succeeded, failed, remaining };
@@ -5529,6 +5953,7 @@ export class Indexer {
             attemptCount: batch.attemptCount,
             error: batch.error,
             lastAttempt: batch.lastAttempt,
+            chunks: [rawChunk],
           });
         }
       }
