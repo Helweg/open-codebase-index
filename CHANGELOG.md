@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.24.0] - 2026-08-18
 
 ### Added
 
+- Added batched Ollama embedding requests through `/api/embed`, preserving fallback compatibility with servers that only expose the legacy single-text endpoint.
+- Added configurable `indexing.linesPerChunk` for line-based chunking, including strict native-boundary validation and overflow-safe clamping.
+- Added MCP knowledge-base management tools for all MCP clients, with matching host-specific aliases for OpenCode and Pi.
 - Added inclusive `blameUntil` retrieval filters across search, peek, and find-similar tools. Temporal bounds now constrain native vector and keyword candidate retrieval using SQLite blame timestamps instead of filtering only after candidate generation.
 - Added an Ollama-only representative retrieval evaluation command with expanded coverage for embedding failure recovery, index-lock recovery, and duplicate-definition path disambiguation.
 - Added `--embedding-model` to the cross-repository benchmark runner, preserving `nomic-embed-text` as the default while recording the selected local Ollama model in its artifacts.
@@ -27,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Interrupted indexing resume**: Interrupted indexing runs now persist incremental checkpoints (database, vectors, BM25, failed batches, and file hashes), so a subsequent run resumes incrementally instead of re-embedding the whole project. Interrupted global clears and force-indexes are completed on recovery (scoped to the current project when foreign data is present), and checkpointed failed batches and pending retries survive for later retry runs. Checkpoint persistence orders the BM25 index before the vector store so a crash between the two cannot orphan chunks from keyword search. Project-scope dead-lease recovery preserves checkpointed artifacts for incremental resume instead of resetting the local index. Pending retry chunks are no longer duplicated across multiple checkpoints, empty failed-batch state is published before new file hashes, and finalization deduplicates failed-batch records by chunk ID (keeping the highest attempt count).
 - **Interrupted recovery safety**: Recovery of an interrupted global clear or clearing-phase force-index now replays the clear against the originating project scope persisted with the lease, so a project reclaiming a dead lease can no longer delete another project's indexed data. The destructive phase and effective embedding configuration are bound to the lease owner; legacy or configuration-mismatched clears fail closed and retain their recovery marker instead of applying the reclaiming project's settings. Retry runs restore SQLite chunk rows that a recovery health check may have collected as orphans, so a branch reference can never point at a chunk without metadata.
 - **Forced re-embed migration safety**: While a project-scoped forced re-embed is pending, checkpoints no longer stamp new embedding metadata or a compatibility certificate, unchanged scope files are re-embedded instead of skipped, and `retryFailedBatches` only clears the pending migration after the main run has committed its new metadata. This prevents an interrupted migration from resuming into a silent mix of old and new vector spaces.
+- **Pi watcher startup**: Pi now starts the filesystem watcher after a successful index initialization, so codebase changes are observed rather than silently remaining stale.
+- **Indexer resilience**: Unreadable files no longer abort indexing, and invalid Pi indexing configuration is reported as a clear configuration error.
+- **Definition retrieval**: Large declarations and Ruby classes nested in modules are now indexed and ranked correctly for definition lookups.
 - **Conceptual context retrieval**: Prefer implementation paths over tests and documentation for code-focused `codebase_context` searches, without applying a hard source-only filter or changing documentation and test queries.
 - **Scoped definition lookup**: Allow explicit definition searches constrained to a file type or directory to return matching declarations in fixtures and test paths without weakening source-first ranking for ordinary searches.
 
