@@ -10,7 +10,7 @@ description: Semantic code and documentation search by meaning. Use codebase_pee
 The indexed codebase contains **two types of content**:
 
 1. **Project Source Code** — all code files in the current workspace
-2. **Knowledge Base Documentation** — external documentation, usage guides, API references, and example programs added via `add_knowledge_base`
+2. **Knowledge Base Documentation** — external documentation, usage guides, API references, and example programs added via `add_knowledge_base` (MCP/OpenCode) or `knowledge_base_add` (Pi).
 
 ## When to Use What
 
@@ -100,22 +100,17 @@ Manually trigger indexing. Required before first search.
 ### `index_status`
 Check if indexed and ready.
 
-### `add_knowledge_base`
-Add a folder as a knowledge base. The folder will be indexed alongside project code.
+### MCP/OpenCode knowledge-base tools
 
-```
-add_knowledge_base(path="/path/to/docs")
-```
+- `add_knowledge_base(path="/path/to/docs")`
+- `list_knowledge_bases`
+- `remove_knowledge_base(path="/path/to/docs")`
 
-### `list_knowledge_bases`
-List all configured knowledge base folders.
+### Pi knowledge-base tools
 
-### `remove_knowledge_base`
-Remove a knowledge base folder from the index.
-
-```
-remove_knowledge_base(path="/path/to/docs")
-```
+- `knowledge_base_add(path="/path/to/docs")`
+- `knowledge_base_list`
+- `knowledge_base_remove(path="/path/to/docs")`
 
 ## Query Tips
 

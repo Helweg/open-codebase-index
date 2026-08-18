@@ -3313,7 +3313,7 @@ export class Indexer {
 
     if (!this.configuredProviderInfo) {
       throw new Error(
-        "No embedding provider available. Configure GitHub Copilot, OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint."
+        "No embedding provider available. Configure OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint."
       );
     }
 
