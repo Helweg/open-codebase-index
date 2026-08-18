@@ -168,12 +168,11 @@ Abstracts different AI embedding APIs:
 
 | Provider | Implementation | Rate Limit Strategy |
 |----------|----------------|---------------------|
-| GitHub Copilot | OAuth + internal API | 1 concurrent, 4s delay |
 | OpenAI | Official API | 3 concurrent, 500ms delay |
 | Google | Gemini API | 5 concurrent, 200ms delay |
 | Ollama | Local REST | 5 concurrent, no delay |
 
-Detection order: Ollama → GitHub Copilot → OpenAI → Google
+Detection order: Ollama → OpenAI → Google
 
 ### Native Module (`native/src/`)
 
@@ -373,8 +372,7 @@ All processing happens locally. Nothing leaves your machine.
 
 ### Credential Handling
 
-- GitHub Copilot: Uses OpenCode's OAuth token
-- OpenAI/Google: Reads from environment variables
+- OpenAI/Google: Read credentials from OpenCode auth configuration
 - Ollama: Local REST, no credentials needed
 
 No credentials are stored by the plugin.

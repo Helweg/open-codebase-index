@@ -26,7 +26,7 @@ We will acknowledge receipt within 48 hours and provide a detailed response with
 
 This plugin:
 - Stores vector indices locally in your project directory
-- Sends code chunks to embedding APIs (GitHub Copilot, OpenAI, Google, or local Ollama)
+- Sends code chunks to embedding APIs (OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint)
 - Does not transmit data to any other third parties
 
 ### Data Privacy
