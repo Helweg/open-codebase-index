@@ -118,7 +118,7 @@ Reports readiness, chunk counts, compatibility, current provider/model, and inde
 
 ### `index_codebase`
 
-Creates or updates the index. Incremental indexing is the default. Use `force: true` only for a required full rebuild. `estimateOnly` reports estimated embedding work without indexing.
+Creates or updates the index. Incremental indexing is the default. Use `force: true` only for a required full rebuild. `estimateOnly` reports estimated embedding work without indexing. `dryRun` parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index — a read-only preflight.
 
 ### `index_health_check`
 

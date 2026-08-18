@@ -14,7 +14,10 @@ export interface CostEstimate {
 
 // Result of a dry-run index_codebase pass: parse the real file set, build the
 // embedding text for every indexable chunk, and sum estimateTokens over those
-// texts without calling the embedding provider or writing to the index.
+// texts without requesting embeddings or writing to the index. Provider
+// detection may still run as part of normal initialization (for ollama this
+// contacts /api/tags and /api/show); no embeddings are requested and no writes
+// occur.
 //
 // The token sum uses the local estimate (estimateTokens = ceil(len/4)). It
 // equals the live "Tokens used" counter only for providers that report usage
@@ -106,7 +109,7 @@ export function formatCostEstimate(estimate: CostEstimate): string {
 }
 
 export function formatDryRunEstimate(estimate: DryRunEstimate): string {
-  return `Dry run: parsed the file set to measure the embedding workload. No embeddings were written and the index was not changed.
+  return `Dry run: parsed the file set to measure the embedding workload. No embedding requests were made and the index was not changed.
 
   Files to embed:   ${estimate.filesCount.toLocaleString()}
   Chunks to embed:  ${estimate.chunksCount.toLocaleString()}

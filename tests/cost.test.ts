@@ -244,7 +244,7 @@ describe("cost utilities", () => {
     it("should state the dry-run did not write embeddings or change the index", () => {
       const formatted = formatDryRunEstimate({ filesCount: 1, chunksCount: 1, tokensToEmbed: 1 });
 
-      expect(formatted).toContain("No embeddings were written");
+      expect(formatted).toContain("No embedding requests were made");
       expect(formatted).toContain("index was not changed");
       // The percent-denominator basis note ci relies on: local estimate basis,
       // scoped to estimate-based providers (ollama).

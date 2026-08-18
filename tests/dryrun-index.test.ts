@@ -128,4 +128,28 @@ describe("indexer dryRunCost", () => {
     const status = await indexer.getStatus();
     expect(status.indexed).toBe(false);
   });
+
+  it("counts a source chunk once even when it splits into multiple embedding texts", async () => {
+    // One exported function whose body is a >6100-char string: a single source
+    // chunk whose embedding text exceeds nomic-embed-text's maxChunkTokens
+    // (1536 -> maxContentChars ~6100), so createEmbeddingTexts splits it into
+    // multiple embedding texts.
+    fs.writeFileSync(
+      path.join(tempDir, "src", "huge.ts"),
+      `export function huge() { return "${"x".repeat(7000)}"; }\n`,
+      "utf-8",
+    );
+    const indexer = createIndexer();
+    const dryRun = await indexer.dryRunCost();
+
+    const stats = await indexer.forceIndex();
+
+    // chunksCount counts source chunks (like indexedChunks), not embedding texts,
+    // so it still matches after a chunk splits.
+    expect(stats.indexedChunks).toBe(dryRun.chunksCount);
+    // tokens are summed per embedding text, so the token totals still match.
+    expect(stats.tokensUsed).toBe(dryRun.tokensToEmbed);
+    // The oversized chunk split: more embedding requests than source chunks.
+    expect(embeddingCalls.length).toBeGreaterThan(dryRun.chunksCount);
+  });
 });

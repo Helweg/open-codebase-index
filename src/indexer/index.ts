@@ -4079,8 +4079,10 @@ export class Indexer {
         );
         for (const chunk of chunksToProcess) {
           const texts = createEmbeddingTexts(chunk, parsed.path, maxChunkTokens);
+          // Count one per source chunk (matches stats.indexedChunks); a chunk may
+          // split into multiple embedding texts, which are summed into tokensToEmbed.
+          chunksCount += 1;
           for (const text of texts) {
-            chunksCount += 1;
             tokensToEmbed += estimateTokens(text);
           }
         }
