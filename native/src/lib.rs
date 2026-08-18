@@ -35,8 +35,12 @@ pub fn parse_file(
     content: String,
     lines_per_chunk: Option<u32>,
 ) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_internal(&file_path, &content, lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize)
-        .map_err(|e| Error::from_reason(e.to_string()))
+    parser::parse_file_internal(
+        &file_path,
+        &content,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
@@ -45,14 +49,21 @@ pub fn parse_file_as_text(
     content: String,
     lines_per_chunk: Option<u32>,
 ) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_as_text_internal(&file_path, &content, lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize)
-        .map_err(|e| Error::from_reason(e.to_string()))
+    parser::parse_file_as_text_internal(
+        &file_path,
+        &content,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
 pub fn parse_files(files: Vec<FileInput>, lines_per_chunk: Option<u32>) -> Result<Vec<ParsedFile>> {
-    parser::parse_files_parallel(files, lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize)
-        .map_err(|e| Error::from_reason(e.to_string()))
+    parser::parse_files_parallel(
+        files,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]

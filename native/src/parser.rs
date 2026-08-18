@@ -117,7 +117,10 @@ fn parse_file_with_symbols_internal(
     let language = Language::from_extension(ext);
 
     if language == Language::Text {
-        return Ok((chunk_by_lines(content, &language, lines_per_chunk), Vec::new()));
+        return Ok((
+            chunk_by_lines(content, &language, lines_per_chunk),
+            Vec::new(),
+        ));
     }
 
     let mut parser = Parser::new();
@@ -145,7 +148,12 @@ fn parse_file_with_symbols_internal(
         Language::Gdscript => tree_sitter_gdscript::LANGUAGE.into(),
         Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
         Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
-        _ => return Ok((chunk_by_lines(content, &language, lines_per_chunk), Vec::new())),
+        _ => {
+            return Ok((
+                chunk_by_lines(content, &language, lines_per_chunk),
+                Vec::new(),
+            ))
+        }
     };
 
     parser.set_language(&ts_language)?;
@@ -1931,7 +1939,8 @@ int main() {
 
     #[test]
     fn test_parse_cpp_preserves_small_type_symbols() {
-        let chunks = parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n", 30).unwrap();
+        let chunks =
+            parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n", 30).unwrap();
 
         assert!(chunks.iter().any(|chunk| {
             chunk.chunk_type == "class_specifier" && chunk.name.as_deref() == Some("Tag")
