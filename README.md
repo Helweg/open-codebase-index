@@ -19,7 +19,7 @@ New installs should use `open-codebase-index` and `open-codebase-index-mcp`. The
 - **Definition and graph navigation** through `implementation_lookup`, `call_graph`, and `call_graph_path`.
 - **Incremental, branch-aware indexing** with file watching and content-hash reuse.
 - **Local storage** backed by SQLite, usearch vectors, and a BM25 inverted index.
-- **Multiple embedding providers**: Ollama, GitHub Copilot, OpenAI, Google, or a custom OpenAI-compatible endpoint.
+- **Multiple embedding providers**: Ollama, OpenAI, Google, or a custom OpenAI-compatible endpoint.
 - **Native parsing** for TypeScript/TSX, JavaScript/JSX, Python, Rust, Swift, Go, Java, C#, Ruby, C/C++, Metal, PHP, Apex, Bash, Zig, GDScript, MATLAB, JSON, TOML, YAML, Markdown, and HTML, with text fallback.
 
 ## Quick start with OpenCode
@@ -176,7 +176,9 @@ The index stores reusable content by hash and maintains branch catalogs for chun
 
 ## Knowledge bases and reranking
 
-OpenCode, Pi, and every MCP client can index additional directories as knowledge bases. Configure them with `knowledgeBases`, or use the knowledge-base tools: `add_knowledge_base`, `list_knowledge_bases`, and `remove_knowledge_base` for MCP clients and OpenCode, and `knowledge_base_add`, `knowledge_base_list`, and `knowledge_base_remove` for Pi.
+OpenCode, Pi, and every MCP client can index additional directories as knowledge bases. Configure them with `knowledgeBases`, or use the knowledge-base tools:
+- MCP and OpenCode: `add_knowledge_base`, `list_knowledge_bases`, `remove_knowledge_base`
+- Pi: `knowledge_base_add`, `knowledge_base_list`, `knowledge_base_remove`
 
 Optional external reranking supports Cohere, Jina, and custom compatible endpoints. Local filtering and evidence classes are applied before external candidates are submitted.
 

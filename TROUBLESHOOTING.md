@@ -79,29 +79,26 @@ Runtime state directories such as `.opencode` and `.codebase-index` are intentio
 
 **Error message:**
 ```
-No embedding provider available. Configure GitHub, OpenAI, Google, or Ollama.
+No embedding provider available. Configure OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint.
 ```
 
 **Cause:** The plugin cannot find any configured embedding provider credentials.
 
 **Solutions:**
 
-### Option 1: Use GitHub Copilot (if you have a subscription)
-No additional configuration needed. The plugin automatically detects Copilot credentials.
-
-### Option 2: Use OpenAI
+### Option 1: Use OpenAI
 ```bash
 export OPENAI_API_KEY=sk-...
 ```
 
 Or set in your shell profile (`~/.bashrc`, `~/.zshrc`).
 
-### Option 3: Use Google (Gemini)
+### Option 2: Use Google (Gemini)
 ```bash
 export GOOGLE_API_KEY=...
 ```
 
-### Option 4: Use Ollama (local, free)
+### Option 3: Use Ollama (local, free)
 ```bash
 # Install Ollama from https://ollama.ai
 # Then pull the embedding model:
@@ -120,9 +117,8 @@ Run `/status` in OpenCode to see which provider is detected.
 
 Auto-detect tries providers in this order:
 1. Ollama
-2. GitHub Copilot
-3. OpenAI
-4. Google (Gemini)
+2. OpenAI
+3. Google
 
 ---
 
@@ -139,11 +135,10 @@ Too many requests
 
 **Solutions:**
 
-### For GitHub Copilot
-GitHub Copilot has strict rate limits (~15 requests/minute). The plugin automatically:
-- Uses concurrency of 1
-- Adds 4-second delays between requests
-- Retries with exponential backoff
+### For OpenAI and Google
+These providers can enforce quota limits. The plugin automatically:
+- Uses provider defaults for concurrency and request timing
+- Retries with exponential backoff on transient rate-limit errors
 
 **If still hitting limits:**
 1. Wait 1-2 minutes and retry
@@ -153,18 +148,18 @@ GitHub Copilot has strict rate limits (~15 requests/minute). The plugin automati
    ```
 
 ### For OpenAI
-OpenAI has generous limits, but if you hit them:
 1. Check your OpenAI account tier (free tier has lower limits)
-2. Consider upgrading to a paid tier
-3. Use Ollama for initial indexing, then switch back
+2. Consider switching to a paid tier
+3. For OpenAI-heavy workloads, switch to Ollama for initial indexing, then switch back
 
 ### For Google
-Similar to OpenAI. Check your quota at [Google Cloud Console](https://console.cloud.google.com/).
+1. Check your quota at [Google Cloud Console](https://console.cloud.google.com/).
+2. Verify your API credentials can access Gemini embeddings.
 
 If you see provider/model errors, verify that your configured Google credentials have access to the Gemini embeddings API.
 
 ### For Large Codebases (1k+ files)
-Use Ollama locally - no rate limits:
+Use Ollama locally to avoid external rate limits:
 ```bash
 ollama pull nomic-embed-text
 ```
@@ -231,7 +226,7 @@ Index incompatible: <reason>. Run index with force=true to rebuild.
 **Cause:** The index was built with a different embedding provider or model than what's currently configured. Embeddings from different providers have different dimensions and are not compatible.
 
 **Common scenarios:**
-- Switched from GitHub Copilot to OpenAI
+- Switched from one embedding provider to another
 - Changed Ollama embedding model
 - Updated to a new version of the embedding model
 
@@ -250,7 +245,6 @@ Different embedding providers produce vectors with different dimensions:
 
 | Provider | Model | Dimensions |
 |----------|-------|------------|
-| GitHub Copilot | text-embedding-3-small | 1536 |
 | OpenAI | text-embedding-3-small | 1536 |
 | Google | text-embedding-004 | 768 |
 | Ollama | nomic-embed-text | 768 |
@@ -340,8 +334,8 @@ Files over 1MB are skipped by default, but many medium-sized files can still be 
 }
 ```
 
-### 3. GitHub Copilot Rate Limits
-Copilot has 4-second delays between requests.
+### 3. Provider Rate Limits
+Provider-specific settings vary by quota and account tier. See the earlier rate-limiting guidance for provider-specific behavior.
 
 **Solution:** For initial indexing, use a faster provider, then switch back:
 ```json
