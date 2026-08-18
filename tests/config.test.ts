@@ -276,6 +276,11 @@ describe("config schema", () => {
         // through to the native layer, where they would coerce to 0.
         expect(parseConfig({ indexing: { linesPerChunk: NaN } }).indexing.linesPerChunk).toBe(30);
         expect(parseConfig({ indexing: { linesPerChunk: Infinity } }).indexing.linesPerChunk).toBe(30);
+        // Values above u32::MAX wrap to 0 in the native Option<u32> and then over-chunk
+        // (chunk_by_lines treats 0 as 1). Clamp to u32::MAX (4294967295) so the native
+        // layer never receives a wrapped value.
+        expect(parseConfig({ indexing: { linesPerChunk: 4_294_967_296 } }).indexing.linesPerChunk).toBe(4294967295);
+        expect(parseConfig({ indexing: { linesPerChunk: 9_999_999_999 } }).indexing.linesPerChunk).toBe(4294967295);
       });
 
       it("should enforce minimum of 1 for gcIntervalDays", () => {
