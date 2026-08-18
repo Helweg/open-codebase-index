@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added a `dryRun` option to `index_codebase` and an `index --dry-run` CLI flag: a read-only preflight that parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index. The total serves as a fixed, monotonic denominator for live indexing progress (a force index climbs to ~100%; an incremental index tops out below 100% because cached chunks are counted but not re-embedded) and as a cost preview before committing GPU or time.
+
 ## [0.24.0] - 2026-08-18
 
 ### Added
@@ -17,7 +23,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `--embedding-model` to the cross-repository benchmark runner, preserving `nomic-embed-text` as the default while recording the selected local Ollama model in its artifacts.
 - Expanded the frozen mixed-intent cross-repository cohort to 100 reviewed queries across JavaScript, Python, Go, Rust, Java, C#, PHP, and Ruby, with additional hard Ruby and C# cases.
 - Added a deterministic pull-request CI gate that clones each pinned cohort revision and validates every evidence path plus definition symbol without invoking embeddings.
-- Added a `dryRun` option to `index_codebase` and an `index --dry-run` CLI flag: a read-only preflight that parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index. The total serves as a fixed, monotonic denominator for live indexing progress (a force index climbs to ~100%; an incremental index tops out below 100% because cached chunks are counted but not re-embedded) and as a cost preview before committing GPU or time.
 
 ### Changed
 
