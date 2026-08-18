@@ -246,8 +246,10 @@ describe("cost utilities", () => {
 
       expect(formatted).toContain("No embeddings were written");
       expect(formatted).toContain("index was not changed");
-      // The percent-denominator basis note ci relies on.
-      expect(formatted).toContain("estimateTokens(text) basis");
+      // The percent-denominator basis note ci relies on: local estimate basis,
+      // scoped to estimate-based providers (ollama).
+      expect(formatted).toContain("estimateTokens(text)");
+      expect(formatted).toContain("ollama");
     });
 
     it("should distinguish force-index exactness from incremental upper bound", () => {

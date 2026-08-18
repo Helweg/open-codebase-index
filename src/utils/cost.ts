@@ -14,12 +14,18 @@ export interface CostEstimate {
 
 // Result of a dry-run index_codebase pass: parse the real file set, build the
 // embedding text for every indexable chunk, and sum estimateTokens over those
-// texts without calling the embedding provider or writing to the index. The
-// token sum uses the exact same basis (estimateTokens = ceil(len/4)) the
-// provider reports as "Tokens used", so for a force index (cache bypassed) it
-// is the precise value "Tokens used" climbs to. For an incremental index it is
-// an upper bound: chunks already in the embedding cache are counted here but
-// are not re-embedded.
+// texts without calling the embedding provider or writing to the index.
+//
+// The token sum uses the local estimate (estimateTokens = ceil(len/4)). It
+// equals the live "Tokens used" counter only for providers that report usage
+// on the same basis (ollama counts ceil(len/4)); for providers that report a
+// server tokenizer count (OpenAI, Gemini, custom) it is only an estimate.
+//
+// For a matching provider and a project-scoped force index, the force pass
+// clears its own cached embeddings, so the live counter climbs to this sum. A
+// force index on a shared global index can reuse cached embeddings from other
+// projects, and an incremental index counts cached chunks that are not
+// re-embedded; in both cases the dry-run value is an upper bound.
 export interface DryRunEstimate {
   filesCount: number;
   chunksCount: number;
@@ -106,11 +112,17 @@ export function formatDryRunEstimate(estimate: DryRunEstimate): string {
   Chunks to embed:  ${estimate.chunksCount.toLocaleString()}
   Tokens to embed:  ${estimate.tokensToEmbed.toLocaleString()}
 
-The "Tokens to embed" value uses the same estimateTokens(text) basis the embedding
-provider reports as "Tokens used", so a force index (cache bypassed) climbs to exactly
-this number. For an incremental index this is an upper bound: chunks already in the
-embedding cache are counted here but are not re-embedded, so "Tokens used" climbs to a
-lower value and a progress percent against this total tops out below 100%.
+The "Tokens to embed" value uses the local estimateTokens(text) = ceil(len/4). It
+matches the live "Tokens used" counter only for providers that report usage on the
+same basis (ollama); for providers that report a server tokenizer count (OpenAI,
+Gemini, custom) it is only an estimate.
+
+For a matching provider and a project-scoped force index, the force pass clears its
+own cached embeddings, so the live counter climbs to this number. A force index on a
+shared global index can reuse cached embeddings from other projects, and an
+incremental index counts cached chunks that are not re-embedded; in both cases this
+number is an upper bound on the live counter, so a progress percent against this
+total tops out below 100%.
 `;
 }
 
