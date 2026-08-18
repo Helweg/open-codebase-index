@@ -6,7 +6,7 @@ import { promisify } from "util";
 import PQueue from "p-queue";
 import pRetry from "p-retry";
 
-import { ParsedCodebaseIndexConfig, type RerankerConfig } from "../config/schema.js";
+import { type EmbeddingBatchConfig, ParsedCodebaseIndexConfig, type RerankerConfig } from "../config/schema.js";
 import { detectEmbeddingProvider, ConfiguredProviderInfo, tryDetectProvider, createCustomProviderInfo } from "../embeddings/detector.js";
 import {
   createEmbeddingProvider,
@@ -305,15 +305,31 @@ function getSafeEmbeddingChunkTokenLimit(provider: ConfiguredProviderInfo): numb
   return Math.min(2000, maxChunkTokens);
 }
 
-function getDynamicBatchOptions(provider: ConfiguredProviderInfo): { maxBatchTokens?: number; maxBatchItems?: number } {
-  if (provider.provider === "ollama") {
-    return {
-      maxBatchTokens: provider.modelInfo.maxTokens,
-      maxBatchItems: 1,
-    };
-  }
+// Ollama default batch caps. maxBatchItems is the count limiter; maxBatchTokens is a
+// request size/time guard (ollama encodes each input independently, so the per-batch
+// token sum is not bounded by the model context). 65536 allows the default 16 items
+// (each input is split to <= ~1536 tokens) and is overridable via embedding.batch.
+// 16 (not 32) bounds the in-flight workload: ollama concurrency is fixed at 5, so the
+// worst case is 5 concurrent batches * 16 inputs (~80 texts) rather than 160.
+const DEFAULT_OLLAMA_MAX_BATCH_ITEMS = 16;
+const DEFAULT_OLLAMA_MAX_BATCH_TOKENS = 65_536;
 
-  return {};
+export function getDynamicBatchOptions(
+  provider: ConfiguredProviderInfo,
+  embeddingBatch?: EmbeddingBatchConfig,
+): { maxBatchTokens?: number; maxBatchItems?: number } {
+  // embedding.batch.* is documented as ollama-only. Non-ollama providers keep
+  // their existing (unbatched-by-this-layer) behavior, so return an empty
+  // options object regardless of any user-supplied batch config.
+  if (provider.provider !== "ollama") {
+    return {};
+  }
+  const base = { maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS, maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS };
+  return {
+    ...base,
+    ...(typeof embeddingBatch?.maxBatchTokens === "number" && Number.isFinite(embeddingBatch.maxBatchTokens) ? { maxBatchTokens: embeddingBatch.maxBatchTokens } : {}),
+    ...(typeof embeddingBatch?.maxBatchItems === "number" && Number.isFinite(embeddingBatch.maxBatchItems) ? { maxBatchItems: embeddingBatch.maxBatchItems } : {}),
+  };
 }
 
 function isSqliteCorruptionError(error: unknown): boolean {
@@ -2522,6 +2538,9 @@ export class Indexer {
       forceReembed: boolean;
       reuseCachedEmbeddings: boolean;
       incrementRepeatedFailures: boolean;
+      // When true (recovery path), embed previously-failed chunks one per request
+      // so a permanently-failing chunk is isolated instead of failing its batch.
+      forceSingleItemBatches?: boolean;
       onSucceeded?: (chunks: PendingChunk[]) => void;
       onProgress?: (progress: Readonly<PendingChunkBatchResult>) => void;
     },
@@ -2580,10 +2599,15 @@ export class Indexer {
     const embeddingPartsByChunk = new Map<string, Array<{ vector: number[]; tokenCount: number } | undefined>>();
     const completedVectorsByChunkId = new Map<string, number[]>();
     const completedChunkIds = new Set<string>();
-    const requestBatches = createPendingEmbeddingRequestBatches(
-      chunksNeedingEmbedding,
-      getDynamicBatchOptions(options.configuredProviderInfo),
-    );
+    const batchOptions = getDynamicBatchOptions(options.configuredProviderInfo, this.config.embedding?.batch);
+    // On the recovery path, embed previously-failed chunks one per request so a
+    // permanently-failing chunk is isolated instead of failing its whole batch.
+    // Scoped to ollama (whose default batch size groups chunks); other providers
+    // keep their existing recovery batching.
+    if (options.forceSingleItemBatches && options.configuredProviderInfo.provider === "ollama") {
+      batchOptions.maxBatchItems = 1;
+    }
+    const requestBatches = createPendingEmbeddingRequestBatches(chunksNeedingEmbedding, batchOptions);
     let fatalError: unknown;
 
     for (const requestBatch of requestBatches) {
@@ -4662,6 +4686,7 @@ export class Indexer {
           forceReembed: forceScopedReembed,
           reuseCachedEmbeddings: true,
           incrementRepeatedFailures: true,
+          forceSingleItemBatches: true,
           onSucceeded: (succeededChunks) => {
             database.addChunksToBranchBatch(
               this.getBranchCatalogKey(),
@@ -5898,6 +5923,7 @@ export class Indexer {
           forceReembed: false,
           reuseCachedEmbeddings: false,
           incrementRepeatedFailures: false,
+          forceSingleItemBatches: true,
           onSucceeded: (succeededChunks) => {
             database.addChunksToBranchBatch(
               this.getBranchCatalogKey(),

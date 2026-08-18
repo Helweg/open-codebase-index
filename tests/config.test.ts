@@ -441,6 +441,47 @@ describe("config schema", () => {
       });
     });
 
+    describe("embedding.batch config", () => {
+      it("defaults to an empty embedding config when no batch knobs are set", () => {
+        const config = parseConfig({});
+        expect(config.embedding).toEqual({});
+      });
+
+      it("parses maxBatchItems and maxBatchTokens", () => {
+        const config = parseConfig({
+          embedding: { batch: { maxBatchItems: 16, maxBatchTokens: 4096 } },
+        });
+        expect(config.embedding.batch).toEqual({ maxBatchItems: 16, maxBatchTokens: 4096 });
+      });
+
+      it("accepts a single knob and omits the other", () => {
+        const config = parseConfig({ embedding: { batch: { maxBatchItems: 8 } } });
+        expect(config.embedding.batch).toEqual({ maxBatchItems: 8 });
+        expect(config.embedding.batch?.maxBatchTokens).toBeUndefined();
+      });
+
+      it("clamps non-positive and fractional values to a minimum of 1", () => {
+        const config = parseConfig({
+          embedding: { batch: { maxBatchItems: 0.5, maxBatchTokens: -10 } },
+        });
+        expect(config.embedding.batch).toEqual({ maxBatchItems: 1, maxBatchTokens: 1 });
+      });
+
+      it("ignores non-number batch knobs", () => {
+        const config = parseConfig({
+          embedding: { batch: { maxBatchItems: "32", maxBatchTokens: true } },
+        } as unknown as Parameters<typeof parseConfig>[0]);
+        expect(config.embedding).toEqual({});
+      });
+
+      it("ignores Infinity and NaN so they cannot defeat batch splitting", () => {
+        const config = parseConfig({
+          embedding: { batch: { maxBatchItems: Infinity, maxBatchTokens: NaN } },
+        } as unknown as Parameters<typeof parseConfig>[0]);
+        expect(config.embedding).toEqual({});
+      });
+    });
+
     describe("custom provider config", () => {
       it("should parse valid custom provider config", () => {
         const config = parseConfig({

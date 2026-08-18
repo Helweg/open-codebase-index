@@ -204,6 +204,27 @@ describe("indexer failed batch recovery", () => {
     const config = parseConfig({
       embeddingProvider: "ollama",
       embeddingModel: "nomic-embed-text",
+      // These tests verify per-text recovery machinery (truncation, splitting,
+      // attemptCount, same-run failure isolation), which requires one chunk per
+      // batch. The batched /api/embed fast path is covered in ollama-embed.test.ts.
+      embedding: { batch: { maxBatchItems: 1 } },
+      indexing: {
+        watchFiles: false,
+        retries: 0,
+        retryDelayMs: 1,
+      },
+    });
+
+    return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
+  }
+
+  // Ollama indexer with the DEFAULT batch size (no maxBatchItems pin). Used by
+  // the recovery-isolation regression test, which needs the batched main run to
+  // fail a whole batch and the recovery run to re-embed one chunk per request.
+  function createBatchedOllamaIndexer(): Indexer {
+    const config = parseConfig({
+      embeddingProvider: "ollama",
+      embeddingModel: "nomic-embed-text",
       indexing: {
         watchFiles: false,
         retries: 0,
@@ -864,6 +885,59 @@ describe("indexer failed batch recovery", () => {
     expect(persistedBatches[0]?.chunks[0]?.id).toBeDefined();
     expect(persistedBatches[0]?.attemptCount).toBeGreaterThan(1);
     expect(persistedBatches[0]?.error).toContain("persistent split failure");
+  });
+
+  it("isolates a permanently-failing chunk from healthy chunks on the recovery run (batched ollama)", async () => {
+    // A poison chunk deterministically fails with a NON-fallback error (HTTP 500,
+    // not context-length). With the default 16-item batch, run 1 fails the whole
+    // batch that contains the poison. The recovery run re-embeds one chunk per
+    // request, so the poison fails alone and the healthy chunks that shared its
+    // batch index. Without the recovery-path override this regresses: recovery
+    // re-batches the failed chunks together and the poison fails them all again.
+    fetchSpy.mockImplementation(async (url, init) => {
+      if (String(url).endsWith("/api/tags")) {
+        return new Response(JSON.stringify({ models: [{ name: "nomic-embed-text" }] }), { status: 200 });
+      }
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[]; prompt?: string };
+      const isPoison = (text: string) => text.includes("POISON");
+      if (String(url).endsWith("/api/embed")) {
+        const texts = Array.isArray(body.input) ? body.input : [];
+        if (texts.some(isPoison)) {
+          return new Response(JSON.stringify({ error: "persistent failure" }), { status: 500 });
+        }
+        return new Response(JSON.stringify({
+          embeddings: texts.map(() => Array.from({ length: 768 }, () => 0.1)),
+        }), { status: 200 });
+      }
+      if (String(url).endsWith("/api/embeddings")) {
+        if (isPoison(body.prompt ?? "")) {
+          return new Response(JSON.stringify({ error: "persistent failure" }), { status: 500 });
+        }
+        return new Response(JSON.stringify({ embedding: Array.from({ length: 768 }, () => 0.1) }), { status: 200 });
+      }
+      throw new Error(`Unexpected request: ${String(url)}`);
+    });
+
+    const lines: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      lines.push(`export const healthy${i} = 'healthy${i}';`);
+    }
+    lines.splice(15, 0, "export const POISON = 'POISON';");
+    fs.writeFileSync(sourceFile, lines.join("\n"), "utf-8");
+
+    const indexer = createBatchedOllamaIndexer();
+    const first = await indexer.index();
+    // Run 1: the batch containing POISON fails wholesale (non-fallback 500).
+    expect(first.failedChunks).toBeGreaterThan(0);
+
+    // Recovery run: failed chunks are re-embedded one per request, so only the
+    // poison chunk stays failed and its healthy co-batch chunks get indexed.
+    const recovered = await indexer.index();
+    expect(recovered.indexedChunks).toBeGreaterThan(0);
+    expect(recovered.failedChunks).toBe(1);
+
+    const status = await indexer.getStatus();
+    expect(status.failedBatchesCount).toBe(1);
   });
 
   it("persists failed batches when storage fails after pooling embeddings", async () => {
