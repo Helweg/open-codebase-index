@@ -33,6 +33,7 @@ export interface CliIndexArgs {
   config?: string;
   force: boolean;
   estimateOnly: boolean;
+  dryRun: boolean;
   verbose: boolean;
 }
 
@@ -69,6 +70,7 @@ export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
   let config: string | undefined;
   let force = false;
   let estimateOnly = false;
+  let dryRun = false;
   let verbose = false;
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -111,12 +113,15 @@ export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
       continue;
     }
 
-    if (arg === "--force" || arg === "--estimate-only" || arg === "--verbose") {
+    if (arg === "--force" || arg === "--estimate-only" || arg === "--dry-run" || arg === "--verbose") {
       if (arg === "--force") {
         force = true;
       }
       if (arg === "--estimate-only") {
         estimateOnly = true;
+      }
+      if (arg === "--dry-run") {
+        dryRun = true;
       }
       if (arg === "--verbose") {
         verbose = true;
@@ -131,7 +136,7 @@ export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
     throw new Error(`Unknown index option: ${arg}`);
   }
 
-  return { project, host, config, force, estimateOnly, verbose };
+  return { project, host, config, force, estimateOnly, dryRun, verbose };
 }
 
 export function loadCliRawConfig(args: CliArgs): unknown {
@@ -149,6 +154,7 @@ Options:
   --config <path>        Explicit JSON config path
   --force                Rebuild index even if already up to date
   --estimate-only        Estimate indexing cost only
+  --dry-run              Parse only; report the exact embedding token total without indexing
   --verbose              Include detailed final index statistics
   --help                 Show this message
 
@@ -391,6 +397,7 @@ export async function handleIndexCommand(
     const indexArgs: SharedIndexCodebaseArgs = {
       force: parsedArgs.force,
       estimateOnly: parsedArgs.estimateOnly,
+      dryRun: parsedArgs.dryRun,
       verbose: parsedArgs.verbose,
     };
 

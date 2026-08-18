@@ -21,7 +21,7 @@ import {
   runIndexCodebase,
   runIndexHealthCheck,
 } from "./operations.js";
-import { formatCostEstimate } from "../utils/cost.js";
+import { formatCostEstimate, formatDryRunEstimate } from "../utils/cost.js";
 import { resolveCodebaseEditContext } from "./edit-context.js";
 import { resolveCodebaseContext } from "./context.js";
 import {
@@ -67,6 +67,7 @@ export async function executeIndexCodebase(
 ): Promise<ExecutionResult> {
   const result = await runIndexCodebase(projectRoot, host, args, onProgress);
   if (result.kind === "estimate") return { text: formatCostEstimate(result.estimate) };
+  if (result.kind === "dryrun") return { text: formatDryRunEstimate(result.dryrun) };
   if (result.kind === "busy") return { text: result.text, isError: true };
   if (result.kind === "message") return { text: result.text };
   return { text: formatIndexStats(result.stats, args.verbose ?? false) };

@@ -5,9 +5,11 @@ import {
   estimateChunksFromFiles,
   estimateCost,
   formatCostEstimate,
+  formatDryRunEstimate,
   parseConfirmationResponse,
   formatConfirmationPrompt,
   CostEstimate,
+  DryRunEstimate,
 } from "../src/utils/cost.js";
 
 describe("cost utilities", () => {
@@ -221,6 +223,40 @@ describe("cost utilities", () => {
       expect(formatted).toContain("└");
       expect(formatted).toContain("┘");
       expect(formatted).toContain("│");
+    });
+  });
+
+  describe("formatDryRunEstimate", () => {
+    it("should format the file/chunk/token totals with locale grouping", () => {
+      const estimate: DryRunEstimate = {
+        filesCount: 970,
+        chunksCount: 72488,
+        tokensToEmbed: 76509389,
+      };
+
+      const formatted = formatDryRunEstimate(estimate);
+
+      expect(formatted).toContain("Files to embed:   970");
+      expect(formatted).toContain("Chunks to embed:  72,488");
+      expect(formatted).toContain("Tokens to embed:  76,509,389");
+    });
+
+    it("should state the dry-run did not write embeddings or change the index", () => {
+      const formatted = formatDryRunEstimate({ filesCount: 1, chunksCount: 1, tokensToEmbed: 1 });
+
+      expect(formatted).toContain("No embedding requests were made");
+      expect(formatted).toContain("index was not changed");
+      // The percent-denominator basis note ci relies on: local estimate basis,
+      // scoped to estimate-based providers (ollama).
+      expect(formatted).toContain("estimateTokens(text)");
+      expect(formatted).toContain("ollama");
+    });
+
+    it("should distinguish force-index exactness from incremental upper bound", () => {
+      const formatted = formatDryRunEstimate({ filesCount: 0, chunksCount: 0, tokensToEmbed: 0 });
+
+      expect(formatted).toContain("force index");
+      expect(formatted).toContain("upper bound");
     });
   });
 

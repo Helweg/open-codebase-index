@@ -192,6 +192,7 @@ export const index_codebase: ToolDefinition = tool({
   args: {
     force: z.boolean().optional().default(false).describe("Force reindex even if already indexed"),
     estimateOnly: z.boolean().optional().default(false).describe("Only show cost estimate without indexing"),
+    dryRun: z.boolean().optional().default(false).describe("Parse the file set and report the exact embedding token total without indexing. Read-only; the index is not changed. The total is the value 'Tokens used' climbs to for a force index (and an upper bound for an incremental)."),
     verbose: z.boolean().optional().default(false).describe("Show detailed info about skipped files and parsing failures"),
   },
   async execute(args, context) {

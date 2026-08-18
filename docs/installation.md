@@ -189,6 +189,7 @@ opencode-codebase-index-mcp index --project /path/to/repo --estimate-only
 When using `index`:
 
 - `--estimate-only` prints the estimate directly and exits.
+- `--dry-run` parses the file set and reports the exact embedding token total (files, source chunks, tokens) without indexing; read-only, no embedding requests.
 - `--force` bypasses stale-index checks.
 - `--verbose` includes detailed final index statistics.
 - `--config` loads and parses that file, then initializes the runtime from it before indexing.

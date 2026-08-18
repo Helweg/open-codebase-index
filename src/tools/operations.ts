@@ -20,7 +20,7 @@ import type { SharedCodeCommunitiesArgs } from "./contracts.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
-import type { CostEstimate } from "../utils/cost.js";
+import type { CostEstimate, DryRunEstimate } from "../utils/cost.js";
 import type { AutoIndexStatusSnapshot } from "../utils/auto-index.js";
 import type { SearchTrace } from "../indexer/index.js";
 import {
@@ -425,10 +425,11 @@ export async function getCallGraphPath(
 export async function runIndexCodebase(
   projectRoot: string | undefined,
   host: HostMode,
-  args: { force?: boolean; estimateOnly?: boolean; verbose?: boolean },
+  args: { force?: boolean; estimateOnly?: boolean; dryRun?: boolean; verbose?: boolean },
   onProgress?: ProgressCb,
 ): Promise<
   | { kind: "estimate"; estimate: CostEstimate }
+  | { kind: "dryrun"; dryrun: DryRunEstimate }
   | { kind: "stats"; stats: IndexStats }
   | IndexMessageResult
   | IndexBusyResult
@@ -439,6 +440,10 @@ export async function runIndexCodebase(
   try {
     if (args.estimateOnly) {
       return { kind: "estimate", estimate: await indexer.estimateCost() };
+    }
+
+    if (args.dryRun) {
+      return { kind: "dryrun", dryrun: await indexer.dryRunCost() };
     }
 
     const coordinated = runCoordinatedIndex(root, host, args.force ?? false, (progress) => {
