@@ -23,20 +23,47 @@ pub use parser::*;
 pub use store::*;
 pub use types::*;
 
+/// Default lines-per-chunk window used when a napi caller omits the argument
+/// (undefined -> None). The config layer always supplies a value, so this only
+/// covers direct native callers and tests. Must stay in sync with
+/// `getDefaultIndexingConfig().linesPerChunk` in src/config/defaults.ts.
+const DEFAULT_LINES_PER_CHUNK: u32 = 30;
+
 #[napi]
-pub fn parse_file(file_path: String, content: String) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_internal(&file_path, &content).map_err(|e| Error::from_reason(e.to_string()))
+pub fn parse_file(
+    file_path: String,
+    content: String,
+    lines_per_chunk: Option<u32>,
+) -> Result<Vec<CodeChunk>> {
+    parser::parse_file_internal(
+        &file_path,
+        &content,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
-pub fn parse_file_as_text(file_path: String, content: String) -> Result<Vec<CodeChunk>> {
-    parser::parse_file_as_text_internal(&file_path, &content)
-        .map_err(|e| Error::from_reason(e.to_string()))
+pub fn parse_file_as_text(
+    file_path: String,
+    content: String,
+    lines_per_chunk: Option<u32>,
+) -> Result<Vec<CodeChunk>> {
+    parser::parse_file_as_text_internal(
+        &file_path,
+        &content,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]
-pub fn parse_files(files: Vec<FileInput>) -> Result<Vec<ParsedFile>> {
-    parser::parse_files_parallel(files).map_err(|e| Error::from_reason(e.to_string()))
+pub fn parse_files(files: Vec<FileInput>, lines_per_chunk: Option<u32>) -> Result<Vec<ParsedFile>> {
+    parser::parse_files_parallel(
+        files,
+        lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+    )
+    .map_err(|e| Error::from_reason(e.to_string()))
 }
 
 #[napi]

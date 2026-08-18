@@ -14,7 +14,11 @@ const MAX_CHUNK_SIZE: usize = 2000;
 const TARGET_CHUNK_SIZE: usize = 500;
 const OVERLAP_LINES: usize = 3;
 
-pub fn parse_file_internal(file_path: &str, content: &str) -> Result<Vec<CodeChunk>> {
+pub fn parse_file_internal(
+    file_path: &str,
+    content: &str,
+    lines_per_chunk: usize,
+) -> Result<Vec<CodeChunk>> {
     let ext = Path::new(file_path)
         .extension()
         .and_then(|e| e.to_str())
@@ -23,7 +27,7 @@ pub fn parse_file_internal(file_path: &str, content: &str) -> Result<Vec<CodeChu
     let language = Language::from_extension(ext);
 
     if language == Language::Text {
-        return Ok(chunk_by_lines(content, &language));
+        return Ok(chunk_by_lines(content, &language, lines_per_chunk));
     }
 
     let mut parser = Parser::new();
@@ -52,7 +56,7 @@ pub fn parse_file_internal(file_path: &str, content: &str) -> Result<Vec<CodeChu
         Language::Gdscript => tree_sitter_gdscript::LANGUAGE.into(),
         Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
         Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
-        _ => return Ok(chunk_by_lines(content, &language)),
+        _ => return Ok(chunk_by_lines(content, &language, lines_per_chunk)),
     };
 
     parser.set_language(&ts_language)?;
@@ -61,25 +65,33 @@ pub fn parse_file_internal(file_path: &str, content: &str) -> Result<Vec<CodeChu
         .parse(content, None)
         .ok_or_else(|| anyhow!("Failed to parse file: {}", file_path))?;
 
-    extract_chunks(&tree, content, &language)
+    extract_chunks(&tree, content, &language, lines_per_chunk)
 }
 
-pub fn parse_file_as_text_internal(file_path: &str, content: &str) -> Result<Vec<CodeChunk>> {
+pub fn parse_file_as_text_internal(
+    file_path: &str,
+    content: &str,
+    lines_per_chunk: usize,
+) -> Result<Vec<CodeChunk>> {
     let ext = Path::new(file_path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
 
     let language = Language::from_extension(ext);
-    Ok(chunk_by_lines(content, &language))
+    Ok(chunk_by_lines(content, &language, lines_per_chunk))
 }
 
-pub fn parse_files_parallel(files: Vec<FileInput>) -> Result<Vec<ParsedFile>> {
+pub fn parse_files_parallel(
+    files: Vec<FileInput>,
+    lines_per_chunk: usize,
+) -> Result<Vec<ParsedFile>> {
     let results: Vec<ParsedFile> = files
         .par_iter()
         .filter_map(|file| {
             let (chunks, symbols) =
-                parse_file_with_symbols_internal(&file.path, &file.content).ok()?;
+                parse_file_with_symbols_internal(&file.path, &file.content, lines_per_chunk)
+                    .ok()?;
             let hash = crate::hasher::xxhash_content(&file.content);
             Some(ParsedFile {
                 path: file.path.clone(),
@@ -96,6 +108,7 @@ pub fn parse_files_parallel(files: Vec<FileInput>) -> Result<Vec<ParsedFile>> {
 fn parse_file_with_symbols_internal(
     file_path: &str,
     content: &str,
+    lines_per_chunk: usize,
 ) -> Result<(Vec<CodeChunk>, Vec<ParsedSymbol>)> {
     let ext = Path::new(file_path)
         .extension()
@@ -104,7 +117,10 @@ fn parse_file_with_symbols_internal(
     let language = Language::from_extension(ext);
 
     if language == Language::Text {
-        return Ok((chunk_by_lines(content, &language), Vec::new()));
+        return Ok((
+            chunk_by_lines(content, &language, lines_per_chunk),
+            Vec::new(),
+        ));
     }
 
     let mut parser = Parser::new();
@@ -132,14 +148,19 @@ fn parse_file_with_symbols_internal(
         Language::Gdscript => tree_sitter_gdscript::LANGUAGE.into(),
         Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
         Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
-        _ => return Ok((chunk_by_lines(content, &language), Vec::new())),
+        _ => {
+            return Ok((
+                chunk_by_lines(content, &language, lines_per_chunk),
+                Vec::new(),
+            ))
+        }
     };
 
     parser.set_language(&ts_language)?;
     let tree = parser
         .parse(content, None)
         .ok_or_else(|| anyhow!("Failed to parse file: {}", file_path))?;
-    let chunks = extract_chunks(&tree, content, &language)?;
+    let chunks = extract_chunks(&tree, content, &language, lines_per_chunk)?;
     let symbols = extract_symbols(&tree, content, &language);
     Ok((chunks, symbols))
 }
@@ -187,7 +208,12 @@ fn extract_symbol_nodes(
     }
 }
 
-fn extract_chunks(tree: &Tree, source: &str, language: &Language) -> Result<Vec<CodeChunk>> {
+fn extract_chunks(
+    tree: &Tree,
+    source: &str,
+    language: &Language,
+    lines_per_chunk: usize,
+) -> Result<Vec<CodeChunk>> {
     let mut chunks = Vec::new();
     let root = tree.root_node();
     let mut cursor = root.walk();
@@ -195,7 +221,7 @@ fn extract_chunks(tree: &Tree, source: &str, language: &Language) -> Result<Vec<
     extract_semantic_nodes(&mut cursor, source, language, &mut chunks, 0);
 
     if chunks.is_empty() {
-        return Ok(chunk_by_lines(source, language));
+        return Ok(chunk_by_lines(source, language, lines_per_chunk));
     }
 
     merge_small_chunks(&mut chunks);
@@ -1154,7 +1180,7 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
     *chunks = merged;
 }
 
-fn chunk_by_lines(content: &str, language: &Language) -> Vec<CodeChunk> {
+fn chunk_by_lines(content: &str, language: &Language, lines_per_chunk: usize) -> Vec<CodeChunk> {
     let lines: Vec<&str> = content.lines().collect();
     let total_lines = lines.len();
 
@@ -1162,12 +1188,17 @@ fn chunk_by_lines(content: &str, language: &Language) -> Vec<CodeChunk> {
         return Vec::new();
     }
 
-    let lines_per_chunk = 30;
-    let step_size = if lines_per_chunk > OVERLAP_LINES {
-        lines_per_chunk - OVERLAP_LINES
-    } else {
-        lines_per_chunk
-    };
+    // Defense in depth: the config layer clamps linesPerChunk to >= 1, but this pub fn is
+    // also reachable through the napi API with an explicit 0, which would make step_size 0
+    // and hang the loop below. Treat anything below 1 as 1 (one line per chunk).
+    let lines_per_chunk = lines_per_chunk.max(1);
+
+    // Cap the overlap so it stays at or below ~25% of the window. At the default
+    // lines_per_chunk (30) the overlap is min(3, 7) = 3, which is bit-identical to
+    // the previous hardcoded behavior. Smaller opt-in windows shrink the overlap so
+    // the chunks do not collapse into near-duplicates.
+    let overlap = OVERLAP_LINES.min(lines_per_chunk / 4);
+    let step_size = lines_per_chunk.saturating_sub(overlap);
     let mut chunks = Vec::new();
     let mut start = 0;
 
@@ -1389,7 +1420,7 @@ class Greeter {
 }
 "#;
 
-        let chunks = parse_file_internal("test.ts", content).unwrap();
+        let chunks = parse_file_internal("test.ts", content, 30).unwrap();
         assert!(!chunks.is_empty());
     }
 
@@ -1404,7 +1435,7 @@ class Greeter {
 	const values = [1, 2].map(item => item * 2);
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content)
+        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content, 30)
             .expect("should parse TypeScript arrow functions");
 
         let arrow_names: Vec<String> = symbols
@@ -1434,7 +1465,7 @@ class Greeter {
 	}
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content)
+        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content, 30)
             .expect("should parse exported abstract class");
 
         assert!(symbols.iter().any(|symbol| {
@@ -1465,7 +1496,7 @@ class Greeter:
         return f"Hello, {self.name}!"
 "#;
 
-        let chunks = parse_file_internal("test.py", content).unwrap();
+        let chunks = parse_file_internal("test.py", content, 30).unwrap();
         assert!(!chunks.is_empty());
     }
 
@@ -1479,7 +1510,7 @@ class Greeter:
     #[test]
     fn test_parse_php_8_semantic_chunks_have_names() {
         let content = include_str!("../../tests/fixtures/call-graph/php-8-features.php");
-        let chunks = parse_file_internal("php-8-features.php", content).unwrap();
+        let chunks = parse_file_internal("php-8-features.php", content, 30).unwrap();
 
         assert!(chunks.iter().any(|chunk| {
             chunk.chunk_type == "class_declaration" && chunk.name.as_deref() == Some("Job")
@@ -1506,7 +1537,7 @@ class Greeter:
             .collect();
         let content = lines.join("\n");
 
-        let chunks = chunk_by_lines(&content, &Language::Text);
+        let chunks = chunk_by_lines(&content, &Language::Text, 30);
 
         assert!(chunks.len() >= 2, "Should have multiple chunks");
 
@@ -1523,6 +1554,85 @@ class Greeter:
     }
 
     #[test]
+    fn test_chunk_by_lines_default_unchanged() {
+        // The default window (30) must keep the historical 30-line chunks and 3-line
+        // overlap (step 27), so existing behavior is bit-identical when the knob is
+        // left at its default.
+        let lines: Vec<String> = (0..100)
+            .map(|i| format!("line {} content here", i))
+            .collect();
+        let content = lines.join("\n");
+
+        let chunks = chunk_by_lines(&content, &Language::Text, 30);
+
+        assert!(!chunks.is_empty(), "Should produce chunks");
+        let first_span = chunks[0].end_line - chunks[0].start_line + 1;
+        assert_eq!(first_span, 30, "First chunk should span 30 lines");
+        if chunks.len() >= 2 {
+            let step = chunks[1].start_line - chunks[0].start_line;
+            assert_eq!(step, 27, "Default step should be 27 (30 - overlap 3)");
+        }
+    }
+
+    #[test]
+    fn test_chunk_by_lines_custom_size() {
+        // A smaller opt-in window (5) must shrink both the chunk size and the
+        // overlap. overlap = min(3, 5/4 = 1) = 1, so step = 5 - 1 = 4.
+        let lines: Vec<String> = (0..40)
+            .map(|i| format!("line {} content here", i))
+            .collect();
+        let content = lines.join("\n");
+
+        let chunks = chunk_by_lines(&content, &Language::Text, 5);
+
+        assert!(chunks.len() >= 2, "Should produce multiple small chunks");
+        for chunk in &chunks {
+            let span = chunk.end_line - chunk.start_line + 1;
+            assert!(
+                span <= 5,
+                "Each chunk should span at most 5 lines, got {}",
+                span
+            );
+        }
+        if chunks.len() >= 2 {
+            let step = chunks[1].start_line - chunks[0].start_line;
+            assert_eq!(step, 4, "Step should be 4 (window 5 - overlap 1)");
+            // Overlap of 1 line: chunk 1 starts where chunk 0 is still in range.
+            assert!(
+                chunks[1].start_line <= chunks[0].end_line,
+                "Chunks should overlap by 1 line"
+            );
+        }
+    }
+
+    #[test]
+    fn test_chunk_by_lines_size_one_no_overlap() {
+        // A window of 1 line must not overlap itself (overlap = min(3, 0) = 0),
+        // producing one chunk per non-empty line.
+        let content = "a\nb\nc";
+        let chunks = chunk_by_lines(content, &Language::Text, 1);
+
+        assert_eq!(chunks.len(), 3, "One line per chunk");
+        for chunk in &chunks {
+            let span = chunk.end_line - chunk.start_line + 1;
+            assert_eq!(span, 1, "Each chunk should span exactly 1 line");
+        }
+    }
+
+    #[test]
+    fn test_chunk_by_lines_zero_clamped_to_one() {
+        // A window of 0 must be clamped to 1 rather than hang (step_size would otherwise
+        // be 0 and the loop would never advance). Behaves like a window of 1.
+        let content = "a\nb\nc";
+        let chunks = chunk_by_lines(content, &Language::Text, 0);
+
+        assert_eq!(chunks.len(), 3, "Zero window clamps to one line per chunk");
+        for chunk in &chunks {
+            assert_eq!(chunk.end_line - chunk.start_line + 1, 1);
+        }
+    }
+
+    #[test]
     fn test_jsdoc_extraction() {
         let content = r#"
 /**
@@ -1535,7 +1645,7 @@ function validateEmail(email: string): boolean {
 }
 "#;
 
-        let chunks = parse_file_internal("test.ts", content).unwrap();
+        let chunks = parse_file_internal("test.ts", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have at least one chunk");
 
         let chunk = &chunks[0];
@@ -1561,7 +1671,7 @@ fn factorial(n: u64) -> Option<u64> {
 }
 "#;
 
-        let chunks = parse_file_internal("test.rs", content).unwrap();
+        let chunks = parse_file_internal("test.rs", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have at least one chunk");
 
         let chunk = &chunks[0];
@@ -1596,7 +1706,7 @@ public enum Operation {
 }
 "#;
 
-        let chunks = parse_file_internal("Calculator.java", content).unwrap();
+        let chunks = parse_file_internal("Calculator.java", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for Java");
 
         let has_class = chunks.iter().any(|c| c.chunk_type == "class_declaration");
@@ -1633,7 +1743,7 @@ public struct Point
 }
 "#;
 
-        let chunks = parse_file_internal("Person.cs", content).unwrap();
+        let chunks = parse_file_internal("Person.cs", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for C#");
     }
 
@@ -1661,7 +1771,7 @@ module Utils
 end
 "#;
 
-        let chunks = parse_file_internal("greeter.rb", content).unwrap();
+        let chunks = parse_file_internal("greeter.rb", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for Ruby");
 
         let has_class = chunks.iter().any(|c| c.chunk_type == "class");
@@ -1682,7 +1792,7 @@ module Rack
 end
 "#;
 
-        let (_, symbols) = parse_file_with_symbols_internal("rack/protection.rb", content)
+        let (_, symbols) = parse_file_with_symbols_internal("rack/protection.rb", content, 30)
             .expect("should parse nested Ruby modules");
         assert!(
             symbols
@@ -1691,7 +1801,7 @@ end
             "Expected nested Ruby class symbol named ContentSecurityPolicy"
         );
 
-        let chunks = parse_file_internal("rack/protection.rb", content)
+        let chunks = parse_file_internal("rack/protection.rb", content, 30)
             .expect("should produce semantic chunks for nested Ruby class");
         assert!(
             chunks.iter().any(|chunk| {
@@ -1721,7 +1831,7 @@ function add() {
 greet "World"
 "#;
 
-        let chunks = parse_file_internal("script.sh", content).unwrap();
+        let chunks = parse_file_internal("script.sh", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for Bash");
 
         let has_function = chunks.iter().any(|c| c.chunk_type == "function_definition");
@@ -1762,7 +1872,7 @@ void greet(const char* name) {
 }
 "#;
 
-        let chunks = parse_file_internal("main.c", content).unwrap();
+        let chunks = parse_file_internal("main.c", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for C");
 
         let has_function = chunks.iter().any(|c| c.chunk_type == "function_definition");
@@ -1808,7 +1918,7 @@ int main() {
 }
 "#;
 
-        let chunks = parse_file_internal("main.cpp", content).unwrap();
+        let chunks = parse_file_internal("main.cpp", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for C++");
 
         let has_class = chunks.iter().any(|c| c.chunk_type == "class_specifier");
@@ -1829,7 +1939,8 @@ int main() {
 
     #[test]
     fn test_parse_cpp_preserves_small_type_symbols() {
-        let chunks = parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n").unwrap();
+        let chunks =
+            parse_file_internal("small.cpp", "class Tag {};\nstruct Point {};\n", 30).unwrap();
 
         assert!(chunks.iter().any(|chunk| {
             chunk.chunk_type == "class_specifier" && chunk.name.as_deref() == Some("Tag")
@@ -1847,7 +1958,7 @@ inline T scaled_value(T value, constant float& scale) {
 }
 "#;
 
-        let chunks = parse_file_internal("shader.metal", content).unwrap();
+        let chunks = parse_file_internal("shader.metal", content, 30).unwrap();
         let function = chunks
             .iter()
             .find(|chunk| chunk.name.as_deref() == Some("scaled_value"))
@@ -1884,7 +1995,7 @@ lto = true
 opt-level = 3
 "#;
 
-        let chunks = parse_file_internal("Cargo.toml", content).unwrap();
+        let chunks = parse_file_internal("Cargo.toml", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for TOML");
 
         let has_table = chunks.iter().any(|c| c.chunk_type == "table");
@@ -1922,7 +2033,7 @@ spec:
             - containerPort: 8080
 "#;
 
-        let chunks = parse_file_internal("deployment.yaml", content).unwrap();
+        let chunks = parse_file_internal("deployment.yaml", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for YAML");
     }
 
@@ -1953,7 +2064,7 @@ myFunction();
 Please read CONTRIBUTING.md for details.
 "#;
 
-        let chunks = parse_file_internal("README.md", content).unwrap();
+        let chunks = parse_file_internal("README.md", content, 30).unwrap();
         // Markdown falls back to line-based chunking
         assert!(!chunks.is_empty(), "Should have chunks for Markdown");
         // Should be block type since we use line-based chunking
@@ -1979,7 +2090,7 @@ public with sharing class AccountService {
 }
 "#;
 
-        let chunks = parse_file_internal("AccountService.cls", content).unwrap();
+        let chunks = parse_file_internal("AccountService.cls", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for Apex");
 
         let has_class = chunks.iter().any(|c| c.chunk_type == "class_declaration");
@@ -1996,7 +2107,7 @@ trigger AccountTrigger on Account (before insert, before update, after delete) {
 }
 "#;
 
-        let chunks = parse_file_internal("AccountTrigger.trigger", content).unwrap();
+        let chunks = parse_file_internal("AccountTrigger.trigger", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for Apex trigger");
 
         let has_trigger = chunks.iter().any(|c| c.chunk_type == "trigger_declaration");
@@ -2029,7 +2140,7 @@ class InnerThing:
         pass
 "#;
 
-        let chunks = parse_file_internal("player.gd", content).unwrap();
+        let chunks = parse_file_internal("player.gd", content, 30).unwrap();
         assert!(!chunks.is_empty(), "Should have chunks for GDScript");
 
         let chunk_types: Vec<&str> = chunks.iter().map(|c| c.chunk_type.as_str()).collect();
@@ -2071,7 +2182,7 @@ public class AccountService {
 }
 "#;
 
-        let chunks = parse_file_internal("AccountService.cls", content).unwrap();
+        let chunks = parse_file_internal("AccountService.cls", content, 30).unwrap();
         let class_chunk = chunks.iter().find(|c| c.chunk_type == "class_declaration");
         assert!(class_chunk.is_some(), "Should find class_declaration");
         assert!(

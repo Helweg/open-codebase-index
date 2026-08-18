@@ -25,6 +25,9 @@ export function getDefaultIndexingConfig(): IndexingConfig {
     maxDepth: 5,
     maxFilesPerDirectory: 100,
     fallbackToTextOnMaxChunks: true,
+    // Must stay in sync with DEFAULT_LINES_PER_CHUNK in native/src/lib.rs (the napi
+    // fallback used when a native caller omits the argument).
+    linesPerChunk: 30,
     gitBlame: { enabled: false },
   };
 }

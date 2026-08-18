@@ -264,6 +264,25 @@ describe("config schema", () => {
         expect(parseConfig({ indexing: { maxChunksPerFile: -5 } }).indexing.maxChunksPerFile).toBe(1);
       });
 
+      it("should default linesPerChunk to 30 and honor explicit overrides", () => {
+        expect(parseConfig({}).indexing.linesPerChunk).toBe(30);
+        expect(parseConfig({ indexing: { linesPerChunk: 10 } }).indexing.linesPerChunk).toBe(10);
+        // Non-number falls back to the default.
+        expect(parseConfig({ indexing: { linesPerChunk: "small" } }).indexing.linesPerChunk).toBe(30);
+        // Values below 1 are clamped to 1, and floats are floored.
+        expect(parseConfig({ indexing: { linesPerChunk: 0 } }).indexing.linesPerChunk).toBe(1);
+        expect(parseConfig({ indexing: { linesPerChunk: 7.9 } }).indexing.linesPerChunk).toBe(7);
+        // Non-finite numbers (NaN, Infinity) fall back to the default rather than leaking
+        // through to the native layer, where they would coerce to 0.
+        expect(parseConfig({ indexing: { linesPerChunk: NaN } }).indexing.linesPerChunk).toBe(30);
+        expect(parseConfig({ indexing: { linesPerChunk: Infinity } }).indexing.linesPerChunk).toBe(30);
+        // Values above u32::MAX wrap to 0 in the native Option<u32> and then over-chunk
+        // (chunk_by_lines treats 0 as 1). Clamp to u32::MAX (4294967295) so the native
+        // layer never receives a wrapped value.
+        expect(parseConfig({ indexing: { linesPerChunk: 4_294_967_296 } }).indexing.linesPerChunk).toBe(4294967295);
+        expect(parseConfig({ indexing: { linesPerChunk: 9_999_999_999 } }).indexing.linesPerChunk).toBe(4294967295);
+      });
+
       it("should enforce minimum of 1 for gcIntervalDays", () => {
         expect(parseConfig({ indexing: { gcIntervalDays: 0 } }).indexing.gcIntervalDays).toBe(1);
         expect(parseConfig({ indexing: { gcIntervalDays: -1 } }).indexing.gcIntervalDays).toBe(1);

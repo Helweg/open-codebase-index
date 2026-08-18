@@ -4370,7 +4370,7 @@ export class Indexer {
         const loadedByPath = new Map(loadedFiles.map((file) => [file.path, file]));
         const descriptorByPath = new Map(descriptorBatch.map((descriptor) => [descriptor.storedPath, descriptor]));
         const parseStartTime = performance.now();
-        const parsedFiles = parseFiles(loadedFiles);
+        const parsedFiles = parseFiles(loadedFiles, this.config.indexing.linesPerChunk);
         const parseMs = performance.now() - parseStartTime;
         this.logger.recordFilesParsed(parsedFiles.length);
         this.logger.recordParseDuration(parseMs);
@@ -4402,7 +4402,7 @@ export class Indexer {
             this.config.indexing.fallbackToTextOnMaxChunks &&
             chunksToProcess.length > this.config.indexing.maxChunksPerFile
           ) {
-            chunksToProcess = parseFileAsText(parsed.path, loadedFile.content);
+            chunksToProcess = parseFileAsText(parsed.path, loadedFile.content, this.config.indexing.linesPerChunk);
           }
           chunksToProcess = selectIndexableChunks(
             chunksToProcess,

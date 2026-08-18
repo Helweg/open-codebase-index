@@ -65,6 +65,16 @@ export interface IndexingConfig {
    * instead of skipping the rest of the file. Default: true
    */
   fallbackToTextOnMaxChunks: boolean;
+  /**
+   * Max lines per chunk for line-based parsing (.jsonl, .txt, unknown extensions,
+   * and the AST fallback path). Each chunk is a sliding window of this many lines.
+   * Default: 30. Lower it for finer-grained retrieval on line-delimited files (for
+   * example Claude .jsonl session transcripts, where one line is one message). The
+   * overlap between neighboring chunks is auto-capped at one quarter of this value,
+   * so smaller windows shrink the overlap too. Only the line-based path is affected;
+   * AST-parsed languages are unchanged.
+   */
+  linesPerChunk: number;
   gitBlame: {
     enabled: boolean;
   };
@@ -237,6 +247,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     maxDepth: typeof rawIndexing.maxDepth === "number" ? (rawIndexing.maxDepth < -1 ? -1 : rawIndexing.maxDepth) : defaultIndexing.maxDepth,
     maxFilesPerDirectory: typeof rawIndexing.maxFilesPerDirectory === "number" ? Math.max(1, rawIndexing.maxFilesPerDirectory) : defaultIndexing.maxFilesPerDirectory,
     fallbackToTextOnMaxChunks: typeof rawIndexing.fallbackToTextOnMaxChunks === "boolean" ? rawIndexing.fallbackToTextOnMaxChunks : defaultIndexing.fallbackToTextOnMaxChunks,
+    linesPerChunk: typeof rawIndexing.linesPerChunk === "number" && Number.isFinite(rawIndexing.linesPerChunk) ? Math.min(Math.max(1, Math.floor(rawIndexing.linesPerChunk)), 4294967295) : defaultIndexing.linesPerChunk,
     gitBlame: {
       enabled: rawIndexing.gitBlame && typeof rawIndexing.gitBlame === "object" && typeof (rawIndexing.gitBlame as Record<string, unknown>).enabled === "boolean"
         ? (rawIndexing.gitBlame as { enabled: boolean }).enabled

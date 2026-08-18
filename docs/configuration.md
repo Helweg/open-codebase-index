@@ -223,6 +223,7 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 | `maxDepth` | `5` | Directory traversal depth; `-1` is unlimited |
 | `maxFilesPerDirectory` | `100` | Per-directory file cap |
 | `fallbackToTextOnMaxChunks` | `true` | Fall back to line chunks when the semantic cap is reached |
+| `linesPerChunk` | `30` | Max lines per chunk for line-based parsing (`.jsonl`, `.txt`, unknown extensions, and the AST fallback). Lower it for finer-grained retrieval on line-delimited files. Only the line-based path is affected; AST-parsed languages are unchanged |
 | `gitBlame.enabled` | `false` | Store git blame metadata for filtering |
 
 Example:
