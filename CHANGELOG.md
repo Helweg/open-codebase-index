@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-19
+
 ### Added
 
 - Added a `dryRun` option to `index_codebase` and an `index --dry-run` CLI flag: a read-only preflight that parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index. The total serves as a fixed, monotonic denominator for live indexing progress (a force index climbs to ~100%; an incremental index tops out below 100% because cached chunks are counted but not re-embedded) and as a cost preview before committing GPU or time.
 - Added query-weighted quality aggregates to cross-repository benchmark reports, alongside clearly labelled per-repository macro averages, so uneven cohort sizes cannot obscure the headline Hit@k, MRR, or nDCG results.
 - Added a concise `cbi` terminal command for status, indexing, search, definition lookup, and direct caller or callee inspection, while keeping the existing MCP binary unchanged.
+
+### Changed
+
+- Documented optional `codebase_edit_context` guidance for Pi, MCP, and OpenCode workflows, while leaving retrieval discretionary rather than mandatory.
+
+### Fixed
+
+- **Definition retrieval**: Ruby classes and modules are retained in the call-graph symbol catalog so nested Ruby declarations can be resolved by definition lookup.
 
 ## [0.24.0] - 2026-08-18
 
