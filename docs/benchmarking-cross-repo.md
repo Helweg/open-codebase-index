@@ -179,6 +179,21 @@ The report places results in a standalone **Fair codebase-memory-mcp Comparator*
 
 ## Output artifacts
 
+Reports expose two aggregate quality views:
+
+- **Macro average across repositories** gives every successful repository equal
+  weight. It retains latency rows, which are repository-level repeat summaries.
+- **Query-weighted quality** weights Hit@k, MRR@10, and nDCG@10 by the number
+  of queries evaluated by each comparator. Use this view as the headline when
+  cohorts contain different-sized repository datasets. It deliberately omits
+  latency, token, and cost rows because averaging their per-repository summary
+  values would not produce an exact per-query aggregate.
+
+The JSON report retains the compatibility `aggregate` object for macro metrics
+and adds `queryWeightedQuality` with each comparator's metric values and query
+denominator. Plugin uses the dataset query count, ripgrep its evaluated query
+count, and ast-grep its structural-query scope.
+
 Each run writes to:
 
 - `benchmarks/results/cross-repo/<timestamp>/report.md`
