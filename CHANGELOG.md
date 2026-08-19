@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Config exclude**: `exclude` globs now omit matching files from indexing instead of recording them as skipped and still embedding them. Directory globs such as `**/common/**` skip the tree, and incremental `/index` plus `retryFailedBatches` drop stale failed-batch retries for newly excluded paths.
+
 ## [0.25.0] - 2026-08-19
 
 ### Added

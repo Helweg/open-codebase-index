@@ -13,7 +13,7 @@ import {
   EmbeddingProviderInterface,
   CustomProviderNonRetryableError,
 } from "../embeddings/provider.js";
-import { collectFiles, SkippedFile } from "../utils/files.js";
+import { collectFiles, isExcludedByPatterns, type SkippedFile } from "../utils/files.js";
 import { createCostEstimate, CostEstimate, DryRunEstimate } from "../utils/cost.js";
 import { Logger, initializeLogger } from "../utils/logger.js";
 import {
@@ -1262,6 +1262,24 @@ export class Indexer {
     }
 
     return path.relative(this.projectRoot, canonicalFilePath).split(path.sep).join("/");
+  }
+
+  private isStoredPathExcluded(storedPath: string): boolean {
+    const posixStored = storedPath.split(path.sep).join("/");
+    if (isExcludedByPatterns(posixStored, this.config.exclude)) {
+      return true;
+    }
+    if (!path.isAbsolute(storedPath)) {
+      return false;
+    }
+
+    const relativePath = path.relative(this.projectRoot, storedPath).split(path.sep).join("/");
+    // Knowledge-base files live outside the project. A `../` prefix would
+    // false-match hidden-file globs such as **/.*/** because `..` starts with a dot.
+    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+      return false;
+    }
+    return isExcludedByPatterns(relativePath, this.config.exclude);
   }
 
   private resolveStoredFilePath(filePath: string, rootPath = this.projectRoot): string {
@@ -4356,7 +4374,10 @@ export class Indexer {
     }
 
     const shouldRetryFailedPath = (filePath: string | null): boolean =>
-      filePath !== null && currentFileHashes.has(filePath) && unchangedFilePaths.has(filePath);
+      filePath !== null
+      && !this.isStoredPathExcluded(filePath)
+      && currentFileHashes.has(filePath)
+      && unchangedFilePaths.has(filePath);
     const failedProcessing = this.prepareFailedBatchProcessing(scopedRoots, shouldRetryFailedPath);
     const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
     const providerRateLimits = this.getProviderRateLimits(configuredProviderInfo.provider);
@@ -5957,7 +5978,9 @@ export class Indexer {
     const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
     const providerRateLimits = this.getProviderRateLimits(configuredProviderInfo.provider);
     const roots = this.config.scope === "global" ? this.getScopedRoots() : null;
-    const failedProcessing = this.prepareFailedBatchProcessing(roots, () => true);
+    const shouldProcessFailedPath = (filePath: string | null): boolean =>
+      filePath === null || !this.isStoredPathExcluded(filePath);
+    const failedProcessing = this.prepareFailedBatchProcessing(roots, shouldProcessFailedPath);
 
     if (failedProcessing.latestById.size === 0) {
       this.finalizeFailedBatchWriteState(failedProcessing.state);
@@ -5973,7 +5996,7 @@ export class Indexer {
       const retryableChunks = this.iterateLatestFailedChunks(
         failedProcessing.latestById,
         roots,
-        () => true,
+        shouldProcessFailedPath,
         maxChunkTokens,
       );
       for (const retryBatch of iterateOrderedFileBatches(

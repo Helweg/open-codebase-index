@@ -385,10 +385,10 @@ Lower the minimum score:
 ```
 
 ### 5. Files Excluded
-Check if your files are being excluded by `.gitignore` or size limits:
+Check if your files are being excluded by `exclude` globs, `.gitignore`, or size limits:
 > "Run `/index` in verbose mode"
 
-This shows which files were skipped and why.
+This shows which files were skipped and why. `exclude` omits matching files from the index even when they also match `include`. After changing `exclude`, rerun `/index` (not force) so stale failed-batch retries for those paths are dropped. `.git/info/exclude` is not read.
 
 ---
 

@@ -275,7 +275,9 @@ Example:
 - `include` replaces the default include patterns.
 - `additionalInclude` extends the defaults.
 - `exclude` replaces the default exclude patterns.
-- `.gitignore` is also respected.
+- Matching files are omitted from the index, including paths that also match `include`. Directory globs such as `**/generated/**` skip the whole tree.
+- Incremental `/index` and `retryFailedBatches` drop stale failed-batch retries for paths that are now excluded, so previously failed chunks are not re-embedded.
+- `.gitignore` is also respected. Tracked Git files can still be excluded from the index with `exclude`; `.git/info/exclude` is not read.
 
 ## Knowledge bases
 
