@@ -81,8 +81,8 @@ function smokeIdentity(identity, expectedBinaries) {
 }
 
 try {
-  smokeIdentity(catalog.product.current, [catalog.product.current.mcpBinary]);
-  smokeIdentity(catalog.product.future, [catalog.product.future.mcpBinary, catalog.product.current.mcpBinary]);
+  smokeIdentity(catalog.product.current, [catalog.product.current.mcpBinary, "cbi"]);
+  smokeIdentity(catalog.product.future, [catalog.product.future.mcpBinary, catalog.product.current.mcpBinary, "cbi"]);
 } finally {
   rmSync(scratchRoot, { recursive: true, force: true });
 }

@@ -125,6 +125,23 @@ Claude uses:
 - global config: `~/.claude/codebase-index.json`
 - global index: `~/.claude/global-index/`
 
+## Human CLI
+
+The concise `cbi` command is for terminal use. It shares OCI's index and retrieval operations, while `open-codebase-index-mcp` remains the MCP-server binary.
+
+```bash
+# Inspect readiness, then create or refresh the index
+cbi status --project /path/to/repo --host jcode
+cbi index --project /path/to/repo --host jcode
+
+# Search and inspect code from the terminal
+cbi search "retry recovery" --project /path/to/repo --limit 5
+cbi definition Indexer --project /path/to/repo
+cbi graph callers Indexer --project /path/to/repo
+```
+
+Use `cbi index --dry-run` for a parse-only embedding-token total, `--estimate-only` for an estimate, and `cbi --help` for command usage.
+
 ## Generic MCP clients
 
 Run the published MCP server with `npx`:
