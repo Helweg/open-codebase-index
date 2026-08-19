@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Added a `dryRun` option to `index_codebase` and an `index --dry-run` CLI flag: a read-only preflight that parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index. The total serves as a fixed, monotonic denominator for live indexing progress (a force index climbs to ~100%; an incremental index tops out below 100% because cached chunks are counted but not re-embedded) and as a cost preview before committing GPU or time.
+- Added query-weighted quality aggregates to cross-repository benchmark reports, alongside clearly labelled per-repository macro averages, so uneven cohort sizes cannot obscure the headline Hit@k, MRR, or nDCG results.
 
 ## [0.24.0] - 2026-08-18
 
