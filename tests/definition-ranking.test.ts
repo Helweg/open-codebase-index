@@ -225,4 +225,68 @@ describe("definition ranking helpers", () => {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
   });
+
+  it("finds a Ruby module definition when definitionIntent is requested", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "definition-ranking-ruby-"));
+    const rubyFilePath = path.join(tempDir, "sinatra.rb");
+    const rubyContent = `module Sinatra
+  module NotFound
+    module Templates
+      def self.call
+      end
+    end
+  end
+end
+`;
+    fs.writeFileSync(rubyFilePath, rubyContent, "utf-8");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+      const texts = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+      return new Response(
+        JSON.stringify({
+          data: texts.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+          usage: { total_tokens: Math.max(1, texts.length) },
+        }),
+        { status: 200 },
+      );
+    });
+
+    const indexer = new Indexer(tempDir, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-model",
+        dimensions: 8,
+      },
+      indexing: {
+        watchFiles: false,
+      },
+      search: {
+        maxResults: 10,
+        minScore: 0,
+      },
+    }), "opencode");
+
+    try {
+      await indexer.index();
+
+      const results = await indexer.search("where is Templates definition", 10, {
+        definitionIntent: true,
+        fileType: "rb",
+        metadataOnly: true,
+        filterByBranch: false,
+      });
+
+      expect(results.some((result) =>
+        result.name === "Templates" &&
+        result.chunkType === "module" &&
+        result.filePath === rubyFilePath
+      )).toBe(true);
+    } finally {
+      await indexer.close();
+      fetchSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });

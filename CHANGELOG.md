@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Forced re-embed migration safety**: While a project-scoped forced re-embed is pending, checkpoints no longer stamp new embedding metadata or a compatibility certificate, unchanged scope files are re-embedded instead of skipped, and `retryFailedBatches` only clears the pending migration after the main run has committed its new metadata. This prevents an interrupted migration from resuming into a silent mix of old and new vector spaces.
 - **Pi watcher startup**: Pi now starts the filesystem watcher after a successful index initialization, so codebase changes are observed rather than silently remaining stale.
 - **Indexer resilience**: Unreadable files no longer abort indexing, and invalid Pi indexing configuration is reported as a clear configuration error.
-- **Definition retrieval**: Large declarations and Ruby classes nested in modules are now indexed and ranked correctly for definition lookups.
+- **Definition retrieval**: Large declarations and Ruby classes or modules nested in modules are now indexed and ranked correctly for definition lookups.
 - **Conceptual context retrieval**: Prefer implementation paths over tests and documentation for code-focused `codebase_context` searches, without applying a hard source-only filter or changing documentation and test queries.
 - **Scoped definition lookup**: Allow explicit definition searches constrained to a file type or directory to return matching declarations in fixtures and test paths without weakening source-first ranking for ordinary searches.
 

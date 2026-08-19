@@ -10,6 +10,9 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "enum_declaration",
   "function_definition",
   "class_definition",
+  // Ruby module/class symbols that are declaration-bearing and navigable.
+  "class",
+  "module",
   "class_specifier",
   "struct_specifier",
   "namespace_definition",
