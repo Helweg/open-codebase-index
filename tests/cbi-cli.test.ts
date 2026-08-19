@@ -45,4 +45,56 @@ describe("cbi CLI", () => {
 
     expect(calls).toEqual(["search:retry:2", "definition:Indexer", "graph:callees:Indexer:/tmp/src/index.ts"]);
   });
+
+  it("parses search options placed around the positional query without leaking values into positionals", () => {
+    const cwd = "/tmp";
+
+    const before = parseCbiCommandArgs("search", ["project-query", "--project", "repo", "--host", "jcode", "--config", "ci.json", "--limit", "3"], cwd);
+    expect(before).toMatchObject({
+      positionals: ["project-query"],
+      project: "/tmp/repo",
+      host: "jcode",
+      config: "/tmp/ci.json",
+      limit: 3,
+    });
+
+    const after = parseCbiCommandArgs("search", ["project-query", "--limit", "3", "--project", "repo", "--host", "jcode", "--config", "ci.json"], cwd);
+    expect(after).toMatchObject({
+      positionals: ["project-query"],
+      project: "/tmp/repo",
+      host: "jcode",
+      config: "/tmp/ci.json",
+      limit: 3,
+    });
+  });
+
+  it("parses definition options before and after the positional symbol without treating values as positionals", () => {
+    const before = parseCbiCommandArgs("definition", ["--project", "repo", "--host", "jcode", "--config", "ci.json", "CodebaseIndex"], "/tmp");
+    expect(before.positionals).toEqual(["CodebaseIndex"]);
+    expect(before.project).toBe("/tmp/repo");
+    expect(before.host).toBe("jcode");
+    expect(before.config).toBe("/tmp/ci.json");
+
+    const after = parseCbiCommandArgs("definition", ["CodebaseIndex", "--config", "ci.json", "--project", "repo", "--host", "jcode"], "/tmp");
+    expect(after.positionals).toEqual(["CodebaseIndex"]);
+    expect(after.project).toBe("/tmp/repo");
+    expect(after.host).toBe("jcode");
+    expect(after.config).toBe("/tmp/ci.json");
+  });
+
+  it("parses graph --file and shared global options before and after required args", () => {
+    const first = parseCbiCommandArgs("graph", ["callers", "codebaseContext", "--file", "src/index.ts", "--project", "repo", "--host", "jcode", "--config", "cli.json"], "/tmp");
+    expect(first.positionals).toEqual(["callers", "codebaseContext"]);
+    expect(first.filePath).toBe("/tmp/src/index.ts");
+    expect(first.project).toBe("/tmp/repo");
+    expect(first.host).toBe("jcode");
+    expect(first.config).toBe("/tmp/cli.json");
+
+    const second = parseCbiCommandArgs("graph", ["--file", "src/index.ts", "--project", "repo", "--host", "jcode", "callers", "codebaseContext", "--config", "cli.json"], "/tmp");
+    expect(second.positionals).toEqual(["callers", "codebaseContext"]);
+    expect(second.filePath).toBe("/tmp/src/index.ts");
+    expect(second.project).toBe("/tmp/repo");
+    expect(second.host).toBe("jcode");
+    expect(second.config).toBe("/tmp/cli.json");
+  });
 });
