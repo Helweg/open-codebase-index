@@ -361,6 +361,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
         "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
         "not mechanically for every task. " +
         "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
+        "For change requests with a known or strongly suspected target symbol, optionally use codebase_edit_context as a compact, bounded pre-edit context for source plus direct callers and callees. " +
         "Avoid repeating broad reads when the compact evidence already answers the question. " +
         "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.",
     };

@@ -757,6 +757,10 @@ describe("Pi adapter conformance", () => {
       "inspect returned evidence before broad search/grep/bash/read-style reads",
     );
     expect((result as { systemPrompt?: string }).systemPrompt).toContain(
+      "optionally use codebase_edit_context",
+    );
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain("direct callers and callees");
+    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
       "Avoid repeating broad reads when the compact evidence already answers the question",
     );
     expect((result as { systemPrompt?: string }).systemPrompt).toContain("not mechanically for every task");

@@ -78,11 +78,12 @@ Pi exposes all 15 portable tools, including `call_graph` and `call_graph_path`, 
 
 1. `index_status` when index readiness is unknown.
 2. `codebase_context` for a repository question that may require discovery, a definition, or a dependency path.
-3. `codebase_peek` for direct low-token location discovery.
-4. `implementation_lookup` for a known symbol or definition question.
-5. `codebase_search` when full matching source content is required.
-6. `grep` for exact identifiers or exhaustive text matches.
-7. `call_graph` or `call_graph_path` for graph-specific questions.
+3. `codebase_edit_context` optionally when a broad change request already has a known or suspected target symbol, for compact pre-edit source plus caller/callee context.
+4. `codebase_peek` for direct low-token location discovery.
+5. `implementation_lookup` for a known symbol or definition question.
+6. `codebase_search` when full matching source content is required.
+7. `grep` for exact identifiers or exhaustive text matches.
+8. `call_graph` or `call_graph_path` for graph-specific questions.
 
 ## Core retrieval tools
 
