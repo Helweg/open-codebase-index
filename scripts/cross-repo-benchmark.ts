@@ -1909,6 +1909,97 @@ function averageMetrics(metricsList: EvalMetrics[]): EvalMetrics {
   };
 }
 
+export interface QueryWeightedQualityInput {
+  metrics: EvalMetrics;
+  queryCount: number;
+}
+
+export interface QueryWeightedQuality {
+  queryCount: number;
+  hitAt1: number;
+  hitAt3: number;
+  hitAt5: number;
+  hitAt10: number;
+  mrrAt10: number;
+  ndcgAt10: number;
+}
+
+export interface QueryWeightedQualityAggregates {
+  plugin?: QueryWeightedQuality;
+  ripgrep?: QueryWeightedQuality;
+  sg?: QueryWeightedQuality;
+}
+
+function buildQueryWeightedQuality(values: QueryWeightedQualityInput[]): QueryWeightedQuality | undefined {
+  const weightedValues = values.filter((value) => value.queryCount > 0);
+  const denominator = weightedValues.reduce((sum, value) => sum + value.queryCount, 0);
+  if (denominator === 0) {
+    return undefined;
+  }
+
+  const totals = weightedValues.reduce((acc, value) => {
+    const weight = value.queryCount;
+    acc.hitAt1 += value.metrics.hitAt1 * weight;
+    acc.hitAt3 += value.metrics.hitAt3 * weight;
+    acc.hitAt5 += value.metrics.hitAt5 * weight;
+    acc.hitAt10 += value.metrics.hitAt10 * weight;
+    acc.mrrAt10 += value.metrics.mrrAt10 * weight;
+    acc.ndcgAt10 += value.metrics.ndcgAt10 * weight;
+    return acc;
+  }, {
+    hitAt1: 0,
+    hitAt3: 0,
+    hitAt5: 0,
+    hitAt10: 0,
+    mrrAt10: 0,
+    ndcgAt10: 0,
+  });
+
+  return {
+    queryCount: denominator,
+    hitAt1: totals.hitAt1 / denominator,
+    hitAt3: totals.hitAt3 / denominator,
+    hitAt5: totals.hitAt5 / denominator,
+    hitAt10: totals.hitAt10 / denominator,
+    mrrAt10: totals.mrrAt10 / denominator,
+    ndcgAt10: totals.ndcgAt10 / denominator,
+  };
+}
+
+export function buildQueryWeightedQualityAggregates(
+  repoResults: RepoBenchmarkResult[],
+): QueryWeightedQualityAggregates {
+  const successful = repoResults.filter((item) => !item.error);
+
+  return {
+    plugin: buildQueryWeightedQuality(
+      successful
+        .map((result) => ({ metrics: result.plugin.metrics, queryCount: result.datasetQueryCount }))
+        .filter((item): item is QueryWeightedQualityInput => item.queryCount > 0),
+    ),
+    ripgrep: buildQueryWeightedQuality(
+      successful
+        .map((result) => {
+          if (!result.ripgrep) {
+            return undefined;
+          }
+          return { metrics: result.ripgrep.metrics, queryCount: result.ripgrep.perQueryCount };
+        })
+        .filter((item): item is QueryWeightedQualityInput => item !== undefined && item.queryCount > 0),
+    ),
+    sg: buildQueryWeightedQuality(
+      successful
+        .map((result) => {
+          if (!result.sg) {
+            return undefined;
+          }
+          return { metrics: result.sg.metrics, queryCount: result.sg.scopedQueryCount };
+        })
+        .filter((item): item is QueryWeightedQualityInput => item !== undefined && item.queryCount > 0),
+    ),
+  };
+}
+
 function pct(value: number): string {
   return `${(value * 100).toFixed(2)}%`;
 }
@@ -1919,6 +2010,44 @@ function num(value: number): string {
 
 function ms(value: number): string {
   return value.toFixed(2);
+}
+
+function appendQueryWeightedQualityTable(
+  lines: string[],
+  aggregates: QueryWeightedQualityAggregates,
+): void {
+  const comparatorCount = [
+    aggregates.plugin,
+    aggregates.ripgrep,
+    aggregates.sg,
+  ].filter((item): item is QueryWeightedQuality => item !== undefined).length;
+
+  if (comparatorCount === 0) {
+    return;
+  }
+
+  lines.push("## Aggregate (Query-weighted quality)");
+  lines.push("");
+  lines.push("This section aggregates quality by evaluated query count for each comparator:");
+  lines.push("- Plugin: datasetQueryCount");
+  lines.push("- Ripgrep: perQueryCount");
+  lines.push("- ast-grep: scopedQueryCount");
+  lines.push("");
+  lines.push("| Comparator | Evaluated queries | Hit@1 | Hit@3 | Hit@5 | Hit@10 | MRR@10 | nDCG@10 |");
+  lines.push("|---|---:|---:|---:|---:|---:|---:|---:|");
+
+  const rows = [
+    { name: "Plugin", aggregate: aggregates.plugin },
+    { name: "Ripgrep", aggregate: aggregates.ripgrep },
+    { name: "ast-grep", aggregate: aggregates.sg },
+  ].filter((row): row is { name: string; aggregate: QueryWeightedQuality } => row.aggregate !== undefined);
+  for (const row of rows) {
+    const aggregate = row.aggregate;
+    lines.push(
+      `| ${row.name} | ${aggregate.queryCount} | ${pct(aggregate.hitAt1)} | ${pct(aggregate.hitAt3)} | ${pct(aggregate.hitAt5)} | ${pct(aggregate.hitAt10)} | ${num(aggregate.mrrAt10)} | ${num(aggregate.ndcgAt10)} |`,
+    );
+  }
+  lines.push("");
 }
 
 function appendCodeGraphMetricTable(
@@ -2049,7 +2178,7 @@ export function buildReportMarkdown(
   const sgSuccessful = successful.filter((item) => item.sg).map((item) => item.sg?.metrics).filter((item): item is EvalMetrics => item !== undefined);
   const sgAggregate = sgSuccessful.length > 0 ? averageMetrics(sgSuccessful) : undefined;
 
-  lines.push("## Aggregate (Median per repo, then average across repos)");
+  lines.push("## Aggregate quality (Macro average across repos)");
   lines.push("");
   lines.push(`| Metric | Plugin | Ripgrep | ${aggregateSgHeaderLabel} |`);
   lines.push("|---|---:|---:|---:|");
@@ -2063,6 +2192,8 @@ export function buildReportMarkdown(
   lines.push(`| Latency p95 (ms) | ${ms(pluginAggregate.latencyMs.p95)} | ${ripgrepAggregate ? ms(ripgrepAggregate.latencyMs.p95) : "N/A"} | ${sgAggregate ? ms(sgAggregate.latencyMs.p95) : "N/A"} |`);
   lines.push(`| Latency p99 (ms) | ${ms(pluginAggregate.latencyMs.p99)} | ${ripgrepAggregate ? ms(ripgrepAggregate.latencyMs.p99) : "N/A"} | ${sgAggregate ? ms(sgAggregate.latencyMs.p99) : "N/A"} |`);
   lines.push("");
+
+  appendQueryWeightedQualityTable(lines, buildQueryWeightedQualityAggregates(successful));
 
   if (options.codegraph) {
     lines.push("## Fair CodeGraph Comparator");
@@ -2525,9 +2656,17 @@ async function main(): Promise<void> {
             results
               .filter((item) => !item.error && item.sg)
               .map((item) => item.sg?.metrics)
-              .filter((item): item is EvalMetrics => item !== undefined)
+          .filter((item): item is EvalMetrics => item !== undefined)
           ),
     },
+    queryWeightedQuality: (() => {
+      const queryWeighted = buildQueryWeightedQualityAggregates(results);
+      return {
+        plugin: queryWeighted.plugin,
+        ripgrep: queryWeighted.ripgrep,
+        sg: queryWeighted.sg,
+      };
+    })(),
     codebaseMemoryMcpComparison: options.codebaseMemoryMcp ? (() => {
       const comparable = results
         .filter((item) => !item.error)
