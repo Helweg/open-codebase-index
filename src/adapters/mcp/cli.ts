@@ -354,7 +354,7 @@ function isSensitiveKey(key: string): boolean {
   return /(?:api[-_]?key|token|password|secret|authorization)/i.test(key);
 }
 
-function redactSensitiveText(text: string): string {
+export function redactSensitiveText(text: string): string {
   return text.replace(
     /((?:api[-_]?key|token|password|secret|authorization)\s*[=:]\s*)([^\s,;]+)/gi,
     "$1[REDACTED]",

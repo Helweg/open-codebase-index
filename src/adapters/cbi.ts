@@ -15,7 +15,7 @@ import {
 import { initializeTools } from "../tools/operation-runtime.js";
 import { searchCodebase } from "../tools/operations.js";
 import { formatSearchResults } from "../tools/utils.js";
-import { handleIndexCommand } from "./mcp/cli.js";
+import { handleIndexCommand, redactSensitiveText } from "./mcp/cli.js";
 
 type TextSink = (text: string) => void;
 type Result = { text: string; isError?: boolean };
@@ -159,7 +159,7 @@ function requirePositionals(args: CbiCommandArgs, command: string, count: number
 
 export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {}): Promise<number> {
   const stdout = deps.printStdout ?? ((text) => console.log(text));
-  const stderr = deps.printStderr ?? ((text) => console.error(text));
+  const stderr = deps.printStderr ?? ((text) => console.error(redactSensitiveText(text)));
   const command = argv[2];
 
   if (!command || command === "help" || command === "--help" || command === "-h") {

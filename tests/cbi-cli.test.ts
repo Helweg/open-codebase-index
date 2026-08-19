@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { parseCbiCommandArgs, runCbiCli } from "../src/adapters/cbi.js";
 
@@ -96,5 +96,26 @@ describe("cbi CLI", () => {
     expect(second.project).toBe("/tmp/repo");
     expect(second.host).toBe("jcode");
     expect(second.config).toBe("/tmp/cli.json");
+  });
+
+  it("redacts apiKey-like values printed to the default stderr sink on CBI operation errors", async () => {
+    const stderr: string[] = [];
+    const originalConsoleError = console.error;
+    const spy = vi.spyOn(console, "error").mockImplementation((text) => {
+      stderr.push(String(text));
+    });
+
+    const exitCode = await runCbiCli(["node", "cbi", "status", "--project", "/repo", "--host", "jcode"], "/tmp", {
+      runStatus: async () => ({ text: "apiKey=top-secret-value", isError: true }),
+      printStdout: () => undefined,
+      printStderr: undefined,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr.join("\n")).toContain("apiKey=[REDACTED]");
+    expect(stderr.join("\n")).not.toContain("top-secret-value");
+
+    spy.mockRestore();
+    console.error = originalConsoleError;
   });
 });
