@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts", "src/cli.ts", "src/pi-extension.ts"],
+  entry: ["src/index.ts", "src/cli.ts", "src/cbi.ts", "src/pi-extension.ts"],
   format: ["esm", "cjs"],
   dts: false,
   sourcemap: true,

@@ -6,9 +6,15 @@ import * as path from "node:path";
 
 const require = createRequire(import.meta.url);
 
-function runCliCommand(args, { killAfterMs = null, action = null, actionDelayMs = 1_000 } = {}) {
+function runCliCommand(args, {
+  killAfterMs = null,
+  action = null,
+  actionDelayMs = 1_000,
+  cliPathOverride = null,
+} = {}) {
   return new Promise((resolve, reject) => {
-    const command = [cliPath, ...args];
+    const commandPath = cliPathOverride ?? cliPath;
+    const command = [commandPath, ...args];
     const child = spawn(process.execPath, command, {
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
@@ -60,6 +66,11 @@ try {
     JSON.stringify({ indexing: { autoIndex: false, watchFiles: true, requireProjectMarker: false } }),
   );
   const projectArgs = ["--host", "jcode", "--project", tempDir, "--config", configPath];
+
+  const cbiHelp = await runCliCommand(["--help"], { cliPathOverride: "dist/cbi.js" });
+  if (cbiHelp.code !== 0 || !cbiHelp.stdout.includes("Usage: cbi")) {
+    throw new Error(`Built CBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
+  }
 
   const mcpStartup = await runCliCommand(projectArgs, { killAfterMs: 2_000 });
   if (mcpStartup.signal === null && mcpStartup.code !== 0) {

@@ -149,7 +149,7 @@ describe("Phase 1 product identity compatibility", () => {
     const claudeMarketplace = readJson<{ owner: { url: string } }>(".claude-plugin/marketplace.json");
     const codexManifest = readJson<CodexManifestMetadata>(".codex-plugin/plugin.json");
 
-    const expectedBin = { [current.mcpBinary]: "dist/cli.js" };
+    const expectedBin = { [current.mcpBinary]: "dist/cli.js", cbi: "dist/cbi.js" };
     expect(packageJson.name).toBe(current.packageName);
     expect(packageJson.bin).toEqual(expectedBin);
     expect(packageJson.repository.url).toBe(current.repository);
@@ -185,7 +185,7 @@ describe("Phase 1 product identity compatibility", () => {
       const packageLock = readJson<PackageLockMetadata>(path.join(tempDir, "package-lock.json"));
       const checkedInPackageJson = readJson<PackageMetadata>("package.json");
       const checkedInPackageLock = readJson<PackageLockMetadata>("package-lock.json");
-      const expectedBin = { [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js" };
+      const expectedBin = { [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js", cbi: "dist/cbi.js" };
 
       expect(packageJson.name).toBe(IDENTITY_CATALOG.product.current.packageName);
       expect(packageJson.bin).toEqual(expectedBin);
@@ -226,6 +226,7 @@ describe("Phase 1 product identity compatibility", () => {
       const expectedBin = {
         [IDENTITY_CATALOG.product.future.mcpBinary]: "dist/cli.js",
         [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js",
+        cbi: "dist/cbi.js",
       };
       const expectedMcpArgs = [
         "-y",

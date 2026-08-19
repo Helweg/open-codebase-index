@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "opencode-codebase-index-mcp": "dist/cli.js"
+    "opencode-codebase-index-mcp": "dist/cli.js",
+    "cbi": "dist/cbi.js"
   },
   "license": "MIT",
   "author": "Kenneth",

@@ -96,8 +96,12 @@ if (!existsSync(packageLockPath)) fail(`Missing package-lock.json at ${packageLo
 const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
 const packageLock = JSON.parse(readFileSync(packageLockPath, "utf-8"));
 const cliTarget = packageJson.bin?.[catalog.product.current.mcpBinary];
+const cbiTarget = packageJson.bin?.cbi;
 if (typeof cliTarget !== "string") {
   fail(`Missing current MCP binary entry: ${catalog.product.current.mcpBinary}`);
+}
+if (typeof cbiTarget !== "string") {
+  fail("Missing cbi binary entry");
 }
 
 function copyProject() {
@@ -225,10 +229,11 @@ function prepareClaudeMarketplace(manifestPath) {
 }
 
 const preparedBins = isCurrentIdentity()
-  ? { [catalog.product.current.mcpBinary]: cliTarget }
+  ? { [catalog.product.current.mcpBinary]: cliTarget, cbi: cbiTarget }
   : {
       [catalog.product.future.mcpBinary]: cliTarget,
       [catalog.product.current.mcpBinary]: cliTarget,
+      cbi: cbiTarget,
     };
 
 const targetPackageJsonPath = path.join(outputDir, "package.json");
