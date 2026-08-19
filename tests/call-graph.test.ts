@@ -1756,6 +1756,61 @@ func caller() { helper(1) }
     });
   });
 
+  describe("ruby symbol persistence", () => {
+    it("persists class and module symbols in the branch symbol catalog", async () => {
+      const rubyFilePath = path.join(tempDir, "sinatra.rb");
+      const rubyContent = `module Sinatra
+  module NotFound
+    class Templates
+      def self.call
+        :ok
+      end
+    end
+  end
+end
+`;
+
+      fs.writeFileSync(rubyFilePath, rubyContent, "utf-8");
+
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        const texts = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+        return new Response(
+          JSON.stringify({
+            data: texts.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+            usage: { total_tokens: Math.max(1, texts.length) },
+          }),
+          { status: 200 },
+        );
+      });
+
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-model",
+          dimensions: 8,
+        },
+        indexing: { watchFiles: false },
+      });
+      const indexer = new Indexer(tempDir, config, "opencode");
+
+      try {
+        await indexer.index();
+
+        const symbols = await indexer.getSymbolsForBranch();
+        const rubySymbols = symbols.filter((symbol) => symbol.filePath === rubyFilePath);
+
+        expect(rubySymbols.some((symbol) => symbol.kind === "module" && symbol.name === "Sinatra")).toBe(true);
+        expect(rubySymbols.some((symbol) => symbol.kind === "module" && symbol.name === "NotFound")).toBe(true);
+        expect(rubySymbols.some((symbol) => symbol.kind === "class" && symbol.name === "Templates")).toBe(true);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+  });
+
   describe("symbol enclosure", () => {
     it("should exclude a call at a Tree-sitter end-column boundary", () => {
       const filePath = path.join(tempDir, "Boundary.js");
