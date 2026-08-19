@@ -157,22 +157,24 @@ No neutral storage migration is required for the public rename.
 
 ## Package and binary compatibility design
 
-During the transition, the new `package.json` should expose both binary names to the same built CLI:
+During the transition, the new `package.json` should expose both MCP binary names to the same built CLI and the concise human CLI:
 
 ```json
 {
   "bin": {
     "open-codebase-index-mcp": "dist/cli.js",
-    "opencode-codebase-index-mcp": "dist/cli.js"
+    "opencode-codebase-index-mcp": "dist/cli.js",
+    "cbi": "dist/cbi.js"
   }
 }
 ```
 
-Keep `src/cli.ts` and `dist/cli.*` as stable executable facades. The MCP implementation remains under `src/adapters/mcp/`.
+Keep `src/cli.ts` and `dist/cli.*` as stable MCP executable facades. Keep `src/cbi.ts` and `dist/cbi.*` as the stable human CLI facade. The MCP implementation remains under `src/adapters/mcp/`.
 
 Before publishing, test:
 
 - direct npm execution of both binary names,
+- direct npm execution and global installation of `cbi`,
 - global and local installs,
 - symlink entrypoint detection,
 - ESM and CommonJS loading,

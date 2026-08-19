@@ -127,7 +127,7 @@ Claude uses:
 
 ## Human CLI
 
-The concise `cbi` command is for terminal use. It shares OCI's index and retrieval operations, while `open-codebase-index-mcp` remains the MCP-server binary.
+The concise `cbi` command is for terminal use. It shares `open-codebase-index` index and retrieval operations, while `open-codebase-index-mcp` remains the MCP-server binary.
 
 ```bash
 # Inspect readiness, then create or refresh the index
