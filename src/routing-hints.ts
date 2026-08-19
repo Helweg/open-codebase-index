@@ -137,6 +137,8 @@ export function buildRoutingHint(
   status: Pick<StatusResult, "indexed" | "compatibility"> | null,
   includeGraphHandoff: boolean = false,
 ): string | null {
+  const hasSymbolCue = hasIdentifierShape(assessment.text) || containsQuotedIdentifier(assessment.text);
+
   if (assessment.intent === "definition_lookup") {
     if (!status || !status.indexed || status.compatibility?.compatible === false) {
       return "For this turn, if you need a symbol definition, check `index_status` first and run `index_codebase` if the index is missing or incompatible. Then use `implementation_lookup` for the definition site. Use `grep` for exhaustive literal matches.";
@@ -149,15 +151,19 @@ export function buildRoutingHint(
     return null;
   }
 
+  const preEditHint = assessment.intent === "local_broad_task" && hasSymbolCue
+    ? " If a likely target symbol is already known or strongly suspected, consider optional `codebase_edit_context` as a compact pre-edit next step for bounded source plus direct callers and callees."
+    : "";
+
   if (!status || !status.indexed || status.compatibility?.compatible === false) {
     const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbols." : "";
-    return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Then use \`codebase_context\` as the first local repository lookup. Use \`grep\` for exact identifiers or exhaustive matches.`;
+    return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Then use \`codebase_context\` as the first local repository lookup. Use \`grep\` for exact identifiers or exhaustive matches.${preEditHint}`;
   }
 
   const graphHandoff = includeGraphHandoff
     ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
     : "";
-  return `For this turn, prefer \`codebase_context\` for local code discovery, then use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. Use \`grep\` for exact identifiers or exhaustive matches.`;
+  return `For this turn, prefer \`codebase_context\` for local code discovery, then use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. Use \`grep\` for exact identifiers or exhaustive matches.${preEditHint}`;
 }
 
 export class RoutingHintController {
@@ -213,6 +219,7 @@ export class RoutingHintController {
 
     if (
       toolName === "codebase_context"
+      || toolName === "codebase_edit_context"
       || toolName === "codebase_peek"
       || toolName === "codebase_search"
       || toolName === "implementation_lookup"

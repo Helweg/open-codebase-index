@@ -1011,6 +1011,8 @@ describe("MCP server tools and prompts", () => {
     expect(instructions).toBeDefined();
     expect(instructions).toContain("index_status");
     expect(instructions).toContain("codebase_context");
+    expect(instructions).toContain("codebase_edit_context");
+    expect(instructions).toContain("compact pre-edit");
     expect(instructions).toContain("codebase_peek");
     expect(instructions).toContain("implementation_lookup");
     expect(instructions).toContain("codebase_search");

@@ -119,6 +119,28 @@ describe("routing hints", () => {
       expect(hint).toContain("Use graph tools after semantic discovery identifies relevant symbols");
     });
 
+    it("adds optional codebase_edit_context guidance for broad change requests with suspected symbols", () => {
+      const hint = buildRoutingHint(
+        assessRoutingIntent("Implement validateToken to reject invalid tokens with clearer errors"),
+        { indexed: true, compatibility: { compatible: true } },
+      );
+
+      expect(hint).toContain("consider optional `codebase_edit_context`");
+      expect(hint).toContain("bounded source");
+      expect(hint).toContain("callers and callees");
+      expect(hint).toContain("prefer `codebase_context`");
+    });
+
+    it("does not add codebase_edit_context guidance for conceptual discovery even with identifier cues", () => {
+      const hint = buildRoutingHint(
+        assessRoutingIntent("How is validateToken validated in this flow?"),
+        { indexed: true, compatibility: { compatible: true } },
+      );
+
+      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).not.toContain("consider optional `codebase_edit_context`");
+    });
+
     it("returns null for non-conceptual intents", () => {
       const hint = buildRoutingHint(
         assessRoutingIntent("Find all references to validateToken"),
