@@ -7,6 +7,11 @@ import { parseConfig } from "../src/config/schema.js";
 import { IndexLockContentionError } from "../src/indexer/index-lock.js";
 import type { IndexFreshnessResult, IndexProgress, IndexStats, StatusResult } from "../src/indexer/index.js";
 import type { BackgroundIndexingPolicy } from "../src/utils/power-source.js";
+import {
+  configureBackgroundWorker,
+  isBackgroundWorkerLeader,
+  resetBackgroundWorkersForTests,
+} from "../src/utils/background-worker.js";
 
 const powerSource = vi.hoisted(() => ({
   createBackgroundIndexingPolicy: vi.fn(),
@@ -24,7 +29,9 @@ import {
   resetAutoIndexCoordinatorsForTests,
   runCoordinatedIndex,
   startAutoIndex,
+  startAutoIndexForBackgroundWorker,
   stopAutoIndex,
+  stopAutoIndexForBackgroundWorker,
   waitForAutoIndexForRetrieval,
 } from "../src/utils/auto-index.js";
 
@@ -127,6 +134,7 @@ describe("auto-index coordinator", () => {
   });
 
   afterEach(async () => {
+    await resetBackgroundWorkersForTests();
     await resetAutoIndexCoordinatorsForTests();
     vi.useRealTimers();
     rmSync(projectRoot, { recursive: true, force: true });
@@ -161,7 +169,7 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
   });
 
-  it("refreshes a readable stale Pi index before retrieval", async () => {
+  it("refreshes a readable stale Pi index before reporting it ready", async () => {
     const indexer = new MockIndexer();
     indexer.readable = true;
     indexer.freshness = { readable: true, current: false, reason: "files-changed" };
@@ -170,8 +178,59 @@ describe("auto-index coordinator", () => {
     const result = await waitForAutoIndexForRetrieval(projectRoot, "pi");
 
     expect(result).toEqual({ ready: true });
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+  });
+
+  it("refreshes a readable branch-changed index before reporting it ready", async () => {
+    const indexer = new MockIndexer();
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: false, reason: "branch-changed" };
+    configureAutoIndex(projectRoot, "pi", config(), () => indexer);
+
+    await expect(waitForAutoIndexForRetrieval(projectRoot, "pi")).resolves.toEqual({ ready: true });
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+  });
+
+  it("does not serve a stale snapshot while its refresh is in flight", async () => {
+    const indexer = new MockIndexer();
+    const refresh = deferred<IndexStats>();
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: false, reason: "files-changed" };
+    indexer.index.mockImplementation(async () => refresh.promise);
+    configureAutoIndex(projectRoot, "pi", config({ autoIndexWaitMs: 0 }), () => indexer);
+
+    const result = await waitForAutoIndexForRetrieval(projectRoot, "pi");
+
+    expect(result).toMatchObject({
+      ready: false,
+      text: expect.stringMatching(/Automatic indexing is indexing/i),
+    });
     expect(indexer.index).toHaveBeenCalledOnce();
-    expect(indexer.getIndexFreshness).toHaveBeenCalledTimes(3);
+
+    refresh.resolve(stats());
+    await vi.waitFor(() => expect(getAutoIndexStatus(projectRoot, "pi").state).toBe("ready"));
+  });
+
+  it.each([
+    "unreadable",
+    "incompatible",
+    "failed-batches",
+    "migration-required",
+  ] as const)("keeps a %s snapshot unavailable for retrieval", async (reason) => {
+    const indexer = new MockIndexer();
+    indexer.readable = reason !== "unreadable";
+    indexer.freshness = {
+      readable: reason !== "unreadable",
+      current: false,
+      reason,
+    };
+    configureAutoIndex(projectRoot, "pi", config(), () => indexer);
+
+    const result = await waitForAutoIndexForRetrieval(projectRoot, "pi");
+
+    expect(result.ready).toBe(false);
+    expect(result.text).toContain("Run index_codebase");
+    expect(indexer.index).not.toHaveBeenCalled();
   });
 
   it("lets concurrent first retrievals await one in-flight job", async () => {
@@ -449,6 +508,69 @@ describe("auto-index coordinator", () => {
     await expect(firstRequest).resolves.toMatchObject({ outcome: "stopped" });
     await expect(secondRequest).resolves.toMatchObject({ outcome: "ready" });
     expect(secondIndexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the replacement coordinator active while its previous worker shuts down", async () => {
+    const firstIndexer = new MockIndexer();
+    const secondIndexer = new MockIndexer();
+    firstIndexer.readable = true;
+    firstIndexer.freshness = { readable: true, current: true, reason: "current" };
+    const localConfig = config();
+    configureAutoIndex(projectRoot, "codex", localConfig, () => firstIndexer);
+    configureBackgroundWorker(projectRoot, "codex", localConfig, {
+      startAutoIndex: (source) => {
+        startAutoIndexForBackgroundWorker(projectRoot, "codex", source);
+      },
+      stopAutoIndex: () => stopAutoIndexForBackgroundWorker(projectRoot, "codex"),
+    });
+    await vi.waitFor(() => expect(getAutoIndexStatus(projectRoot, "codex").state).toBe("ready"));
+
+    const previousHome = process.env.HOME;
+    const testHome = path.join(projectRoot, "test-home");
+    mkdirSync(testHome);
+    process.env.HOME = testHome;
+    try {
+      configureAutoIndex(projectRoot, "codex", config({}, { scope: "global" }), () => secondIndexer);
+
+      await vi.waitFor(() => expect(isBackgroundWorkerLeader(projectRoot, "codex")).toBe(true));
+      await vi.waitFor(() => expect(secondIndexer.index).toHaveBeenCalledOnce());
+      expect(getAutoIndexStatus(projectRoot, "codex").state).toBe("ready");
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.HOME;
+      } else {
+        process.env.HOME = previousHome;
+      }
+    }
+  });
+
+  it("keeps a managed worker coordinator when a non-authoritative registration is unsafe", async () => {
+    const indexer = new MockIndexer();
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: true, reason: "current" };
+    const safeConfig = config({ requireProjectMarker: false });
+    configureAutoIndex(projectRoot, "codex", safeConfig, () => indexer);
+    configureBackgroundWorker(projectRoot, "codex", safeConfig, {
+      startAutoIndex: (source) => {
+        startAutoIndexForBackgroundWorker(projectRoot, "codex", source);
+      },
+      stopAutoIndex: () => stopAutoIndexForBackgroundWorker(projectRoot, "codex"),
+    });
+    await vi.waitFor(() => expect(getAutoIndexStatus(projectRoot, "codex").state).toBe("ready"));
+
+    rmSync(path.join(projectRoot, "package.json"));
+    configureAutoIndex(projectRoot, "codex", config(), () => indexer, {
+      preserveManagedWorker: true,
+      synchronizeBackgroundWorker: false,
+    });
+
+    expect(getAutoIndexStatus(projectRoot, "codex").blockedReason).toBeUndefined();
+    const refresh = startAutoIndexForBackgroundWorker(projectRoot, "codex");
+    expect(refresh).not.toBeNull();
+    await expect(refresh).resolves.toMatchObject({
+      outcome: "ready",
+      skipped: true,
+    });
   });
 
   it("queues force indexing behind and supersedes background work safely", async () => {

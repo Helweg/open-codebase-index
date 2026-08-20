@@ -36,7 +36,9 @@ export function createWatcherWithIndexer(
 ): CombinedWatcher {
   const fileWatcher = new FileWatcher(projectRoot, config, host, options);
   const configPaths = getConfigPaths(projectRoot, host, options);
-  configureAutoIndex(projectRoot, host, parseConfig(config), getIndexer);
+  configureAutoIndex(projectRoot, host, parseConfig(config), getIndexer, {
+    synchronizeBackgroundWorker: false,
+  });
   let stopped = false;
   const requestReindex = () => {
     if (stopped) return;
@@ -58,7 +60,9 @@ export function createWatcherWithIndexer(
         const parsedConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
         const refreshedConfig = refreshIndexerForDirectory(projectRoot, host, parsedConfig);
         if (refreshedConfig) {
-          configureAutoIndex(projectRoot, host, refreshedConfig, getIndexer);
+          configureAutoIndex(projectRoot, host, refreshedConfig, getIndexer, {
+            synchronizeBackgroundWorker: false,
+          });
         }
       }
       requestReindex();

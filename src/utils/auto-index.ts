@@ -8,6 +8,14 @@ import * as path from "path";
 
 import { resolveProjectIndexPath } from "../config/paths.js";
 import { isTransientIndexLockContention } from "../indexer/index-lock.js";
+import {
+  isBackgroundWorkerLeader,
+  isBackgroundWorkerManaged,
+  requestBackgroundWorker,
+  requestBackgroundWorkerRefresh,
+  stopBackgroundWorker,
+  updateBackgroundWorkerConfig,
+} from "./background-worker.js";
 import { hasProjectMarker } from "./files.js";
 import { createBackgroundIndexingPolicy } from "./power-source.js";
 
@@ -59,6 +67,11 @@ export interface AutoIndexRetrievalResult {
   text?: string;
 }
 
+export interface AutoIndexStopResult {
+  completed: boolean;
+  completion: Promise<void>;
+}
+
 type CoordinatedIndexer = Pick<
   Indexer,
   "forceIndex" | "getStatus" | "index"
@@ -74,6 +87,7 @@ interface AutoIndexRegistration {
 }
 
 interface IndexRequest {
+  allowDisabledAutoIndex?: boolean;
   checkFreshness: boolean;
   force: boolean;
   onProgress?: (progress: IndexProgress) => void;
@@ -130,7 +144,7 @@ function coordinatorKey(
   return `${canonicalizePath(indexPath)}::${canonicalProjectRoot}`;
 }
 
-function getProjectSafety(
+export function getProjectSafety(
   projectRoot: string,
   config: ParsedCodebaseIndexConfig,
 ): Pick<AutoIndexRegistration, "blockedReason" | "safeToRun"> {
@@ -198,6 +212,33 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T | und
   });
 }
 
+function settlesWithin(promise: Promise<unknown>, timeoutMs: number): Promise<boolean> {
+  if (timeoutMs <= 0) return Promise.resolve(false);
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(false);
+    }, timeoutMs);
+    timer.unref?.();
+    void promise.then(
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(true);
+      },
+      () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(true);
+      },
+    );
+  });
+}
+
 function requestPriority(request: IndexRequest): number {
   if (request.force) return 4;
   if (request.source === "manual") return 3;
@@ -209,6 +250,7 @@ function mergeRequests(current: IndexRequest | null, next: IndexRequest): IndexR
   if (!current) return next;
   const preferred = requestPriority(next) > requestPriority(current) ? next : current;
   return {
+    allowDisabledAutoIndex: current.allowDisabledAutoIndex || next.allowDisabledAutoIndex,
     checkFreshness: current.checkFreshness && next.checkFreshness,
     force: current.force || next.force,
     onProgress: next.onProgress ?? current.onProgress,
@@ -277,11 +319,14 @@ class AutoIndexCoordinator {
     };
   }
 
-  start(source: "startup" | "retrieval"): Promise<CoordinatedIndexResult> | null {
+  start(
+    source: "startup" | "retrieval",
+    allowDisabledAutoIndex = false,
+  ): Promise<CoordinatedIndexResult> | null {
     this.refreshSafety();
-    if (!this.registration.config.indexing.autoIndex || !this.registration.safeToRun) return null;
+    if ((!this.registration.config.indexing.autoIndex && !allowDisabledAutoIndex) || !this.registration.safeToRun) return null;
     if (this.status.state === "failed") return this.inFlight;
-    return this.request({ checkFreshness: true, force: false, source });
+    return this.request({ allowDisabledAutoIndex, checkFreshness: true, force: false, source });
   }
 
   request(request: IndexRequest): Promise<CoordinatedIndexResult> {
@@ -353,7 +398,7 @@ class AutoIndexCoordinator {
     return this.registration.config.indexing.autoIndexWaitMs;
   }
 
-  async stop(waitForCompletion = false): Promise<void> {
+  async stop(waitForCompletion = false): Promise<AutoIndexStopResult> {
     this.stopped = true;
     this.batteryDeferredRequest = null;
     this.cancelBatteryRetry();
@@ -366,13 +411,17 @@ class AutoIndexCoordinator {
       retryAttempt: undefined,
     });
     const inFlight = this.inFlight;
-    if (inFlight) {
-      if (waitForCompletion) {
-        await inFlight;
-      } else {
-        await withTimeout(inFlight, SHUTDOWN_WAIT_MS);
-      }
+    const completion = inFlight
+      ? inFlight.then(() => undefined, () => undefined)
+      : Promise.resolve();
+    if (!inFlight) {
+      return { completed: true, completion };
     }
+    if (waitForCompletion) {
+      await completion;
+      return { completed: true, completion };
+    }
+    return { completed: await settlesWithin(completion, SHUTDOWN_WAIT_MS), completion };
   }
 
   private startRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
@@ -579,7 +628,9 @@ class AutoIndexCoordinator {
       return true;
     }
 
-    return this.registration.safeToRun && this.registration.config.indexing.autoIndex;
+    return this.registration.safeToRun && (
+      this.registration.config.indexing.autoIndex || request.allowDisabledAutoIndex === true
+    );
   }
 
   private shouldDeferForBattery(request: IndexRequest): boolean {
@@ -657,14 +708,41 @@ function getCoordinator(projectRoot: string, host: HostMode): AutoIndexCoordinat
   return key ? coordinators.get(key) ?? null : null;
 }
 
+interface ConfigureAutoIndexOptions {
+  preserveManagedWorker?: boolean;
+  synchronizeBackgroundWorker?: boolean;
+}
+
+function synchronizeBackgroundWorker(
+  projectRoot: string,
+  host: HostMode,
+  config: ParsedCodebaseIndexConfig,
+  safeToRun: boolean,
+): void {
+  if (safeToRun) {
+    updateBackgroundWorkerConfig(projectRoot, host, config);
+    return;
+  }
+
+  void stopBackgroundWorker(projectRoot, host).catch((error: unknown) => {
+    console.error("[codebase-index] Failed to stop background worker after project safety changed:", error);
+  });
+}
+
 export function configureAutoIndex(
   projectRoot: string,
   host: HostMode,
   config: ParsedCodebaseIndexConfig,
   getIndexer: () => CoordinatedIndexer,
+  options: ConfigureAutoIndexOptions = {},
 ): void {
   const projectKey = projectLookupKey(projectRoot, host);
   const safety = getProjectSafety(projectRoot, config);
+  const synchronizeWorker = options.synchronizeBackgroundWorker ?? true;
+  if (options.preserveManagedWorker === true && isBackgroundWorkerManaged(projectRoot, host)) {
+    // Initialization callers must not replace state owned by an existing worker.
+    return;
+  }
   const registration: AutoIndexRegistration = {
     backgroundIndexingPolicy: createBackgroundIndexingPolicy(
       config.indexing.pauseBackgroundIndexingOnBattery,
@@ -682,6 +760,13 @@ export function configureAutoIndex(
     const stopPrevious = previousCoordinator?.stop(true) ?? Promise.resolve();
     const activation = Promise.all([previousBarrier, stopPrevious]).then(() => undefined);
     coordinatorReplacementBarriers.set(projectKey, activation);
+
+    if (synchronizeWorker) {
+      // The existing worker's stop hook resolves the coordinator by project key.
+      // Synchronize it before publishing the replacement so teardown cannot
+      // stop the new coordinator instead of the one being drained.
+      synchronizeBackgroundWorker(projectRoot, host, config, safety.safeToRun);
+    }
     coordinators.delete(previousKey);
 
     const coordinator = new AutoIndexCoordinator(registration);
@@ -699,6 +784,9 @@ export function configureAutoIndex(
     coordinator.update(registration);
   }
   coordinatorKeysByProject.set(projectKey, key);
+  if (synchronizeWorker) {
+    synchronizeBackgroundWorker(projectRoot, host, config, safety.safeToRun);
+  }
 }
 
 export function startAutoIndex(
@@ -706,13 +794,35 @@ export function startAutoIndex(
   host: HostMode,
   source: "startup" | "retrieval" = "startup",
 ): Promise<CoordinatedIndexResult> | null {
-  return getCoordinator(projectRoot, host)?.start(source) ?? null;
+  if (isBackgroundWorkerManaged(projectRoot, host)) {
+    if (source === "retrieval") {
+      requestBackgroundWorkerRefresh(projectRoot, host);
+    } else {
+      requestBackgroundWorker(projectRoot, host);
+    }
+    return isBackgroundWorkerLeader(projectRoot, host)
+      ? getCoordinator(projectRoot, host)?.currentJob() ?? null
+      : null;
+  }
+  return startAutoIndexForBackgroundWorker(projectRoot, host, source);
+}
+
+export function startAutoIndexForBackgroundWorker(
+  projectRoot: string,
+  host: HostMode,
+  source: "startup" | "retrieval" = "startup",
+  allowDisabledAutoIndex = false,
+): Promise<CoordinatedIndexResult> | null {
+  return getCoordinator(projectRoot, host)?.start(source, allowDisabledAutoIndex) ?? null;
 }
 
 export function requestBackgroundIndex(
   projectRoot: string,
   host: HostMode,
 ): Promise<CoordinatedIndexResult> | null {
+  if (isBackgroundWorkerManaged(projectRoot, host) && !isBackgroundWorkerLeader(projectRoot, host)) {
+    return null;
+  }
   return getCoordinator(projectRoot, host)?.request({
     checkFreshness: false,
     force: false,
@@ -767,18 +877,26 @@ export async function waitForAutoIndexForRetrieval(
   }
 
   try {
-    if (await hasReadableCurrentIndex(coordinator)) return { ready: true };
+    const readiness = await getSearchReadiness(coordinator);
+    if (readiness.searchable) {
+      return { ready: true };
+    }
+    if (readiness.blocked) return unavailableSnapshotResult(readiness.reason);
   } catch {
     // The coordinator reports a sanitized actionable failure below.
   }
 
-  const job = coordinator.start("retrieval") ?? coordinator.currentJob();
+  const job = startRetrievalRefresh(projectRoot, host, coordinator);
   if (job) {
     await withTimeout(job, coordinator.getWaitMs());
+  } else if (isBackgroundWorkerManaged(projectRoot, host)) {
+    await waitForPublishedSnapshot(coordinator, coordinator.getWaitMs());
   }
 
   try {
-    if (await hasReadableCurrentIndex(coordinator)) return { ready: true };
+    const readiness = await getSearchReadiness(coordinator);
+    if (readiness.searchable) return { ready: true };
+    if (readiness.blocked) return unavailableSnapshotResult(readiness.reason);
   } catch {
     // The coordinator reports a sanitized actionable failure below.
   }
@@ -805,8 +923,21 @@ export async function waitForAutoIndexForRetrieval(
 export async function stopAutoIndex(
   projectRoot: string,
   host: HostMode,
+  waitForCompletion = false,
 ): Promise<void> {
-  await getCoordinator(projectRoot, host)?.stop();
+  await stopAutoIndexForBackgroundWorker(projectRoot, host, waitForCompletion);
+}
+
+export async function stopAutoIndexForBackgroundWorker(
+  projectRoot: string,
+  host: HostMode,
+  waitForCompletion = false,
+): Promise<AutoIndexStopResult> {
+  const coordinator = getCoordinator(projectRoot, host);
+  if (!coordinator) {
+    return { completed: true, completion: Promise.resolve() };
+  }
+  return coordinator.stop(waitForCompletion);
 }
 
 export async function stopAllAutoIndexes(): Promise<void> {
@@ -821,11 +952,65 @@ export async function resetAutoIndexCoordinatorsForTests(): Promise<void> {
   coordinatorReplacementBarriers.clear();
 }
 
-async function hasReadableCurrentIndex(coordinator: AutoIndexCoordinator): Promise<boolean> {
+interface SearchReadiness {
+  blocked: boolean;
+  reason?: string;
+  searchable: boolean;
+}
+
+async function getSearchReadiness(coordinator: AutoIndexCoordinator): Promise<SearchReadiness> {
   const indexer = coordinator.getIndexer();
   if (indexer.getIndexFreshness) {
     const freshness = await indexer.getIndexFreshness();
-    return freshness.readable && freshness.current;
+    const searchable = freshness.readable && freshness.current && freshness.reason === "current";
+    return {
+      blocked: freshness.reason === "unreadable"
+        || freshness.reason === "incompatible"
+        || freshness.reason === "failed-batches"
+        || freshness.reason === "migration-required",
+      reason: freshness.reason,
+      searchable,
+    };
   }
-  return (await indexer.getStatus()).indexed;
+  const indexed = (await indexer.getStatus()).indexed;
+  return { blocked: false, searchable: indexed };
+}
+
+function unavailableSnapshotResult(reason: string | undefined): AutoIndexRetrievalResult {
+  const detail = reason === "incompatible"
+    ? "The existing index is incompatible with the configured embedding provider."
+    : reason === "migration-required"
+      ? "The existing index requires a storage migration."
+      : reason === "failed-batches"
+        ? "The existing index has failed embedding batches."
+        : "The existing index is unreadable.";
+  return {
+    ready: false,
+    text: `${detail} Run index_codebase before retrying retrieval.`,
+  };
+}
+
+function startRetrievalRefresh(
+  projectRoot: string,
+  host: HostMode,
+  coordinator: AutoIndexCoordinator,
+): Promise<CoordinatedIndexResult> | null {
+  if (isBackgroundWorkerManaged(projectRoot, host)) {
+    requestBackgroundWorkerRefresh(projectRoot, host, true);
+    return isBackgroundWorkerLeader(projectRoot, host)
+      ? coordinator.currentJob()
+      : null;
+  }
+  return coordinator.start("retrieval") ?? coordinator.currentJob();
+}
+
+async function waitForPublishedSnapshot(
+  coordinator: AutoIndexCoordinator,
+  waitMs: number,
+): Promise<void> {
+  const deadline = Date.now() + waitMs;
+  while (Date.now() < deadline) {
+    if ((await getSearchReadiness(coordinator)).searchable) return;
+    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+  }
 }

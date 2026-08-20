@@ -14,6 +14,7 @@ import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { acquireIndexLock, releaseIndexLock } from "../src/indexer/index-lock.js";
 import { Database, InvertedIndex, VectorStore } from "../src/native/index.js";
+import { getBackgroundWorkerLeasePath } from "../src/utils/background-worker.js";
 
 interface WorkerMessage {
   type: string;
@@ -305,6 +306,7 @@ describe("multiprocess indexing", () => {
   async function createMcpClient(
     configPath: string,
     host: "claude" | "codex" | "jcode" | "opencode" | "pi" = "opencode",
+    options: { environment?: Record<string, string>; preloads?: string[] } = {},
   ): Promise<{
     client: Client;
     transport: StdioClientTransport;
@@ -312,10 +314,14 @@ describe("multiprocess indexing", () => {
   }> {
     const stderr: string[] = [];
     const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
+    const args = ["--import", "tsx"];
+    for (const preload of options.preloads ?? []) args.push("--import", preload);
+    args.push(cliPath, "--project", projectRoot, "--config", configPath, "--host", host);
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ["--import", "tsx", cliPath, "--project", projectRoot, "--config", configPath, "--host", host],
+      args,
       cwd: path.dirname(cliPath),
+      env: { ...Object.fromEntries(Object.entries(process.env).filter(([, value]) => value !== undefined)), ...options.environment },
       stderr: "pipe",
     });
     transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
@@ -336,6 +342,70 @@ describe("multiprocess indexing", () => {
     expect(result.ok).toBe(true);
     await worker.waitForExit();
     await embeddingServer.waitForIdle();
+  }
+
+  async function waitForCondition(
+    condition: () => boolean,
+    description: string,
+    timeoutMs = 10_000,
+  ): Promise<void> {
+    const startedAt = Date.now();
+    while (!condition()) {
+      if (Date.now() - startedAt > timeoutMs) throw new Error(`Timed out waiting for ${description}`);
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  async function waitForProcessExit(pid: number, timeoutMs = 5_000): Promise<void> {
+    const startedAt = Date.now();
+    while (true) {
+      try {
+        process.kill(pid, 0);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ESRCH") return;
+        throw error;
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`Process ${pid} did not exit`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  }
+
+  function writeBackgroundMcpConfig(
+    configPath: string,
+    indexingOverrides: Record<string, unknown> = {},
+  ): ReturnType<typeof parseConfig> {
+    const rawConfig = {
+      embeddingProvider: "custom",
+      scope: "project",
+      customProvider: {
+        baseUrl: embeddingServer.baseUrl,
+        model: "multiprocess-test",
+        dimensions: 8,
+        timeoutMs: 5000,
+        maxBatchSize: 64,
+        concurrency: 1,
+        requestIntervalMs: 0,
+      },
+      include: ["**/*.ts"],
+      exclude: ["**/.codebase-index/**", "**/.opencode/**", "**/.git/**", "**/node_modules/**"],
+      indexing: {
+        autoIndex: true,
+        autoIndexWaitMs: 5000,
+        autoIndexMaxRetries: 3,
+        autoIndexRetryDelayMs: 10,
+        watchFiles: true,
+        autoGc: false,
+        retries: 0,
+        retryDelayMs: 1,
+        gitBlame: { enabled: false },
+        ...indexingOverrides,
+      },
+      debug: { enabled: false },
+    };
+    fs.writeFileSync(configPath, JSON.stringify(rawConfig));
+    return parseConfig(rawConfig);
   }
 
   function createLocalIndexer(
@@ -1169,6 +1239,376 @@ describe("multiprocess indexing", () => {
     await Promise.all([first.client.close(), second.client.close()]);
     mcpClients = [];
     assertIndexIntegrity();
+  });
+
+  it("elects one Codex background worker, blocks a stale snapshot, and promotes a follower", async () => {
+    const configPath = path.join(tempDir, "codex-background-worker.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath, { autoIndexWaitMs: 0 });
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const indexPath = path.join(projectRoot, ".codebase-index", "index");
+    const readyPath = path.join(tempDir, "background-publication-ready.json");
+    const releasePath = path.join(tempDir, "background-publication-release");
+    const watcherEventsPath = path.join(tempDir, "watcher-events.log");
+    const environment = {
+      TEST_BM25_TARGET_PATH: fs.realpathSync(path.join(indexPath, "inverted-index.json")),
+      TEST_BM25_READY_PATH: readyPath,
+      TEST_BM25_RELEASE_PATH: releasePath,
+      TEST_PROJECT_ROOT: projectRoot,
+      TEST_WATCHER_EVENTS_PATH: watcherEventsPath,
+    };
+    const preloads = [
+      new URL("./fixtures/bm25-publication-barrier.mjs", import.meta.url).href,
+      new URL("./fixtures/watcher-probe.mjs", import.meta.url).href,
+    ];
+
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex", { environment, preloads }),
+      createMcpClient(configPath, "codex", { environment, preloads }),
+    ]);
+    expect(first.transport.pid).not.toBeNull();
+    expect(second.transport.pid).not.toBeNull();
+    expect(first.transport.pid).not.toBe(second.transport.pid);
+
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "background worker lease");
+    await waitForCondition(() => {
+      if (!fs.existsSync(watcherEventsPath)) return false;
+      const watcherStarts = fs.readFileSync(watcherEventsPath, "utf-8").trim().split("\n").filter(Boolean);
+      return new Set(watcherStarts).size === 1;
+    }, "watching from exactly one process");
+
+    const firstOwner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    expect([first.transport.pid, second.transport.pid]).toContain(firstOwner.pid);
+    const initialWatcherStarts = fs.readFileSync(watcherEventsPath, "utf-8").trim().split("\n").filter(Boolean);
+    expect(new Set(initialWatcherStarts)).toEqual(new Set([String(firstOwner.pid)]));
+    const leader = first.transport.pid === firstOwner.pid ? first : second;
+    const follower = leader === first ? second : first;
+
+    fs.writeFileSync(sourcePath, "export function alpha() { return 'stale'; }\nexport function gamma() { return alpha(); }\n");
+    await waitForFile(readyPath);
+    expect(embeddingServer.requestCount).toBe(1);
+    expect(embeddingServer.maxActive).toBe(1);
+
+    const searchResult = await follower.client.callTool({
+      name: "codebase_search",
+      arguments: { query: "beta" },
+    });
+    const searchText = (searchResult.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+    expect(searchResult.isError).toBe(true);
+    expect(searchText).toMatch(/Automatic indexing is (?:idle|indexing)/i);
+    expect(searchText).not.toContain("INDEX_BUSY");
+    expect(embeddingServer.inputs.filter((input) => input.includes("stale"))).toHaveLength(1);
+
+    fs.writeFileSync(releasePath, "release");
+    await embeddingServer.waitForIdle();
+
+    await vi.waitFor(async () => {
+      const refreshedSearch = await follower.client.callTool({
+        name: "codebase_search",
+        arguments: { query: "gamma" },
+      });
+      const refreshedText = (refreshedSearch.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+      expect(refreshedSearch.isError).not.toBe(true);
+      expect(refreshedText).toContain('function_declaration "gamma"');
+    }, { timeout: 10_000 });
+
+    process.kill(firstOwner.pid, "SIGKILL");
+    await waitForCondition(() => {
+      if (!fs.existsSync(leasePath)) return false;
+      const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+      return owner.pid === follower.transport.pid;
+    }, "follower background worker promotion", 12_000);
+
+    await waitForCondition(() => {
+      if (!fs.existsSync(watcherEventsPath)) return false;
+      const watcherStarts = fs.readFileSync(watcherEventsPath, "utf-8").trim().split("\n").filter(Boolean);
+      return watcherStarts.includes(String(follower.transport.pid));
+    }, "promoted follower watcher activity", 12_000);
+    expect(new Set(fs.readFileSync(watcherEventsPath, "utf-8").trim().split("\n").filter(Boolean))).toEqual(new Set([
+      String(firstOwner.pid),
+      String(follower.transport.pid),
+    ]));
+
+    await vi.waitFor(async () => {
+      const status = await follower.client.callTool({ name: "index_status", arguments: {} });
+      const statusText = (status.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+      expect(statusText).toContain("state: ready");
+    }, { timeout: 10_000 });
+    embeddingServer.reset();
+    fs.writeFileSync(sourcePath, "export function recovered() { return 'after-leader-crash'; }\n");
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("after-leader-crash"),
+    ]));
+
+    await follower.client.close();
+    mcpClients = mcpClients.filter((client) => client !== follower.client && client !== leader.client);
+  });
+
+  it("promotes the remaining Codex process after a clean background-worker shutdown", async () => {
+    const configPath = path.join(tempDir, "codex-clean-background-worker.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath);
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const indexPath = path.join(projectRoot, ".codebase-index", "index");
+    const watcherEventsPath = path.join(tempDir, "clean-watcher-events.log");
+    const environment = {
+      TEST_PROJECT_ROOT: projectRoot,
+      TEST_WATCHER_EVENTS_PATH: watcherEventsPath,
+    };
+    const preloads = [new URL("./fixtures/watcher-probe.mjs", import.meta.url).href];
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex", { environment, preloads }),
+      createMcpClient(configPath, "codex", { environment, preloads }),
+    ]);
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "clean-shutdown background worker lease");
+    const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    const leader = first.transport.pid === owner.pid ? first : second;
+    const follower = leader === first ? second : first;
+
+    await leader.client.close();
+    mcpClients = mcpClients.filter((client) => client !== leader.client);
+    await waitForCondition(() => {
+      if (!fs.existsSync(leasePath)) return false;
+      const replacement = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+      return replacement.pid === follower.transport.pid;
+    }, "clean follower promotion", 12_000);
+    await waitForCondition(() => {
+      if (!fs.existsSync(watcherEventsPath)) return false;
+      const watcherStarts = fs.readFileSync(watcherEventsPath, "utf-8").split("\n").filter(Boolean);
+      return watcherStarts.includes(String(follower.transport.pid));
+    }, "clean promoted follower watcher activity", 12_000);
+
+    fs.writeFileSync(sourcePath, "export function cleanhandoff() { return 'after-clean-handoff'; }\n");
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("after-clean-handoff"),
+    ]));
+
+    await follower.client.close();
+    mcpClients = mcpClients.filter((client) => client !== follower.client);
+    expect(fs.existsSync(indexPath)).toBe(true);
+  });
+
+  it("allows a follower to force an explicit index while another process leads background work", async () => {
+    const configPath = path.join(tempDir, "codex-manual-follower-index.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath);
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex"),
+      createMcpClient(configPath, "codex"),
+    ]);
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "manual-follower background worker lease");
+    const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    const leader = first.transport.pid === owner.pid ? first : second;
+    const follower = leader === first ? second : first;
+    await vi.waitFor(async () => {
+      const status = await leader.client.callTool({ name: "index_status", arguments: {} });
+      const text = (status.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+      expect(text).toContain("state: ready");
+    }, { timeout: 10_000 });
+
+    const explicitForce = await follower.client.callTool({
+      name: "index_codebase",
+      arguments: { force: true },
+    });
+    expect(explicitForce.isError, JSON.stringify(explicitForce.content)).not.toBe(true);
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.requestCount).toBe(1);
+    expect(JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8"))).toMatchObject({
+      pid: owner.pid,
+    });
+
+    await Promise.all([first.client.close(), second.client.close()]);
+    mcpClients = mcpClients.filter((client) => client !== first.client && client !== second.client);
+  });
+
+  it("exits a busy Codex leader without releasing its lease before follower recovery", async () => {
+    const configPath = path.join(tempDir, "codex-busy-shutdown.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath);
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex"),
+      createMcpClient(configPath, "codex"),
+    ]);
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "busy-shutdown background worker lease");
+    const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    const leader = first.transport.pid === owner.pid ? first : second;
+    const follower = leader === first ? second : first;
+    const leaderPid = leader.transport.pid;
+    if (leaderPid === null) throw new Error("Expected an MCP leader process");
+
+    embeddingServer.block();
+    fs.writeFileSync(sourcePath, "export function busyhandoff() { return 'before-bounded-shutdown'; }\n");
+    await embeddingServer.waitForRequestCount(1);
+    await leader.client.close().catch(() => undefined);
+    mcpClients = mcpClients.filter((client) => client !== leader.client);
+    await waitForProcessExit(leaderPid);
+
+    expect(fs.existsSync(leasePath)).toBe(true);
+    const retainedOwner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    expect(retainedOwner.pid).toBe(leaderPid);
+    embeddingServer.release();
+    await embeddingServer.waitForIdle();
+
+    await waitForCondition(() => {
+      if (!fs.existsSync(leasePath)) return false;
+      const replacement = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+      return replacement.pid === follower.transport.pid;
+    }, "follower recovery after busy leader exit", 12_000);
+    await vi.waitFor(async () => {
+      const status = await follower.client.callTool({ name: "index_status", arguments: {} });
+      const text = (status.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+      expect(text).toContain("state: ready");
+    }, { timeout: 10_000 });
+
+    embeddingServer.reset();
+    fs.writeFileSync(sourcePath, "export function recoveredbusyhandoff() { return 'after-bounded-shutdown'; }\n");
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("after-bounded-shutdown"),
+    ]));
+
+    await follower.client.close();
+    mcpClients = mcpClients.filter((client) => client !== follower.client);
+  });
+
+  it("keeps watcher-driven indexing when auto-index startup is disabled", async () => {
+    const configPath = path.join(tempDir, "codex-watcher-only.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath, { autoIndex: false, watchFiles: true });
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const mcp = await createMcpClient(configPath, "codex");
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "watcher-only background worker lease");
+    fs.writeFileSync(sourcePath, "export function watcheronly() { return 'watcher-only-refresh'; }\n");
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("watcher-only-refresh"),
+    ]));
+
+    await mcp.client.close();
+    mcpClients = mcpClients.filter((client) => client !== mcp.client);
+  });
+
+  it("lets an auto-index-enabled follower request first-use indexing from a watcher-only leader", async () => {
+    const leaderConfigPath = path.join(tempDir, "codex-watcher-only-leader.json");
+    const followerConfigPath = path.join(tempDir, "codex-auto-index-follower.json");
+    const leaderConfig = writeBackgroundMcpConfig(leaderConfigPath, {
+      autoIndex: false,
+      watchFiles: true,
+    });
+    writeBackgroundMcpConfig(followerConfigPath, {
+      autoIndex: true,
+      autoIndexWaitMs: 12_000,
+      watchFiles: false,
+    });
+
+    const leader = await createMcpClient(leaderConfigPath, "codex");
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, leaderConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "watcher-only leader lease");
+    expect(JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8"))).toMatchObject({
+      pid: leader.transport.pid,
+    });
+
+    const follower = await createMcpClient(followerConfigPath, "codex");
+    const lookup = follower.client.callTool({
+      name: "call_graph",
+      arguments: { direction: "callers", name: "alpha" },
+    });
+    await embeddingServer.waitForRequestCount(1, 12_000);
+    await embeddingServer.waitForIdle();
+    expect((await lookup).isError).not.toBe(true);
+    expect(embeddingServer.requestCount).toBe(1);
+    expect(embeddingServer.maxActive).toBe(1);
+
+    await Promise.all([leader.client.close(), follower.client.close()]);
+    mcpClients = mcpClients.filter((client) => client !== leader.client && client !== follower.client);
+  });
+
+  it("has the leader refresh a stale index requested by a follower without file watching", async () => {
+    const configPath = path.join(tempDir, "codex-follower-refresh.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath, {
+      autoIndex: true,
+      autoIndexWaitMs: 0,
+      watchFiles: false,
+    });
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex"),
+      createMcpClient(configPath, "codex"),
+    ]);
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+    await waitForCondition(() => fs.existsSync(leasePath), "follower-refresh background worker lease");
+    const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+    const follower = first.transport.pid === owner.pid ? second : first;
+
+    fs.writeFileSync(sourcePath, "export function alpha() { return 'follower-refresh'; }\nexport function gamma() { return alpha(); }\n");
+    const search = await follower.client.callTool({
+      name: "codebase_search",
+      arguments: { query: "beta" },
+    });
+    const searchText = (search.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+    expect(search.isError).toBe(true);
+    expect(searchText).toMatch(/Automatic indexing is (?:idle|indexing)/i);
+    expect(searchText).not.toContain("INDEX_BUSY");
+    await waitForCondition(
+      () => embeddingServer.inputs.some((input) => input.includes("follower-refresh")),
+      "leader refresh requested by follower",
+      12_000,
+    );
+    await embeddingServer.waitForIdle();
+    expect(embeddingServer.inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("follower-refresh"),
+    ]));
+
+    await vi.waitFor(async () => {
+      const refreshedSearch = await follower.client.callTool({
+        name: "codebase_search",
+        arguments: { query: "gamma" },
+      });
+      const refreshedText = (refreshedSearch.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
+      expect(refreshedSearch.isError).not.toBe(true);
+      expect(refreshedText).toContain('function_declaration "gamma"');
+    }, { timeout: 10_000 });
+
+    await Promise.all([first.client.close(), second.client.close()]);
+    mcpClients = mcpClients.filter((client) => client !== first.client && client !== second.client);
   });
 
   it("supports first-use, healthy-skip, stale-refresh, and disabled auto-indexing over Jcode stdio", async () => {
