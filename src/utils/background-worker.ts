@@ -708,6 +708,10 @@ class BackgroundWorkerController {
     return this.lease !== null && !this.stopping && !this.losingLeadership;
   }
 
+  isStopping(): boolean {
+    return this.stopping;
+  }
+
   getHooksForConfig(config: ParsedCodebaseIndexConfig): BackgroundWorkerHooks {
     const watcherFactoryForConfig = this.hooks.watcherFactoryForConfig;
     if (!watcherFactoryForConfig) return this.hooks;
@@ -1114,6 +1118,11 @@ export function isBackgroundWorkerManaged(projectRoot: string, host: HostMode): 
 export function isBackgroundWorkerLeader(projectRoot: string, host: HostMode): boolean {
   const key = workerKeysByProject.get(projectLookupKey(projectRoot, host));
   return key !== undefined && workers.get(key)?.isLeader() === true;
+}
+
+export function isBackgroundWorkerStopping(projectRoot: string, host: HostMode): boolean {
+  const key = workerKeysByProject.get(projectLookupKey(projectRoot, host));
+  return key !== undefined && workers.get(key)?.isStopping() === true;
 }
 
 export async function stopBackgroundWorker(projectRoot: string, host: HostMode): Promise<void> {

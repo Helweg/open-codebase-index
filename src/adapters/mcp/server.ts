@@ -13,6 +13,8 @@ import {
   configureBackgroundWorker,
   getBackgroundWorkerProjectKey,
   isBackgroundWorkerManaged,
+  isBackgroundWorkerStopping,
+  requestBackgroundWorker,
   stopBackgroundWorker,
   waitForBackgroundWorkerStart,
 } from "../../utils/background-worker.js";
@@ -23,6 +25,7 @@ import {
 } from "../../utils/auto-index.js";
 
 const mcpWorkerReferences = new Map<string, number>();
+const mcpWorkerTeardowns = new Map<string, Promise<void>>();
 
 function retainMcpBackgroundWorker(projectRoot: string, host: HostMode): void {
   const key = getBackgroundWorkerProjectKey(projectRoot, host);
@@ -37,7 +40,15 @@ async function releaseMcpBackgroundWorker(projectRoot: string, host: HostMode): 
     return;
   }
   mcpWorkerReferences.delete(key);
-  await stopBackgroundWorker(projectRoot, host);
+  const teardown = stopBackgroundWorker(projectRoot, host);
+  mcpWorkerTeardowns.set(key, teardown);
+  try {
+    await teardown;
+  } finally {
+    if (mcpWorkerTeardowns.get(key) === teardown) {
+      mcpWorkerTeardowns.delete(key);
+    }
+  }
 }
 
 function getServerInstructions(host: string): string {
@@ -66,11 +77,14 @@ function configureMcpBackgroundWorker(
 
   if (isBackgroundWorkerManaged(projectRoot, host)) {
     const key = getBackgroundWorkerProjectKey(projectRoot, host);
-    if ((mcpWorkerReferences.get(key) ?? 0) === 0) {
+    if ((mcpWorkerReferences.get(key) ?? 0) === 0 && !mcpWorkerTeardowns.has(key)) {
       return { managesWorker: false };
     }
     if (watcherFactory !== undefined) {
       attachBackgroundWorkerWatcher(projectRoot, host, watcherFactory, watcherFactoryForConfig);
+    }
+    if (mcpWorkerTeardowns.has(key) || isBackgroundWorkerStopping(projectRoot, host)) {
+      requestBackgroundWorker(projectRoot, host);
     }
     return { managesWorker: true };
   }

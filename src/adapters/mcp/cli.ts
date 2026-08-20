@@ -331,6 +331,9 @@ export async function runMcpCli(argv: string[]): Promise<void> {
       )
       : null
   );
+  await server.connect(transport);
+  if (shutdownPromise) return;
+
   await attachMcpBackgroundWatcher(
     args.project,
     config,
@@ -338,9 +341,6 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     config.indexing.watchFiles && isValidProject ? watcherFactoryForConfig(config) : null,
     watcherFactoryForConfig,
   );
-  if (shutdownPromise) return;
-
-  await server.connect(transport);
   if (shutdownPromise) return;
 }
 

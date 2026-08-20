@@ -191,7 +191,7 @@ describe("MCP CLI shutdown lifecycle", () => {
     expect(events).toEqual(["watcher.stop", "backgroundWorker.stop", "server.close", "exit:0"]);
   });
 
-  it("waits for background watcher startup before connecting the transport", async () => {
+  it("connects the transport before waiting for background watcher startup", async () => {
     const watcherStarted = createDeferred<void>();
     lifecycleMocks.attachMcpBackgroundWatcher.mockImplementation((_project, _config, _host, factory) => {
       watcherAttached = true;
@@ -200,8 +200,9 @@ describe("MCP CLI shutdown lifecycle", () => {
     });
 
     const starting = startCli();
-    await vi.waitFor(() => expect(lifecycleMocks.attachMcpBackgroundWatcher).toHaveBeenCalledOnce());
-    expect(server.connect).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(server.connect).toHaveBeenCalledOnce());
+    expect(lifecycleMocks.attachMcpBackgroundWatcher).toHaveBeenCalledOnce();
+    expect(server.connect).toHaveBeenCalledBefore(lifecycleMocks.attachMcpBackgroundWatcher);
 
     watcherStarted.resolve();
     await starting;
@@ -275,7 +276,7 @@ describe("MCP CLI shutdown lifecycle", () => {
     await vi.waitFor(() => {
       expect(lifecycleMocks.exit).toHaveBeenCalledWith(0);
     });
-    expect(watcher.stop).toHaveBeenCalledOnce();
+    expect(watcher.stop).not.toHaveBeenCalled();
     expect(lifecycleMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
     expect(server.close).toHaveBeenCalledOnce();
   });

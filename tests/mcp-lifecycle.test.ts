@@ -21,6 +21,8 @@ const backgroundWorkerMocks = vi.hoisted(() => ({
   updateBackgroundWorkerConfig: vi.fn(),
   isBackgroundWorkerLeader: vi.fn(() => false),
   isBackgroundWorkerManaged: vi.fn(() => false),
+  isBackgroundWorkerStopping: vi.fn(() => false),
+  requestBackgroundWorker: vi.fn(),
 }));
 
 vi.mock("../src/utils/background-worker.js", () => ({
@@ -31,7 +33,8 @@ vi.mock("../src/utils/background-worker.js", () => ({
   updateBackgroundWorkerConfig: backgroundWorkerMocks.updateBackgroundWorkerConfig,
   isBackgroundWorkerLeader: backgroundWorkerMocks.isBackgroundWorkerLeader,
   isBackgroundWorkerManaged: backgroundWorkerMocks.isBackgroundWorkerManaged,
-  requestBackgroundWorker: vi.fn(),
+  isBackgroundWorkerStopping: backgroundWorkerMocks.isBackgroundWorkerStopping,
+  requestBackgroundWorker: backgroundWorkerMocks.requestBackgroundWorker,
   requestBackgroundWorkerRefresh: vi.fn(),
 }));
 
@@ -68,6 +71,9 @@ describe("MCP automatic indexing lifecycle", () => {
     backgroundWorkerMocks.isBackgroundWorkerLeader.mockReturnValue(false);
     backgroundWorkerMocks.isBackgroundWorkerManaged.mockReset();
     backgroundWorkerMocks.isBackgroundWorkerManaged.mockReturnValue(false);
+    backgroundWorkerMocks.isBackgroundWorkerStopping.mockReset();
+    backgroundWorkerMocks.isBackgroundWorkerStopping.mockReturnValue(false);
+    backgroundWorkerMocks.requestBackgroundWorker.mockReset();
   });
 
   afterEach(async () => {
@@ -169,6 +175,47 @@ describe("MCP automatic indexing lifecycle", () => {
     await second.close();
     expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledTimes(1);
     expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "codex");
+  });
+
+  it("restarts shared coordination when a replacement server joins during teardown", async () => {
+    const projectRoot = "/tmp/mcp-replacement-during-teardown";
+    const stop = pendingStop();
+    backgroundWorkerMocks.isBackgroundWorkerManaged.mockReturnValue(false);
+    backgroundWorkerMocks.stopBackgroundWorker
+      .mockReturnValueOnce(stop.promise)
+      .mockResolvedValueOnce(undefined);
+
+    const first = createMcpServer(projectRoot, safeProjectConfig(), "codex");
+    backgroundWorkerMocks.isBackgroundWorkerManaged.mockReturnValue(true);
+    const closing = first.close();
+    await vi.waitFor(() => {
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
+    });
+
+    const replacement = createMcpServer(projectRoot, safeProjectConfig(), "codex");
+    expect(backgroundWorkerMocks.requestBackgroundWorker).toHaveBeenCalledWith(projectRoot, "codex");
+
+    stop.resolve();
+    await closing;
+    await replacement.close();
+    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledTimes(2);
+  });
+
+  it("restarts shared coordination when a server joins an external teardown", async () => {
+    const projectRoot = "/tmp/mcp-replacement-during-external-teardown";
+    backgroundWorkerMocks.isBackgroundWorkerManaged.mockReturnValue(false);
+    const first = createMcpServer(projectRoot, safeProjectConfig(), "codex");
+
+    backgroundWorkerMocks.isBackgroundWorkerManaged.mockReturnValue(true);
+    backgroundWorkerMocks.isBackgroundWorkerStopping.mockReturnValue(true);
+    const replacement = createMcpServer(projectRoot, safeProjectConfig(), "codex");
+
+    expect(backgroundWorkerMocks.requestBackgroundWorker).toHaveBeenCalledWith(projectRoot, "codex");
+
+    await first.close();
+    expect(backgroundWorkerMocks.stopBackgroundWorker).not.toHaveBeenCalled();
+    await replacement.close();
+    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
   });
 
   it("keeps a safe shared worker running when a marker-required server joins", async () => {
