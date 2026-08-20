@@ -153,7 +153,7 @@ describe("indexer failed batch recovery", () => {
     _extraDirs = [];
   });
 
-  function createIndexer(): Indexer {
+  function createIndexer(overrides: Record<string, unknown> = {}): Indexer {
     const config = parseConfig({
       embeddingProvider: "custom",
       customProvider: {
@@ -176,6 +176,7 @@ describe("indexer failed batch recovery", () => {
         retries: 0,
         retryDelayMs: 1,
       },
+      ...overrides,
     });
 
     return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
@@ -255,6 +256,117 @@ describe("indexer failed batch recovery", () => {
     expect(recoveredStatus.indexed).toBe(true);
     expect(recoveredStatus.failedBatchesCount).toBe(0);
     expect(recoveredStatus.failedBatchesPath).toBeUndefined();
+  });
+
+  it("drops excluded files from incremental retries of stale failed batches", async () => {
+    fs.mkdirSync(path.join(tempDir, "toms_common"), { recursive: true });
+    const excludedSql = path.join(tempDir, "toms_common", "huge.sql");
+    fs.writeFileSync(excludedSql, "SELECT 1;\n".repeat(20), "utf-8");
+
+    failEmbeddings = true;
+    const firstIndexer = createIndexer();
+    const failedStats = await firstIndexer.index();
+    expect(failedStats.failedChunks).toBeGreaterThan(0);
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    const embedTexts: string[] = [];
+    fetchSpy.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/api/tags")) {
+        return new Response(JSON.stringify({
+          models: [{ name: "nomic-embed-text" }],
+        }), { status: 200 });
+      }
+
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[]; prompt?: string };
+      const texts = Array.isArray(body.input) ? body.input : (body.prompt ? [body.prompt] : []);
+      embedTexts.push(...texts);
+
+      const data = texts.map((text) => {
+        let seed = 0;
+        for (const ch of text) {
+          seed = (seed * 31 + ch.charCodeAt(0)) % 1000;
+        }
+        const embedding = Array.from({ length: 8 }, (_, idx) => ((seed + idx * 17) % 997) / 997);
+        return { embedding };
+      });
+
+      return new Response(
+        JSON.stringify({
+          data,
+          usage: { total_tokens: Math.max(1, texts.length * 8) },
+        }),
+        { status: 200 }
+      );
+    });
+
+    const secondIndexer = createIndexer({
+      exclude: ["**/toms_common/**", "**/.opencode/**", "**/.git/**", "**/node_modules/**"],
+    });
+    const recoveredStats = await secondIndexer.index();
+    expect(recoveredStats.failedChunks).toBe(0);
+    expect(recoveredStats.skippedFiles.some((entry) => (
+      entry.reason === "excluded" && entry.path.replace(/\\/g, "/").includes("toms_common")
+    ))).toBe(true);
+
+    const recoveredStatus = await secondIndexer.getStatus();
+    expect(recoveredStatus.failedBatchesCount).toBe(0);
+    expect(embedTexts.some((text) => text.includes("SELECT 1"))).toBe(false);
+
+    const retry = await secondIndexer.retryFailedBatches();
+    expect(retry.remaining).toBe(0);
+    expect(retry.failed).toBe(0);
+  });
+
+  it("retryFailedBatches discards chunks whose files are now excluded", async () => {
+    fs.mkdirSync(path.join(tempDir, "toms_common"), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, "toms_common", "huge.sql"), "SELECT 1;\n".repeat(20), "utf-8");
+
+    failEmbeddings = true;
+    const firstIndexer = createIndexer();
+    await firstIndexer.index();
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    const embedTexts: string[] = [];
+    failEmbeddings = false;
+    fetchSpy.mockImplementation(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith("/api/tags")) {
+        return new Response(JSON.stringify({
+          models: [{ name: "nomic-embed-text" }],
+        }), { status: 200 });
+      }
+
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[]; prompt?: string };
+      const texts = Array.isArray(body.input) ? body.input : (body.prompt ? [body.prompt] : []);
+      embedTexts.push(...texts);
+
+      const data = texts.map((text) => {
+        let seed = 0;
+        for (const ch of text) {
+          seed = (seed * 31 + ch.charCodeAt(0)) % 1000;
+        }
+        const embedding = Array.from({ length: 8 }, (_, idx) => ((seed + idx * 17) % 997) / 997);
+        return { embedding };
+      });
+
+      return new Response(
+        JSON.stringify({
+          data,
+          usage: { total_tokens: Math.max(1, texts.length * 8) },
+        }),
+        { status: 200 }
+      );
+    });
+
+    const secondIndexer = createIndexer({
+      exclude: ["**/toms_common/**", "**/.opencode/**", "**/.git/**", "**/node_modules/**"],
+    });
+    const retry = await secondIndexer.retryFailedBatches();
+    expect(retry.failed).toBe(0);
+    expect(retry.remaining).toBe(0);
+    expect(embedTexts.some((text) => text.includes("SELECT 1"))).toBe(false);
+    expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
   });
 
   it("clears stale failed batch warnings after a clean no-op run", async () => {
@@ -1331,6 +1443,90 @@ describe("indexer failed batch recovery", () => {
     expect(foreignChunk).toBeDefined();
     expect(typeof foreignChunk?.text).toBe("string");
     expect(foreignChunk?.texts).toBeUndefined();
+  });
+
+  it("retries failed batches for a global-scope project beneath a hidden directory", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "failed-batches-hidden-parent-home-"));
+    _extraDirs.push(tempHome);
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const projectRoot = path.join(tempDir, ".work", "project");
+    const projectFile = path.join(projectRoot, "src", "a.ts");
+    const excludedFile = path.join(projectRoot, ".hidden", "ignored.ts");
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    fs.mkdirSync(path.dirname(excludedFile), { recursive: true });
+    fs.writeFileSync(projectFile, "export function alpha() { return 'a'; }\n", "utf-8");
+    fs.writeFileSync(excludedFile, "export function ignored() { return 'hidden'; }\n", "utf-8");
+
+    const globalFailedBatchesPath = path.join(tempHome, ".opencode", "global-index", "failed-batches.json");
+    fs.mkdirSync(path.dirname(globalFailedBatchesPath), { recursive: true });
+    fs.writeFileSync(
+      globalFailedBatchesPath,
+      JSON.stringify([
+        {
+          chunks: [
+            {
+              id: "hidden-parent-valid",
+              text: "export function alpha() { return 'a'; }",
+              content: "export function alpha() { return 'a'; }",
+              contentHash: "hidden-parent-valid-hash",
+              metadata: {
+                filePath: projectFile,
+                startLine: 1,
+                endLine: 1,
+                language: "typescript",
+                chunkType: "function",
+                hash: "hidden-parent-valid-hash",
+                name: "alpha",
+              },
+            },
+            {
+              id: "hidden-parent-excluded",
+              text: "export function ignored() { return 'hidden'; }",
+              content: "export function ignored() { return 'hidden'; }",
+              contentHash: "hidden-parent-excluded-hash",
+              metadata: {
+                filePath: excludedFile,
+                startLine: 1,
+                endLine: 1,
+                language: "typescript",
+                chunkType: "function",
+                hash: "hidden-parent-excluded-hash",
+                name: "ignored",
+              },
+            },
+          ],
+          error: "previous hidden-parent failure",
+          attemptCount: 1,
+          lastAttempt: new Date().toISOString(),
+        },
+      ], null, 2),
+      "utf-8"
+    );
+
+    const indexer = _indexers[_indexers.push(new Indexer(projectRoot, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      scope: "global",
+      indexing: {
+        watchFiles: false,
+        retries: 0,
+        retryDelayMs: 1,
+      },
+    }), "opencode")) - 1];
+
+    await indexer.initialize();
+    const retry = await indexer.retryFailedBatches();
+
+    expect(retry.succeeded).toBe(1);
+    expect(retry.failed).toBe(0);
+    expect(retry.remaining).toBe(0);
+    expect(fs.existsSync(globalFailedBatchesPath)).toBe(false);
   });
 
   it("logs a warning when persisted failed batches are malformed", async () => {

@@ -72,6 +72,39 @@ export function createIgnoreFilter(projectRoot: string): Ignore {
   return ig;
 }
 
+function toPosixRelativePath(relativePath: string): string {
+  return relativePath.split(path.sep).join("/");
+}
+
+function matchesAnyGlob(filePath: string, patterns: string[]): boolean {
+  const normalized = toPosixRelativePath(filePath);
+  return patterns.some((pattern) => matchGlob(normalized, pattern));
+}
+
+export function isExcludedByPatterns(relativePath: string, excludePatterns: string[]): boolean {
+  return matchesAnyGlob(relativePath, excludePatterns);
+}
+
+function isExcludedDirectory(relativePath: string, excludePatterns: string[]): boolean {
+  const normalized = toPosixRelativePath(relativePath);
+  if (matchesAnyGlob(normalized, excludePatterns)) {
+    return true;
+  }
+
+  for (const pattern of excludePatterns) {
+    const posixPattern = toPosixRelativePath(pattern).replace(/\/+$/, "");
+    if (!posixPattern.endsWith("/**")) {
+      continue;
+    }
+    const directoryPattern = posixPattern.slice(0, -3);
+    if (directoryPattern && matchesAnyGlob(normalized, [directoryPattern])) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 export function shouldIncludeFile(
   filePath: string,
   projectRoot: string,
@@ -79,9 +112,9 @@ export function shouldIncludeFile(
   excludePatterns: string[],
   ignoreFilter: Ignore
 ): boolean {
-  const relativePath = path.relative(projectRoot, filePath);
+  const relativePath = toPosixRelativePath(path.relative(projectRoot, filePath));
 
-  if (hasFilteredPathSegment(relativePath, path.sep)) {
+  if (hasFilteredPathSegment(relativePath, "/")) {
     return false;
   }
 
@@ -89,19 +122,11 @@ export function shouldIncludeFile(
     return false;
   }
 
-  for (const pattern of excludePatterns) {
-    if (matchGlob(relativePath, pattern)) {
-      return false;
-    }
+  if (isExcludedByPatterns(relativePath, excludePatterns)) {
+    return false;
   }
 
-  for (const pattern of includePatterns) {
-    if (matchGlob(relativePath, pattern)) {
-      return true;
-    }
-  }
-
-  return false;
+  return matchesAnyGlob(relativePath, includePatterns);
 }
 
 function matchGlob(filePath: string, pattern: string): boolean {
@@ -153,7 +178,7 @@ export async function* walkDirectory(
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
-    const relativePath = path.relative(projectRoot, fullPath);
+    const relativePath = toPosixRelativePath(path.relative(projectRoot, fullPath));
 
     if (isHiddenPathSegment(entry.name)) {
       if (entry.isDirectory()) {
@@ -175,6 +200,10 @@ export async function* walkDirectory(
     }
 
     if (entry.isDirectory()) {
+      if (isExcludedDirectory(relativePath, excludePatterns)) {
+        skipped.push({ path: relativePath, reason: "excluded" });
+        continue;
+      }
       subdirs.push({ fullPath, relativePath });
     } else if (entry.isFile()) {
       const stat = await fsPromises.stat(fullPath);
@@ -184,22 +213,12 @@ export async function* walkDirectory(
         continue;
       }
 
-      for (const pattern of excludePatterns) {
-        if (matchGlob(relativePath, pattern)) {
-          skipped.push({ path: relativePath, reason: "excluded" });
-          continue;
-        }
+      if (isExcludedByPatterns(relativePath, excludePatterns)) {
+        skipped.push({ path: relativePath, reason: "excluded" });
+        continue;
       }
 
-      let matched = false;
-      for (const pattern of includePatterns) {
-        if (matchGlob(relativePath, pattern)) {
-          matched = true;
-          break;
-        }
-      }
-
-      if (matched) {
+      if (matchesAnyGlob(relativePath, includePatterns)) {
         filesInDir.push({ path: fullPath, size: stat.size });
       }
     }
@@ -211,7 +230,7 @@ export async function* walkDirectory(
     yield f;
   }
   for (let i = options.maxFilesPerDirectory; i < filesInDir.length; i++) {
-    skipped.push({ path: path.relative(projectRoot, filesInDir[i].path), reason: "excluded" });
+    skipped.push({ path: toPosixRelativePath(path.relative(projectRoot, filesInDir[i].path)), reason: "excluded" });
   }
 
   const canRecurse = options.maxDepth === -1 || currentDepth < options.maxDepth;
