@@ -67,6 +67,20 @@ describe("files utilities", () => {
       ).toBe(false);
     });
 
+    it("should exclude files under a directory glob even when include matches", () => {
+      const filter = createIgnoreFilter(tempDir);
+
+      expect(
+        shouldIncludeFile(
+          path.join(tempDir, "toms_common", "huge.sql"),
+          tempDir,
+          ["**/*.sql"],
+          ["**/toms_common/**"],
+          filter
+        )
+      ).toBe(false);
+    });
+
     it("should respect gitignore", () => {
       fs.writeFileSync(path.join(tempDir, ".gitignore"), "ignored/\n");
       const filter = createIgnoreFilter(tempDir);
@@ -256,6 +270,85 @@ describe("files utilities", () => {
       expect(result.files.length).toBe(2);
       expect(result.files.some((f) => f.path.endsWith("root.js"))).toBe(true);
       expect(result.files.some((f) => f.path.endsWith("nested.js"))).toBe(true);
+    });
+
+    it("should omit files that match exclude even when they also match include", async () => {
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "toms_common"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "export const x = 1;");
+      fs.writeFileSync(path.join(tempDir, "toms_common", "huge.sql"), "SELECT 1;");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts", "**/*.sql"],
+        ["**/toms_common/**"],
+        1048576
+      );
+
+      expect(result.files.map((file) => path.basename(file.path))).toEqual(["index.ts"]);
+      expect(result.files.some((file) => file.path.includes("toms_common"))).toBe(false);
+      expect(result.skipped.some((entry) => (
+        entry.reason === "excluded" && entry.path.replace(/\\/g, "/").includes("toms_common")
+      ))).toBe(true);
+    });
+
+    it("should omit exclude matches after a non-matching earlier exclude pattern", async () => {
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "common", "scripts"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "src", "keep.ts"), "export const keep = true;");
+      fs.writeFileSync(path.join(tempDir, "common", "scripts", "bulk.sql"), "SELECT 1;");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts", "**/*.sql"],
+        ["**/generated/**", "**/common/scripts/**"],
+        1048576
+      );
+
+      expect(result.files.map((file) => path.basename(file.path))).toEqual(["keep.ts"]);
+      expect(result.files.some((file) => file.path.endsWith("bulk.sql"))).toBe(false);
+    });
+
+    it("should skip walking a directory covered by a /** exclude glob", async () => {
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "toms_common", "nested"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "export const x = 1;");
+      fs.writeFileSync(path.join(tempDir, "toms_common", "nested", "deep.sql"), "SELECT 1;");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts", "**/*.sql"],
+        ["**/toms_common/**"],
+        1048576
+      );
+
+      expect(result.files.map((file) => path.basename(file.path))).toEqual(["index.ts"]);
+      expect(result.skipped).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "toms_common", reason: "excluded" }),
+        ])
+      );
+      expect(result.skipped.some((entry) => entry.path.includes("deep.sql"))).toBe(false);
+    });
+
+    it("should still walk directories when exclude matches only files", async () => {
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "export const x = 1;");
+      fs.writeFileSync(path.join(tempDir, "src", "seed.sql"), "SELECT 1;");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts", "**/*.sql"],
+        ["**/*.sql"],
+        1048576
+      );
+
+      expect(result.files.map((file) => path.basename(file.path))).toEqual(["index.ts"]);
+      expect(result.skipped).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ path: "src/seed.sql", reason: "excluded" }),
+        ])
+      );
     });
   });
 
