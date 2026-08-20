@@ -2,6 +2,7 @@ import type { HostMode } from "../config/host.js";
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import { parseConfig } from "../config/schema.js";
 import { configureAutoIndex, waitForAutoIndexForRetrieval } from "../utils/auto-index.js";
+import { isBackgroundWorkerManaged } from "../utils/background-worker.js";
 import { Indexer } from "../indexer/index.js";
 import { isIndexLockContentionError } from "../indexer/index-lock.js";
 import {
@@ -18,6 +19,10 @@ export const configCache = new Map<IndexerCacheKey, ParsedCodebaseIndexConfig>()
 export const defaultProjectRoots = new Map<HostMode, string>();
 
 export type IndexBusyResult = { kind: "busy"; text: string };
+
+interface InitializeToolsOptions {
+  preserveManagedWorker?: boolean;
+}
 
 export function getIndexBusyResult(error: unknown): IndexBusyResult | null {
   if (!isIndexLockContentionError(error)) return null;
@@ -109,16 +114,31 @@ export function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer
   }
   const indexer = new Indexer(projectRoot, config, host);
   indexerCache.set(key, indexer);
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host), {
+    preserveManagedWorker: true,
+    synchronizeBackgroundWorker: false,
+  });
   return indexer;
 }
 
-export function initializeTools(projectRoot: string, config: ParsedCodebaseIndexConfig, host: HostMode): void {
+export function initializeTools(
+  projectRoot: string,
+  config: ParsedCodebaseIndexConfig,
+  host: HostMode,
+  options: InitializeToolsOptions = {},
+): void {
   defaultProjectRoots.set(host, projectRoot);
   const key = getIndexerCacheKey(projectRoot, host);
+  if (options.preserveManagedWorker === true && isBackgroundWorkerManaged(projectRoot, host) && indexerCache.has(key)) {
+    // A later in-process server must not replace state owned by the worker.
+    return;
+  }
   configCache.set(key, config);
   indexerCache.set(key, new Indexer(projectRoot, config, host));
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host), {
+    preserveManagedWorker: options.preserveManagedWorker,
+    synchronizeBackgroundWorker: false,
+  });
 }
 
 export function getSharedIndexer(host: HostMode): Indexer {
@@ -147,7 +167,9 @@ export function refreshIndexerForDirectory(
   const key = getIndexerCacheKey(projectRoot, host);
   configCache.set(key, config);
   indexerCache.set(key, new Indexer(projectRoot, config, host));
-  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host));
+  configureAutoIndex(projectRoot, host, config, () => getOrCreateIndexer(projectRoot, host), {
+    synchronizeBackgroundWorker: true,
+  });
   return config;
 }
 

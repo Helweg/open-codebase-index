@@ -1,1 +1,1 @@
-export { createMcpServer } from "./adapters/mcp/server.js";
+export { attachMcpBackgroundWatcher, createMcpServer } from "./adapters/mcp/server.js";

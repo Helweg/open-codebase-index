@@ -10,14 +10,15 @@ import { parseConfig } from "../../config/schema.js";
 import { parseHostMode, HOST_MODES, type HostMode } from "../../config/host.js";
 import { handleEvalCommand } from "../../eval/cli.js";
 import { Indexer } from "../../indexer/index.js";
-import { createMcpServer } from "../../mcp-server.js";
+import { attachMcpBackgroundWatcher, createMcpServer } from "../../mcp-server.js";
 import { loadConfigFile, loadMergedConfig } from "../../config/merger.js";
 import { getIndexerForProject } from "../../tools/operations.js";
 import { initializeTools } from "../../tools/operation-runtime.js";
 import { executeIndexCodebase } from "../../tools/execute-common.js";
 import { hasProjectMarker } from "../../utils/files.js";
-import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
-import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
+import { BackgroundWorkerStopError, stopBackgroundWorker } from "../../utils/background-worker.js";
+import { isHomeDirectory } from "../../utils/auto-index.js";
+import { createWatcherWithIndexer } from "../../watcher/index.js";
 import { attachRecentActivity } from "../../tools/visualize/activity.js";
 import { generateVisualizationHtml, transformForVisualization } from "../../tools/visualize/index.js";
 
@@ -255,7 +256,6 @@ export async function runMcpCli(argv: string[]): Promise<void> {
 
   const server = createMcpServer(args.project, config, args.host);
   const transport = new StdioServerTransport();
-  let watcher: CombinedWatcher | null = null;
   let shutdownPromise: Promise<void> | undefined;
   const onServerClose = server.server.onclose;
 
@@ -270,16 +270,19 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     shutdownPromise = (async (): Promise<void> => {
       let exitCode = 0;
       try {
-        await watcher?.stop();
+        await stopBackgroundWorker(args.project, args.host);
       } catch (error) {
         exitCode = 1;
-        console.error("Failed to stop MCP file watcher cleanly:", error);
-      }
-      try {
-        await stopAutoIndex(args.project, args.host);
-      } catch (error) {
-        exitCode = 1;
-        console.error("Failed to stop automatic indexing cleanly:", error);
+        if (error instanceof BackgroundWorkerStopError) {
+          if (error.watcherError !== undefined) {
+            console.error("Failed to stop MCP file watcher cleanly:", error.watcherError);
+          }
+          if (error.autoIndexError !== undefined) {
+            console.error("Failed to stop automatic indexing cleanly:", error.autoIndexError);
+          }
+        } else {
+          console.error("Failed to stop automatic indexing cleanly:", error);
+        }
       }
       try {
         await server.close();
@@ -312,21 +315,33 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     process.once("SIGTERM", requestShutdown);
   }
 
-  await server.connect(transport);
-  if (shutdownPromise) return;
-
   const isHomeDir = isHomeDirectory(args.project);
   const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(args.project));
 
-  if (config.indexing.watchFiles && isValidProject) {
-    watcher = createWatcherWithIndexer(
-      () => getIndexerForProject(args.project, args.host),
-      args.project,
-      config,
-      args.host,
-      args.config ? { configPath: args.config } : {},
-    );
-  }
+  const watcherFactoryForConfig = (refreshedConfig: typeof config) => (
+    refreshedConfig.indexing.watchFiles
+      && !isHomeDirectory(args.project)
+      && (!refreshedConfig.indexing.requireProjectMarker || hasProjectMarker(args.project))
+      ? () => createWatcherWithIndexer(
+        () => getIndexerForProject(args.project, args.host),
+        args.project,
+        refreshedConfig,
+        args.host,
+        args.config ? { configPath: args.config } : {},
+      )
+      : null
+  );
+  await attachMcpBackgroundWatcher(
+    args.project,
+    config,
+    args.host,
+    config.indexing.watchFiles && isValidProject ? watcherFactoryForConfig(config) : null,
+    watcherFactoryForConfig,
+  );
+  if (shutdownPromise) return;
+
+  await server.connect(transport);
+  if (shutdownPromise) return;
 }
 
 interface CliIndexCommandDeps {

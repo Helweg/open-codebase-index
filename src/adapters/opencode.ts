@@ -31,46 +31,13 @@ import {
 import { TOOL_NAME } from "../tools/tool-names.js";
 import { loadCommandsFromDirectory } from "../commands/loader.js";
 import { RoutingHintController } from "../routing-hints.js";
-import { isHomeDirectory, startAutoIndex } from "../utils/auto-index.js";
-import { hasProjectMarker } from "../utils/files.js";
+import { configureBackgroundWorker, stopBackgroundWorker, waitForBackgroundWorkerStart } from "../utils/background-worker.js";
+import {
+  getProjectSafety,
+  startAutoIndexForBackgroundWorker,
+  stopAutoIndexForBackgroundWorker,
+} from "../utils/auto-index.js";
 import { isGitRepo } from "../git/index.js";
-import type { CombinedWatcher } from "../watcher/index.js";
-
-const activeWatchers = new Map<string, CombinedWatcher>();
-const watcherReplacementChains = new Map<string, Promise<void>>();
-
-async function replaceActiveWatcher(
-  projectRoot: string,
-  createNextWatcher: (() => CombinedWatcher) | null,
-): Promise<void> {
-  const chain = (watcherReplacementChains.get(projectRoot) ?? Promise.resolve())
-    .catch(() => undefined)
-    .then(async () => {
-      const existing = activeWatchers.get(projectRoot);
-      if (existing) {
-        try {
-          await existing.stop();
-        } catch (error) {
-          console.error("[codebase-index] Failed to stop replaced watcher:", error);
-          throw error;
-        }
-        if (activeWatchers.get(projectRoot) === existing) {
-          activeWatchers.delete(projectRoot);
-        }
-      }
-      if (createNextWatcher) {
-        activeWatchers.set(projectRoot, createNextWatcher());
-      }
-    });
-  watcherReplacementChains.set(projectRoot, chain);
-  try {
-    await chain;
-  } finally {
-    if (watcherReplacementChains.get(projectRoot) === chain) {
-      watcherReplacementChains.delete(projectRoot);
-    }
-  }
-}
 
 function getCommandsDir(): string {
   let currentDir = process.cwd();
@@ -133,8 +100,9 @@ const plugin: Plugin = async ({ directory, worktree }) => {
       ? new RoutingHintController(() => getProjectIndexer().getStatus(), 200, config.search.routingGraphHandoffHints)
       : null;
 
-    const isHomeDir = isHomeDirectory(projectRoot);
-    const isValidProject = !isHomeDir && (!config.indexing.requireProjectMarker || hasProjectMarker(projectRoot));
+    const projectSafety = getProjectSafety(projectRoot, config);
+    const isHomeDir = projectSafety.blockedReason === "home-directory";
+    const isValidProject = projectSafety.safeToRun;
 
     if (isHomeDir) {
       console.warn(
@@ -148,17 +116,28 @@ const plugin: Plugin = async ({ directory, worktree }) => {
       );
     }
 
-    if (config.indexing.autoIndex && isValidProject) {
-      startAutoIndex(projectRoot, "opencode", "startup");
-    }
-
-    if (config.indexing.watchFiles && isValidProject) {
-      await replaceActiveWatcher(
-        projectRoot,
-        () => createWatcherWithIndexer(getProjectIndexer, projectRoot, config, "opencode"),
-      );
+    if (!isValidProject) {
+      await stopBackgroundWorker(projectRoot, "opencode").catch((error: unknown) => {
+        console.error("[codebase-index] Failed to stop unsafe OpenCode background worker:", error);
+      });
     } else {
-      await replaceActiveWatcher(projectRoot, null);
+      const watcherFactoryForConfig = (refreshedConfig: typeof config) => (
+        refreshedConfig.indexing.watchFiles
+          ? () => createWatcherWithIndexer(getProjectIndexer, projectRoot, refreshedConfig, "opencode")
+          : null
+      );
+      configureBackgroundWorker(projectRoot, "opencode", config, {
+        startAutoIndex: (source, allowDisabledAutoIndex) => {
+          startAutoIndexForBackgroundWorker(projectRoot, "opencode", source, allowDisabledAutoIndex);
+        },
+        stopAutoIndex: () => stopAutoIndexForBackgroundWorker(projectRoot, "opencode"),
+        watcherFactory: watcherFactoryForConfig(config),
+        watcherFactoryForConfig,
+        replaceWatcher: true,
+      }, {
+        restartAutoIndex: true,
+      });
+      await waitForBackgroundWorkerStart(projectRoot, "opencode");
     }
 
     return {

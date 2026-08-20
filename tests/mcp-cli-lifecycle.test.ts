@@ -5,20 +5,34 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const lifecycleMocks = vi.hoisted(() => ({
+  BackgroundWorkerStopError: class BackgroundWorkerStopError extends Error {
+    constructor(
+      readonly watcherError: unknown | undefined,
+      readonly autoIndexError: unknown | undefined,
+    ) {
+      super("Failed to stop background worker");
+    }
+  },
   createMcpServer: vi.fn(),
+  attachMcpBackgroundWatcher: vi.fn(),
   createWatcherWithIndexer: vi.fn(),
   isHomeDirectory: vi.fn(() => false),
-  stopAutoIndex: vi.fn(),
+  stopBackgroundWorker: vi.fn(),
   exit: vi.fn(),
 }));
 
 vi.mock("../src/mcp-server.js", () => ({
   createMcpServer: lifecycleMocks.createMcpServer,
+  attachMcpBackgroundWatcher: lifecycleMocks.attachMcpBackgroundWatcher,
 }));
 
 vi.mock("../src/utils/auto-index.js", () => ({
   isHomeDirectory: lifecycleMocks.isHomeDirectory,
-  stopAutoIndex: lifecycleMocks.stopAutoIndex,
+}));
+
+vi.mock("../src/utils/background-worker.js", () => ({
+  BackgroundWorkerStopError: lifecycleMocks.BackgroundWorkerStopError,
+  stopBackgroundWorker: lifecycleMocks.stopBackgroundWorker,
 }));
 
 vi.mock("../src/watcher/index.js", () => ({
@@ -58,9 +72,11 @@ describe("MCP CLI shutdown lifecycle", () => {
   let server: FakeMcpServer;
   let tempDir: string;
   let watcher: FakeWatcher;
+  let watcherAttached: boolean;
 
   beforeEach(() => {
     events = [];
+    watcherAttached = false;
     tempDir = mkdtempSync(path.join(os.tmpdir(), "mcp-cli-lifecycle-"));
     writeFileSync(
       path.join(tempDir, "config.json"),
@@ -68,8 +84,9 @@ describe("MCP CLI shutdown lifecycle", () => {
     );
 
     lifecycleMocks.createMcpServer.mockReset();
+    lifecycleMocks.attachMcpBackgroundWatcher.mockReset();
     lifecycleMocks.createWatcherWithIndexer.mockReset();
-    lifecycleMocks.stopAutoIndex.mockReset();
+    lifecycleMocks.stopBackgroundWorker.mockReset();
     lifecycleMocks.exit.mockReset();
     vi.spyOn(process, "exit").mockImplementation(((code?: number | string) => {
       events.push(`exit:${String(code)}`);
@@ -81,8 +98,9 @@ describe("MCP CLI shutdown lifecycle", () => {
         events.push("watcher.stop");
       }),
     };
-    lifecycleMocks.stopAutoIndex.mockImplementation(async () => {
-      events.push("autoIndex.stop");
+    lifecycleMocks.stopBackgroundWorker.mockImplementation(async () => {
+      if (watcherAttached) await watcher.stop();
+      events.push("backgroundWorker.stop");
     });
     server = {
       close: vi.fn(async () => {
@@ -97,6 +115,20 @@ describe("MCP CLI shutdown lifecycle", () => {
     };
     lifecycleMocks.createMcpServer.mockReturnValue(server);
     lifecycleMocks.createWatcherWithIndexer.mockReturnValue(watcher);
+    lifecycleMocks.stopBackgroundWorker.mockImplementation(async () => {
+      if (watcherAttached) {
+        try {
+          await watcher.stop();
+        } catch (error) {
+          throw new lifecycleMocks.BackgroundWorkerStopError(error, undefined);
+        }
+      }
+      events.push("backgroundWorker.stop");
+    });
+    lifecycleMocks.attachMcpBackgroundWatcher.mockImplementation((_project, _config, _host, factory) => {
+      watcherAttached = true;
+      factory?.();
+    });
   });
 
   afterEach(() => {
@@ -125,7 +157,7 @@ describe("MCP CLI shutdown lifecycle", () => {
       expect(lifecycleMocks.exit).toHaveBeenCalledWith(0);
     });
     expect(watcher.stop).toHaveBeenCalledOnce();
-    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
     expect(server.close).toHaveBeenCalledOnce();
   }
 
@@ -147,7 +179,7 @@ describe("MCP CLI shutdown lifecycle", () => {
 
     stopGate.resolve();
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["watcher.stop", "backgroundWorker.stop", "server.close", "exit:0"]);
   });
 
   it("runs teardown when stdin closes without an end event", async () => {
@@ -156,7 +188,27 @@ describe("MCP CLI shutdown lifecycle", () => {
     process.stdin.emit("close");
 
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["watcher.stop", "backgroundWorker.stop", "server.close", "exit:0"]);
+  });
+
+  it("waits for background watcher startup before connecting the transport", async () => {
+    const watcherStarted = createDeferred<void>();
+    lifecycleMocks.attachMcpBackgroundWatcher.mockImplementation((_project, _config, _host, factory) => {
+      watcherAttached = true;
+      factory?.();
+      return watcherStarted.promise;
+    });
+
+    const starting = startCli();
+    await vi.waitFor(() => expect(lifecycleMocks.attachMcpBackgroundWatcher).toHaveBeenCalledOnce());
+    expect(server.connect).not.toHaveBeenCalled();
+
+    watcherStarted.resolve();
+    await starting;
+    expect(server.connect).toHaveBeenCalledOnce();
+
+    process.stdin.emit("close");
+    await expectSuccessfulShutdown();
   });
 
   it("still closes the server when watcher teardown fails", async () => {
@@ -176,13 +228,13 @@ describe("MCP CLI shutdown lifecycle", () => {
     });
     expect(server.close).toHaveBeenCalledOnce();
     expect(error).toHaveBeenCalledWith("Failed to stop MCP file watcher cleanly:", stopError);
-    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:1"]);
+    expect(events).toEqual(["watcher.stop", "server.close", "exit:1"]);
   });
 
-  it("still closes the server when auto-index shutdown fails", async () => {
-    const stopError = new Error("auto-index stop failed");
-    lifecycleMocks.stopAutoIndex.mockImplementation(async () => {
-      events.push("autoIndex.stop");
+  it("still closes the server when background worker shutdown fails", async () => {
+    const stopError = new Error("background worker stop failed");
+    lifecycleMocks.stopBackgroundWorker.mockImplementation(async () => {
+      events.push("backgroundWorker.stop");
       throw stopError;
     });
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -193,10 +245,10 @@ describe("MCP CLI shutdown lifecycle", () => {
     await vi.waitFor(() => {
       expect(lifecycleMocks.exit).toHaveBeenCalledWith(1);
     });
-    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
     expect(server.close).toHaveBeenCalledOnce();
     expect(error).toHaveBeenCalledWith("Failed to stop automatic indexing cleanly:", stopError);
-    expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:1"]);
+    expect(events).toEqual(["backgroundWorker.stop", "server.close", "exit:1"]);
   });
 
   it("handles SIGINT while MCP transport startup is still pending", async () => {
@@ -223,8 +275,8 @@ describe("MCP CLI shutdown lifecycle", () => {
     await vi.waitFor(() => {
       expect(lifecycleMocks.exit).toHaveBeenCalledWith(0);
     });
-    expect(watcher.stop).not.toHaveBeenCalled();
-    expect(lifecycleMocks.stopAutoIndex).toHaveBeenCalledOnce();
+    expect(watcher.stop).toHaveBeenCalledOnce();
+    expect(lifecycleMocks.stopBackgroundWorker).toHaveBeenCalledOnce();
     expect(server.close).toHaveBeenCalledOnce();
   });
 
@@ -234,7 +286,7 @@ describe("MCP CLI shutdown lifecycle", () => {
     server.server.onclose?.();
 
     await expectSuccessfulShutdown();
-    expect(events).toEqual(["server.onclose", "watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
+    expect(events).toEqual(["server.onclose", "watcher.stop", "backgroundWorker.stop", "server.close", "exit:0"]);
   });
 
   if (process.platform !== "win32") {
@@ -244,7 +296,7 @@ describe("MCP CLI shutdown lifecycle", () => {
       process.emit(signal);
 
       await expectSuccessfulShutdown();
-      expect(events).toEqual(["watcher.stop", "autoIndex.stop", "server.close", "exit:0"]);
+      expect(events).toEqual(["watcher.stop", "backgroundWorker.stop", "server.close", "exit:0"]);
     });
   }
 

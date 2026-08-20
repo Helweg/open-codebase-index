@@ -9,6 +9,7 @@ import { parseConfig } from "../src/config/schema.js";
 import { resolveProjectConfigPath, resolveProjectIndexPath, resolveWritableProjectConfigPath } from "../src/config/paths.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database, hashContent, InvertedIndex, VectorStore } from "../src/native/index.js";
+import { getBackgroundWorkerLeasePath } from "../src/utils/background-worker.js";
 
 function readBranchFileHashes(indexPath: string, branch: string): Record<string, string> {
   const branchHash = hashContent(branch).slice(0, 16);
@@ -229,6 +230,28 @@ describe("worktree fallback (issue #60)", () => {
     } finally {
       await indexer.close();
     }
+  });
+
+  it("keeps worker leases distinct for an inherited index and a worktree-local index", () => {
+    const mainConfig = parseConfig(loadMergedConfig(mainRepoDir, "opencode"));
+    const inheritedConfig = parseConfig(loadMergedConfig(worktreeDir, "opencode"));
+    const mainLease = getBackgroundWorkerLeasePath(mainRepoDir, mainConfig, "opencode");
+    const inheritedLease = getBackgroundWorkerLeasePath(worktreeDir, inheritedConfig, "opencode");
+
+    expect(path.dirname(inheritedLease)).toBe(path.dirname(mainLease));
+    expect(inheritedLease).not.toBe(mainLease);
+
+    fs.mkdirSync(path.join(worktreeDir, ".opencode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(worktreeDir, ".opencode", "codebase-index.json"),
+      JSON.stringify({ scope: "project" }),
+      "utf-8",
+    );
+    const localConfig = parseConfig(loadMergedConfig(worktreeDir, "opencode"));
+    const localLease = getBackgroundWorkerLeasePath(worktreeDir, localConfig, "opencode");
+
+    expect(path.dirname(localLease)).toBe(path.join(fs.realpathSync.native(path.join(worktreeDir, ".opencode")), "index"));
+    expect(localLease).not.toBe(inheritedLease);
   });
 
   it("rebinds branch-scoped runtime caches when one Indexer switches branches", async () => {

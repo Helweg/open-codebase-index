@@ -42,9 +42,10 @@ import {
 } from "../../tools/context.js";
 import { resolveCodebaseEditContext } from "../../tools/edit-context.js";
 import { registerPiCallGraphTools } from "./call-graph.js";
-import { isHomeDirectory, stopAutoIndex } from "../../utils/auto-index.js";
+import { configureBackgroundWorker, stopBackgroundWorker, waitForBackgroundWorkerStart } from "../../utils/background-worker.js";
+import { isHomeDirectory, startAutoIndexForBackgroundWorker, stopAutoIndexForBackgroundWorker } from "../../utils/auto-index.js";
 import { hasProjectMarker } from "../../utils/files.js";
-import { createWatcherWithIndexer, type CombinedWatcher } from "../../watcher/index.js";
+import { createWatcherWithIndexer } from "../../watcher/index.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
 import {
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
@@ -60,7 +61,6 @@ import {
 } from "../../tools/contracts.js";
 
 const HOST = "pi" as const;
-const activeWatchers = new Map<string, CombinedWatcher>();
 
 const ChunkType = Type.Union([
   Type.Literal("function"),
@@ -84,28 +84,37 @@ function isValidProject(projectRoot: string, requireProjectMarker: boolean): boo
   return !isHomeDirectory(projectRoot) && (!requireProjectMarker || hasProjectMarker(projectRoot));
 }
 
-function ensureWatcher(projectRoot: string): void {
-  if (activeWatchers.has(projectRoot)) return;
-
+async function ensureWatcher(projectRoot: string): Promise<void> {
   const config = parseConfig(loadMergedConfig(projectRoot, HOST));
-  if (!config.indexing.watchFiles || !isValidProject(projectRoot, config.indexing.requireProjectMarker)) {
+  if (!isValidProject(projectRoot, config.indexing.requireProjectMarker)) {
+    await stopBackgroundWorker(projectRoot, HOST).catch((error: unknown) => {
+      console.error("[codebase-index] Failed to stop Pi background worker:", error);
+    });
     return;
   }
 
-  activeWatchers.set(projectRoot, createWatcherWithIndexer(
-    () => getIndexerForProject(projectRoot, HOST),
-    projectRoot,
-    config,
-    HOST,
-  ));
-}
-
-async function stopWatcher(projectRoot: string): Promise<void> {
-  const watcher = activeWatchers.get(projectRoot);
-  if (!watcher) return;
-
-  activeWatchers.delete(projectRoot);
-  await watcher.stop();
+  // The background worker may become leader immediately. Create the Indexer and
+  // its coordinator first so the startup callback cannot be dropped.
+  getIndexerForProject(projectRoot, HOST);
+  const watcherFactoryForConfig = (refreshedConfig: typeof config) => (
+    refreshedConfig.indexing.watchFiles
+      ? () => createWatcherWithIndexer(
+        () => getIndexerForProject(projectRoot, HOST),
+        projectRoot,
+        refreshedConfig,
+        HOST,
+      )
+      : null
+  );
+  configureBackgroundWorker(projectRoot, HOST, config, {
+    startAutoIndex: (source, allowDisabledAutoIndex) => {
+      startAutoIndexForBackgroundWorker(projectRoot, HOST, source, allowDisabledAutoIndex);
+    },
+    stopAutoIndex: () => stopAutoIndexForBackgroundWorker(projectRoot, HOST),
+    watcherFactory: watcherFactoryForConfig(config),
+    watcherFactoryForConfig,
+  });
+  await waitForBackgroundWorkerStart(projectRoot, HOST);
 }
 
 export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
@@ -353,7 +362,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
   registerPiCallGraphTools(pi);
 
   pi.on("before_agent_start", async (event, ctx) => {
-    ensureWatcher(projectRoot(ctx));
+    await ensureWatcher(projectRoot(ctx));
     return {
       systemPrompt:
         `${event.systemPrompt}\n\n` +
@@ -369,7 +378,7 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     const root = projectRoot(ctx);
-    await Promise.all([stopWatcher(root), stopAutoIndex(root, HOST)]);
+    await stopBackgroundWorker(root, HOST);
   });
 
   pi.registerTool({
