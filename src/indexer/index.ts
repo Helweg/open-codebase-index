@@ -1265,21 +1265,19 @@ export class Indexer {
   }
 
   private isStoredPathExcluded(storedPath: string): boolean {
-    const posixStored = storedPath.split(path.sep).join("/");
-    if (isExcludedByPatterns(posixStored, this.config.exclude)) {
-      return true;
+    let matchPath = storedPath.split(path.sep).join("/");
+    if (path.isAbsolute(storedPath)) {
+      const relativePath = path.relative(this.projectRoot, storedPath).split(path.sep).join("/");
+      // Knowledge-base files live outside the project. A `../` prefix would
+      // false-match hidden-file globs such as **/.*/** because `..` starts with a dot.
+      // Glob-matching the raw absolute path has the same problem: default **/.*/**
+      // would treat a hidden parent such as /Users/me/.work/project as excluded.
+      if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+        return false;
+      }
+      matchPath = relativePath;
     }
-    if (!path.isAbsolute(storedPath)) {
-      return false;
-    }
-
-    const relativePath = path.relative(this.projectRoot, storedPath).split(path.sep).join("/");
-    // Knowledge-base files live outside the project. A `../` prefix would
-    // false-match hidden-file globs such as **/.*/** because `..` starts with a dot.
-    if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
-      return false;
-    }
-    return isExcludedByPatterns(relativePath, this.config.exclude);
+    return isExcludedByPatterns(matchPath, this.config.exclude);
   }
 
   private resolveStoredFilePath(filePath: string, rootPath = this.projectRoot): string {

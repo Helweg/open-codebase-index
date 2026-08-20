@@ -1445,6 +1445,90 @@ describe("indexer failed batch recovery", () => {
     expect(foreignChunk?.texts).toBeUndefined();
   });
 
+  it("retries failed batches for a global-scope project beneath a hidden directory", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "failed-batches-hidden-parent-home-"));
+    _extraDirs.push(tempHome);
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+
+    const projectRoot = path.join(tempDir, ".work", "project");
+    const projectFile = path.join(projectRoot, "src", "a.ts");
+    const excludedFile = path.join(projectRoot, ".hidden", "ignored.ts");
+    fs.mkdirSync(path.dirname(projectFile), { recursive: true });
+    fs.mkdirSync(path.dirname(excludedFile), { recursive: true });
+    fs.writeFileSync(projectFile, "export function alpha() { return 'a'; }\n", "utf-8");
+    fs.writeFileSync(excludedFile, "export function ignored() { return 'hidden'; }\n", "utf-8");
+
+    const globalFailedBatchesPath = path.join(tempHome, ".opencode", "global-index", "failed-batches.json");
+    fs.mkdirSync(path.dirname(globalFailedBatchesPath), { recursive: true });
+    fs.writeFileSync(
+      globalFailedBatchesPath,
+      JSON.stringify([
+        {
+          chunks: [
+            {
+              id: "hidden-parent-valid",
+              text: "export function alpha() { return 'a'; }",
+              content: "export function alpha() { return 'a'; }",
+              contentHash: "hidden-parent-valid-hash",
+              metadata: {
+                filePath: projectFile,
+                startLine: 1,
+                endLine: 1,
+                language: "typescript",
+                chunkType: "function",
+                hash: "hidden-parent-valid-hash",
+                name: "alpha",
+              },
+            },
+            {
+              id: "hidden-parent-excluded",
+              text: "export function ignored() { return 'hidden'; }",
+              content: "export function ignored() { return 'hidden'; }",
+              contentHash: "hidden-parent-excluded-hash",
+              metadata: {
+                filePath: excludedFile,
+                startLine: 1,
+                endLine: 1,
+                language: "typescript",
+                chunkType: "function",
+                hash: "hidden-parent-excluded-hash",
+                name: "ignored",
+              },
+            },
+          ],
+          error: "previous hidden-parent failure",
+          attemptCount: 1,
+          lastAttempt: new Date().toISOString(),
+        },
+      ], null, 2),
+      "utf-8"
+    );
+
+    const indexer = _indexers[_indexers.push(new Indexer(projectRoot, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      scope: "global",
+      indexing: {
+        watchFiles: false,
+        retries: 0,
+        retryDelayMs: 1,
+      },
+    }), "opencode")) - 1];
+
+    await indexer.initialize();
+    const retry = await indexer.retryFailedBatches();
+
+    expect(retry.succeeded).toBe(1);
+    expect(retry.failed).toBe(0);
+    expect(retry.remaining).toBe(0);
+    expect(fs.existsSync(globalFailedBatchesPath)).toBe(false);
+  });
+
   it("logs a warning when persisted failed batches are malformed", async () => {
     const failedBatchesPath = path.join(tempDir, ".opencode", "index", "failed-batches.json");
     fs.mkdirSync(path.dirname(failedBatchesPath), { recursive: true });
