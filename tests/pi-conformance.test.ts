@@ -21,6 +21,13 @@ const operationMocks = vi.hoisted(() => ({
 const autoIndexMocks = vi.hoisted(() => ({
   isHomeDirectory: vi.fn(() => false),
   stopAutoIndex: vi.fn(async () => {}),
+  startAutoIndexForBackgroundWorker: vi.fn(),
+}));
+
+const backgroundWorkerMocks = vi.hoisted(() => ({
+  configureBackgroundWorker: vi.fn(),
+  stopBackgroundWorker: vi.fn(async () => {}),
+  waitForBackgroundWorkerStart: vi.fn(async () => {}),
 }));
 
 const configMocks = vi.hoisted(() => ({
@@ -56,6 +63,13 @@ vi.mock("../src/tools/operations.js", () => ({
 vi.mock("../src/utils/auto-index.js", () => ({
   isHomeDirectory: autoIndexMocks.isHomeDirectory,
   stopAutoIndex: autoIndexMocks.stopAutoIndex,
+  startAutoIndexForBackgroundWorker: autoIndexMocks.startAutoIndexForBackgroundWorker,
+}));
+
+vi.mock("../src/utils/background-worker.js", () => ({
+  configureBackgroundWorker: backgroundWorkerMocks.configureBackgroundWorker,
+  stopBackgroundWorker: backgroundWorkerMocks.stopBackgroundWorker,
+  waitForBackgroundWorkerStart: backgroundWorkerMocks.waitForBackgroundWorkerStart,
 }));
 
 vi.mock("../src/config/merger.js", () => ({
@@ -163,11 +177,15 @@ describe("Pi adapter conformance", () => {
     operationMocks.getIndexMetrics.mockClear();
     autoIndexMocks.stopAutoIndex.mockReset();
     autoIndexMocks.stopAutoIndex.mockResolvedValue(undefined);
+    autoIndexMocks.startAutoIndexForBackgroundWorker.mockReset();
     autoIndexMocks.isHomeDirectory.mockReset();
     autoIndexMocks.isHomeDirectory.mockReturnValue(false);
     configMocks.loadMergedConfig.mockReset();
     configMocks.loadMergedConfig.mockReturnValue({ indexing: { watchFiles: false, requireProjectMarker: false } });
     watcherMocks.createWatcherWithIndexer.mockReset();
+    backgroundWorkerMocks.configureBackgroundWorker.mockReset();
+    backgroundWorkerMocks.stopBackgroundWorker.mockReset();
+    backgroundWorkerMocks.stopBackgroundWorker.mockResolvedValue(undefined);
     operationMocks.getIndexerForProject.mockReset();
     operationMocks.getIndexerForProject.mockReturnValue({});
   });
@@ -178,6 +196,14 @@ describe("Pi adapter conformance", () => {
       indexing: { watchFiles: true, requireProjectMarker: false },
     });
     watcherMocks.createWatcherWithIndexer.mockReturnValue(watcher);
+    let configuredWatcher: { stop: () => Promise<void> } | null = null;
+    backgroundWorkerMocks.configureBackgroundWorker.mockImplementation((_root, _host, _config, hooks) => {
+      configuredWatcher ??= hooks.watcherFactory?.() ?? null;
+    });
+    backgroundWorkerMocks.stopBackgroundWorker.mockImplementation(async () => {
+      await configuredWatcher?.stop();
+      configuredWatcher = null;
+    });
 
     const { beforeAgentStartHandlers, sessionShutdownHandlers } = await registerPiTools();
     const event = { systemPrompt: "base prompt" };
@@ -196,7 +222,7 @@ describe("Pi adapter conformance", () => {
 
     await sessionShutdownHandlers[0]?.({ type: "session_shutdown" }, ctx);
     expect(watcher.stop).toHaveBeenCalledOnce();
-    expect(autoIndexMocks.stopAutoIndex).toHaveBeenCalledWith("/watched-project", "pi");
+    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith("/watched-project", "pi");
   });
 
   it("does not start a Pi watcher when watchFiles is disabled", async () => {
@@ -210,12 +236,71 @@ describe("Pi adapter conformance", () => {
     expect(watcherMocks.createWatcherWithIndexer).not.toHaveBeenCalled();
   });
 
+  it("initializes the Pi indexer before its background worker starts automatic indexing", async () => {
+    const events: string[] = [];
+    configMocks.loadMergedConfig.mockReturnValue({
+      indexing: { autoIndex: true, watchFiles: false, requireProjectMarker: false },
+    });
+    operationMocks.getIndexerForProject.mockImplementation(() => {
+      events.push("indexer");
+      return {};
+    });
+    backgroundWorkerMocks.configureBackgroundWorker.mockImplementation((_root, _host, _config, hooks) => {
+      events.push("worker");
+      hooks.startAutoIndex("startup");
+    });
+    autoIndexMocks.startAutoIndexForBackgroundWorker.mockImplementation(() => {
+      events.push("auto-index");
+    });
+    const { beforeAgentStartHandlers } = await registerPiTools();
+
+    await beforeAgentStartHandlers[0]?.(
+      { systemPrompt: "base prompt" },
+      { cwd: "/pi-auto-index-project" },
+    );
+
+    expect(events).toEqual(["indexer", "worker", "auto-index"]);
+    expect(watcherMocks.createWatcherWithIndexer).not.toHaveBeenCalled();
+  });
+
+  it("does not request automatic-index restarts for repeated Pi agent starts", async () => {
+    configMocks.loadMergedConfig.mockReturnValue({
+      indexing: { autoIndex: true, watchFiles: false, requireProjectMarker: false },
+    });
+    const { beforeAgentStartHandlers } = await registerPiTools();
+    const event = { systemPrompt: "base prompt" };
+    const ctx = { cwd: "/pi-repeated-start-project" };
+
+    await beforeAgentStartHandlers[0]?.(event, ctx);
+    await beforeAgentStartHandlers[0]?.(event, ctx);
+
+    expect(backgroundWorkerMocks.configureBackgroundWorker).toHaveBeenCalledTimes(2);
+    expect(backgroundWorkerMocks.configureBackgroundWorker.mock.calls.map((call) => call.length)).toEqual([4, 4]);
+  });
+
+  it("logs an invalid-project background worker teardown failure", async () => {
+    autoIndexMocks.isHomeDirectory.mockReturnValue(true);
+    const stopError = new Error("stop failed");
+    backgroundWorkerMocks.stopBackgroundWorker.mockRejectedValue(stopError);
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { beforeAgentStartHandlers } = await registerPiTools();
+
+    await beforeAgentStartHandlers[0]?.(
+      { systemPrompt: "base prompt" },
+      { cwd: "/invalid-pi-project" },
+    );
+    await vi.waitFor(() => {
+      expect(error).toHaveBeenCalledWith("[codebase-index] Failed to stop Pi background worker:", stopError);
+    });
+    error.mockRestore();
+  });
+
   it("awaits automatic indexing shutdown when the Pi session closes", async () => {
     let releaseStop!: () => void;
     const stopping = new Promise<void>((resolve) => {
       releaseStop = resolve;
     });
-    autoIndexMocks.stopAutoIndex.mockReturnValueOnce(stopping);
+    backgroundWorkerMocks.stopBackgroundWorker.mockReturnValueOnce(stopping);
     const { sessionShutdownHandlers } = await registerPiTools();
 
     let settled = false;
@@ -227,7 +312,7 @@ describe("Pi adapter conformance", () => {
     });
     await Promise.resolve();
 
-    expect(autoIndexMocks.stopAutoIndex).toHaveBeenCalledWith("/repo", "pi");
+    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith("/repo", "pi");
     expect(settled).toBe(false);
     releaseStop();
     await shutdown;

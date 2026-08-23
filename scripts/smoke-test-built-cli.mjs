@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const require = createRequire(import.meta.url);
 
@@ -57,6 +59,41 @@ function runCliCommand(args, {
   });
 }
 
+function withTimeout(promise, timeoutMs, description) {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(`${description} timed out after ${timeoutMs} ms`)), timeoutMs);
+    void promise.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function runMcpHandshake(args) {
+  const stderr = [];
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [cliPath, ...args],
+    cwd: process.cwd(),
+    stderr: "pipe",
+  });
+  transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
+  const client = new Client({ name: "built-cli-smoke", version: "1.0.0" });
+  try {
+    await withTimeout(client.connect(transport), 5_000, "MCP initialize");
+    await withTimeout(client.close(), 5_000, "MCP shutdown");
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw new Error(`Built ESM Codex MCP handshake failed:\n${stderr.join("")}`, { cause: error });
+  }
+}
+
 const cliPath = process.argv[2] ?? "dist/cli.js";
 const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-smoke-"));
 try {
@@ -65,17 +102,14 @@ try {
     configPath,
     JSON.stringify({ indexing: { autoIndex: false, watchFiles: true, requireProjectMarker: false } }),
   );
-  const projectArgs = ["--host", "jcode", "--project", tempDir, "--config", configPath];
+  const projectArgs = ["--host", "codex", "--project", tempDir, "--config", configPath];
 
   const cbiHelp = await runCliCommand(["--help"], { cliPathOverride: "dist/cbi.js" });
   if (cbiHelp.code !== 0 || !cbiHelp.stdout.includes("Usage: cbi")) {
     throw new Error(`Built CBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
   }
 
-  const mcpStartup = await runCliCommand(projectArgs, { killAfterMs: 2_000 });
-  if (mcpStartup.signal === null && mcpStartup.code !== 0) {
-    throw new Error(`Built ESM CLI failed in MCP startup mode with exit code ${mcpStartup.code}:\n${mcpStartup.stderr}`);
-  }
+  await Promise.all([runMcpHandshake(projectArgs), runMcpHandshake(projectArgs)]);
 
   const indexHelp = await runCliCommand(["index", "--help"]);
   if (indexHelp.code !== 0 || !indexHelp.stderr.includes("Usage:")) {

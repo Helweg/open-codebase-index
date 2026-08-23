@@ -36,6 +36,17 @@ const mockState = vi.hoisted(() => ({
   }>,
 }));
 
+const backgroundWorkerMocks = vi.hoisted(() => ({
+  configureBackgroundWorker: vi.fn(),
+  stopBackgroundWorker: vi.fn(async () => {}),
+  updateBackgroundWorkerConfig: vi.fn(),
+  waitForBackgroundWorkerStart: vi.fn(async () => {}),
+}));
+
+const fileMocks = vi.hoisted(() => ({
+  hasProjectMarker: vi.fn(() => true),
+}));
+
 vi.mock("../src/config/merger.js", () => ({
   loadMergedConfig: vi.fn(() => ({})),
 }));
@@ -45,11 +56,22 @@ vi.mock("../src/config/schema.js", () => ({
 }));
 
 vi.mock("../src/utils/files.js", () => ({
-  hasProjectMarker: vi.fn(() => true),
+  hasProjectMarker: fileMocks.hasProjectMarker,
 }));
 
 vi.mock("../src/watcher/index.js", () => ({
   createWatcherWithIndexer: mockState.createWatcherWithIndexer,
+}));
+
+vi.mock("../src/utils/background-worker.js", () => ({
+  configureBackgroundWorker: backgroundWorkerMocks.configureBackgroundWorker,
+  stopBackgroundWorker: backgroundWorkerMocks.stopBackgroundWorker,
+  updateBackgroundWorkerConfig: backgroundWorkerMocks.updateBackgroundWorkerConfig,
+  waitForBackgroundWorkerStart: backgroundWorkerMocks.waitForBackgroundWorkerStart,
+  isBackgroundWorkerLeader: vi.fn(() => false),
+  isBackgroundWorkerManaged: vi.fn(() => false),
+  requestBackgroundWorker: vi.fn(),
+  requestBackgroundWorkerRefresh: vi.fn(),
 }));
 
 vi.mock("../src/commands/loader.js", () => ({
@@ -109,14 +131,6 @@ import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/u
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";
 
-function createDeferred<T>(): { promise: Promise<T>; resolve: (value: T | PromiseLike<T>) => void } {
-  let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
-  return { promise, resolve };
-}
-
 describe("plugin routing hint hook selection", () => {
   beforeEach(() => {
     mockState.config = {
@@ -139,6 +153,10 @@ describe("plugin routing hint hook selection", () => {
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
     mockState.createWatcherWithIndexer.mockClear();
+    backgroundWorkerMocks.configureBackgroundWorker.mockReset();
+    backgroundWorkerMocks.stopBackgroundWorker.mockReset().mockResolvedValue(undefined);
+    backgroundWorkerMocks.updateBackgroundWorkerConfig.mockReset();
+    fileMocks.hasProjectMarker.mockReset().mockReturnValue(true);
     mockState.indexer.forceIndex.mockReset().mockResolvedValue({});
     mockState.indexer.getStatus.mockReset().mockResolvedValue({ indexed: true });
     mockState.indexer.index.mockReset().mockResolvedValue({});
@@ -170,9 +188,29 @@ describe("plugin routing hint hook selection", () => {
     try {
       await plugin({ directory: homeLink } as Parameters<typeof plugin>[0]);
       expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
+      expect(backgroundWorkerMocks.configureBackgroundWorker).not.toHaveBeenCalled();
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(homeLink, "opencode");
     } finally {
       warn.mockRestore();
       rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not configure a worker when a project marker is required but missing", async () => {
+    const projectRoot = "/tmp/missing-project-marker";
+    mockState.config.indexing.autoIndex = true;
+    mockState.config.indexing.watchFiles = true;
+    fileMocks.hasProjectMarker.mockReturnValue(false);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
+
+      expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
+      expect(backgroundWorkerMocks.configureBackgroundWorker).not.toHaveBeenCalled();
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode");
+    } finally {
+      warn.mockRestore();
     }
   });
 
@@ -217,103 +255,41 @@ describe("plugin routing hint hook selection", () => {
     expect(new Set(Object.keys(runtime.tool ?? {})).size).toBe(OPENCODE_TOOL_NAMES.length);
   });
 
-  it("waits for the previous watcher to stop before creating the next one", async () => {
-    mockState.config.indexing.autoIndex = true;
+  it("delegates watcher ownership to the background worker on reload", async () => {
     mockState.config.indexing.watchFiles = true;
-    const indexGate = createDeferred<{}>();
-    mockState.indexer.index.mockImplementationOnce(() => indexGate.promise);
-    const stopGate = createDeferred<void>();
-    const firstWatcher = {
-      stop: vi.fn(() => stopGate.promise),
-    };
-    const secondWatcher = { stop: vi.fn().mockResolvedValue(undefined) };
-    mockState.createWatcherWithIndexer
-      .mockReturnValueOnce(firstWatcher)
-      .mockReturnValueOnce(secondWatcher);
+    const projectRoot = "/tmp/reload-project";
 
-    await plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0]);
-    await vi.waitFor(() => expect(mockState.indexer.index).toHaveBeenCalledOnce());
-
-    const secondReload = plugin({ directory: "/tmp/reload-project" } as Parameters<typeof plugin>[0]);
-    await vi.waitFor(() => expect(firstWatcher.stop).toHaveBeenCalledOnce());
-    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
-
-    stopGate.resolve();
-    await secondReload;
-
-    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(2);
-    expect(mockState.indexer.index).toHaveBeenCalledOnce();
-    indexGate.resolve({});
-    await vi.waitFor(() => expect(mockState.indexer.getStatus).toHaveBeenCalled());
-  });
-
-  it("does not create a second watcher when stopping the previous one fails", async () => {
-    mockState.config.indexing.watchFiles = true;
-    const stopError = new Error("stop failed");
-    const firstWatcher = {
-      stop: vi.fn()
-        .mockRejectedValueOnce(stopError)
-        .mockResolvedValue(undefined),
-    };
-    mockState.createWatcherWithIndexer.mockReturnValue(firstWatcher);
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
-    const projectRoot = "/tmp/stop-failure-project";
-
-    try {
-      await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
-      const failedReload = await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
-
-      expect(failedReload.tool).toBeUndefined();
-      expect(firstWatcher.stop).toHaveBeenCalledOnce();
-      expect(error).toHaveBeenCalledWith("[codebase-index] Failed to stop replaced watcher:", stopError);
-      expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
-    } finally {
-      mockState.config.indexing.watchFiles = false;
-      await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
-      error.mockRestore();
-    }
-  });
-
-  it("serializes concurrent reloads while replaced watcher shutdowns are pending", async () => {
-    mockState.config.indexing.watchFiles = true;
-    const firstStopGate = createDeferred<void>();
-    const secondStopGate = createDeferred<void>();
-    const firstWatcher = { stop: vi.fn(() => firstStopGate.promise) };
-    const secondWatcher = { stop: vi.fn(() => secondStopGate.promise) };
-    const finalWatcher = { stop: vi.fn().mockResolvedValue(undefined) };
-    mockState.createWatcherWithIndexer
-      .mockReturnValueOnce(firstWatcher)
-      .mockReturnValueOnce(secondWatcher)
-      .mockReturnValueOnce(finalWatcher);
-
-    const projectRoot = "/tmp/concurrent-reload-project";
-    const reloads = [
-      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
-      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
-      plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]),
-    ];
-
-    await vi.waitFor(() => expect(firstWatcher.stop).toHaveBeenCalledOnce());
-    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledOnce();
-    expect(secondWatcher.stop).not.toHaveBeenCalled();
-
-    firstStopGate.resolve();
-    await vi.waitFor(() => expect(secondWatcher.stop).toHaveBeenCalledOnce());
-    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(2);
-    expect(finalWatcher.stop).not.toHaveBeenCalled();
-
-    secondStopGate.resolve();
-    await Promise.all(reloads);
-
-    expect(mockState.createWatcherWithIndexer).toHaveBeenCalledTimes(3);
-    expect(firstWatcher.stop).toHaveBeenCalledOnce();
-    expect(secondWatcher.stop).toHaveBeenCalledOnce();
-    expect(finalWatcher.stop).not.toHaveBeenCalled();
-
-    mockState.config.indexing.watchFiles = false;
+    await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
     await plugin({ directory: projectRoot } as Parameters<typeof plugin>[0]);
 
-    expect(finalWatcher.stop).toHaveBeenCalledOnce();
+    expect(backgroundWorkerMocks.configureBackgroundWorker).toHaveBeenCalledTimes(2);
+    expect(backgroundWorkerMocks.configureBackgroundWorker).toHaveBeenLastCalledWith(
+      projectRoot,
+      "opencode",
+      mockState.config,
+      expect.objectContaining({
+        watcherFactory: expect.any(Function),
+        watcherFactoryForConfig: expect.any(Function),
+        replaceWatcher: true,
+      }),
+      { restartAutoIndex: true },
+    );
+  });
+
+  it("clears the watcher factory when file watching is disabled", async () => {
+    mockState.config.indexing.watchFiles = false;
+    await plugin({ directory: "/tmp/unwatched-project" } as Parameters<typeof plugin>[0]);
+
+    expect(backgroundWorkerMocks.configureBackgroundWorker).toHaveBeenCalledWith(
+      "/tmp/unwatched-project",
+      "opencode",
+      mockState.config,
+      expect.objectContaining({
+        watcherFactory: null,
+        watcherFactoryForConfig: expect.any(Function),
+      }),
+      { restartAutoIndex: true },
+    );
   });
 
   it("injects hints through system transform when role is system", async () => {

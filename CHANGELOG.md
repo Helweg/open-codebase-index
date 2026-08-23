@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MCP background worker coordination**: Concurrent MCP sessions for the same project now elect one local background worker for file watching and automatic indexing. Other sessions do not start background work and continue serving normal MCP requests, including explicit indexing operations. No daemon, installation, configuration, index-path, or storage migration is required.
 - **Config exclude**: `exclude` globs now omit matching files from indexing instead of recording them as skipped and still embedding them. Directory globs such as `**/common/**` skip the tree, and incremental `/index` plus `retryFailedBatches` drop stale failed-batch retries for newly excluded paths.
 - **Failed-batch retries**: Project-owned stored paths are matched against `exclude` globs after normalizing to the project root, so a hidden parent directory (for example `~/.work/project`) no longer makes valid failed batches look excluded in global scope.
 
