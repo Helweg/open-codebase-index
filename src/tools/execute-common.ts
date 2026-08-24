@@ -18,6 +18,7 @@ import {
   getIndexMetrics,
   getIndexStatus,
   implementationLookup,
+  isExactSymbolQuery,
   runIndexCodebase,
   runIndexHealthCheck,
 } from "./operations.js";
@@ -120,6 +121,7 @@ export async function executeImplementationLookup(
     limit: args.limit,
     fileType: args.fileType,
     directory: args.directory,
+    exactSymbol: isExactSymbolQuery(args.query),
   });
   return { text: formatDefinitionLookup(results, args.query) };
 }

@@ -669,6 +669,8 @@ describe("Pi adapter conformance", () => {
       limit: 100,
       fileType: undefined,
       directory: undefined,
+      exactSymbol: true,
+      trace: undefined,
     });
     expect(result?.content[0]?.text).toContain("src/auth.ts:12-30");
     expect(result?.content[0]?.text).not.toContain("function validateToken() {}");
@@ -708,6 +710,8 @@ describe("Pi adapter conformance", () => {
       limit: 100,
       fileType: undefined,
       directory: undefined,
+      exactSymbol: false,
+      trace: undefined,
     });
     expect(result?.content[0]?.text).toContain("\"getStatus\"");
   });
@@ -740,6 +744,8 @@ describe("Pi adapter conformance", () => {
       limit: 100,
       fileType: undefined,
       directory: undefined,
+      exactSymbol: false,
+      trace: undefined,
     });
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith(
       "/repo",

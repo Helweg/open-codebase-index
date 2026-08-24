@@ -127,10 +127,11 @@ async function resolveCodebaseContextUnmeasured(
     directory,
     diagnostic: input.diagnostic,
   }, {
-    lookup: (lookupSymbol, retrievalLimit, scope, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
+    lookup: (lookupSymbol, retrievalLimit, scope, exactSymbol, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
       limit: retrievalLimit,
       fileType: scope.fileType,
       directory: scope.directory,
+      exactSymbol,
       trace,
     }),
     search: (queryText, retrievalLimit, scope, trace, searchOptions) => searchCodebase(projectRoot, host, queryText, {

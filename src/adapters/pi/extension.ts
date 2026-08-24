@@ -16,6 +16,7 @@ import {
   getIndexerForProject,
   getCodeCommunities,
   implementationLookup,
+  isExactSymbolQuery,
   listKnowledgeBases,
   removeKnowledgeBase,
   runIndexCodebase,
@@ -271,7 +272,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       directory: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await implementationLookup(projectRoot(ctx), HOST, params.query, params);
+      const results = await implementationLookup(projectRoot(ctx), HOST, params.query, {
+        ...params,
+        exactSymbol: isExactSymbolQuery(params.query),
+      });
       return text(formatDefinitionLookup(results, params.query), results);
     },
   });

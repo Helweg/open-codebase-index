@@ -1,4 +1,4 @@
-import { existsSync, realpathSync, statSync } from "fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import * as path from "path";
 import { parseConfig } from "../config/schema.js";
 import { getHostProjectConfigRelativePath } from "../config/paths.js";
@@ -147,6 +147,65 @@ function symbolNameMatches(symbol: SymbolData, requestedName: string): boolean {
   return symbol.language === "apex" || symbol.language === "php"
     ? symbol.name.toLowerCase() === requestedName.toLowerCase()
     : symbol.name === requestedName;
+}
+
+export function isExactSymbolQuery(query: string): boolean {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/u.test(query.trim());
+}
+
+function exactSymbolMatchesScope(
+  symbol: SymbolData,
+  projectRoot: string,
+  options: { fileType?: string; directory?: string },
+): boolean {
+  const normalizedPath = normalizeCallGraphPath(symbol.filePath);
+  const fileType = trimOrUndefined(options.fileType)?.replace(/^\./, "").toLowerCase();
+  if (fileType && !normalizedPath.toLowerCase().endsWith(`.${fileType}`)) {
+    return false;
+  }
+
+  const directory = trimOrUndefined(options.directory);
+  if (!directory) return true;
+  const normalizedDirectory = normalizeCallGraphPath(directory);
+  const absoluteDirectory = isAbsoluteCallGraphPath(normalizedDirectory)
+    ? normalizedDirectory
+    : normalizeCallGraphPath(path.join(projectRoot, normalizedDirectory));
+  return normalizedPath === absoluteDirectory || normalizedPath.startsWith(`${absoluteDirectory}/`);
+}
+
+function exactSymbolSearchResults(
+  symbols: SymbolData[],
+  projectRoot: string,
+  query: string,
+  options: { limit?: number; fileType?: string; directory?: string },
+): SearchResult[] {
+  const name = query.trim();
+  const limit = options.limit ?? 5;
+  return symbols
+    .filter((symbol) => symbolNameMatches(symbol, name))
+    .filter((symbol) => exactSymbolMatchesScope(symbol, projectRoot, options))
+    .sort((left, right) => left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine)
+    .slice(0, limit)
+    .map((symbol) => {
+      let content = "[File not accessible]";
+      try {
+        content = readFileSync(symbol.filePath, "utf-8")
+          .split("\n")
+          .slice(symbol.startLine - 1, symbol.endLine)
+          .join("\n");
+      } catch {
+        // Preserve the normal search contract when a stale indexed file is unavailable.
+      }
+      return {
+        filePath: symbol.filePath,
+        startLine: symbol.startLine,
+        endLine: symbol.endLine,
+        content,
+        score: 1,
+        chunkType: symbol.kind,
+        name: symbol.name,
+      };
+    });
 }
 
 function toCandidate(symbol: SymbolData, projectRoot: string): CallGraphSymbolCandidate {
@@ -332,11 +391,21 @@ export async function implementationLookup(
     limit?: number;
     fileType?: string;
     directory?: string;
+    exactSymbol?: boolean;
     trace?: (trace: SearchTrace) => void;
   } = {},
 ): Promise<SearchResult[]> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
-  const indexer = getIndexerForProject(projectRoot, host);
+  const root = getProjectRoot(projectRoot, host);
+  const indexer = getIndexerForProject(root, host);
+  if (options.exactSymbol) {
+    return exactSymbolSearchResults(
+      await indexer.getCallGraphSymbols(),
+      root,
+      query,
+      options,
+    );
+  }
   return indexer.search(query, options.limit, {
     fileType: options.fileType,
     directory: options.directory,

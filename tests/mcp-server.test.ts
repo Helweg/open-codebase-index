@@ -830,11 +830,7 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain('function "validateToken"');
     expect(content[0].text).not.toContain("return token.length");
     const indexer = indexerMockState.instances.at(-1);
-    expect(indexer?.search).toHaveBeenCalledWith(
-      "validateToken",
-      100,
-      expect.objectContaining({ definitionIntent: true }),
-    );
+    expect(indexer?.getCallGraphSymbols).toHaveBeenCalled();
   });
 
   it("should return codebase_context diagnostics as MCP structured content on request", async () => {
