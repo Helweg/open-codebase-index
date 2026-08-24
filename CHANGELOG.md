@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-23
+
 ### Fixed
 
 - **MCP background worker coordination**: Concurrent MCP sessions for the same project now elect one local background worker for file watching and automatic indexing. Other sessions do not start background work and continue serving normal MCP requests, including explicit indexing operations. No daemon, installation, configuration, index-path, or storage migration is required.
