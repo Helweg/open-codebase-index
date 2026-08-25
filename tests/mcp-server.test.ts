@@ -1349,6 +1349,21 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("validateToken");
   });
 
+  it("reports an explicit overloaded context symbol as ambiguous", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("left", "duplicateSymbol", "/tmp/test-project/src/left.ts"),
+      graphSymbol("right", "duplicateSymbol", "/tmp/test-project/src/right.ts"),
+    ]);
+
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "find duplicateSymbol", symbol: "duplicateSymbol", diagnostic: true },
+    });
+    expect((result as { structuredContent?: { resolution?: string; matchKind?: string } }).structuredContent)
+      .toMatchObject({ resolution: "ambiguous", matchKind: "exact_symbol" });
+  });
+
   it("keeps generated and vendor definitions as explicit ambiguous candidates", async () => {
     const indexer = indexerMockState.instances[0];
     indexer.getCallGraphSymbols.mockResolvedValueOnce([

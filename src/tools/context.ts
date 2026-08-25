@@ -186,9 +186,10 @@ export async function resolveCodebaseContext(
   try {
     const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
     if (trimOrUndefined(input.symbol) && result.details) {
-      result.details.resolution = (result.details.resultCount ?? result.details.selectedCount ?? 0) > 0
-        ? "resolved"
-        : "not_found";
+      const candidateCount = result.details.candidateCount ?? result.details.resultCount ?? result.details.selectedCount ?? 0;
+      result.details.resolution = candidateCount === 0
+        ? "not_found"
+        : candidateCount === 1 ? "resolved" : "ambiguous";
       result.details.matchKind = "exact_symbol";
     }
     const details = result.details;
