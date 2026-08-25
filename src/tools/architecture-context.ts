@@ -273,7 +273,10 @@ function sourceEvidence(
   let lines = fileCache.get(symbol.filePath);
   if (lines === undefined) {
     try {
-      lines = readFileSync(symbol.filePath, "utf8").split(/\r?\n/);
+      const sourcePath = projectRoot && !path.isAbsolute(symbol.filePath)
+        ? path.resolve(projectRoot, symbol.filePath)
+        : symbol.filePath;
+      lines = readFileSync(sourcePath, "utf8").split(/\r?\n/);
     } catch {
       lines = null;
     }
