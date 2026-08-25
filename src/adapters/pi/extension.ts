@@ -6,6 +6,7 @@ import { loadMergedConfig } from "../../config/merger.js";
 import { formatCostEstimate, formatDryRunEstimate } from "../../utils/cost.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import { formatCodeCommunities } from "../../tools/format-communities.js";
+import { executeArchitectureContext } from "../../tools/execute-common.js";
 import {
   addKnowledgeBase,
   findSimilarCode,
@@ -15,7 +16,6 @@ import {
   getPrImpact,
   getIndexerForProject,
   getCodeCommunities,
-  getArchitectureContext,
   implementationLookup,
   isExactSymbolQuery,
   listKnowledgeBases,
@@ -416,8 +416,8 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
       tokenBudget: Type.Optional(Type.Integer({ minimum: 128, maximum: 4000, default: 1200 })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getArchitectureContext(projectRoot(ctx), HOST, params);
-      return text(result.text, result);
+      const result = await executeArchitectureContext(projectRoot(ctx), HOST, params);
+      return text(result.text, result.details);
     },
   });
 
