@@ -48,6 +48,7 @@ describe("eval reports", () => {
       search: 30,
       context: 7,
       "edit-context": 3,
+      architecture: 4,
     };
     const summaryPath = path.join(tempDir, "summary.json");
     writeFileSync(summaryPath, JSON.stringify(source), "utf-8");
@@ -58,5 +59,6 @@ describe("eval reports", () => {
     expect(createSummaryMarkdown(summary)).toContain("| search | 30 |");
     expect(createSummaryMarkdown(summary)).toContain("| context | 7 |");
     expect(createSummaryMarkdown(summary)).toContain("| edit-context | 3 |");
+    expect(createSummaryMarkdown(summary)).toContain("| architecture | 4 |");
   });
 });

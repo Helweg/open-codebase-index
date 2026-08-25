@@ -69,6 +69,18 @@ export function createSummaryMarkdown(
   );
   lines.push("");
 
+  if (summary.metrics.retrievalModeCounts) {
+    lines.push("## Retrieval Mode Distribution");
+    lines.push("");
+    lines.push("| Mode | Count |");
+    lines.push("|---|---:|");
+    for (const mode of ["search", "context", "edit-context", "architecture"] as const) {
+      const count = summary.metrics.retrievalModeCounts[mode] ?? 0;
+      lines.push(`| ${mode} | ${count} |`);
+    }
+    lines.push("");
+  }
+
   lines.push("## Metrics");
   lines.push("");
   lines.push("| Metric | Value |");

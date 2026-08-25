@@ -51,12 +51,13 @@ function parseQueryType(value: unknown, path: string): GoldenQueryType {
     value === "implementation-intent" ||
     value === "similarity" ||
     value === "keyword-heavy" ||
-    value === "conceptual"
+    value === "conceptual" ||
+    value === "architecture"
   ) {
     return value;
   }
   throw new Error(
-    `${path} must be one of: definition, implementation-intent, similarity, keyword-heavy, conceptual`
+    `${path} must be one of: definition, implementation-intent, similarity, keyword-heavy, conceptual, architecture`
   );
 }
 
@@ -126,6 +127,10 @@ function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefin
   const directory = parseStringOrUndefined(value.directory, `${path}.directory`);
   const callerLimit = parsePositiveIntegerOrUndefined(value.callerLimit, `${path}.callerLimit`);
   const calleeLimit = parsePositiveIntegerOrUndefined(value.calleeLimit, `${path}.calleeLimit`);
+  const depth = parsePositiveIntegerOrUndefined(value.depth, `${path}.depth`);
+  if (depth !== undefined && depth > 3) {
+    throw new Error(`${path}.depth must be at most 3`);
+  }
   const tokenBudget = parsePositiveIntegerOrUndefined(value.tokenBudget, `${path}.tokenBudget`);
   return {
     ...(symbol !== undefined ? { symbol } : {}),
@@ -134,6 +139,7 @@ function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefin
     ...(directory !== undefined ? { directory } : {}),
     ...(callerLimit !== undefined ? { callerLimit } : {}),
     ...(calleeLimit !== undefined ? { calleeLimit } : {}),
+    ...(depth !== undefined ? { depth } : {}),
     ...(tokenBudget !== undefined ? { tokenBudget } : {}),
   };
 }
@@ -162,8 +168,8 @@ function parseSemanticVersion(value: unknown, path: string): string {
 
 function parseRetrievalMode(value: unknown, path: string): GoldenRetrievalMode {
   if (value === undefined || value === "search") return "search";
-  if (value === "context" || value === "edit-context") return value;
-  throw new Error(`${path} must be one of: search, context, edit-context`);
+  if (value === "context" || value === "edit-context" || value === "architecture") return value;
+  throw new Error(`${path} must be one of: search, context, edit-context, architecture`);
 }
 
 function parseStringOrUndefined(value: unknown, path: string): string | undefined {

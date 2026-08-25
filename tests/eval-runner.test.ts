@@ -150,6 +150,58 @@ describe("eval runner", () => {
     expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
   });
 
+  it("executes architecture_context queries and measures cited evidence relevance and response tokens", async () => {
+    writeFileSync(
+      path.join(tempDir, "benchmarks", "golden", "architecture.json"),
+      JSON.stringify({
+        version: "1.0.0",
+        name: "architecture",
+        queries: [{
+          id: "architecture-indexer",
+          query: "map the indexer architecture before changing result ranking",
+          queryType: "architecture",
+          retrievalMode: "architecture",
+          args: { directory: "src/indexer", depth: 2, tokenBudget: 512 },
+          expected: {
+            gradedEvidence: [{
+              path: "src/indexer/index.ts",
+              symbol: "rankHybridResults",
+              relevance: 3,
+            }],
+          },
+        }],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const runtimeCacheSpy = vi.spyOn(operationRuntime, "getIndexerForProject");
+    const result = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/architecture.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    expect(runtimeCacheSpy).not.toHaveBeenCalled();
+    runtimeCacheSpy.mockRestore();
+    expect(result.perQuery[0]).toMatchObject({
+      retrievalMode: "architecture",
+      queryType: "architecture",
+      hitAt1: true,
+      tokenBudget: 512,
+    });
+    expect(result.perQuery[0]?.responseTokens).toBeGreaterThan(0);
+    expect(result.perQuery[0]?.responseTokens).toBeLessThanOrEqual(512);
+    expect(result.perQuery[0]?.results[0]).toMatchObject({
+      filePath: "src/indexer/index.ts",
+      name: "rankHybridResults",
+      chunkType: "architecture-module",
+    });
+    expect(result.summary.metrics.retrievalModeCounts?.architecture).toBe(1);
+    expect(result.summary.metrics.contextEfficiency.responseTokens.max).toBeLessThanOrEqual(512);
+  });
+
   it("evaluates edit-context targets and only scores published graph neighbors when expected", async () => {
     writeFileSync(
       path.join(tempDir, "src", "indexer", "index.ts"),

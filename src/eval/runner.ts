@@ -10,6 +10,7 @@ import { resolveSearchContext } from "../tools/context.js";
 import { resolveCodebaseEditContextWithDependencies } from "../tools/edit-context.js";
 import {
   getCallGraphDataForIndexer,
+  getArchitectureContextForIndexer,
   type CallGraphDataResult,
   type CallGraphSymbolResolution,
 } from "../tools/operations.js";
@@ -138,6 +139,91 @@ function calleeResult(edge: CallEdgeData, symbols: SymbolData[]): EvalSearchResu
     chunkType: "graph-callee",
     name: symbol.name,
     graphDirection: "callee",
+  };
+}
+
+function architectureEvidenceResults(
+  result: Awaited<ReturnType<typeof getArchitectureContextForIndexer>>,
+): { results: EvalSearchResult[]; candidateCount: number } {
+  const candidates: EvalSearchResult[] = [];
+  for (const module of result.modules) {
+    for (const evidence of module.evidence) {
+      candidates.push({
+        filePath: evidence.filePath,
+        startLine: evidence.line || undefined,
+        endLine: evidence.line || undefined,
+        score: 1,
+        chunkType: "architecture-module",
+        name: evidence.symbol,
+      });
+    }
+  }
+  for (const boundary of result.boundaries) {
+    for (const evidence of boundary.evidence) {
+      candidates.push({
+        filePath: evidence.fromFilePath,
+        score: 0.75,
+        chunkType: "architecture-boundary",
+        name: evidence.fromSymbol,
+      });
+      candidates.push({
+        filePath: evidence.toFilePath,
+        score: 0.75,
+        chunkType: "architecture-boundary",
+        name: evidence.toSymbol,
+      });
+    }
+  }
+  for (const hub of result.hubs) {
+    candidates.push({
+      filePath: hub.filePath,
+      score: 0.5,
+      chunkType: "architecture-hub",
+      name: hub.symbol,
+    });
+  }
+
+  const seen = new Set<string>();
+  const results = candidates.filter((candidate) => {
+    const key = `${normalizedPath(candidate.filePath)}::${candidate.name ?? ""}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { results, candidateCount: candidates.length };
+}
+
+async function runArchitectureContextQuery(
+  indexer: Indexer,
+  projectRoot: string,
+  query: GoldenQuery,
+): Promise<{
+  results: EvalSearchResult[];
+  context: {
+    tokenBudget: number;
+    responseTokens: number;
+    candidateCount: number;
+    deduplicatedCount: number;
+    omittedCount: number;
+  };
+}> {
+  const architecture = await getArchitectureContextForIndexer(indexer, projectRoot, {
+    query: query.query,
+    directory: query.args?.directory,
+    depth: query.args?.depth,
+    tokenBudget: query.args?.tokenBudget,
+    includeRecentActivity: false,
+  });
+  const evidence = architectureEvidenceResults(architecture);
+  return {
+    results: evidence.results,
+    context: {
+      tokenBudget: architecture.tokenBudget,
+      responseTokens: architecture.tokenEstimate,
+      candidateCount: evidence.candidateCount,
+      deduplicatedCount: evidence.results.length,
+      omittedCount: Object.values(architecture.omitted).reduce((total, value) => total + value, 0),
+    },
   };
 }
 
@@ -291,6 +377,9 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
       const editContextResult = query.retrievalMode === "edit-context"
         ? await runEditContextQuery(indexer, options.projectRoot, query)
         : undefined;
+      const architectureResult = query.retrievalMode === "architecture"
+        ? await runArchitectureContextQuery(indexer, options.projectRoot, query)
+        : undefined;
       const contextResult = query.retrievalMode === "context"
         ? await resolveSearchContext({
           query: query.query,
@@ -317,7 +406,8 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
           }),
         })
         : undefined;
-      const result = editContextResult?.results
+      const result = architectureResult?.results
+        ?? editContextResult?.results
         ?? contextResult?.details?.results
         ?? await indexer.search(query.query, 10, {
           metadataOnly: true,
@@ -355,7 +445,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         };
       });
 
-      const contextMeasurement = editContextResult?.context ?? (contextResult?.details ? {
+      const contextMeasurement = architectureResult?.context ?? editContextResult?.context ?? (contextResult?.details ? {
         tokenBudget: contextResult.details.tokenBudget,
         responseTokens: contextResult.details.tokenEstimate,
         candidateCount: contextResult.details.candidateCount ?? 0,
