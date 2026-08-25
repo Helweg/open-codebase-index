@@ -7,6 +7,7 @@ import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { buildCodeCommunitiesResult } from "./format-communities.js";
+import { buildArchitectureContext } from "./architecture-context.js";
 import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
@@ -16,7 +17,7 @@ import {
   CODE_COMMUNITIES_MIN_COUPLING,
   CODE_COMMUNITIES_MIN_SIZE,
 } from "./contracts.js";
-import type { SharedCodeCommunitiesArgs } from "./contracts.js";
+import type { SharedArchitectureContextArgs, SharedCodeCommunitiesArgs } from "./contracts.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
@@ -903,3 +904,28 @@ export {
   getSharedIndexer,
   formatStatus,
 };
+
+export async function getArchitectureContext(
+  projectRoot: string | undefined,
+  host: HostMode,
+  params: SharedArchitectureContextArgs,
+): Promise<import("./architecture-context.js").ArchitectureContextResult> {
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  const indexer = getIndexerForProject(projectRoot, host);
+  const [communities, centrality, couplings] = await Promise.all([
+    indexer.detectCommunities(),
+    indexer.computeCentrality(),
+    indexer.detectCommunityCouplings(),
+  ]);
+  let focusedSymbols: SymbolData[] = [];
+  if (params.query?.trim()) {
+    const results = await indexer.search(params.query.trim(), 24, {
+      metadataOnly: true,
+      directory: params.directory ?? undefined,
+      prioritizeSourcePaths: true,
+    });
+    const paths = [...new Set(results.map((result) => result.filePath))];
+    focusedSymbols = paths.length > 0 ? await indexer.getSymbolsForFiles(paths) : [];
+  }
+  return buildArchitectureContext(params, communities, centrality, couplings, focusedSymbols);
+}

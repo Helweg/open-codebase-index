@@ -15,6 +15,7 @@ import {
   getPrImpact,
   getIndexerForProject,
   getCodeCommunities,
+  getArchitectureContext,
   implementationLookup,
   isExactSymbolQuery,
   listKnowledgeBases,
@@ -400,6 +401,23 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await getPrImpact(projectRoot(ctx), HOST, params);
       return text(formatPrImpact(result), result);
+    },
+  });
+
+  pi.registerTool({
+    name: TOOL_NAME.ARCHITECTURE_CONTEXT,
+    label: "Architecture Context",
+    description: "Repository-scale architecture map with source-backed module, boundary, and hub evidence.",
+    parameters: Type.Object({
+      query: Type.Optional(Type.String()),
+      directory: Type.Optional(Type.String()),
+      depth: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, default: 2 })),
+      includeRecentActivity: Type.Optional(Type.Boolean({ default: false })),
+      tokenBudget: Type.Optional(Type.Integer({ minimum: 128, maximum: 4000, default: 1200 })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const result = await getArchitectureContext(projectRoot(ctx), HOST, params);
+      return text(result.text, result);
     },
   });
 

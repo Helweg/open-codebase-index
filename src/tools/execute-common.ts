@@ -4,6 +4,7 @@ import type {
   SharedCallGraphPathArgs,
   SharedCodebaseContextArgs,
   SharedCodebaseEditContextArgs,
+  SharedArchitectureContextArgs,
   SharedCodeCommunitiesArgs,
   SharedIndexCodebaseArgs,
   SharedIndexLogsArgs,
@@ -14,6 +15,7 @@ import {
   getCallGraphData,
   getCallGraphPath,
   getCodeCommunities,
+  getArchitectureContext,
   getIndexLogs,
   getIndexMetrics,
   getIndexStatus,
@@ -169,4 +171,13 @@ export async function executeCodeCommunities(
 ): Promise<ExecutionResult> {
   const result = await getCodeCommunities(projectRoot, host, args);
   return { text: formatCodeCommunities(result) };
+}
+
+export async function executeArchitectureContext(
+  projectRoot: string | undefined,
+  host: HostMode,
+  args: SharedArchitectureContextArgs,
+): Promise<ExecutionResult> {
+  const result = await getArchitectureContext(projectRoot, host, args);
+  return { text: result.text, details: result as unknown as Record<string, unknown> };
 }

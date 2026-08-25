@@ -6,11 +6,11 @@ Tool availability depends on the host mode.
 
 | Host / integration | Tool surface | Additional capabilities |
 |---|---|---|
-| `opencode` (plugin) | 19 tools in total (15 portable tools + 3 knowledge-base tools + 1 OpenCode-native tool) | Slash commands and `index_visualize` |
-| MCP clients, including `codex`, `claude`, and `jcode` | 18 tools + 5 prompts (15 portable tools + 3 knowledge-base tools) | Knowledge-base management for every MCP client; no OpenCode slash commands |
-| `pi` (Pi extension) | 18 tools total (15 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
+| `opencode` (plugin) | 20 tools in total (16 portable tools + 3 knowledge-base tools + 1 OpenCode-native tool) | Slash commands and `index_visualize` |
+| MCP clients, including `codex`, `claude`, and `jcode` | 19 tools + 5 prompts (16 portable tools + 3 knowledge-base tools) | Knowledge-base management for every MCP client; no OpenCode slash commands |
+| `pi` (Pi extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
 
-### Portable MCP core (15 tools)
+### Portable MCP core (16 tools)
 
 These tools are available through the MCP server and the OpenCode plugin.
 
@@ -28,6 +28,7 @@ These tools are available through the MCP server and the OpenCode plugin.
 - `call_graph`
 - `call_graph_path`
 - `pr_impact`
+- `architecture_context`
 - `code_communities`
 
 The MCP server also exposes five prompts:

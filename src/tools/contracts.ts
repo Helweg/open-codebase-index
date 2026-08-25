@@ -100,6 +100,14 @@ export interface SharedCallGraphPathArgs {
   maxDepth?: number;
 }
 
+export interface SharedArchitectureContextArgs {
+  query?: string | null;
+  directory?: string | null;
+  depth?: number;
+  includeRecentActivity?: boolean;
+  tokenBudget?: number;
+}
+
 export interface SharedCodeCommunitiesArgs {
   branch?: string;
   minSize?: number;
