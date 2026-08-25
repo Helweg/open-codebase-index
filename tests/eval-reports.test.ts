@@ -44,10 +44,19 @@ describe("eval reports", () => {
       readFileSync("benchmarks/baselines/eval-baseline-summary.json", "utf-8"),
     ) as { metrics: Record<string, unknown> };
     source.metrics.graphNeighborRecall = 0.5;
+    source.metrics.retrievalModeCounts = {
+      search: 30,
+      context: 7,
+      "edit-context": 3,
+    };
     const summaryPath = path.join(tempDir, "summary.json");
     writeFileSync(summaryPath, JSON.stringify(source), "utf-8");
     const summary = loadSummary(summaryPath);
 
     expect(createSummaryMarkdown(summary)).toContain("| Graph-neighbor recall | 0.5000 |");
+    expect(createSummaryMarkdown(summary)).toContain("## Retrieval Mode Distribution");
+    expect(createSummaryMarkdown(summary)).toContain("| search | 30 |");
+    expect(createSummaryMarkdown(summary)).toContain("| context | 7 |");
+    expect(createSummaryMarkdown(summary)).toContain("| edit-context | 3 |");
   });
 });

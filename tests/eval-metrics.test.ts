@@ -485,6 +485,58 @@ describe("eval metrics", () => {
     expect(perQuery[0].rawTop3DistinctRatio).toBeCloseTo(2 / 3, 6);
   });
 
+  it("tracks retrieval mode distribution in aggregate metrics", () => {
+    const perQuery = [
+      buildPerQueryResult(
+        query({ id: "q-search" }),
+        [{
+          filePath: "/repo/src/indexer/index.ts",
+          startLine: 1,
+          endLine: 2,
+          score: 1,
+          chunkType: "function",
+          name: "rankHybridResults",
+        }],
+        10,
+        10,
+      ),
+      buildPerQueryResult(
+        query({ id: "q-context", retrievalMode: "context" }),
+        [{
+          filePath: "/repo/src/indexer/index.ts",
+          startLine: 1,
+          endLine: 2,
+          score: 1,
+          chunkType: "function",
+          name: "rankHybridResults",
+        }],
+        10,
+        10,
+      ),
+      buildPerQueryResult(
+        query({ id: "q-edit", retrievalMode: "edit-context" }),
+        [{
+          filePath: "/repo/src/indexer/index.ts",
+          startLine: 1,
+          endLine: 2,
+          score: 1,
+          chunkType: "function",
+          name: "rankHybridResults",
+        }],
+        10,
+        10,
+      ),
+    ];
+
+    const metrics = computeEvalMetrics([query({ id: "q-search" }), query({ id: "q-context", retrievalMode: "context" }), query({ id: "q-edit", retrievalMode: "edit-context" })], perQuery, 0, 0, 0);
+
+    expect(metrics.retrievalModeCounts).toEqual({
+      search: 1,
+      context: 1,
+      "edit-context": 1,
+    });
+  });
+
   it("measures context response tokens, candidate compression, and quality per token", () => {
     const queries: GoldenQuery[] = [
       query({ id: "q1", retrievalMode: "context" }),
