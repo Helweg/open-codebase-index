@@ -113,6 +113,12 @@ function normalizePath(value: string): string {
   return value.trim().replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
 }
 
+function compactText(value: string, maxLength: number): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(1, maxLength - 1))}…`;
+}
+
 function displayPath(filePath: string, projectRoot?: string): string {
   const normalizedFilePath = normalizePath(filePath);
   if (!projectRoot) return normalizedFilePath;
@@ -422,9 +428,10 @@ function renderArchitectureText(
   recentActivityUnavailable: boolean,
 ): string {
   const lines = ["→ Architecture context"];
-  if (input.query?.trim()) lines.push(`Focus: ${input.query.trim()}`);
+  const minimumBudget = (input.tokenBudget ?? ARCHITECTURE_CONTEXT_DEFAULT_TOKEN_BUDGET) <= 160;
+  if (input.query?.trim()) lines.push(`Focus: ${compactText(input.query, minimumBudget ? 32 : 64)}`);
   lines.push(
-    `Coverage: ${coverage.symbols} scoped symbols across ${coverage.communities} modules${input.directory ? ` in ${normalizePath(input.directory)}` : ""}.`,
+    `Coverage: ${coverage.symbols} scoped symbols across ${coverage.communities} modules${input.directory ? ` in ${compactText(normalizePath(input.directory), minimumBudget ? 24 : 48)}` : ""}.`,
     `Uncertainty: ${coverage.note}`,
   );
 
@@ -481,19 +488,29 @@ function recommendationsFor(
   graphSparse: boolean,
 ): string[] {
   const evidence = modules[0]?.evidence[0];
-  const directory = input.directory?.trim() || undefined;
+  const maxArgumentLength = (input.tokenBudget ?? ARCHITECTURE_CONTEXT_DEFAULT_TOKEN_BUDGET) <= 160 ? 24 : 160;
+  const directory = input.directory?.trim()
+    ? compactText(input.directory, maxArgumentLength)
+    : undefined;
   const recommendations: string[] = [];
   if (evidence) {
     recommendations.push(`implementation_lookup ${JSON.stringify({
-      query: evidence.symbol,
-      directory: path.posix.dirname(evidence.filePath),
+      query: compactText(evidence.symbol, maxArgumentLength),
+      directory: compactText(path.posix.dirname(evidence.filePath), maxArgumentLength),
     })}`);
     if (!graphSparse) {
-      recommendations.push(`call_graph ${JSON.stringify({ name: evidence.symbol, filePath: evidence.filePath, direction: "callees" })}`);
+      recommendations.push(`call_graph ${JSON.stringify({
+        name: compactText(evidence.symbol, maxArgumentLength),
+        filePath: compactText(evidence.filePath, maxArgumentLength),
+        direction: "callees",
+      })}`);
     }
   }
   recommendations.push(`codebase_context ${JSON.stringify({
-    query: input.query?.trim() || (evidence ? `Understand ${evidence.symbol} and its module` : "Locate the repository subsystem to inspect"),
+    query: compactText(
+      input.query?.trim() || (evidence ? `Understand ${evidence.symbol} and its module` : "Locate the repository subsystem to inspect"),
+      maxArgumentLength,
+    ),
     ...(directory ? { directory } : {}),
     tokenBudget: Math.min(1200, input.tokenBudget ?? ARCHITECTURE_CONTEXT_DEFAULT_TOKEN_BUDGET),
   })}`);

@@ -171,6 +171,24 @@ describe("architecture_context", () => {
     expect(result.text).toContain("Recommended next steps:");
   });
 
+  it("keeps minimum token budgets bounded for adversarially long focus inputs", () => {
+    const result = buildArchitectureContext(
+      {
+        query: "architecture focus ".repeat(100),
+        directory: `src/${"nested/".repeat(100)}`,
+        tokenBudget: 128,
+        includeRecentActivity: true,
+      },
+      [],
+      [],
+      [],
+    );
+
+    expect(result.tokenEstimate).toBeLessThanOrEqual(128);
+    expect(result.text).toContain("…");
+    expect(result.text).toContain("No global architecture is substituted");
+  });
+
   it("renders optional recent activity with commit, date, summary, and files", () => {
     const result = buildArchitectureContext(
       { includeRecentActivity: true },
