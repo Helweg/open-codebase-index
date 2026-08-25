@@ -38,6 +38,7 @@ export function buildArchitectureContext(
   couplings: CommunityCouplingData[],
   focusedSymbols: SymbolData[] = [],
   graphCoverage?: { totalEdges: number; resolvedEdges: number },
+  recentActivity: string[] = [],
 ): ArchitectureContextResult {
   const depth = Math.max(1, Math.min(ARCHITECTURE_CONTEXT_MAX_DEPTH, Math.floor(input.depth ?? ARCHITECTURE_CONTEXT_DEFAULT_DEPTH)));
   const focusIds = new Set(focusedSymbols.map((symbol) => symbol.id));
@@ -103,6 +104,7 @@ export function buildArchitectureContext(
     lines.push("\nEntry points and hubs:");
     for (const hub of hubs) lines.push(`- ${hub.symbol} (${hub.filePath}), ${hub.connections} graph connections`);
   }
+  if (input.includeRecentActivity && recentActivity.length > 0) lines.push("\nRecent activity:", ...recentActivity.map((item) => `- ${item}`));
   lines.push("\nRecommended next steps:", ...recommendations.map((item) => `- ${item}`));
   return { modules, boundaries, hubs, coverage: { symbols: scopedMembers.length, communities: byCommunity.size, scoped: Boolean(input.directory || input.query), graphSparse, note }, recommendations, text: lines.join("\n") };
 }

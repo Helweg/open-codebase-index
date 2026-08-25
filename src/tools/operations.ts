@@ -8,6 +8,8 @@ import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { buildCodeCommunitiesResult } from "./format-communities.js";
 import { buildArchitectureContext } from "./architecture-context.js";
+import { attachRecentActivity } from "./visualize/activity.js";
+import { transformForVisualization } from "./visualize/transform.js";
 import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
@@ -928,8 +930,12 @@ export async function getArchitectureContext(
     const paths = [...new Set(results.map((result) => result.filePath))];
     focusedSymbols = paths.length > 0 ? await indexer.getSymbolsForFiles(paths) : [];
   }
+  const recentActivity = params.includeRecentActivity
+    ? attachRecentActivity(transformForVisualization(visualization.symbols, visualization.edges, { directory: params.directory ?? undefined }), getProjectRoot(projectRoot, host)).changes
+      ?.slice(0, 3).map((change) => `${change.title}: ${change.summary}`) ?? []
+    : [];
   return buildArchitectureContext(params, communities, centrality, couplings, focusedSymbols, {
     totalEdges: visualization.edges.length,
     resolvedEdges: visualization.edges.filter((edge) => edge.isResolved).length,
-  });
+  }, recentActivity);
 }

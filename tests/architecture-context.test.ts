@@ -21,6 +21,7 @@ describe("architecture_context", () => {
     expect(first.text).toContain("Api (src/api.ts)");
     expect(first.text).toContain("Api (src/api.ts) -> Store (src/store.ts)");
     expect(first.text).toContain("Recommended next steps");
+    expect(buildArchitectureContext({ includeRecentActivity: true }, communities, centrality, couplings, [], undefined, ["API moved recently: source-backed activity"]).text).toContain("Recent activity:");
   });
 
   it("keeps a directory scope strict and reports sparse graph uncertainty", () => {
