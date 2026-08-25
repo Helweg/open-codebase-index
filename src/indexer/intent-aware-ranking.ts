@@ -140,7 +140,8 @@ function queryWords(query: string): string[] {
 }
 
 function hasCodeShape(value: string): boolean {
-  return /[_$]/u.test(value) || /[\p{Ll}\p{N}][\p{Lu}]/u.test(value);
+  return /[_$]/u.test(value) ||
+    (/^[\p{Ll}][\p{L}\p{N}-]*$/u.test(value) && /[\p{Ll}\p{N}][\p{Lu}]/u.test(value));
 }
 
 export function extractIntentIdentifierHints(query: string): string[] {
