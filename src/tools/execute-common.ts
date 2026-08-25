@@ -123,7 +123,17 @@ export async function executeImplementationLookup(
     directory: args.directory,
     exactSymbol: isExactSymbolQuery(args.query),
   });
-  return { text: formatDefinitionLookup(results, args.query) };
+  const exactSymbol = isExactSymbolQuery(args.query);
+  return {
+    text: formatDefinitionLookup(results, args.query),
+    details: {
+      resolution: exactSymbol
+        ? (results.length === 0 ? "not_found" : results.length === 1 ? "resolved" : "ambiguous")
+        : "resolved",
+      matchKind: exactSymbol ? "exact_symbol" : "semantic",
+      results,
+    },
+  };
 }
 
 export async function executeCallGraph(
@@ -131,7 +141,8 @@ export async function executeCallGraph(
   host: HostMode,
   args: SharedCallGraphArgs,
 ): Promise<ExecutionResult> {
-  return { text: formatCallGraphResult(await getCallGraphData(projectRoot, host, args)) };
+  const result = await getCallGraphData(projectRoot, host, args);
+  return { text: formatCallGraphResult(result), details: { resolution: result.resolution, matchKind: "exact_symbol" } };
 }
 
 export async function executeCallGraphPath(
@@ -148,7 +159,7 @@ export async function executeCallGraphPath(
     args.fromFilePath,
     args.toFilePath,
   );
-  return { text: formatCallGraphPathResult(path) };
+  return { text: formatCallGraphPathResult(path), details: { from: path.from, to: path.to, matchKind: "exact_symbol" } };
 }
 
 export async function executeCodeCommunities(

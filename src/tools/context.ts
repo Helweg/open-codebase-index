@@ -185,6 +185,12 @@ export async function resolveCodebaseContext(
   const startedAt = metricsEnabled ? performance.now() : 0;
   try {
     const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
+    if (trimOrUndefined(input.symbol) && result.details) {
+      result.details.resolution = (result.details.resultCount ?? result.details.selectedCount ?? 0) > 0
+        ? "resolved"
+        : "not_found";
+      result.details.matchKind = "exact_symbol";
+    }
     const details = result.details;
     if (metricsEnabled && details) {
       const resultCount = contextResultCount(details);

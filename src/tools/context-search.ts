@@ -38,6 +38,8 @@ export interface CodebaseContextResult {
   text: string;
   details?: {
     route: "path" | "direct-edge" | "definition" | "conceptual";
+    resolution?: "resolved" | "ambiguous" | "not_found";
+    matchKind?: "exact_symbol" | "lexical" | "semantic" | "graph_neighbor";
     routedQuery?: string;
     tokenBudget: number;
     tokenEstimate: number;
