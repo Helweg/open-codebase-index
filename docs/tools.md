@@ -73,20 +73,29 @@ Pi does not expose the shared knowledge-base names. It registers equivalent tool
 - `knowledge_base_add`
 - `knowledge_base_remove`
 
-Pi exposes all 15 portable tools, including `call_graph` and `call_graph_path`, plus its three host-specific knowledge-base aliases.
+Pi exposes all 16 portable tools, including `architecture_context`, `call_graph`, and `call_graph_path`, plus its three host-specific knowledge-base aliases.
 
 ## Recommended selection order
 
 1. `index_status` when index readiness is unknown.
-2. `codebase_context` for a repository question that may require discovery, a definition, or a dependency path.
-3. `codebase_edit_context` optionally when a broad change request already has a known or suspected target symbol, for compact pre-edit source plus caller/callee context.
-4. `codebase_peek` for direct low-token location discovery.
-5. `implementation_lookup` for a known symbol or definition question.
-6. `codebase_search` when full matching source content is required.
-7. `grep` for exact identifiers or exhaustive text matches.
-8. `call_graph` or `call_graph_path` for graph-specific questions.
+2. `architecture_context` before repository-scale planning when module responsibilities and boundaries are not yet known.
+3. `codebase_context` for a repository question that may require discovery, a definition, or a dependency path.
+4. `codebase_edit_context` optionally when a broad change request already has a known or suspected target symbol, for compact pre-edit source plus caller/callee context.
+5. `codebase_peek` for direct low-token location discovery.
+6. `implementation_lookup` for a known symbol or definition question.
+7. `codebase_search` when full matching source content is required.
+8. `grep` for exact identifiers or exhaustive text matches.
+9. `call_graph` or `call_graph_path` for graph-specific questions.
 
 ## Core retrieval tools
+
+### `architecture_context`
+
+Use `architecture_context` when an agent needs a concise repository map before focused retrieval or edits. Each module includes a responsibility excerpt derived from readable source and exact symbol/file/line citations. Cross-module boundaries include representative source and target symbols, while missing or sparse graph coverage is reported explicitly instead of inferred.
+
+`query` and `directory` constrain which modules can consume the response budget. `depth` controls detail from 1 to 3, and `tokenBudget` is enforced from 128 to 4000 estimated tokens without cutting claims or citations mid-entry. When community data is unavailable, the tool can still group matching indexed symbols by source directory, but it labels that fallback and does not invent relationships.
+
+Set `includeRecentActivity: true` to include matching Git activity from the last 90 days with commit, date, summary, and file provenance. If no matching Git history exists, the tool reports that directly and does not substitute graph importance as recent activity.
 
 ### `codebase_context`
 
