@@ -37,11 +37,13 @@ export function buildArchitectureContext(
   centrality: CentralityData[],
   couplings: CommunityCouplingData[],
   focusedSymbols: SymbolData[] = [],
+  graphCoverage?: { totalEdges: number; resolvedEdges: number },
 ): ArchitectureContextResult {
   const depth = Math.max(1, Math.min(ARCHITECTURE_CONTEXT_MAX_DEPTH, Math.floor(input.depth ?? ARCHITECTURE_CONTEXT_DEFAULT_DEPTH)));
   const focusIds = new Set(focusedSymbols.map((symbol) => symbol.id));
   const hasFocus = focusIds.size > 0;
-  const scopedMembers = communities.filter((member) => inDirectory(member.filePath, input.directory ?? undefined) && (!hasFocus || focusIds.has(member.symbolId)));
+  const focusedCommunityIds = new Set(communities.filter((member) => focusIds.has(member.symbolId)).map((member) => member.communityId));
+  const scopedMembers = communities.filter((member) => inDirectory(member.filePath, input.directory ?? undefined) && (!hasFocus || focusedCommunityIds.has(member.communityId)));
   const labels = new Map(communities.map((member) => [member.communityId, member.communityLabel]));
   const byCommunity = new Map<number, CommunityData[]>();
   for (const member of scopedMembers) {
@@ -76,11 +78,12 @@ export function buildArchitectureContext(
     .slice(0, depth * 2)
     .map((item) => ({ symbol: item.symbolName, filePath: item.filePath, connections: item.totalConnections }));
   const graphSparse = scopedMembers.length === 0 || boundaries.length === 0;
+  const resolutionNote = graphCoverage ? ` ${graphCoverage.resolvedEdges}/${graphCoverage.totalEdges} observed call edges are resolved.` : "";
   const note = scopedMembers.length === 0
     ? "No graph symbols matched the requested scope. No architectural relationship is inferred."
     : graphSparse
-      ? "No resolved cross-module coupling was available in this scope. Treat module boundaries as incomplete."
-      : "Module relationships are grounded in resolved representative call relationships.";
+      ? `No resolved cross-module coupling was available in this scope. Treat module boundaries as incomplete.${resolutionNote}`
+      : `Module relationships are grounded in resolved representative call relationships.${resolutionNote}`;
   const recommendations = modules[0]?.evidence[0]
     ? [`implementation_lookup for ${modules[0].evidence[0].symbol} in ${modules[0].evidence[0].filePath}`, `call_graph for ${modules[0].evidence[0].symbol}`]
     : ["codebase_context with a narrower query or directory"];

@@ -912,10 +912,11 @@ export async function getArchitectureContext(
 ): Promise<import("./architecture-context.js").ArchitectureContextResult> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
-  const [communities, centrality, couplings] = await Promise.all([
+  const [communities, centrality, couplings, visualization] = await Promise.all([
     indexer.detectCommunities(),
     indexer.computeCentrality(),
     indexer.detectCommunityCouplings(),
+    indexer.getVisualizationData({ directory: params.directory ?? undefined }),
   ]);
   let focusedSymbols: SymbolData[] = [];
   if (params.query?.trim()) {
@@ -927,5 +928,8 @@ export async function getArchitectureContext(
     const paths = [...new Set(results.map((result) => result.filePath))];
     focusedSymbols = paths.length > 0 ? await indexer.getSymbolsForFiles(paths) : [];
   }
-  return buildArchitectureContext(params, communities, centrality, couplings, focusedSymbols);
+  return buildArchitectureContext(params, communities, centrality, couplings, focusedSymbols, {
+    totalEdges: visualization.edges.length,
+    resolvedEdges: visualization.edges.filter((edge) => edge.isResolved).length,
+  });
 }
