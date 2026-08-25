@@ -830,11 +830,7 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain('function "validateToken"');
     expect(content[0].text).not.toContain("return token.length");
     const indexer = indexerMockState.instances.at(-1);
-    expect(indexer?.search).toHaveBeenCalledWith(
-      "validateToken",
-      100,
-      expect.objectContaining({ definitionIntent: true }),
-    );
+    expect(indexer?.getCallGraphSymbols).toHaveBeenCalled();
   });
 
   it("should return codebase_context diagnostics as MCP structured content on request", async () => {
@@ -1351,6 +1347,51 @@ describe("MCP server tools and prompts", () => {
     expect(content).toHaveLength(1);
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("validateToken");
+  });
+
+  it("reports an explicit overloaded context symbol as ambiguous", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("left", "duplicateSymbol", "/tmp/test-project/src/left.ts"),
+      graphSymbol("right", "duplicateSymbol", "/tmp/test-project/src/right.ts"),
+    ]);
+
+    const result = await client.callTool({
+      name: "codebase_context",
+      arguments: { query: "find duplicateSymbol", symbol: "duplicateSymbol", diagnostic: true },
+    });
+    expect((result as { structuredContent?: { resolution?: string; matchKind?: string } }).structuredContent)
+      .toMatchObject({ resolution: "ambiguous", matchKind: "exact_symbol" });
+  });
+
+  it("keeps generated and vendor definitions as explicit ambiguous candidates", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("source", "buildArtifact", "/tmp/test-project/src/artifact.ts", 10),
+      graphSymbol("generated", "buildArtifact", "/tmp/test-project/generated/artifact.ts", 20),
+      graphSymbol("vendor", "buildArtifact", "/tmp/test-project/vendor/artifact.ts", 30),
+    ]);
+
+    const result = await client.callTool({ name: "implementation_lookup", arguments: { query: "buildArtifact" } });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(text).toContain("src/artifact.ts:10-14");
+    expect(text).toContain("generated/artifact.ts:20-24");
+    expect(text).toContain("vendor/artifact.ts:30-34");
+    expect((result as { structuredContent?: { resolution?: string; matchKind?: string } }).structuredContent)
+      .toMatchObject({ resolution: "ambiguous", matchKind: "exact_symbol" });
+  });
+
+  it("does not resolve a stale catalog symbol absent from the active symbol set", async () => {
+    const indexer = indexerMockState.instances[0];
+    indexer.getCallGraphSymbols.mockResolvedValueOnce([
+      graphSymbol("active", "activeSymbol", "/tmp/test-project/src/active.ts"),
+    ]);
+
+    const result = await client.callTool({ name: "implementation_lookup", arguments: { query: "staleFeatureSymbol" } });
+    const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+    expect(text).toContain('No definition found for "staleFeatureSymbol"');
+    expect((result as { structuredContent?: { resolution?: string; matchKind?: string } }).structuredContent)
+      .toMatchObject({ resolution: "not_found", matchKind: "exact_symbol" });
   });
 
   it("should execute call_graph callers with null optional fields", async () => {

@@ -363,6 +363,8 @@ describe("native OpenCode codebase_context", () => {
       limit: 100,
       fileType: undefined,
       directory: undefined,
+      exactSymbol: true,
+      trace: undefined,
     });
     expect(result).toContain("src/auth.ts:12-30");
     expect(result).not.toContain("fullSource");
@@ -532,6 +534,8 @@ describe("native OpenCode codebase_context", () => {
       limit: 100,
       fileType: undefined,
       directory: undefined,
+      exactSymbol: false,
+      trace: undefined,
     });
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "where is missingHandler defined", {
       limit: 100,
@@ -719,10 +723,10 @@ describe("native OpenCode codebase_context", () => {
     expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(result.details?.route).toBe("definition");
-    expect(result.details?.recovery?.attempts).toHaveLength(2);
+    expect(result.details?.recovery?.attempts).toHaveLength(1);
   });
 
-  it("keeps explicit symbols definition-only with normalized scoped then unscoped lookup", async () => {
+  it("keeps explicit symbols definition-only within their normalized scope", async () => {
     const lookup = vi.fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{
@@ -745,19 +749,18 @@ describe("native OpenCode codebase_context", () => {
       directory: " ./src\\tools/ ",
     }, { lookup, search });
 
+    expect(lookup).toHaveBeenCalledOnce();
     expect(lookup).toHaveBeenNthCalledWith(1, "resolveSearchContext", 100, {
       fileType: "ts",
       directory: "src/tools",
-    }, undefined);
-    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {}, undefined);
+    }, true, undefined);
     expect(search).not.toHaveBeenCalled();
     expect(result.details).toMatchObject({
       route: "definition",
       routedQuery: "resolveSearchContext",
-      truncated: false,
-      selectedCount: 1,
+      truncated: expect.any(Boolean),
     });
-    expect(result.text).toContain("Recovery: directory filter removed; file-type filter removed.");
+    expect(result.text).toContain("No definition found.");
     expect(result.text).not.toContain("resolveSearchContext  ");
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
   });

@@ -38,6 +38,8 @@ export interface CodebaseContextResult {
   text: string;
   details?: {
     route: "path" | "direct-edge" | "definition" | "conceptual";
+    resolution?: "resolved" | "ambiguous" | "not_found";
+    matchKind?: "exact_symbol" | "lexical" | "semantic" | "graph_neighbor";
     routedQuery?: string;
     tokenBudget: number;
     tokenEstimate: number;
@@ -114,6 +116,7 @@ interface SearchContextOperations {
     symbol: string,
     limit: number,
     scope: SearchScope,
+    exactSymbol: boolean,
     trace?: (trace: SearchTrace) => void,
   ): Promise<SearchResult[]>;
   search(
@@ -394,6 +397,7 @@ export async function resolveSearchContext(
 
   const tryDefinitionLookup = async (
     symbol: string,
+    exactSymbol: boolean,
     scope: SearchScope = scopedScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType"> = [],
   ): Promise<SearchResult[]> => {
@@ -402,7 +406,7 @@ export async function resolveSearchContext(
       symbol,
       scope,
       relaxedFieldsForAttempt,
-      (trace) => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT, scope, input.diagnostic ? trace : undefined),
+      (trace) => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT, scope, exactSymbol, input.diagnostic ? trace : undefined),
     );
   };
 
@@ -466,7 +470,7 @@ export async function resolveSearchContext(
   };
 
   if (definitionSymbol) {
-    const scopedDefinitionResults = await tryDefinitionLookup(definitionSymbol);
+    const scopedDefinitionResults = await tryDefinitionLookup(definitionSymbol, Boolean(explicitSymbol));
     if (scopedDefinitionResults.length > 0) {
       const heading = buildPackHeading("definition", decisions);
       return toResult(
@@ -491,36 +495,6 @@ export async function resolveSearchContext(
     }
 
     if (explicitSymbol) {
-      if (hasFilters) {
-        const unscopedDefinitionResults = await tryDefinitionLookup(
-          definitionSymbol,
-          unscopedScope,
-          relaxedFields,
-        );
-        if (unscopedDefinitionResults.length > 0) {
-          const heading = buildPackHeading("definition", decisions);
-          return toResult(
-            "definition",
-            definitionSymbol,
-            buildContextPack(unscopedDefinitionResults, {
-              tokenBudget,
-              maxResults: limit,
-              heading,
-              preserveInputOrder: true,
-              ...(input.diagnostic ? {
-                trace: (trace) => {
-                  const attemptState = findSuccessfulAttemptState("definition");
-                  if (attemptState) {
-                    attemptState.contextPackTrace = trace;
-                  }
-                },
-              } : undefined),
-            }),
-            findSuccessfulAttemptState("definition"),
-          );
-        }
-      }
-
       const heading = buildRecoveryFallbackText(
         attempts,
         tokenBudget,

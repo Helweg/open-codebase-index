@@ -302,7 +302,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
     async (args) => {
       const result = await executeImplementationLookup(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: result.text }] };
+      return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
@@ -323,7 +323,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
     async (args) => {
       const result = await executeCallGraph(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: result.text }] };
+      return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
@@ -339,7 +339,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
     async (args) => {
       const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args);
-      return { content: [{ type: "text", text: result.text }] };
+      return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
   server.tool(

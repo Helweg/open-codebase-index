@@ -127,10 +127,11 @@ async function resolveCodebaseContextUnmeasured(
     directory,
     diagnostic: input.diagnostic,
   }, {
-    lookup: (lookupSymbol, retrievalLimit, scope, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
+    lookup: (lookupSymbol, retrievalLimit, scope, exactSymbol, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
       limit: retrievalLimit,
       fileType: scope.fileType,
       directory: scope.directory,
+      exactSymbol,
       trace,
     }),
     search: (queryText, retrievalLimit, scope, trace, searchOptions) => searchCodebase(projectRoot, host, queryText, {
@@ -184,6 +185,13 @@ export async function resolveCodebaseContext(
   const startedAt = metricsEnabled ? performance.now() : 0;
   try {
     const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
+    if (trimOrUndefined(input.symbol) && result.details) {
+      const candidateCount = result.details.candidateCount ?? result.details.resultCount ?? result.details.selectedCount ?? 0;
+      result.details.resolution = candidateCount === 0
+        ? "not_found"
+        : candidateCount === 1 ? "resolved" : "ambiguous";
+      result.details.matchKind = "exact_symbol";
+    }
     const details = result.details;
     if (metricsEnabled && details) {
       const resultCount = contextResultCount(details);
