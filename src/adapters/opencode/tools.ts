@@ -401,7 +401,7 @@ export const architecture_context: ToolDefinition = tool({
     query: z.string().nullable().optional().describe("Optional subsystem or planning focus"),
     directory: z.string().nullable().optional().describe("Constrain the map to this directory"),
     depth: z.number().int().min(1).max(3).optional().default(2).describe("Summary detail level (1-3)"),
-    includeRecentActivity: z.boolean().optional().default(false).describe("Reserved for recent activity context"),
+    includeRecentActivity: z.boolean().optional().default(false).describe("Include matching Git activity from the last 90 days when available"),
     tokenBudget: z.number().int().min(128).max(4000).optional().default(1200).describe("Maximum response token budget"),
   },
   async execute(args, context) {

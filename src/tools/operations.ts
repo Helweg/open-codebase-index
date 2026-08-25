@@ -7,8 +7,12 @@ import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { buildCodeCommunitiesResult } from "./format-communities.js";
-import { buildArchitectureContext } from "./architecture-context.js";
-import { attachRecentActivity } from "./visualize/activity.js";
+import {
+  buildArchitectureContext,
+  isArchitecturePathInDirectory,
+  selectArchitectureFocusedSymbols,
+} from "./architecture-context.js";
+import { getRecentGitActivity } from "./visualize/activity.js";
 import { transformForVisualization } from "./visualize/transform.js";
 import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
@@ -914,6 +918,14 @@ export async function getArchitectureContext(
 ): Promise<import("./architecture-context.js").ArchitectureContextResult> {
   await ensureAutoIndexReadyForRetrieval(projectRoot, host);
   const indexer = getIndexerForProject(projectRoot, host);
+  return getArchitectureContextForIndexer(indexer, getProjectRoot(projectRoot, host), params);
+}
+
+export async function getArchitectureContextForIndexer(
+  indexer: Indexer,
+  projectRoot: string,
+  params: SharedArchitectureContextArgs,
+): Promise<import("./architecture-context.js").ArchitectureContextResult> {
   const [communities, centrality, couplings, visualization] = await Promise.all([
     indexer.detectCommunities(),
     indexer.computeCentrality(),
@@ -927,15 +939,53 @@ export async function getArchitectureContext(
       directory: params.directory ?? undefined,
       prioritizeSourcePaths: true,
     });
-    const paths = [...new Set(results.map((result) => result.filePath))];
-    focusedSymbols = paths.length > 0 ? await indexer.getSymbolsForFiles(paths) : [];
+    focusedSymbols = selectArchitectureFocusedSymbols(
+      results,
+      visualization.symbols,
+      params.depth,
+    );
   }
+
+  const queryRequested = Boolean(params.query?.trim());
+  const focusIds = new Set(focusedSymbols.map((symbol) => symbol.id));
+  const focusedCommunityIds = new Set(
+    communities.filter((member) => focusIds.has(member.symbolId)).map((member) => member.communityId),
+  );
+  const communityBySymbolId = new Map(communities.map((member) => [member.symbolId, member.communityId]));
+  const scopedSymbols = visualization.symbols.filter((symbol) =>
+    isArchitecturePathInDirectory(symbol.filePath, params.directory, projectRoot)
+    && (!queryRequested
+      || focusIds.has(symbol.id)
+      || focusedCommunityIds.has(communityBySymbolId.get(symbol.id) ?? -1))
+  );
+  const scopedSymbolIds = new Set(scopedSymbols.map((symbol) => symbol.id));
+  const scopedEdges = visualization.edges.filter((edge) => scopedSymbolIds.has(edge.fromSymbolId));
   const recentActivity = params.includeRecentActivity
-    ? attachRecentActivity(transformForVisualization(visualization.symbols, visualization.edges, { directory: params.directory ?? undefined }), getProjectRoot(projectRoot, host)).changes
-      ?.slice(0, 3).map((change) => `${change.title}: ${change.summary}`) ?? []
+    ? getRecentGitActivity(
+      transformForVisualization(scopedSymbols, visualization.edges, {
+        directory: params.directory ?? undefined,
+        includeOrphans: true,
+      }),
+      projectRoot,
+    ).slice(0, 3).map((change) => ({
+      title: change.title,
+      date: change.when,
+      commit: change.source.replace(/^commit\s+/, ""),
+      summary: change.summary,
+      filePaths: change.filePaths,
+    }))
     : [];
-  return buildArchitectureContext(params, communities, centrality, couplings, focusedSymbols, {
-    totalEdges: visualization.edges.length,
-    resolvedEdges: visualization.edges.filter((edge) => edge.isResolved).length,
-  }, recentActivity);
+
+  return buildArchitectureContext(params, communities, centrality, couplings, {
+    projectRoot,
+    sourceSymbols: visualization.symbols,
+    focusedSymbols,
+    graphCoverage: {
+      totalEdges: scopedEdges.length,
+      resolvedEdges: scopedEdges.filter((edge) =>
+        edge.isResolved && edge.toSymbolId !== undefined && scopedSymbolIds.has(edge.toSymbolId)
+      ).length,
+    },
+    recentActivity,
+  });
 }
