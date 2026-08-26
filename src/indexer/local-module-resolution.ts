@@ -49,6 +49,16 @@ interface ModuleRecord {
   starExports: string[];
 }
 
+export interface LocalModulePathAlias {
+  pattern: string;
+  targets: readonly string[];
+}
+
+export interface LocalModulePathAliases {
+  baseUrl: string;
+  aliases: readonly LocalModulePathAlias[];
+}
+
 export interface LocalModuleData {
   content: string;
   symbols: readonly SymbolData[];
@@ -57,6 +67,7 @@ export interface LocalModuleData {
 export interface LocalModuleResolverOptions {
   filePaths: readonly string[];
   loadModule: (filePath: string) => Promise<LocalModuleData | undefined>;
+  tsConfigPathAliases?: LocalModulePathAliases;
 }
 
 export function isJavaScriptFamilyFilePath(filePath: string): boolean {
@@ -67,6 +78,249 @@ export function isJavaScriptFamilyFilePath(filePath: string): boolean {
 
 function normalizeFilePath(filePath: string): string {
   return path.posix.normalize(filePath.replaceAll("\\", "/"));
+}
+
+function hasAtMostOneWildcard(value: string): boolean {
+  const first = value.indexOf("*");
+  return first === -1 || first === value.lastIndexOf("*");
+}
+
+function normalizePathAliasTarget(rawTarget: string): string {
+  const normalized = normalizeFilePath(rawTarget.trim());
+  if (normalized.length > 1 && normalized.endsWith("/")) {
+    return normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+function validateCompilerOptionsObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeBaseUrl(rawBaseUrl: string | undefined): string | undefined {
+  if (!rawBaseUrl) {
+    return undefined;
+  }
+
+  const trimmedBaseUrl = normalizeFilePath(rawBaseUrl.trim());
+  if (trimmedBaseUrl === ".") {
+    return ".";
+  }
+  if (trimmedBaseUrl === "") {
+    return ".";
+  }
+  if (path.posix.isAbsolute(trimmedBaseUrl)) {
+    return undefined;
+  }
+  if (trimmedBaseUrl === ".." || trimmedBaseUrl.startsWith("../") || trimmedBaseUrl.startsWith("./..")) {
+    return undefined;
+  }
+  return trimmedBaseUrl;
+}
+
+function removeJsoncComments(configText: string): string {
+  const output: string[] = [];
+  let inString: string | null = null;
+  let isEscaped = false;
+
+  for (let index = 0; index < configText.length; index += 1) {
+    const char = configText[index];
+    const nextChar = configText[index + 1];
+
+    if (inString !== null) {
+      output.push(char);
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        isEscaped = true;
+        continue;
+      }
+      if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = char;
+      output.push(char);
+      continue;
+    }
+
+    if (char === "/" && nextChar === "/") {
+      index += 1;
+      while (index + 1 < configText.length && configText[index + 1] !== "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "/" && nextChar === "*") {
+      index += 2;
+      while (index + 1 < configText.length) {
+        if (configText[index] === "*" && configText[index + 1] === "/") {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+
+    output.push(char);
+  }
+
+  return output.join("");
+}
+
+function removeJsonTrailingCommas(configText: string): string {
+  const output: string[] = [];
+  let inString: string | null = null;
+  let isEscaped = false;
+
+  for (let index = 0; index < configText.length; index += 1) {
+    const char = configText[index];
+
+    if (inString !== null) {
+      output.push(char);
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        isEscaped = true;
+        continue;
+      }
+      if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = char;
+      output.push(char);
+      continue;
+    }
+
+    if (char !== ",") {
+      output.push(char);
+      continue;
+    }
+
+    let nextIndex = index + 1;
+    while (nextIndex < configText.length && /\s/u.test(configText[nextIndex])) {
+      nextIndex += 1;
+    }
+
+    const nextChar = configText[nextIndex];
+    if (nextChar === "}" || nextChar === "]" || nextChar === undefined) {
+      continue;
+    }
+
+    output.push(char);
+  }
+
+  return output.join("");
+}
+
+function parseJsonConfig(configText: string): unknown {
+  const sanitizedJson = removeJsonTrailingCommas(removeJsoncComments(configText));
+  return JSON.parse(sanitizedJson);
+}
+
+export function parseTsConfigForModuleResolution(configText: string): LocalModulePathAliases | undefined {
+  let rawConfig: unknown;
+  try {
+    rawConfig = parseJsonConfig(configText);
+  } catch {
+    return undefined;
+  }
+
+  if (!validateCompilerOptionsObject(rawConfig)) {
+    return undefined;
+  }
+
+  const compilerOptions = rawConfig.compilerOptions;
+  if (!validateCompilerOptionsObject(compilerOptions)) {
+    return undefined;
+  }
+
+  const normalizedBaseUrl = normalizeBaseUrl(typeof compilerOptions.baseUrl === "string" ? compilerOptions.baseUrl : undefined);
+  const rawPaths = compilerOptions.paths;
+  if (rawPaths === undefined) {
+    return undefined;
+  }
+
+  const aliases: LocalModulePathAlias[] = [];
+    if (rawPaths !== undefined) {
+      if (!validateCompilerOptionsObject(rawPaths)) {
+        return undefined;
+      }
+
+      for (const [pattern, targetsValue] of Object.entries(rawPaths)) {
+        const normalizedPattern = normalizePathAliasTarget(pattern);
+        if (normalizedPattern.length === 0 || normalizedPattern === ".") {
+          return undefined;
+        }
+        if (!hasAtMostOneWildcard(normalizedPattern)) {
+          return undefined;
+        }
+
+        if (!Array.isArray(targetsValue)) {
+          return undefined;
+        }
+
+        const targets: string[] = [];
+        for (const target of targetsValue) {
+          if (typeof target !== "string") {
+            return undefined;
+          }
+          const normalizedTarget = normalizePathAliasTarget(target);
+          if (!hasAtMostOneWildcard(normalizedTarget)) {
+            return undefined;
+          }
+          if (normalizedTarget.startsWith("/") || normalizedTarget === ".." || normalizedTarget.startsWith("../")) {
+            return undefined;
+          }
+          if (normalizedTarget.length === 0) {
+            return undefined;
+          }
+          targets.push(normalizedTarget);
+        }
+
+        if (targets.length === 0) {
+          return undefined;
+        }
+
+        aliases.push({ pattern: normalizedPattern, targets });
+      }
+    }
+
+  if (aliases.length === 0) {
+    return undefined;
+  }
+
+  return {
+    baseUrl: normalizedBaseUrl ?? ".",
+    aliases,
+  };
+}
+
+function isProjectLocalPath(candidatePath: string): boolean {
+  if (path.posix.isAbsolute(candidatePath) || candidatePath === ".." || candidatePath.startsWith("../")) {
+    return false;
+  }
+  return true;
+}
+
+function trimLeadingCurrentDir(candidatePath: string): string {
+  if (candidatePath === ".") {
+    return ".";
+  }
+  return candidatePath.startsWith("./") ? candidatePath.slice(2) : candidatePath;
 }
 
 function isIdentifierStart(char: string): boolean {
@@ -370,6 +624,8 @@ export class LocalModuleCallResolver {
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
   private readonly exportCache = new Map<string, SymbolData[]>();
+  private readonly baseUrl?: string;
+  private readonly pathAliases: ReadonlyArray<LocalModulePathAlias> = [];
 
   constructor(options: LocalModuleResolverOptions) {
     for (const filePath of options.filePaths) {
@@ -377,6 +633,10 @@ export class LocalModuleCallResolver {
       if (isJavaScriptFamilyFilePath(normalized)) this.modulePaths.add(normalized);
     }
     this.loadModule = options.loadModule;
+    if (options.tsConfigPathAliases) {
+      this.baseUrl = options.tsConfigPathAliases.baseUrl;
+      this.pathAliases = options.tsConfigPathAliases.aliases;
+    }
   }
 
   seedModule(filePath: string, data: LocalModuleData): void {
@@ -444,28 +704,111 @@ export class LocalModuleCallResolver {
   }
 
   private resolveModuleSpecifier(importerFilePath: string, specifier: string): string[] {
-    if (!specifier.startsWith(".")) return [];
-    const base = normalizeFilePath(path.posix.join(path.posix.dirname(importerFilePath), specifier));
-    if (this.modulePaths.has(base)) return [base];
+    if (specifier.startsWith(".")) {
+      const base = normalizeFilePath(path.posix.join(path.posix.dirname(importerFilePath), specifier));
+      return this.resolveModuleCandidates(base);
+    }
 
-    const extension = path.posix.extname(base).toLowerCase();
+    const aliasCandidates = this.resolveModuleSpecifierFromAliases(specifier);
+    if (aliasCandidates !== undefined) {
+      return aliasCandidates;
+    }
+
+    if (this.pathAliases.length === 0) {
+      return [];
+    }
+
+    return [];
+  }
+
+  private resolveModuleSpecifierFromAliases(specifier: string): string[] | undefined {
+    if (this.pathAliases.length === 0) return undefined;
+
+    const matchedAliasTargets = new Set<string>();
+    let anyAliasMatched = false;
+
+    for (const alias of this.pathAliases) {
+      const wildcard = this.matchPathAliasPattern(specifier, alias.pattern);
+      if (wildcard === undefined) {
+        continue;
+      }
+      anyAliasMatched = true;
+
+      for (const targetPattern of alias.targets) {
+        const target = this.replaceWildcard(targetPattern, wildcard);
+          const rawPath = normalizeFilePath(path.posix.join(this.baseUrl ?? ".", target));
+        if (!isProjectLocalPath(rawPath)) continue;
+        for (const candidate of this.resolveModuleCandidates(trimLeadingCurrentDir(rawPath))) {
+          matchedAliasTargets.add(candidate);
+        }
+      }
+    }
+
+    if (!anyAliasMatched) return undefined;
+    return [...matchedAliasTargets].sort();
+  }
+
+  private resolveModuleCandidates(base: string): string[] {
+    if (!isProjectLocalPath(base)) return [];
+
     const candidates = new Set<string>();
+    const normalizedBase = trimLeadingCurrentDir(base);
+    if (this.modulePaths.has(normalizedBase)) {
+      candidates.add(normalizedBase);
+    }
+
+    const extension = path.posix.extname(normalizedBase).toLowerCase();
     if (JAVASCRIPT_RUNTIME_EXTENSIONS.has(extension)) {
-      const withoutExtension = base.slice(0, -extension.length);
+      const withoutExtension = normalizedBase.slice(0, -extension.length);
       for (const sourceExtension of TYPESCRIPT_SOURCE_EXTENSIONS) {
         const candidate = `${withoutExtension}${sourceExtension}`;
         if (this.modulePaths.has(candidate)) candidates.add(candidate);
       }
-    } else if (extension.length === 0) {
-      for (const sourceExtension of JAVASCRIPT_SOURCE_EXTENSIONS) {
-        const fileCandidate = `${base}${sourceExtension}`;
-        const indexCandidate = path.posix.join(base, `index${sourceExtension}`);
-        if (this.modulePaths.has(fileCandidate)) candidates.add(fileCandidate);
-        if (this.modulePaths.has(indexCandidate)) candidates.add(indexCandidate);
+      return [...candidates].sort();
+    }
+
+    if (extension.length > 0 && JAVASCRIPT_SOURCE_EXTENSIONS.includes(extension as (typeof JAVASCRIPT_SOURCE_EXTENSIONS)[number])) {
+      if (this.modulePaths.has(normalizedBase)) {
+        return [...candidates].sort();
       }
     }
 
+    if (extension.length !== 0) return [...candidates].sort();
+
+    for (const sourceExtension of JAVASCRIPT_SOURCE_EXTENSIONS) {
+      const fileCandidate = `${normalizedBase}${sourceExtension}`;
+      const indexCandidate = path.posix.join(normalizedBase, `index${sourceExtension}`);
+      if (this.modulePaths.has(fileCandidate)) candidates.add(fileCandidate);
+      if (this.modulePaths.has(indexCandidate)) candidates.add(indexCandidate);
+    }
+
     return [...candidates].sort();
+  }
+
+  private matchPathAliasPattern(specifier: string, pattern: string): string | undefined {
+    const wildcard = pattern.indexOf("*");
+    if (wildcard === -1) {
+      return specifier === pattern ? "" : undefined;
+    }
+
+    const prefix = pattern.slice(0, wildcard);
+    const suffix = pattern.slice(wildcard + 1);
+    if (specifier.length < prefix.length + suffix.length) {
+      return undefined;
+    }
+    if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) {
+      return undefined;
+    }
+
+    return specifier.slice(prefix.length, specifier.length - suffix.length);
+  }
+
+  private replaceWildcard(target: string, wildcard: string): string {
+    const wildcardIndex = target.indexOf("*");
+    if (wildcardIndex === -1) {
+      return target;
+    }
+    return `${target.slice(0, wildcardIndex)}${wildcard}${target.slice(wildcardIndex + 1)}`;
   }
 
   private async resolveImportedBinding(

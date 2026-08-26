@@ -2526,6 +2526,10 @@ main() {
       fs.cpSync(path.join(fixturesDir, "local-modules"), projectDir, { recursive: true });
     }
 
+    function copyAliasFixture(projectDir: string): void {
+      fs.cpSync(path.join(fixturesDir, "local-module-alias-resolution"), projectDir, { recursive: true });
+    }
+
     it("resolves relative imports, aliases, and re-exports while abstaining on ambiguity", async () => {
       const projectDir = path.join(tempDir, "local-module-project");
       fs.mkdirSync(projectDir, { recursive: true });
@@ -2610,6 +2614,64 @@ main() {
             resolutionRate: 5 / 7,
           },
         ]);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("resolves explicit path aliases deterministically and abstains for external/ambiguous alias targets", async () => {
+      const projectDir = path.join(tempDir, "local-module-alias-project");
+      fs.mkdirSync(projectDir, { recursive: true });
+      copyAliasFixture(projectDir);
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const byName = (name: string): SymbolData => {
+          const matches = symbols.filter((symbol) => symbol.name === name);
+          expect(matches.length).toBeGreaterThan(0);
+          return matches[0];
+        };
+
+        const edgeFrom = async (callerName: string, targetName: string): Promise<CallEdgeData> => {
+          const callerSymbol = byName(callerName);
+          const edge = (await indexer.getCallees(callerSymbol.id)).find((candidate) => candidate.targetName === targetName);
+          expect(edge).toBeDefined();
+          return edge!;
+        };
+
+        await expect(edgeFrom("runDeterministic", "deterministicTarget")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("deterministicTarget").id,
+        });
+
+        const ambiguousEdge = await edgeFrom("runAmbiguous", "ambiguousTarget");
+        expect(ambiguousEdge).toMatchObject({ isResolved: false });
+        expect(ambiguousEdge.toSymbolId).toBeUndefined();
+
+        const externalEdge = await edgeFrom("runExternal", "externalTarget");
+        expect(externalEdge).toMatchObject({ isResolved: false });
+        expect(externalEdge.toSymbolId).toBeUndefined();
+
+        const embeddingCallsBeforeConfigChange = fetchSpy.mock.calls.length;
+        fs.writeFileSync(path.join(projectDir, "tsconfig.json"), JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: {
+              "@core/*": ["src/missing/*"],
+              "@ambiguous/*": ["src/ambiguous-a/*", "src/ambiguous-b/*"],
+            },
+          },
+        }));
+        await indexer.index();
+
+        const refreshedEdge = await edgeFrom("runDeterministic", "deterministicTarget");
+        expect(refreshedEdge).toMatchObject({ isResolved: false });
+        expect(refreshedEdge.toSymbolId).toBeUndefined();
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeConfigChange);
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();

@@ -1,0 +1,10 @@
+{
+  // baseUrl is intentionally non-empty to confirm explicit paths-only behavior.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@ambiguous/*": ["src/ambiguous-a/*", "src/ambiguous-b/*"],
+    },
+  }
+}

@@ -111,7 +111,12 @@ import {
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
-import { isJavaScriptFamilyFilePath, LocalModuleCallResolver } from "./local-module-resolution.js";
+import {
+  isJavaScriptFamilyFilePath,
+  LocalModuleCallResolver,
+  parseTsConfigForModuleResolution,
+  type LocalModulePathAliases,
+} from "./local-module-resolution.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
@@ -1237,6 +1242,37 @@ export class Indexer {
     this.logger = initializeLogger(config.debug);
   }
 
+  private loadTsConfigPathAliases(): LocalModulePathAliases | undefined {
+    const tsConfigPath = path.join(this.materializedProjectRoot, "tsconfig.json");
+    const jsConfigPath = path.join(this.materializedProjectRoot, "jsconfig.json");
+    const configPaths = [tsConfigPath, jsConfigPath].filter((pathToCheck) => existsSync(pathToCheck));
+    if (configPaths.length !== 1) {
+      return undefined;
+    }
+
+    let configText: string;
+    try {
+      configText = readFileSync(configPaths[0], "utf-8");
+    } catch {
+      return undefined;
+    }
+
+    return parseTsConfigForModuleResolution(configText);
+  }
+
+  private getLocalModuleResolutionConfigHash(): string {
+    const configNames = ["tsconfig.json", "jsconfig.json"];
+    const configState = configNames.map((name) => {
+      const configPath = path.join(this.materializedProjectRoot, name);
+      try {
+        return [name, readFileSync(configPath, "utf-8")] as const;
+      } catch {
+        return [name, null] as const;
+      }
+    });
+    return hashContent(JSON.stringify(configState));
+  }
+
   private getIndexPath(): string {
     return this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
   }
@@ -1686,6 +1722,12 @@ export class Indexer {
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
     return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
+  }
+
+  private getLocalModuleResolutionConfigMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.localModuleResolutionConfigHash", catalogIdentity);
   }
 
   private getSwiftParserVersionMetadataKey(
@@ -3845,6 +3887,10 @@ export class Indexer {
     this.database.setMetadata("index.embeddingModel", provider.modelInfo.model);
     this.database.setMetadata("index.embeddingDimensions", provider.modelInfo.dimensions.toString());
     this.database.setMetadata(this.getCallGraphResolutionMetadataKey(), CALL_GRAPH_RESOLUTION_VERSION);
+    this.database.setMetadata(
+      this.getLocalModuleResolutionConfigMetadataKey(),
+      this.getLocalModuleResolutionConfigHash(),
+    );
     if (this.config.scope === "global") {
       if (completeProjectEmbeddingStrategyReset) {
         this.database.setMetadata(this.getProjectEmbeddingStrategyMetadataKey(), EMBEDDING_STRATEGY_VERSION);
@@ -4292,6 +4338,9 @@ export class Indexer {
     const currentStoredFilePaths = new Set(files.map((file) => this.toStoredFilePath(file.path)));
     const needsCallGraphResolutionMigration =
       database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
+    const localModuleResolutionConfigChanged =
+      database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
+      !== this.getLocalModuleResolutionConfigHash();
     let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
       (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
       && isJavaScriptFamilyFilePath(filePath)
@@ -4330,7 +4379,7 @@ export class Indexer {
         javaScriptGraphSourcesChanged = true;
       }
       const needsCallGraphRefresh = cachedHashMatches
-        && needsCallGraphResolutionMigration
+        && (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged)
         && (
           isJavaScriptFamilyFilePath(storedPath)
           || database.getChunksByFile(storedPath).some((chunk) =>
@@ -4449,6 +4498,7 @@ export class Indexer {
         descriptor,
       ]),
     );
+    const localModulePathAliases = this.loadTsConfigPathAliases();
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       loadModule: async (filePath) => {
@@ -4471,6 +4521,7 @@ export class Indexer {
           symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
         };
       },
+      ...(localModulePathAliases === undefined ? {} : { tsConfigPathAliases: localModulePathAliases }),
     });
     let writeTransactionActive = false;
 
