@@ -118,10 +118,123 @@ function normalizeBaseUrl(rawBaseUrl: string | undefined): string | undefined {
   return trimmedBaseUrl;
 }
 
+function removeJsoncComments(configText: string): string {
+  const output: string[] = [];
+  let inString: string | null = null;
+  let isEscaped = false;
+
+  for (let index = 0; index < configText.length; index += 1) {
+    const char = configText[index];
+    const nextChar = configText[index + 1];
+
+    if (inString !== null) {
+      output.push(char);
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        isEscaped = true;
+        continue;
+      }
+      if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = char;
+      output.push(char);
+      continue;
+    }
+
+    if (char === "/" && nextChar === "/") {
+      index += 1;
+      while (index + 1 < configText.length && configText[index + 1] !== "\n") {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (char === "/" && nextChar === "*") {
+      index += 2;
+      while (index + 1 < configText.length) {
+        if (configText[index] === "*" && configText[index + 1] === "/") {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      continue;
+    }
+
+    output.push(char);
+  }
+
+  return output.join("");
+}
+
+function removeJsonTrailingCommas(configText: string): string {
+  const output: string[] = [];
+  let inString: string | null = null;
+  let isEscaped = false;
+
+  for (let index = 0; index < configText.length; index += 1) {
+    const char = configText[index];
+
+    if (inString !== null) {
+      output.push(char);
+      if (isEscaped) {
+        isEscaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        isEscaped = true;
+        continue;
+      }
+      if (char === inString) {
+        inString = null;
+      }
+      continue;
+    }
+
+    if (char === '"') {
+      inString = char;
+      output.push(char);
+      continue;
+    }
+
+    if (char !== ",") {
+      output.push(char);
+      continue;
+    }
+
+    let nextIndex = index + 1;
+    while (nextIndex < configText.length && /\s/u.test(configText[nextIndex])) {
+      nextIndex += 1;
+    }
+
+    const nextChar = configText[nextIndex];
+    if (nextChar === "}" || nextChar === "]" || nextChar === undefined) {
+      continue;
+    }
+
+    output.push(char);
+  }
+
+  return output.join("");
+}
+
+function parseJsonConfig(configText: string): unknown {
+  const sanitizedJson = removeJsonTrailingCommas(removeJsoncComments(configText));
+  return JSON.parse(sanitizedJson);
+}
+
 export function parseTsConfigForModuleResolution(configText: string): LocalModulePathAliases | undefined {
   let rawConfig: unknown;
   try {
-    rawConfig = JSON.parse(configText);
+    rawConfig = parseJsonConfig(configText);
   } catch {
     return undefined;
   }
@@ -137,7 +250,7 @@ export function parseTsConfigForModuleResolution(configText: string): LocalModul
 
   const normalizedBaseUrl = normalizeBaseUrl(typeof compilerOptions.baseUrl === "string" ? compilerOptions.baseUrl : undefined);
   const rawPaths = compilerOptions.paths;
-  if (rawPaths === undefined && normalizedBaseUrl === undefined) {
+  if (rawPaths === undefined) {
     return undefined;
   }
 
@@ -186,7 +299,7 @@ export function parseTsConfigForModuleResolution(configText: string): LocalModul
       }
     }
 
-  if (aliases.length === 0 && normalizedBaseUrl === undefined) {
+  if (aliases.length === 0) {
     return undefined;
   }
 
@@ -601,11 +714,11 @@ export class LocalModuleCallResolver {
       return aliasCandidates;
     }
 
-    if (this.baseUrl === undefined) {
+    if (this.pathAliases.length === 0) {
       return [];
     }
 
-    return this.resolveModuleCandidates(normalizeFilePath(path.posix.join(this.baseUrl, specifier)));
+    return [];
   }
 
   private resolveModuleSpecifierFromAliases(specifier: string): string[] | undefined {

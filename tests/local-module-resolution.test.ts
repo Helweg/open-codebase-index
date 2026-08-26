@@ -229,6 +229,39 @@ describe("LocalModuleCallResolver", () => {
     });
   });
 
+  it("supports common JSONC tsconfig syntax", () => {
+    const parsed = parseTsConfigForModuleResolution([
+      '{',
+      '  // compilerOptions',
+      '  "compilerOptions": {',
+      '    "baseUrl": "./src",',
+      '    "paths": {',
+      '      "@/*": ["./*/index"],',
+      '      "@foo/*": ["./foo/*"],',
+      '    },',
+      '  },',
+      '}',
+    ].join("\n"));
+
+    expect(parsed).toEqual({
+      baseUrl: "src",
+      aliases: [
+        { pattern: "@/*", targets: ["*/index"] },
+        { pattern: "@foo/*", targets: ["foo/*"] },
+      ],
+    });
+  });
+
+  it("abstains when tsconfig does not define paths", () => {
+    const parsed = parseTsConfigForModuleResolution(JSON.stringify({
+      compilerOptions: {
+        baseUrl: "./src",
+      },
+    }));
+
+    expect(parsed).toBeUndefined();
+  });
+
   it("ignores invalid module-resolution config with unsupported structures", () => {
     expect(parseTsConfigForModuleResolution("{}")).toBeUndefined();
     expect(parseTsConfigForModuleResolution("not-json")).toBeUndefined();
