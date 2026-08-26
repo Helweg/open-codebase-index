@@ -406,11 +406,12 @@ export class LocalModuleCallResolver {
         candidates.push(...await this.resolveImportedBinding(importer, binding, site.callType));
       }
     } else {
+      const namespaceCallType = site.callType === "MethodCall" ? "Call" : site.callType;
       for (const binding of record.namespaceImports.get(qualifier) ?? []) {
         candidates.push(...await this.resolveImportedBinding(
           importer,
           { importedName: site.calleeName, source: binding.source },
-          site.callType,
+          namespaceCallType,
         ));
       }
     }
