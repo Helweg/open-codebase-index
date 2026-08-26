@@ -1,3 +1,4 @@
+import type { CallGraphCoverage } from "../indexer/call-graph-coverage.js";
 import type {
   CentralityData,
   CommunityCouplingData,
@@ -10,6 +11,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 
 import { estimateTokens } from "../utils/cost.js";
+import { formatCallGraphCoverage } from "../indexer/call-graph-coverage.js";
 import { deriveModules } from "./visualize/modules.js";
 
 export const ARCHITECTURE_CONTEXT_DEFAULT_DEPTH = 2;
@@ -54,7 +56,7 @@ export interface ArchitectureContextSources {
   projectRoot?: string;
   sourceSymbols?: SymbolData[];
   focusedSymbols?: SymbolData[];
-  graphCoverage?: { totalEdges: number; resolvedEdges: number };
+  graphCoverage?: CallGraphCoverage;
   recentActivity?: ArchitectureRecentActivity[];
 }
 
@@ -87,6 +89,7 @@ export interface ArchitectureContextResult {
     scoped: boolean;
     graphSparse: boolean;
     sourceFallback: boolean;
+    graph?: CallGraphCoverage;
     note: string;
   };
   recommendations: string[];
@@ -622,7 +625,7 @@ export function buildArchitectureContext(
     : communityResult.scopedMembers.length;
   const graphSparse = sourceFallback || boundaryCandidates.length === 0;
   const resolutionNote = graphCoverage
-    ? ` ${graphCoverage.resolvedEdges}/${graphCoverage.totalEdges} observed call edges are resolved in scope.`
+    ? ` ${formatCallGraphCoverage(graphCoverage)}`
     : "";
   const note = queryRequested && focusedSymbols.length === 0
     ? "No indexed symbols matched the requested query and scope. No global architecture is substituted."
@@ -639,6 +642,7 @@ export function buildArchitectureContext(
     scoped: Boolean(input.directory || input.query),
     graphSparse,
     sourceFallback,
+    graph: graphCoverage,
     note,
   };
   const recommendationCandidates = recommendationsFor(input, moduleCandidates, graphSparse);

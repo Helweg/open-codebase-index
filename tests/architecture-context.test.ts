@@ -94,7 +94,19 @@ describe("architecture_context", () => {
       {
         projectRoot: tempDir,
         sourceSymbols: symbols,
-        graphCoverage: { totalEdges: 2, resolvedEdges: 1 },
+        graphCoverage: {
+          totalEdges: 2,
+          resolvedEdges: 1,
+          unresolvedEdges: 1,
+          resolutionRate: 0.5,
+          languages: [{
+            language: "typescript",
+            totalEdges: 2,
+            resolvedEdges: 1,
+            unresolvedEdges: 1,
+            resolutionRate: 0.5,
+          }],
+        },
       },
     );
   }
@@ -110,6 +122,13 @@ describe("architecture_context", () => {
     expect(first.text).toContain("implementation_lookup");
     expect(first.modules.every((module) => module.evidence.length > 0)).toBe(true);
     expect(first.modules.every((module) => module.evidence.some((evidence) => evidence.excerpt))).toBe(true);
+    expect(first.coverage.graph).toMatchObject({
+      totalEdges: 2,
+      resolvedEdges: 1,
+      unresolvedEdges: 1,
+    });
+    expect(first.coverage.note).toContain("1 unresolved");
+    expect(first.coverage.note).toContain("by language: typescript 1/2");
   });
 
   it("keeps relative directory scope strict against absolute indexed paths", () => {
@@ -150,7 +169,17 @@ describe("architecture_context", () => {
       [],
       [],
       [],
-      { projectRoot: tempDir, sourceSymbols: symbols, graphCoverage: { totalEdges: 0, resolvedEdges: 0 } },
+      {
+        projectRoot: tempDir,
+        sourceSymbols: symbols,
+        graphCoverage: {
+          totalEdges: 0,
+          resolvedEdges: 0,
+          unresolvedEdges: 0,
+          resolutionRate: 0,
+          languages: [],
+        },
+      },
     );
 
     expect(result.modules.length).toBeGreaterThan(0);
@@ -159,6 +188,7 @@ describe("architecture_context", () => {
     expect(result.coverage.graphSparse).toBe(true);
     expect(result.boundaries).toEqual([]);
     expect(result.text).toContain("no relationship is inferred");
+    expect(result.coverage.note).toContain("No call edges were observed in scope");
   });
 
   it("enforces the requested response token budget while preserving whole cited claims", () => {

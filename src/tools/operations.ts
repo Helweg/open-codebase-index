@@ -5,6 +5,7 @@ import { getHostProjectConfigRelativePath } from "../config/paths.js";
 import type { HostMode } from "../config/host.js";
 import type { CallEdgeData, PathHopData, SymbolData } from "../native/index.js";
 import { Indexer } from "../indexer/index.js";
+import { summarizeCallGraphCoverage } from "../indexer/call-graph-coverage.js";
 import { findKnowledgeBasePathIndex, hasMatchingKnowledgeBasePath, resolveKnowledgeBasePath } from "./knowledge-base-paths.js";
 import { buildCodeCommunitiesResult } from "./format-communities.js";
 import {
@@ -980,12 +981,7 @@ export async function getArchitectureContextForIndexer(
     projectRoot,
     sourceSymbols: visualization.symbols,
     focusedSymbols,
-    graphCoverage: {
-      totalEdges: scopedEdges.length,
-      resolvedEdges: scopedEdges.filter((edge) =>
-        edge.isResolved && edge.toSymbolId !== undefined && scopedSymbolIds.has(edge.toSymbolId)
-      ).length,
-    },
+    graphCoverage: summarizeCallGraphCoverage(scopedSymbols, scopedEdges),
     recentActivity,
   });
 }

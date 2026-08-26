@@ -2507,7 +2507,293 @@ main() {
     });
   });
 
+  describe("local TypeScript and JavaScript module resolution", () => {
+    function mockEmbeddings(): ReturnType<typeof vi.spyOn> {
+      return vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        const inputs = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+        return new Response(
+          JSON.stringify({
+            data: inputs.map(() => ({ embedding: Array(8).fill(0.125) })),
+            usage: { total_tokens: Math.max(1, inputs.length) },
+          }),
+          { status: 200 },
+        );
+      });
+    }
+
+    function copyLocalModuleFixture(projectDir: string): void {
+      fs.cpSync(path.join(fixturesDir, "local-modules"), projectDir, { recursive: true });
+    }
+
+    it("resolves relative imports, aliases, and re-exports while abstaining on ambiguity", async () => {
+      const projectDir = path.join(tempDir, "local-module-project");
+      fs.mkdirSync(projectDir, { recursive: true });
+      copyLocalModuleFixture(projectDir);
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const byName = (name: string): SymbolData => {
+          const matches = symbols.filter((symbol) => symbol.name === name);
+          expect(matches.length).toBeGreaterThan(0);
+          return matches[0];
+        };
+        const edgeFrom = async (callerName: string, targetName: string): Promise<CallEdgeData> => {
+          const edge = (await indexer.getCallees(byName(callerName).id)).find(
+            (candidate) => candidate.targetName === targetName,
+          );
+          expect(edge).toBeDefined();
+          return edge!;
+        };
+
+        await expect(edgeFrom("runDirect", "directTarget")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("directTarget").id,
+        });
+        await expect(edgeFrom("runAlias", "localAlias")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("directTarget").id,
+        });
+        await expect(edgeFrom("runReexport", "localReexport")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("originalTarget").id,
+        });
+
+        const duplicateTargets = symbols.filter((symbol) => symbol.name === "duplicateTarget");
+        expect(duplicateTargets).toHaveLength(2);
+        const duplicateA = duplicateTargets.find((symbol) => symbol.filePath.endsWith("duplicate-a.ts"));
+        await expect(edgeFrom("runDuplicate", "duplicateTarget")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: duplicateA!.id,
+        });
+        const ambiguousEdge = await edgeFrom("runAmbiguous", "ambiguousTarget");
+        expect(ambiguousEdge).toMatchObject({ isResolved: false });
+        expect(ambiguousEdge.toSymbolId).toBeUndefined();
+        const missingEdge = await edgeFrom("runMissing", "missingTarget");
+        expect(missingEdge).toMatchObject({ isResolved: false });
+        expect(missingEdge.toSymbolId).toBeUndefined();
+        await expect(edgeFrom("runLocal", "localTarget")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("localTarget").id,
+        });
+        await expect(edgeFrom("runJavaScript", "jsAlias")).resolves.toMatchObject({
+          isResolved: true,
+          toSymbolId: byName("javascriptTarget").id,
+        });
+
+        const directCallers = await indexer.getCallers("directTarget");
+        expect(directCallers.map((edge) => edge.fromSymbolName).sort()).toEqual(["runAlias", "runDirect"]);
+
+        const coverage = await indexer.getCallGraphCoverage();
+        expect(coverage).toMatchObject({
+          totalEdges: 8,
+          resolvedEdges: 6,
+          unresolvedEdges: 2,
+          resolutionRate: 0.75,
+        });
+        expect(coverage.languages).toEqual([
+          {
+            language: "javascript",
+            totalEdges: 1,
+            resolvedEdges: 1,
+            unresolvedEdges: 0,
+            resolutionRate: 1,
+          },
+          {
+            language: "typescript",
+            totalEdges: 7,
+            resolvedEdges: 5,
+            unresolvedEdges: 2,
+            resolutionRate: 5 / 7,
+          },
+        ]);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("reprocesses unchanged importers when a local re-export changes", async () => {
+      const projectDir = path.join(tempDir, "local-module-refresh-project");
+      fs.mkdirSync(projectDir, { recursive: true });
+      copyLocalModuleFixture(projectDir);
+      const fetchSpy = mockEmbeddings();
+      let indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        await indexer.index();
+        let symbols = await indexer.getSymbolsForBranch();
+        let caller = symbols.find((symbol) => symbol.name === "runReexport");
+        let edge = (await indexer.getCallees(caller!.id)).find(
+          (candidate) => candidate.targetName === "localReexport",
+        );
+        expect(edge?.isResolved).toBe(true);
+        await indexer.close();
+
+        fs.writeFileSync(
+          path.join(projectDir, "barrel.ts"),
+          'export { missingOriginal as publicTarget } from "./reexport-source.js";\n',
+        );
+        indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+        await indexer.index();
+        symbols = await indexer.getSymbolsForBranch();
+        caller = symbols.find((symbol) => symbol.name === "runReexport");
+        edge = (await indexer.getCallees(caller!.id)).find(
+          (candidate) => candidate.targetName === "localReexport",
+        );
+        expect(edge).toMatchObject({ isResolved: false });
+        expect(edge?.toSymbolId).toBeUndefined();
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("migrates unchanged local import edges without re-embedding chunks", async () => {
+      const projectDir = path.join(tempDir, "local-module-migration-project");
+      fs.mkdirSync(projectDir, { recursive: true });
+      copyLocalModuleFixture(projectDir);
+      const fetchSpy = mockEmbeddings();
+      let indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const caller = symbols.find((symbol) => symbol.name === "runAlias");
+        const edge = (await indexer.getCallees(caller!.id)).find(
+          (candidate) => candidate.targetName === "localAlias",
+        );
+        expect(edge?.isResolved).toBe(true);
+        await indexer.close();
+
+        const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        database.upsertCallEdge({
+          id: edge!.id,
+          fromSymbolId: edge!.fromSymbolId,
+          targetName: edge!.targetName,
+          callType: edge!.callType,
+          confidence: edge!.confidence,
+          line: edge!.line,
+          col: edge!.col,
+          isResolved: false,
+        });
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "4");
+        database.close();
+        const embeddingCallsBeforeMigration = fetchSpy.mock.calls.length;
+
+        indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+        await indexer.index();
+        const migratedSymbols = await indexer.getSymbolsForBranch();
+        const migratedCaller = migratedSymbols.find((symbol) => symbol.name === "runAlias");
+        const migratedTarget = migratedSymbols.find((symbol) => symbol.name === "directTarget");
+        const migratedEdge = (await indexer.getCallees(migratedCaller!.id)).find(
+          (candidate) => candidate.targetName === "localAlias",
+        );
+        expect(migratedEdge).toMatchObject({
+          isResolved: true,
+          toSymbolId: migratedTarget!.id,
+        });
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeMigration);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+  });
+
   describe("branch awareness", () => {
+    it("reports graph coverage only for the active branch", async () => {
+      writeGitBranchHead("main");
+      const db = openIndexerDb();
+      const symbols: SymbolData[] = [
+        {
+          id: "sym_main_coverage_caller",
+          filePath: "src/main-caller.ts",
+          name: "mainCaller",
+          kind: "function_declaration",
+          startLine: 1,
+          startCol: 0,
+          endLine: 3,
+          endCol: 0,
+          language: "typescript",
+        },
+        {
+          id: "sym_main_coverage_target",
+          filePath: "src/main-target.ts",
+          name: "mainTarget",
+          kind: "function_declaration",
+          startLine: 1,
+          startCol: 0,
+          endLine: 3,
+          endCol: 0,
+          language: "typescript",
+        },
+        {
+          id: "sym_feature_coverage_caller",
+          filePath: "src/feature-caller.js",
+          name: "featureCaller",
+          kind: "function_declaration",
+          startLine: 1,
+          startCol: 0,
+          endLine: 3,
+          endCol: 0,
+          language: "javascript",
+        },
+      ];
+      db.upsertSymbolsBatch(symbols);
+      db.addSymbolsToBranchBatch("main", [symbols[0].id, symbols[1].id]);
+      db.addSymbolsToBranchBatch("feature", [symbols[2].id]);
+      db.upsertCallEdgesBatch([
+        {
+          id: "edge_main_coverage",
+          fromSymbolId: symbols[0].id,
+          targetName: symbols[1].name,
+          toSymbolId: symbols[1].id,
+          callType: "Call",
+          confidence: "Direct",
+          line: 2,
+          col: 2,
+          isResolved: true,
+        },
+        {
+          id: "edge_feature_coverage",
+          fromSymbolId: symbols[2].id,
+          targetName: "missingFeatureTarget",
+          callType: "Call",
+          confidence: "Direct",
+          line: 2,
+          col: 2,
+          isResolved: false,
+        },
+      ]);
+      db.close();
+
+      let indexer = new Indexer(tempDir, createIndexerConfig(), "opencode");
+      try {
+        await expect(indexer.getCallGraphCoverage()).resolves.toMatchObject({
+          totalEdges: 1,
+          resolvedEdges: 1,
+          unresolvedEdges: 0,
+          languages: [{ language: "typescript", totalEdges: 1, resolvedEdges: 1 }],
+        });
+        await indexer.close();
+
+        writeGitBranchHead("feature");
+        indexer = new Indexer(tempDir, createIndexerConfig(), "opencode");
+        await expect(indexer.getCallGraphCoverage()).resolves.toMatchObject({
+          totalEdges: 1,
+          resolvedEdges: 0,
+          unresolvedEdges: 1,
+          languages: [{ language: "javascript", totalEdges: 1, resolvedEdges: 0 }],
+        });
+      } finally {
+        await indexer.close();
+      }
+    });
+
     it("should filter symbols by current branch", () => {
       const db = openDb();
 
