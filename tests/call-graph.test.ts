@@ -2655,6 +2655,23 @@ main() {
         const externalEdge = await edgeFrom("runExternal", "externalTarget");
         expect(externalEdge).toMatchObject({ isResolved: false });
         expect(externalEdge.toSymbolId).toBeUndefined();
+
+        const embeddingCallsBeforeConfigChange = fetchSpy.mock.calls.length;
+        fs.writeFileSync(path.join(projectDir, "tsconfig.json"), JSON.stringify({
+          compilerOptions: {
+            baseUrl: ".",
+            paths: {
+              "@core/*": ["src/missing/*"],
+              "@ambiguous/*": ["src/ambiguous-a/*", "src/ambiguous-b/*"],
+            },
+          },
+        }));
+        await indexer.index();
+
+        const refreshedEdge = await edgeFrom("runDeterministic", "deterministicTarget");
+        expect(refreshedEdge).toMatchObject({ isResolved: false });
+        expect(refreshedEdge.toSymbolId).toBeUndefined();
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeConfigChange);
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();
