@@ -366,7 +366,9 @@ describe("indexer checkpoint resume", () => {
     writeSourceFile(betaFile, ["betaOne", "betaTwo"]);
     writeSourceFile(gammaFile, ["gammaOne", "gammaTwo"]);
     await expect(indexer.index((progress) => {
-      if (progress.phase === "embedding" && progress.filesProcessed === progress.totalFiles) {
+      // `totalFiles` covers the indexed project, including unchanged alpha.
+      // Interrupt after the first newly indexed file checkpoint instead.
+      if (progress.phase === "embedding" && progress.filesProcessed === 1) {
         throw new Error("simulated interruption after new-file checkpoint");
       }
     })).rejects.toThrow("simulated interruption after new-file checkpoint");

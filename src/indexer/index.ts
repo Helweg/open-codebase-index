@@ -32,7 +32,7 @@ import {
   parseFileAsText,
   estimateTokens,
 } from "../native/index.js";
-import type { SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CommunityCouplingData, CentralityData } from "../native/index.js";
+import type { ParsedFile, SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CommunityCouplingData, CentralityData } from "../native/index.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
@@ -110,6 +110,8 @@ import {
 } from "./failed-state-persistence.js";
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
+import { isJavaScriptFamilyFilePath, LocalModuleCallResolver } from "./local-module-resolution.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
@@ -179,7 +181,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "4";
+const CALL_GRAPH_RESOLUTION_VERSION = "5";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -1342,6 +1344,30 @@ export class Indexer {
   private refreshRuntimeArtifactPaths(): void {
     this.fileHashCachePath = this.getRuntimeArtifactPath("file-hashes.json");
     this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
+  }
+
+  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string): SymbolData[] {
+    const preparedNamespace = this.getPreparedBranchNamespace();
+    return parsed.symbols
+      .filter((parsedSymbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind))
+      .map((parsedSymbol) => {
+        const symbolId = `sym_${hashContent(
+          (preparedNamespace ? `${preparedNamespace}:` : "")
+          + parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":"
+          + parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":" + sourceHash,
+        ).slice(0, 16)}`;
+        return {
+          id: symbolId,
+          filePath: parsed.path,
+          name: parsedSymbol.name,
+          kind: parsedSymbol.kind,
+          startLine: parsedSymbol.startLine,
+          startCol: parsedSymbol.startCol,
+          endLine: parsedSymbol.endLine,
+          endCol: parsedSymbol.endCol,
+          language: parsedSymbol.language,
+        };
+      });
   }
 
   private getPreparedChunkId(chunkId: string): string {
@@ -4259,10 +4285,18 @@ export class Indexer {
     });
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
+    const changedFilePathSet = new Set<string>();
+    const allFileDescriptors = new Map<string, ChangedFileDescriptor>();
     const unchangedFilePaths = new Set<string>();
     const currentFileHashes = new Map<string, string>();
+    const currentStoredFilePaths = new Set(files.map((file) => this.toStoredFilePath(file.path)));
     const needsCallGraphResolutionMigration =
       database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
+    let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
+      (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
+      && isJavaScriptFamilyFilePath(filePath)
+      && !currentStoredFilePaths.has(filePath)
+    );
 
     for (const file of files) {
       const storedPath = this.toStoredFilePath(file.path);
@@ -4283,12 +4317,25 @@ export class Indexer {
         continue;
       }
       currentFileHashes.set(storedPath, currentHash);
+      const descriptor: ChangedFileDescriptor = {
+        storedPath,
+        materializedPath: file.path,
+        hash: currentHash,
+        sourceBytes: file.size,
+      };
+      allFileDescriptors.set(storedPath, descriptor);
 
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
-      const needsCallGraphRefresh = cachedHashMatches &&
-        needsCallGraphResolutionMigration &&
-        database.getChunksByFile(storedPath).some((chunk) =>
-          chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+      if (!cachedHashMatches && isJavaScriptFamilyFilePath(storedPath)) {
+        javaScriptGraphSourcesChanged = true;
+      }
+      const needsCallGraphRefresh = cachedHashMatches
+        && needsCallGraphResolutionMigration
+        && (
+          isJavaScriptFamilyFilePath(storedPath)
+          || database.getChunksByFile(storedPath).some((chunk) =>
+            chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+          )
         );
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
@@ -4298,23 +4345,34 @@ export class Indexer {
         forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
       if (
-        cachedHashMatches &&
-        !inMigrationScope &&
-        !needsCallGraphRefresh &&
-        !requiresSwiftParserUpgrade &&
-        !requiresMetalParserUpgrade &&
-        !refreshCachedSymbols
+        cachedHashMatches
+        && !inMigrationScope
+        && !needsCallGraphRefresh
+        && !requiresSwiftParserUpgrade
+        && !requiresMetalParserUpgrade
+        && !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(storedPath);
-        this.logger.recordCacheHit();
       } else {
-        changedFileDescriptors.push({
-          storedPath,
-          materializedPath: file.path,
-          hash: currentHash,
-          sourceBytes: file.size,
-        });
+        changedFileDescriptors.push(descriptor);
+        changedFilePathSet.add(storedPath);
+      }
+    }
+
+    if (javaScriptGraphSourcesChanged) {
+      for (const [storedPath, descriptor] of allFileDescriptors) {
+        if (!isJavaScriptFamilyFilePath(storedPath) || changedFilePathSet.has(storedPath)) continue;
+        unchangedFilePaths.delete(storedPath);
+        changedFileDescriptors.push(descriptor);
+        changedFilePathSet.add(storedPath);
+      }
+    }
+
+    for (const storedPath of allFileDescriptors.keys()) {
+      if (changedFilePathSet.has(storedPath)) {
         this.logger.recordCacheMiss();
+      } else {
+        this.logger.recordCacheHit();
       }
     }
 
@@ -4385,6 +4443,35 @@ export class Indexer {
       intervalCap: providerRateLimits.concurrency,
     });
     const rateLimitState: EmbeddingRateLimitState = { backoffMs: 0 };
+    const sourceDescriptorsByPath = new Map(
+      [...allFileDescriptors.values()].map((descriptor) => [
+        descriptor.storedPath.split(path.sep).join("/"),
+        descriptor,
+      ]),
+    );
+    const localModuleResolver = new LocalModuleCallResolver({
+      filePaths: [...sourceDescriptorsByPath.keys()],
+      loadModule: async (filePath) => {
+        const descriptor = sourceDescriptorsByPath.get(filePath);
+        if (!descriptor) return undefined;
+        const content = await fsPromises.readFile(descriptor.materializedPath, "utf-8");
+        if (unchangedFilePaths.has(descriptor.storedPath)) {
+          const symbols = database.getSymbolsByFile(descriptor.storedPath).filter((symbol) =>
+            !restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)
+          );
+          return { content, symbols };
+        }
+
+        const parsed = parseFiles(
+          [{ path: descriptor.storedPath, content }],
+          this.config.indexing.linesPerChunk,
+        )[0];
+        return {
+          content,
+          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
+        };
+      },
+    });
     let writeTransactionActive = false;
 
     try {
@@ -4479,6 +4566,7 @@ export class Indexer {
         const chunkDataBatch: ChunkData[] = [];
         const pendingChunks: PendingChunk[] = [];
         const symbolBatch: SymbolData[] = [];
+        const symbolBatchIds = new Set<string>();
         const edgeBatch: CallEdgeData[] = [];
 
         for (const parsed of parsedFiles) {
@@ -4566,32 +4654,18 @@ export class Indexer {
             });
           }
 
-          const fileSymbols: SymbolData[] = [];
-          for (const parsedSymbol of parsed.symbols) {
-            if (!CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind)) {
-              continue;
+          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash);
+          for (const symbol of fileSymbols) {
+            if (!symbolBatchIds.has(symbol.id)) {
+              symbolBatch.push(symbol);
+              symbolBatchIds.add(symbol.id);
             }
-            const preparedNamespace = this.getPreparedBranchNamespace();
-            const symbolId = `sym_${hashContent(
-              (preparedNamespace ? `${preparedNamespace}:` : "") +
-              parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":" +
-              parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":" + descriptor.hash,
-            ).slice(0, 16)}`;
-            const symbol: SymbolData = {
-              id: symbolId,
-              filePath: parsed.path,
-              name: parsedSymbol.name,
-              kind: parsedSymbol.kind,
-              startLine: parsedSymbol.startLine,
-              startCol: parsedSymbol.startCol,
-              endLine: parsedSymbol.endLine,
-              endCol: parsedSymbol.endCol,
-              language: parsedSymbol.language,
-            };
-            fileSymbols.push(symbol);
-            symbolBatch.push(symbol);
-            allSymbolIds.add(symbolId);
+            allSymbolIds.add(symbol.id);
           }
+          localModuleResolver.seedModule(parsed.path, {
+            content: loadedFile.content,
+            symbols: fileSymbols,
+          });
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
           if (!fileLanguage || !CALL_GRAPH_LANGUAGES.has(fileLanguage)) {
@@ -4625,7 +4699,23 @@ export class Indexer {
             candidates = candidates?.filter((symbol) =>
               isCompatibleCFamilyCallTarget(fileLanguage, site.callType, symbol.kind)
             );
-            const resolvedTarget = candidates?.length === 1 ? candidates[0] : undefined;
+            let resolvedTarget = candidates?.length === 1 ? candidates[0] : undefined;
+            if (
+              !resolvedTarget
+              && (!candidates || candidates.length === 0)
+              && isJavaScriptFamilyFilePath(parsed.path)
+            ) {
+              resolvedTarget = await localModuleResolver.resolveCallTarget(
+                parsed.path,
+                loadedFile.content,
+                site,
+              );
+              if (resolvedTarget && !symbolBatchIds.has(resolvedTarget.id)) {
+                symbolBatch.push(resolvedTarget);
+                symbolBatchIds.add(resolvedTarget.id);
+                allSymbolIds.add(resolvedTarget.id);
+              }
+            }
             edgeBatch.push({
               id: `edge_${hashContent(
                 enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column,
@@ -6824,7 +6914,38 @@ export class Indexer {
       }
     }
 
-    return { symbols: [...seenSymbols.values()], edges: [...seenEdges.values()] };
+    const symbols = [...seenSymbols.values()].sort((left, right) =>
+      left.filePath.localeCompare(right.filePath)
+      || left.startLine - right.startLine
+      || left.startCol - right.startCol
+      || left.id.localeCompare(right.id)
+    );
+    const edges = [...seenEdges.values()].sort((left, right) =>
+      left.fromSymbolId.localeCompare(right.fromSymbolId)
+      || left.line - right.line
+      || left.col - right.col
+      || left.id.localeCompare(right.id)
+    );
+    return { symbols, edges };
+  }
+
+  async getCallGraphCoverage(): Promise<CallGraphCoverage> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    const symbolsById = new Map<string, SymbolData>();
+    const edgesById = new Map<string, CallEdgeData>();
+
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      const branchSymbols = database.getSymbolsForBranch(branchKey);
+      for (const symbol of branchSymbols) {
+        symbolsById.set(symbol.id, symbol);
+        for (const edge of database.getCallees(symbol.id, branchKey)) {
+          edgesById.set(edge.id, edge);
+        }
+      }
+    }
+
+    return summarizeCallGraphCoverage([...symbolsById.values()], [...edgesById.values()]);
   }
 
   async close(): Promise<void> {

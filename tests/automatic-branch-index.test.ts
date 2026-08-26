@@ -318,7 +318,7 @@ function changed(): number {
       ),
     ).toBe(true);
     for (const [prefix, version] of [
-      ["index.callGraphResolutionVersion", "4"],
+      ["index.callGraphResolutionVersion", "5"],
       [swiftPrefix, "1"],
       ["index.parser.metalVersion", "1"],
     ] as const) {

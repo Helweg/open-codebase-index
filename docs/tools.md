@@ -91,7 +91,7 @@ Pi exposes all 16 portable tools, including `architecture_context`, `call_graph`
 
 ### `architecture_context`
 
-Use `architecture_context` when an agent needs a concise repository map before focused retrieval or edits. Each module includes a responsibility excerpt derived from readable source and exact symbol/file/line citations. Cross-module boundaries include representative source and target symbols, while missing or sparse graph coverage is reported explicitly instead of inferred.
+Use `architecture_context` when an agent needs a concise repository map before focused retrieval or edits. Each module includes a responsibility excerpt derived from readable source and exact symbol/file/line citations. Cross-module boundaries include representative source and target symbols, while missing or sparse graph coverage is reported explicitly instead of inferred. Coverage includes branch-aware resolved and unresolved edge totals plus a deterministic per-language breakdown.
 
 `query` and `directory` constrain which modules can consume the response budget. `depth` controls detail from 1 to 3, and `tokenBudget` is enforced from 128 to 4000 estimated tokens without cutting claims or citations mid-entry. When community data is unavailable, the tool can still group matching indexed symbols by source directory, but it labels that fallback and does not invent relationships.
 
@@ -147,7 +147,7 @@ Returns recent in-memory debug logs when debug logging is enabled.
 
 ### `call_graph`
 
-Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated.
+Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports and re-export chains, including aliases. Package imports, tsconfig path aliases, CommonJS-only exports, missing modules, and ambiguous module or star-export targets remain unresolved rather than being guessed.
 
 ### `call_graph_path`
 

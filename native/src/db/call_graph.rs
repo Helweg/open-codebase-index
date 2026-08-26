@@ -402,6 +402,18 @@ pub fn get_callers(
                 (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
                 OR
                 (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+                OR EXISTS (
+                    SELECT 1
+                    FROM symbols target
+                    INNER JOIN branch_symbols target_bs
+                        ON target.id = target_bs.symbol_id AND target_bs.branch = ?1
+                    WHERE target.id = ce.to_symbol_id
+                      AND (
+                          (target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE)
+                          OR
+                          (target.language NOT IN ('apex', 'php') AND target.name = ?2 COLLATE BINARY)
+                      )
+                )
             ) AND ce.call_type = ?3
             "#,
             vec![branch.to_string(), symbol_name.to_string(), ct.to_string()],
@@ -417,6 +429,18 @@ pub fn get_callers(
                 (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
                 OR
                 (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+                OR EXISTS (
+                    SELECT 1
+                    FROM symbols target
+                    INNER JOIN branch_symbols target_bs
+                        ON target.id = target_bs.symbol_id AND target_bs.branch = ?1
+                    WHERE target.id = ce.to_symbol_id
+                      AND (
+                          (target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE)
+                          OR
+                          (target.language NOT IN ('apex', 'php') AND target.name = ?2 COLLATE BINARY)
+                      )
+                )
             "#,
             vec![branch.to_string(), symbol_name.to_string()],
         )
@@ -477,6 +501,18 @@ pub fn get_callers_with_context(
                 (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
                 OR
                 (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+                OR EXISTS (
+                    SELECT 1
+                    FROM symbols target
+                    INNER JOIN branch_symbols target_bs
+                        ON target.id = target_bs.symbol_id AND target_bs.branch = ?1
+                    WHERE target.id = ce.to_symbol_id
+                      AND (
+                          (target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE)
+                          OR
+                          (target.language NOT IN ('apex', 'php') AND target.name = ?2 COLLATE BINARY)
+                      )
+                )
             ) AND ce.call_type = ?3
             "#,
             vec![branch.to_string(), symbol_name.to_string(), ct.to_string()],
@@ -503,6 +539,18 @@ pub fn get_callers_with_context(
                 (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
                 OR
                 (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+                OR EXISTS (
+                    SELECT 1
+                    FROM symbols target
+                    INNER JOIN branch_symbols target_bs
+                        ON target.id = target_bs.symbol_id AND target_bs.branch = ?1
+                    WHERE target.id = ce.to_symbol_id
+                      AND (
+                          (target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE)
+                          OR
+                          (target.language NOT IN ('apex', 'php') AND target.name = ?2 COLLATE BINARY)
+                      )
+                )
             "#,
             vec![branch.to_string(), symbol_name.to_string()],
         )
