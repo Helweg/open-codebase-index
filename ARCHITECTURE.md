@@ -151,6 +151,8 @@ Focused helpers keep ranking and batch mechanics out of the orchestrator:
 - `file-batches.ts` defines deterministic file-count and source-byte batch limits.
 - `failed-state-persistence.ts` streams versioned JSONL failure state and legacy reads.
 - `call-graph-constants.ts` owns the shared declaration chunk-type allowlist.
+- `local-module-resolution.ts` resolves conservative TypeScript/JavaScript local relative imports and re-exports from current-branch source without LSP or SCIP.
+- `call-graph-coverage.ts` produces deterministic resolved/unresolved totals and per-language graph diagnostics.
 
 Key public methods include:
 
@@ -161,6 +163,7 @@ Key public methods include:
 | `findSimilar()` | Find semantically similar code for a snippet |
 | `getStatus()` | Report readiness, compatibility, and index metadata |
 | `healthCheck()` | Inspect and clean stale index state |
+| `getCallGraphCoverage()` | Report branch-aware graph resolution coverage by language |
 
 ### Embedding Provider (`src/embeddings/`)
 
@@ -186,7 +189,7 @@ Rust components exposed via NAPI:
 | InvertedIndex | Custom | BM25 keyword search |
 | Hasher | xxhash-rust | Fast content hashing |
 
-The crate root in `native/src/lib.rs` remains the NAPI assembly facade. The Database NAPI class lives in `native/src/bindings/database.rs`. SQLite call-graph rows and queries live in `native/src/db/call_graph.rs`, while the remaining schema, migrations, chunk, embedding, and branch persistence stay in `native/src/db.rs`.
+The crate root in `native/src/lib.rs` remains the NAPI assembly facade. The Database NAPI class lives in `native/src/bindings/database.rs`. SQLite call-graph rows and queries live in `native/src/db/call_graph.rs`, while the remaining schema, migrations, chunk, embedding, and branch persistence stay in `native/src/db.rs`. Source-level TypeScript/JavaScript module resolution stays above this boundary in the TypeScript indexer; the persisted call-edge contract and NAPI value shapes remain unchanged.
 
 ### Tool Runtime (`src/tools/`)
 
