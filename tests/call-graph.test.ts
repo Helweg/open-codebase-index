@@ -2624,6 +2624,12 @@ main() {
       const projectDir = path.join(tempDir, "local-module-alias-project");
       fs.mkdirSync(projectDir, { recursive: true });
       copyAliasFixture(projectDir);
+      const configDir = path.join(projectDir, "config");
+      fs.mkdirSync(configDir, { recursive: true });
+      const originalAliasConfig = fs.readFileSync(path.join(projectDir, "tsconfig.json"), "utf-8")
+        .replace('"baseUrl": "."', '"baseUrl": ".."');
+      fs.writeFileSync(path.join(configDir, "base.json"), originalAliasConfig);
+      fs.writeFileSync(path.join(projectDir, "tsconfig.json"), JSON.stringify({ extends: "./config/base" }));
       const fetchSpy = mockEmbeddings();
       const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
 
@@ -2657,9 +2663,9 @@ main() {
         expect(externalEdge.toSymbolId).toBeUndefined();
 
         const embeddingCallsBeforeConfigChange = fetchSpy.mock.calls.length;
-        fs.writeFileSync(path.join(projectDir, "tsconfig.json"), JSON.stringify({
+        fs.writeFileSync(path.join(configDir, "base.json"), JSON.stringify({
           compilerOptions: {
-            baseUrl: ".",
+            baseUrl: "..",
             paths: {
               "@core/*": ["src/missing/*"],
               "@ambiguous/*": ["src/ambiguous-a/*", "src/ambiguous-b/*"],

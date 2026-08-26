@@ -114,7 +114,7 @@ import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph
 import {
   isJavaScriptFamilyFilePath,
   LocalModuleCallResolver,
-  parseTsConfigForModuleResolution,
+  resolveTsConfigForModuleResolution,
   type LocalModulePathAliases,
 } from "./local-module-resolution.js";
 
@@ -1243,26 +1243,44 @@ export class Indexer {
   }
 
   private loadTsConfigPathAliases(): LocalModulePathAliases | undefined {
-    const tsConfigPath = path.join(this.materializedProjectRoot, "tsconfig.json");
-    const jsConfigPath = path.join(this.materializedProjectRoot, "jsconfig.json");
-    const configPaths = [tsConfigPath, jsConfigPath].filter((pathToCheck) => existsSync(pathToCheck));
-    if (configPaths.length !== 1) {
+    const configName = this.getLocalModuleResolutionRootConfigName();
+    if (!configName) {
       return undefined;
     }
 
-    let configText: string;
-    try {
-      configText = readFileSync(configPaths[0], "utf-8");
-    } catch {
-      return undefined;
-    }
+    return resolveTsConfigForModuleResolution(configName, (configPath) => {
+      try {
+        return readFileSync(path.join(this.materializedProjectRoot, configPath), "utf-8");
+      } catch {
+        return undefined;
+      }
+    });
+  }
 
-    return parseTsConfigForModuleResolution(configText);
+  private getLocalModuleResolutionRootConfigName(): "tsconfig.json" | "jsconfig.json" | undefined {
+    const configNames = ["tsconfig.json", "jsconfig.json"] as const;
+    const existingConfigs = configNames.filter((name) =>
+      existsSync(path.join(this.materializedProjectRoot, name)),
+    );
+    return existingConfigs.length === 1 ? existingConfigs[0] : undefined;
   }
 
   private getLocalModuleResolutionConfigHash(): string {
     const configNames = ["tsconfig.json", "jsconfig.json"];
-    const configState = configNames.map((name) => {
+    const rootConfigName = this.getLocalModuleResolutionRootConfigName();
+    const configNamesToHash = new Set(configNames);
+    if (rootConfigName) {
+      resolveTsConfigForModuleResolution(rootConfigName, (configPath) => {
+        configNamesToHash.add(configPath);
+        try {
+          return readFileSync(path.join(this.materializedProjectRoot, configPath), "utf-8");
+        } catch {
+          return undefined;
+        }
+      });
+    }
+    const namesToHash = [...configNamesToHash].sort();
+    const configState = namesToHash.map((name) => {
       const configPath = path.join(this.materializedProjectRoot, name);
       try {
         return [name, readFileSync(configPath, "utf-8")] as const;

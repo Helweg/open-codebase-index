@@ -52,6 +52,8 @@ interface ModuleRecord {
 export interface LocalModulePathAlias {
   pattern: string;
   targets: readonly string[];
+  /** Project-relative base directory for aliases inherited from another config. */
+  baseUrl?: string;
 }
 
 export interface LocalModulePathAliases {
@@ -231,7 +233,12 @@ function parseJsonConfig(configText: string): unknown {
   return JSON.parse(sanitizedJson);
 }
 
-export function parseTsConfigForModuleResolution(configText: string): LocalModulePathAliases | undefined {
+interface TsConfigDocument {
+  compilerOptions: Record<string, unknown>;
+  extendsPath?: string;
+}
+
+function parseTsConfigDocument(configText: string): TsConfigDocument | undefined {
   let rawConfig: unknown;
   try {
     rawConfig = parseJsonConfig(configText);
@@ -244,60 +251,76 @@ export function parseTsConfigForModuleResolution(configText: string): LocalModul
   }
 
   const compilerOptions = rawConfig.compilerOptions;
-  if (!validateCompilerOptionsObject(compilerOptions)) {
+  if (compilerOptions !== undefined && !validateCompilerOptionsObject(compilerOptions)) {
     return undefined;
   }
 
-  const normalizedBaseUrl = normalizeBaseUrl(typeof compilerOptions.baseUrl === "string" ? compilerOptions.baseUrl : undefined);
-  const rawPaths = compilerOptions.paths;
-  if (rawPaths === undefined) {
+  if (rawConfig.extends !== undefined && typeof rawConfig.extends !== "string") {
     return undefined;
   }
+
+  return {
+    compilerOptions: compilerOptions ?? {},
+    extendsPath: rawConfig.extends,
+  };
+}
+
+function parsePathAliases(compilerOptions: Record<string, unknown>): LocalModulePathAlias[] | undefined {
+  const rawPaths = compilerOptions.paths;
+  if (rawPaths === undefined) return [];
+  if (!validateCompilerOptionsObject(rawPaths)) return undefined;
 
   const aliases: LocalModulePathAlias[] = [];
-    if (rawPaths !== undefined) {
-      if (!validateCompilerOptionsObject(rawPaths)) {
+  for (const [pattern, targetsValue] of Object.entries(rawPaths)) {
+    const normalizedPattern = normalizePathAliasTarget(pattern);
+    if (normalizedPattern.length === 0 || normalizedPattern === ".") {
+      return undefined;
+    }
+    if (!hasAtMostOneWildcard(normalizedPattern)) {
+      return undefined;
+    }
+
+    if (!Array.isArray(targetsValue)) {
+      return undefined;
+    }
+
+    const targets: string[] = [];
+    for (const target of targetsValue) {
+      if (typeof target !== "string") {
         return undefined;
       }
-
-      for (const [pattern, targetsValue] of Object.entries(rawPaths)) {
-        const normalizedPattern = normalizePathAliasTarget(pattern);
-        if (normalizedPattern.length === 0 || normalizedPattern === ".") {
-          return undefined;
-        }
-        if (!hasAtMostOneWildcard(normalizedPattern)) {
-          return undefined;
-        }
-
-        if (!Array.isArray(targetsValue)) {
-          return undefined;
-        }
-
-        const targets: string[] = [];
-        for (const target of targetsValue) {
-          if (typeof target !== "string") {
-            return undefined;
-          }
-          const normalizedTarget = normalizePathAliasTarget(target);
-          if (!hasAtMostOneWildcard(normalizedTarget)) {
-            return undefined;
-          }
-          if (normalizedTarget.startsWith("/") || normalizedTarget === ".." || normalizedTarget.startsWith("../")) {
-            return undefined;
-          }
-          if (normalizedTarget.length === 0) {
-            return undefined;
-          }
-          targets.push(normalizedTarget);
-        }
-
-        if (targets.length === 0) {
-          return undefined;
-        }
-
-        aliases.push({ pattern: normalizedPattern, targets });
+      const normalizedTarget = normalizePathAliasTarget(target);
+      if (!hasAtMostOneWildcard(normalizedTarget)) {
+        return undefined;
       }
+      if (normalizedTarget.startsWith("/") || normalizedTarget === ".." || normalizedTarget.startsWith("../")) {
+        return undefined;
+      }
+      if (normalizedTarget.length === 0) {
+        return undefined;
+      }
+      targets.push(normalizedTarget);
     }
+
+    if (targets.length === 0) {
+      return undefined;
+    }
+
+    aliases.push({ pattern: normalizedPattern, targets });
+  }
+
+  return aliases;
+}
+
+export function parseTsConfigForModuleResolution(configText: string): LocalModulePathAliases | undefined {
+  const document = parseTsConfigDocument(configText);
+  if (!document) return undefined;
+
+  const normalizedBaseUrl = normalizeBaseUrl(
+    typeof document.compilerOptions.baseUrl === "string" ? document.compilerOptions.baseUrl : undefined,
+  );
+  const aliases = parsePathAliases(document.compilerOptions);
+  if (!aliases) return undefined;
 
   if (aliases.length === 0) {
     return undefined;
@@ -307,6 +330,93 @@ export function parseTsConfigForModuleResolution(configText: string): LocalModul
     baseUrl: normalizedBaseUrl ?? ".",
     aliases,
   };
+}
+
+function resolveLocalExtendsPath(configPath: string, extendsPath: string): string | undefined {
+  const trimmed = extendsPath.trim();
+  if (!trimmed.startsWith(".") || path.posix.isAbsolute(trimmed)) return undefined;
+
+  const withExtension = path.posix.extname(trimmed) === "" ? `${trimmed}.json` : trimmed;
+  if (!withExtension.endsWith(".json")) return undefined;
+  const resolved = normalizeFilePath(path.posix.join(path.posix.dirname(configPath), withExtension));
+  return isProjectLocalPath(resolved) ? trimLeadingCurrentDir(resolved) : undefined;
+}
+
+function resolveConfigBaseUrl(configPath: string, rawBaseUrl: string): string | undefined {
+  const normalizedBaseUrl = normalizeFilePath(rawBaseUrl.trim());
+  if (normalizedBaseUrl === "" || path.posix.isAbsolute(normalizedBaseUrl)) return undefined;
+  const resolved = trimLeadingCurrentDir(normalizeFilePath(
+    path.posix.join(path.posix.dirname(configPath), normalizedBaseUrl),
+  ));
+  return isProjectLocalPath(resolved) ? resolved : undefined;
+}
+
+/**
+ * Lists a root config and its local relative `extends` chain. Package-based
+ * configs deliberately return undefined: resolving those would make graph
+ * construction depend on node_modules and TypeScript's full resolver.
+ */
+export function getTsConfigModuleResolutionConfigPaths(
+  configPath: string,
+  loadConfig: (configPath: string) => string | undefined,
+): readonly string[] | undefined {
+  const chain: string[] = [];
+  const visiting = new Set<string>();
+
+  const visit = (candidate: string): boolean => {
+    const normalized = trimLeadingCurrentDir(normalizeFilePath(candidate));
+    if (!isProjectLocalPath(normalized) || visiting.has(normalized)) return false;
+
+    const configText = loadConfig(normalized);
+    if (configText === undefined) return false;
+    const document = parseTsConfigDocument(configText);
+    if (!document) return false;
+
+    visiting.add(normalized);
+    if (document.extendsPath !== undefined) {
+      const parentPath = resolveLocalExtendsPath(normalized, document.extendsPath);
+      if (!parentPath || !visit(parentPath)) return false;
+    }
+    visiting.delete(normalized);
+    chain.push(normalized);
+    return true;
+  };
+
+  return visit(configPath) ? chain : undefined;
+}
+
+/** Resolves aliases through a local relative `extends` chain, parent first. */
+export function resolveTsConfigForModuleResolution(
+  configPath: string,
+  loadConfig: (configPath: string) => string | undefined,
+): LocalModulePathAliases | undefined {
+  const configPaths = getTsConfigModuleResolutionConfigPaths(configPath, loadConfig);
+  if (!configPaths) return undefined;
+
+  let baseUrl = ".";
+  let aliases: LocalModulePathAlias[] | undefined;
+  for (const currentPath of configPaths) {
+    const configText = loadConfig(currentPath);
+    if (configText === undefined) return undefined;
+    const document = parseTsConfigDocument(configText);
+    if (!document) return undefined;
+
+    if (document.compilerOptions.baseUrl !== undefined) {
+      if (typeof document.compilerOptions.baseUrl !== "string") return undefined;
+      const resolvedBaseUrl = resolveConfigBaseUrl(currentPath, document.compilerOptions.baseUrl);
+      if (!resolvedBaseUrl) return undefined;
+      baseUrl = resolvedBaseUrl;
+    }
+
+    if (document.compilerOptions.paths !== undefined) {
+      const currentAliases = parsePathAliases(document.compilerOptions);
+      if (!currentAliases) return undefined;
+      aliases = currentAliases.map((alias) => ({ ...alias, baseUrl }));
+    }
+  }
+
+  if (!aliases || aliases.length === 0) return undefined;
+  return { baseUrl, aliases };
 }
 
 function isProjectLocalPath(candidatePath: string): boolean {
@@ -736,7 +846,7 @@ export class LocalModuleCallResolver {
 
       for (const targetPattern of alias.targets) {
         const target = this.replaceWildcard(targetPattern, wildcard);
-          const rawPath = normalizeFilePath(path.posix.join(this.baseUrl ?? ".", target));
+        const rawPath = normalizeFilePath(path.posix.join(alias.baseUrl ?? this.baseUrl ?? ".", target));
         if (!isProjectLocalPath(rawPath)) continue;
         for (const candidate of this.resolveModuleCandidates(trimLeadingCurrentDir(rawPath))) {
           matchedAliasTargets.add(candidate);
