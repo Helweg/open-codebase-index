@@ -37,6 +37,7 @@ import {
   executeCodebaseContext,
   executeCodebaseEditContext,
   executeCodeCommunities,
+  executeArchitectureContext,
   executeIndexCodebase,
   executeIndexHealthCheck,
   executeIndexLogs,
@@ -370,6 +371,22 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         const message = error instanceof Error ? error.message : String(error);
         return { content: [{ type: "text", text: `Error analyzing PR impact: ${message}` }] };
       }
+    },
+  );
+
+  server.tool(
+    TOOL_NAME.ARCHITECTURE_CONTEXT,
+    "Repository-scale architecture map backed by cited graph symbols and relationships. Use before focused retrieval when module boundaries or entry points are needed.",
+    {
+      query: allowNullAsUndefined(z.string().optional()).describe("Optional subsystem or planning focus"),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Constrain the map to this directory"),
+      depth: allowNullAsUndefined(z.number().int().min(1).max(3).optional().default(2)).describe("Summary detail level (1-3)"),
+      includeRecentActivity: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Include recent activity when available"),
+      tokenBudget: allowNullAsUndefined(z.number().int().min(128).max(4000).optional().default(1200)).describe("Maximum response token budget"),
+    },
+    async (args) => {
+      const result = await executeArchitectureContext(runtime.projectRoot, runtime.host, args);
+      return { content: [{ type: "text", text: result.text }] };
     },
   );
 

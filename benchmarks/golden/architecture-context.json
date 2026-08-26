@@ -1,0 +1,131 @@
+{
+  "version": "1.0.0",
+  "name": "architecture-context",
+  "description": "Repository planning queries evaluated through source-backed architecture_context evidence and response token cost.",
+  "queries": [
+    {
+      "id": "architecture-portable-tool",
+      "query": "map the portable architecture_context operation and how host adapters execute it",
+      "queryType": "architecture",
+      "retrievalMode": "architecture",
+      "difficulty": "medium",
+      "args": {
+        "directory": "src",
+        "depth": 3,
+        "tokenBudget": 1000
+      },
+      "tags": ["architecture", "planning", "portable-tools"],
+      "expected": {
+        "gradedEvidence": [
+          {
+            "path": "src/tools/architecture-context.ts",
+            "relevance": 3
+          },
+          {
+            "path": "src/tools/operations.ts",
+            "relevance": 3
+          },
+          {
+            "path": "src/tools/execute-common.ts",
+            "relevance": 2
+          },
+          {
+            "path": "src/adapters/mcp/register-tools.ts",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "architecture-evaluation-pipeline",
+      "query": "plan a change to evaluation routing, golden dataset parsing, relevance metrics, and token budgets",
+      "queryType": "architecture",
+      "retrievalMode": "architecture",
+      "difficulty": "hard",
+      "args": {
+        "directory": "src/eval",
+        "depth": 3,
+        "tokenBudget": 1000
+      },
+      "tags": ["architecture", "planning", "evaluation"],
+      "expected": {
+        "gradedEvidence": [
+          {
+            "path": "src/eval/runner.ts",
+            "relevance": 3
+          },
+          {
+            "path": "src/eval/schema.ts",
+            "relevance": 2
+          },
+          {
+            "path": "src/eval/metrics.ts",
+            "relevance": 2
+          },
+          {
+            "path": "src/eval/budget.ts",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "architecture-mcp-boundary",
+      "query": "understand MCP server tool registration and shared execution boundaries before adding a portable tool",
+      "queryType": "architecture",
+      "retrievalMode": "architecture",
+      "difficulty": "medium",
+      "args": {
+        "directory": "src/adapters/mcp",
+        "depth": 2,
+        "tokenBudget": 900
+      },
+      "tags": ["architecture", "planning", "mcp"],
+      "expected": {
+        "gradedEvidence": [
+          {
+            "path": "src/adapters/mcp/register-tools.ts",
+            "relevance": 3
+          },
+          {
+            "path": "src/adapters/mcp/server.ts",
+            "relevance": 2
+          },
+          {
+            "path": "src/adapters/mcp/shared.ts",
+            "relevance": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "architecture-indexing-boundaries",
+      "query": "map indexing orchestration, embedding batches, and native persistence boundaries before changing indexing",
+      "queryType": "architecture",
+      "retrievalMode": "architecture",
+      "difficulty": "hard",
+      "args": {
+        "directory": "src/indexer",
+        "depth": 3,
+        "tokenBudget": 1000
+      },
+      "tags": ["architecture", "planning", "indexing"],
+      "expected": {
+        "gradedEvidence": [
+          {
+            "path": "src/indexer/index.ts",
+            "relevance": 3
+          },
+          {
+            "path": "src/indexer/embedding-batches.ts",
+            "relevance": 2
+          },
+          {
+            "path": "src/indexer/search-ranking.ts",
+            "relevance": 1
+          }
+        ]
+      }
+    }
+  ]
+}

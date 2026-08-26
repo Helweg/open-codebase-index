@@ -98,6 +98,7 @@ vi.mock("../src/tools/index.js", () => {
     list_knowledge_bases: toolStub,
     remove_knowledge_base: toolStub,
     pr_impact: toolStub,
+    architecture_context: toolStub,
     code_communities: toolStub,
     index_visualize: toolStub,
     initializeTools: mockState.initializeTools,

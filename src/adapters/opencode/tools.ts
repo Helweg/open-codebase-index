@@ -44,6 +44,7 @@ import {
   executeCodebaseContext,
   executeCodebaseEditContext,
   executeCodeCommunities,
+  executeArchitectureContext,
   executeIndexCodebase,
   executeIndexHealthCheck,
   executeIndexLogs,
@@ -393,6 +394,20 @@ export const remove_knowledge_base: ToolDefinition = tool({
 });
 
 export { pr_impact };
+
+export const architecture_context: ToolDefinition = tool({
+  description: "Repository-scale architecture map backed by cited graph symbols and relationships. Use before focused retrieval when you need module boundaries, entry points, and safe next steps.",
+  args: {
+    query: z.string().nullable().optional().describe("Optional subsystem or planning focus"),
+    directory: z.string().nullable().optional().describe("Constrain the map to this directory"),
+    depth: z.number().int().min(1).max(3).optional().default(2).describe("Summary detail level (1-3)"),
+    includeRecentActivity: z.boolean().optional().default(false).describe("Include matching Git activity from the last 90 days when available"),
+    tokenBudget: z.number().int().min(128).max(4000).optional().default(1200).describe("Maximum response token budget"),
+  },
+  async execute(args, context) {
+    return (await executeArchitectureContext(context?.worktree, DEFAULT_HOST, args)).text;
+  },
+});
 
 export const code_communities: ToolDefinition = tool({
   description:

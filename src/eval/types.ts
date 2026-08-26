@@ -5,12 +5,13 @@ export type GoldenQueryType =
   | "implementation-intent"
   | "similarity"
   | "keyword-heavy"
-  | "conceptual";
+  | "conceptual"
+  | "architecture";
 
 export type GoldenQueryDifficulty = "easy" | "medium" | "hard";
 export type GoldenQueryExpectedOutcome = "results" | "no-results";
 export type GoldenQueryRecoveryExpectation = "none" | "filter-relaxed";
-export type GoldenRetrievalMode = "search" | "context" | "edit-context";
+export type GoldenRetrievalMode = "search" | "context" | "edit-context" | "architecture";
 export type EvalResolvedRoute = "search" | "definition";
 export type GoldenExpectedRoute = "search" | "definition";
 export type GoldenGraphNeighborDirection = "caller" | "callee";
@@ -28,6 +29,7 @@ export interface GoldenQueryArgs {
   directory?: string;
   callerLimit?: number;
   calleeLimit?: number;
+  depth?: number;
   tokenBudget?: number;
 }
 
@@ -169,6 +171,7 @@ export interface EvalMetrics {
   outcomeAccuracy: number;
   recoveryAccuracy: number;
   graphNeighborRecall?: number;
+  retrievalModeCounts?: Partial<Record<GoldenRetrievalMode, number>>;
   distinctTop3Ratio: number;
   rawDistinctTop3Ratio: number;
   latencyMs: {

@@ -8,6 +8,7 @@ import type {
   GoldenGradedEvidence,
   GoldenQuery,
   PerQueryEvalResult,
+  GoldenRetrievalMode,
 } from "./types.js";
 
 function percentile(values: number[], p: number): number {
@@ -435,6 +436,12 @@ export function computeEvalMetrics(
     hitAt10: 0,
     mrrAt10: 0,
     ndcgAt10: 0,
+    retrievalModeCounts: {
+      search: 0,
+      context: 0,
+      "edit-context": 0,
+      architecture: 0,
+    } satisfies Partial<Record<GoldenRetrievalMode, number>>,
     distinctTop3Ratio: 0,
     rawDistinctTop3Ratio: 0,
   };
@@ -462,6 +469,15 @@ export function computeEvalMetrics(
   let graphNeighborExpectedCount = 0;
 
   for (const query of perQuery) {
+    if (
+      query.retrievalMode === "search"
+      || query.retrievalMode === "context"
+      || query.retrievalMode === "edit-context"
+      || query.retrievalMode === "architecture"
+    ) {
+      sum.retrievalModeCounts[query.retrievalMode] += 1;
+    }
+
     if (positiveQueryIds.has(query.id)) {
       if (query.hitAt1) sum.hitAt1 += 1;
       if (query.hitAt3) sum.hitAt3 += 1;
@@ -505,6 +521,7 @@ export function computeEvalMetrics(
     hitAt10: safePositiveDiv(sum.hitAt10),
     mrrAt10: safePositiveDiv(sum.mrrAt10),
     ndcgAt10: safePositiveDiv(sum.ndcgAt10),
+    retrievalModeCounts: sum.retrievalModeCounts,
     routeAccuracy: routeExpectedCount === 0 ? 0 : routeMatchedCount / routeExpectedCount,
     outcomeAccuracy: outcomeExpectedCount === 0 ? 0 : outcomeMatchedCount / outcomeExpectedCount,
     recoveryAccuracy: recoveryExpectedCount === 0 ? 0 : recoveryMatchedCount / recoveryExpectedCount,

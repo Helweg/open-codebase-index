@@ -76,6 +76,54 @@ describe("eval schema", () => {
     expect(dataset.queries[0]?.retrievalMode).toBe("context");
   });
 
+  it("parses architecture planning queries with bounded depth and token cost", () => {
+    const dataset = parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "architecture-context",
+        queries: [{
+          id: "architecture-map",
+          query: "map the indexing and retrieval architecture before planning a change",
+          queryType: "architecture",
+          retrievalMode: "architecture",
+          args: {
+            directory: "src/indexer",
+            depth: 3,
+            tokenBudget: 900,
+          },
+          expected: {
+            gradedEvidence: [{ path: "src/indexer/index.ts", symbol: "Indexer", relevance: 3 }],
+          },
+        }],
+      },
+      "dataset.json",
+    );
+
+    expect(dataset.queries[0]).toMatchObject({
+      queryType: "architecture",
+      retrievalMode: "architecture",
+      args: { directory: "src/indexer", depth: 3, tokenBudget: 900 },
+    });
+  });
+
+  it("rejects architecture depth above the public tool limit", () => {
+    expect(() => parseGoldenDataset(
+      {
+        version: "1.0.0",
+        name: "invalid-architecture",
+        queries: [{
+          id: "architecture-map",
+          query: "map the architecture",
+          queryType: "architecture",
+          retrievalMode: "architecture",
+          args: { depth: 4 },
+          expected: { filePath: "src/indexer/index.ts" },
+        }],
+      },
+      "dataset.json",
+    )).toThrow(/args\.depth must be at most 3/);
+  });
+
   it("parses edit-context queries with a direct graph-neighbor expectation", () => {
     const dataset = parseGoldenDataset(
       {
@@ -163,7 +211,7 @@ describe("eval schema", () => {
         ],
       },
       "dataset.json",
-    )).toThrow(/retrievalMode.*search, context, edit-context/);
+    )).toThrow(/retrievalMode.*search, context, edit-context, architecture/);
   });
 
   it("rejects dataset with missing expected path", () => {

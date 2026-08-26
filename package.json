@@ -46,6 +46,8 @@
     "dev": "tsup --watch",
     "eval": "npx tsx src/cli.ts eval run",
     "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
+    "eval:architecture": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/architecture-context.json",
+    "eval:architecture:ci": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/architecture-context.json --ci --budget benchmarks/budgets/architecture-context.json",
     "eval:pre-edit": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/pre-edit-context.json",
     "eval:representative": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/representative.json",
     "eval:representative:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-full-config.json --reindex --dataset benchmarks/golden/representative.json --budget benchmarks/budgets/representative.json",

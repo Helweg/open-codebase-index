@@ -22,15 +22,18 @@ interface ModuleActivity {
 }
 
 export function attachRecentActivity(data: VisualizationData, projectRoot: string): VisualizationData {
-  const activity = readGitActivity(projectRoot);
-  const changes = activity.size > 0
-    ? buildGitChanges(data, activity, projectRoot)
-    : buildGraphChanges(data);
+  const gitChanges = getRecentGitActivity(data, projectRoot);
+  const changes = gitChanges.length > 0 ? gitChanges : buildGraphChanges(data);
 
   return {
     ...data,
     changes,
   };
+}
+
+export function getRecentGitActivity(data: VisualizationData, projectRoot: string): VisualizationChange[] {
+  const activity = readGitActivity(projectRoot);
+  return activity.size > 0 ? buildGitChanges(data, activity, projectRoot) : [];
 }
 
 function readGitActivity(projectRoot: string): Map<string, FileActivity> {
