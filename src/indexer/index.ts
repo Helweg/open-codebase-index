@@ -111,7 +111,12 @@ import {
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
-import { isJavaScriptFamilyFilePath, LocalModuleCallResolver } from "./local-module-resolution.js";
+import {
+  isJavaScriptFamilyFilePath,
+  LocalModuleCallResolver,
+  parseTsConfigForModuleResolution,
+  type LocalModulePathAliases,
+} from "./local-module-resolution.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 // Languages whose identifiers are case-insensitive at the language level.
@@ -1235,6 +1240,24 @@ export class Indexer {
     this.indexPath = this.getIndexPath();
     this.refreshRuntimeArtifactPaths();
     this.logger = initializeLogger(config.debug);
+  }
+
+  private loadTsConfigPathAliases(): LocalModulePathAliases | undefined {
+    const tsConfigPath = path.join(this.materializedProjectRoot, "tsconfig.json");
+    const jsConfigPath = path.join(this.materializedProjectRoot, "jsconfig.json");
+    const configPaths = [tsConfigPath, jsConfigPath].filter((pathToCheck) => existsSync(pathToCheck));
+    if (configPaths.length !== 1) {
+      return undefined;
+    }
+
+    let configText: string;
+    try {
+      configText = readFileSync(configPaths[0], "utf-8");
+    } catch {
+      return undefined;
+    }
+
+    return parseTsConfigForModuleResolution(configText);
   }
 
   private getIndexPath(): string {
@@ -4449,6 +4472,7 @@ export class Indexer {
         descriptor,
       ]),
     );
+    const localModulePathAliases = this.loadTsConfigPathAliases();
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       loadModule: async (filePath) => {
@@ -4471,6 +4495,7 @@ export class Indexer {
           symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
         };
       },
+      ...(localModulePathAliases === undefined ? {} : { tsConfigPathAliases: localModulePathAliases }),
     });
     let writeTransactionActive = false;
 

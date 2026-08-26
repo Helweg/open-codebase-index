@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { LocalModuleCallResolver, type LocalModuleData } from "../src/indexer/local-module-resolution.js";
+import {
+  LocalModuleCallResolver,
+  parseTsConfigForModuleResolution,
+  type LocalModuleData,
+} from "../src/indexer/local-module-resolution.js";
 import type { CallSiteData, SymbolData } from "../src/native/index.js";
 
 function symbol(id: string, filePath: string, name: string, kind = "function_declaration"): SymbolData {
@@ -207,5 +211,28 @@ describe("LocalModuleCallResolver", () => {
     const second = await instance.resolveCallTarget("src/main.ts", main, site);
     expect(first).toEqual(classSymbol);
     expect(second).toEqual(first);
+  });
+
+  it("parses TypeScript module-resolution config and supports path aliases", () => {
+    const parsed = parseTsConfigForModuleResolution(JSON.stringify({
+      compilerOptions: {
+        baseUrl: "./src",
+        paths: {
+          "@/*": ["./*/index"],
+        },
+      },
+    }));
+
+    expect(parsed).toEqual({
+      baseUrl: "src",
+      aliases: [{ pattern: "@/*", targets: ["*/index"] }],
+    });
+  });
+
+  it("ignores invalid module-resolution config with unsupported structures", () => {
+    expect(parseTsConfigForModuleResolution("{}")).toBeUndefined();
+    expect(parseTsConfigForModuleResolution("not-json")).toBeUndefined();
+    expect(parseTsConfigForModuleResolution(JSON.stringify({ compilerOptions: { paths: { "bad*path*here": ["./x"] } } })))
+      .toBeUndefined();
   });
 });
