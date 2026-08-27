@@ -2684,6 +2684,73 @@ main() {
       }
     });
 
+    it("re-resolves unchanged importers when nearest configs and their extends chain change", async () => {
+      const projectDir = path.join(tempDir, "nearest-local-module-config-project");
+      const appDir = path.join(projectDir, "packages", "app");
+      const appSourceDir = path.join(appDir, "src");
+      const configDir = path.join(projectDir, "packages", "config");
+      fs.mkdirSync(path.join(projectDir, "src", "root"), { recursive: true });
+      fs.mkdirSync(path.join(appSourceDir, "nested"), { recursive: true });
+      fs.mkdirSync(configDir, { recursive: true });
+      fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({ name: "nearest-config-test" }));
+      fs.writeFileSync(path.join(projectDir, "tsconfig.json"), JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: { "@scope/*": ["src/root/*"] },
+        },
+      }));
+      fs.writeFileSync(
+        path.join(appSourceDir, "main.ts"),
+        'import { aliasTarget } from "@scope/target";\nexport function runNearest() { aliasTarget(); }',
+      );
+      fs.writeFileSync(path.join(projectDir, "src", "root", "target.ts"), "export function aliasTarget() {}");
+      fs.writeFileSync(path.join(appSourceDir, "nested", "target.ts"), "export function aliasTarget() {}");
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        const resolvedTargetPath = async (): Promise<string | undefined> => {
+          const symbols = await indexer.getSymbolsForBranch();
+          const caller = symbols.find((symbol) => symbol.name === "runNearest");
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "aliasTarget",
+          );
+          return symbols.find((symbol) => symbol.id === edge?.toSymbolId)?.filePath;
+        };
+
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toMatch(/src[/\\]root[/\\]target\.ts$/u);
+
+        const embeddingCallsBeforeConfigChanges = fetchSpy.mock.calls.length;
+        fs.writeFileSync(path.join(configDir, "base.json"), JSON.stringify({
+          compilerOptions: {
+            baseUrl: "../..",
+            paths: { "@scope/*": ["packages/app/src/nested/*"] },
+          },
+        }));
+        fs.writeFileSync(path.join(appDir, "tsconfig.json"), JSON.stringify({ extends: "../config/base" }));
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toMatch(/packages[/\\]app[/\\]src[/\\]nested[/\\]target\.ts$/u);
+
+        fs.writeFileSync(path.join(configDir, "base.json"), JSON.stringify({
+          compilerOptions: {
+            baseUrl: "../..",
+            paths: { "@scope/*": ["packages/app/src/missing/*"] },
+          },
+        }));
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toBeUndefined();
+
+        fs.unlinkSync(path.join(appDir, "tsconfig.json"));
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toMatch(/src[/\\]root[/\\]target\.ts$/u);
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeConfigChanges);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("reprocesses unchanged importers when a local re-export changes", async () => {
       const projectDir = path.join(tempDir, "local-module-refresh-project");
       fs.mkdirSync(projectDir, { recursive: true });

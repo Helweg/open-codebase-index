@@ -114,8 +114,7 @@ import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph
 import {
   isJavaScriptFamilyFilePath,
   LocalModuleCallResolver,
-  resolveTsConfigForModuleResolution,
-  type LocalModulePathAliases,
+  TsConfigPathAliasCache,
 } from "./local-module-resolution.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
@@ -1209,6 +1208,7 @@ export class Indexer {
   private readerArtifactRetryAfter = new Map<IndexReadIssue["component"], number>();
   private readonly fileBatchLimits?: FileBatchLimits;
   private readonly checkpointIntervalChunks?: number;
+  private localModuleResolutionConfigHash: string | null = null;
 
   constructor(
     projectRoot: string,
@@ -1240,55 +1240,6 @@ export class Indexer {
     this.indexPath = this.getIndexPath();
     this.refreshRuntimeArtifactPaths();
     this.logger = initializeLogger(config.debug);
-  }
-
-  private loadTsConfigPathAliases(): LocalModulePathAliases | undefined {
-    const configName = this.getLocalModuleResolutionRootConfigName();
-    if (!configName) {
-      return undefined;
-    }
-
-    return resolveTsConfigForModuleResolution(configName, (configPath) => {
-      try {
-        return readFileSync(path.join(this.materializedProjectRoot, configPath), "utf-8");
-      } catch {
-        return undefined;
-      }
-    });
-  }
-
-  private getLocalModuleResolutionRootConfigName(): "tsconfig.json" | "jsconfig.json" | undefined {
-    const configNames = ["tsconfig.json", "jsconfig.json"] as const;
-    const existingConfigs = configNames.filter((name) =>
-      existsSync(path.join(this.materializedProjectRoot, name)),
-    );
-    return existingConfigs.length === 1 ? existingConfigs[0] : undefined;
-  }
-
-  private getLocalModuleResolutionConfigHash(): string {
-    const configNames = ["tsconfig.json", "jsconfig.json"];
-    const rootConfigName = this.getLocalModuleResolutionRootConfigName();
-    const configNamesToHash = new Set(configNames);
-    if (rootConfigName) {
-      resolveTsConfigForModuleResolution(rootConfigName, (configPath) => {
-        configNamesToHash.add(configPath);
-        try {
-          return readFileSync(path.join(this.materializedProjectRoot, configPath), "utf-8");
-        } catch {
-          return undefined;
-        }
-      });
-    }
-    const namesToHash = [...configNamesToHash].sort();
-    const configState = namesToHash.map((name) => {
-      const configPath = path.join(this.materializedProjectRoot, name);
-      try {
-        return [name, readFileSync(configPath, "utf-8")] as const;
-      } catch {
-        return [name, null] as const;
-      }
-    });
-    return hashContent(JSON.stringify(configState));
   }
 
   private getIndexPath(): string {
@@ -3905,10 +3856,12 @@ export class Indexer {
     this.database.setMetadata("index.embeddingModel", provider.modelInfo.model);
     this.database.setMetadata("index.embeddingDimensions", provider.modelInfo.dimensions.toString());
     this.database.setMetadata(this.getCallGraphResolutionMetadataKey(), CALL_GRAPH_RESOLUTION_VERSION);
-    this.database.setMetadata(
-      this.getLocalModuleResolutionConfigMetadataKey(),
-      this.getLocalModuleResolutionConfigHash(),
-    );
+    if (this.localModuleResolutionConfigHash !== null) {
+      this.database.setMetadata(
+        this.getLocalModuleResolutionConfigMetadataKey(),
+        this.localModuleResolutionConfigHash,
+      );
+    }
     if (this.config.scope === "global") {
       if (completeProjectEmbeddingStrategyReset) {
         this.database.setMetadata(this.getProjectEmbeddingStrategyMetadataKey(), EMBEDDING_STRATEGY_VERSION);
@@ -4348,6 +4301,22 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
+    const localModuleResolutionCache = new TsConfigPathAliasCache((configPath) => {
+      try {
+        return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
+      } catch {
+        return undefined;
+      }
+    });
+    const localModuleImporterPaths = files.flatMap((file) => {
+      if (!isPathWithinRoot(file.path, this.materializedProjectRoot)) return [];
+      const relativePath = path.relative(this.materializedProjectRoot, file.path).split(path.sep).join("/");
+      return isJavaScriptFamilyFilePath(relativePath) ? [relativePath] : [];
+    });
+    this.localModuleResolutionConfigHash = hashContent(JSON.stringify(
+      localModuleResolutionCache.getConfigState(localModuleImporterPaths),
+    ));
+
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
     const allFileDescriptors = new Map<string, ChangedFileDescriptor>();
@@ -4358,7 +4327,7 @@ export class Indexer {
       database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
     const localModuleResolutionConfigChanged =
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
-      !== this.getLocalModuleResolutionConfigHash();
+      !== this.localModuleResolutionConfigHash;
     let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
       (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
       && isJavaScriptFamilyFilePath(filePath)
@@ -4516,7 +4485,6 @@ export class Indexer {
         descriptor,
       ]),
     );
-    const localModulePathAliases = this.loadTsConfigPathAliases();
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       loadModule: async (filePath) => {
@@ -4539,7 +4507,15 @@ export class Indexer {
           symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
         };
       },
-      ...(localModulePathAliases === undefined ? {} : { tsConfigPathAliases: localModulePathAliases }),
+      pathAliasesForImporter: (filePath) => {
+        if (path.isAbsolute(filePath)) {
+          const materializedPath = this.toMaterializedFilePath(filePath);
+          if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
+          const relativePath = path.relative(this.materializedProjectRoot, materializedPath).split(path.sep).join("/");
+          return localModuleResolutionCache.getPathAliasesForImporter(relativePath);
+        }
+        return localModuleResolutionCache.getPathAliasesForImporter(filePath);
+      },
     });
     let writeTransactionActive = false;
 
@@ -6265,6 +6241,7 @@ export class Indexer {
 
     if (this.currentBranch !== previousBranch) {
       this.refreshRuntimeArtifactPaths();
+      this.localModuleResolutionConfigHash = null;
       this.fileHashCache.clear();
       this.loadFileHashCache();
     }

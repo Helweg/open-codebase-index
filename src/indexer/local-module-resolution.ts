@@ -70,7 +70,10 @@ export interface LocalModuleResolverOptions {
   filePaths: readonly string[];
   loadModule: (filePath: string) => Promise<LocalModuleData | undefined>;
   tsConfigPathAliases?: LocalModulePathAliases;
+  pathAliasesForImporter?: (filePath: string) => LocalModulePathAliases | undefined;
 }
+
+export type LocalModuleResolutionConfigState = ReadonlyArray<readonly [path: string, content: string | null]>;
 
 export function isJavaScriptFamilyFilePath(filePath: string): boolean {
   return JAVASCRIPT_SOURCE_EXTENSIONS.includes(
@@ -419,6 +422,92 @@ export function resolveTsConfigForModuleResolution(
   return { baseUrl, aliases };
 }
 
+/**
+ * Resolves and caches the nearest conventional TypeScript/JavaScript config for
+ * each project-relative importer. Config lookup walks importer ancestors only,
+ * so monorepos do not require a recursive config-file scan. TypeScript config
+ * wins when both conventional config names exist in the same directory.
+ */
+export class TsConfigPathAliasCache {
+  private readonly configTextByPath = new Map<string, string | undefined>();
+  private readonly nearestConfigByDirectory = new Map<string, string | undefined>();
+  private readonly aliasesByConfigPath = new Map<string, LocalModulePathAliases | undefined>();
+
+  constructor(private readonly loadConfig: (configPath: string) => string | undefined) {}
+
+  getPathAliasesForImporter(importerFilePath: string): LocalModulePathAliases | undefined {
+    const configPath = this.findNearestConfigPath(importerFilePath);
+    if (!configPath) return undefined;
+
+    if (this.aliasesByConfigPath.has(configPath)) {
+      return this.aliasesByConfigPath.get(configPath);
+    }
+
+    const aliases = resolveTsConfigForModuleResolution(configPath, (candidate) =>
+      this.loadConfigCached(candidate)
+    );
+    this.aliasesByConfigPath.set(configPath, aliases);
+    return aliases;
+  }
+
+  getConfigState(importerFilePaths: readonly string[]): LocalModuleResolutionConfigState {
+    for (const importerFilePath of importerFilePaths) {
+      this.getPathAliasesForImporter(importerFilePath);
+    }
+
+    return [...this.configTextByPath.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([configPath, content]) => [configPath, content ?? null] as const);
+  }
+
+  private findNearestConfigPath(importerFilePath: string): string | undefined {
+    const normalizedImporter = trimLeadingCurrentDir(normalizeFilePath(importerFilePath));
+    if (!isProjectLocalPath(normalizedImporter) || normalizedImporter === ".") return undefined;
+
+    let directory = path.posix.dirname(normalizedImporter);
+    const visitedDirectories: string[] = [];
+    let nearestConfig: string | undefined;
+
+    while (true) {
+      if (this.nearestConfigByDirectory.has(directory)) {
+        nearestConfig = this.nearestConfigByDirectory.get(directory);
+        break;
+      }
+
+      visitedDirectories.push(directory);
+      for (const configName of ["tsconfig.json", "jsconfig.json"] as const) {
+        const candidate = directory === "." ? configName : path.posix.join(directory, configName);
+        if (this.loadConfigCached(candidate) !== undefined) {
+          nearestConfig = candidate;
+          break;
+        }
+      }
+      if (nearestConfig || directory === ".") break;
+
+      const parentDirectory = path.posix.dirname(directory);
+      if (parentDirectory === directory) break;
+      directory = parentDirectory;
+    }
+
+    for (const visitedDirectory of visitedDirectories) {
+      this.nearestConfigByDirectory.set(visitedDirectory, nearestConfig);
+    }
+    return nearestConfig;
+  }
+
+  private loadConfigCached(configPath: string): string | undefined {
+    const normalized = trimLeadingCurrentDir(normalizeFilePath(configPath));
+    if (!isProjectLocalPath(normalized)) return undefined;
+    if (this.configTextByPath.has(normalized)) {
+      return this.configTextByPath.get(normalized);
+    }
+
+    const configText = this.loadConfig(normalized);
+    this.configTextByPath.set(normalized, configText);
+    return configText;
+  }
+}
+
 function isProjectLocalPath(candidatePath: string): boolean {
   if (path.posix.isAbsolute(candidatePath) || candidatePath === ".." || candidatePath.startsWith("../")) {
     return false;
@@ -734,8 +823,8 @@ export class LocalModuleCallResolver {
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
   private readonly exportCache = new Map<string, SymbolData[]>();
-  private readonly baseUrl?: string;
-  private readonly pathAliases: ReadonlyArray<LocalModulePathAlias> = [];
+  private readonly tsConfigPathAliases?: LocalModulePathAliases;
+  private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
 
   constructor(options: LocalModuleResolverOptions) {
     for (const filePath of options.filePaths) {
@@ -743,10 +832,8 @@ export class LocalModuleCallResolver {
       if (isJavaScriptFamilyFilePath(normalized)) this.modulePaths.add(normalized);
     }
     this.loadModule = options.loadModule;
-    if (options.tsConfigPathAliases) {
-      this.baseUrl = options.tsConfigPathAliases.baseUrl;
-      this.pathAliases = options.tsConfigPathAliases.aliases;
-    }
+    this.tsConfigPathAliases = options.tsConfigPathAliases;
+    this.pathAliasesForImporter = options.pathAliasesForImporter;
   }
 
   seedModule(filePath: string, data: LocalModuleData): void {
@@ -819,25 +906,31 @@ export class LocalModuleCallResolver {
       return this.resolveModuleCandidates(base);
     }
 
-    const aliasCandidates = this.resolveModuleSpecifierFromAliases(specifier);
+    const pathAliases = this.pathAliasesForImporter
+      ? this.pathAliasesForImporter(importerFilePath)
+      : this.tsConfigPathAliases;
+    const aliasCandidates = this.resolveModuleSpecifierFromAliases(specifier, pathAliases);
     if (aliasCandidates !== undefined) {
       return aliasCandidates;
     }
 
-    if (this.pathAliases.length === 0) {
+    if (!pathAliases || pathAliases.aliases.length === 0) {
       return [];
     }
 
     return [];
   }
 
-  private resolveModuleSpecifierFromAliases(specifier: string): string[] | undefined {
-    if (this.pathAliases.length === 0) return undefined;
+  private resolveModuleSpecifierFromAliases(
+    specifier: string,
+    pathAliases: LocalModulePathAliases | undefined,
+  ): string[] | undefined {
+    if (!pathAliases || pathAliases.aliases.length === 0) return undefined;
 
     const matchedAliasTargets = new Set<string>();
     let anyAliasMatched = false;
 
-    for (const alias of this.pathAliases) {
+    for (const alias of pathAliases.aliases) {
       const wildcard = this.matchPathAliasPattern(specifier, alias.pattern);
       if (wildcard === undefined) {
         continue;
@@ -846,7 +939,7 @@ export class LocalModuleCallResolver {
 
       for (const targetPattern of alias.targets) {
         const target = this.replaceWildcard(targetPattern, wildcard);
-        const rawPath = normalizeFilePath(path.posix.join(alias.baseUrl ?? this.baseUrl ?? ".", target));
+        const rawPath = normalizeFilePath(path.posix.join(alias.baseUrl ?? pathAliases.baseUrl, target));
         if (!isProjectLocalPath(rawPath)) continue;
         for (const candidate of this.resolveModuleCandidates(trimLeadingCurrentDir(rawPath))) {
           matchedAliasTargets.add(candidate);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   LocalModuleCallResolver,
+  TsConfigPathAliasCache,
   getTsConfigModuleResolutionConfigPaths,
   parseTsConfigForModuleResolution,
   resolveTsConfigForModuleResolution,
@@ -288,6 +289,75 @@ describe("LocalModuleCallResolver", () => {
 
     await expect(instance.resolveCallTarget("src/main.ts", main, callSite("inheritedTarget", 2, 31)))
       .resolves.toEqual(inheritedTarget);
+  });
+
+  it("uses the nearest importer config and caches config reads and extends resolution", async () => {
+    const configs = new Map([
+      ["tsconfig.json", JSON.stringify({
+        compilerOptions: { baseUrl: ".", paths: { "@scope/*": ["src/root/*"] } },
+      })],
+      ["packages/app/tsconfig.json", JSON.stringify({ extends: "../config/base" })],
+      ["packages/app/jsconfig.json", JSON.stringify({
+        compilerOptions: { baseUrl: "../..", paths: { "@scope/*": ["src/wrong/*"] } },
+      })],
+      ["packages/config/base.json", JSON.stringify({
+        compilerOptions: { baseUrl: "../..", paths: { "@scope/*": ["packages/app/src/nested/*"] } },
+      })],
+      ["packages/js-only/jsconfig.json", JSON.stringify({
+        compilerOptions: { baseUrl: "../..", paths: { "@scope/*": ["packages/js-only/src/nested/*"] } },
+      })],
+    ]);
+    const loadCounts = new Map<string, number>();
+    const aliasCache = new TsConfigPathAliasCache((configPath) => {
+      loadCounts.set(configPath, (loadCounts.get(configPath) ?? 0) + 1);
+      return configs.get(configPath);
+    });
+    const importerContent = 'import { aliasTarget } from "@scope/target";\nexport function run() { aliasTarget(); }';
+    const rootTarget = symbol("root", "src/root/target.ts", "aliasTarget");
+    const appTarget = symbol("app", "packages/app/src/nested/target.ts", "aliasTarget");
+    const jsTarget = symbol("js", "packages/js-only/src/nested/target.ts", "aliasTarget");
+    const modules: Record<string, LocalModuleData> = {
+      "src/main.ts": { content: importerContent, symbols: [symbol("root-run", "src/main.ts", "run")] },
+      "src/root/target.ts": { content: "export function aliasTarget() {}", symbols: [rootTarget] },
+      "packages/app/src/main.ts": {
+        content: importerContent,
+        symbols: [symbol("app-run", "packages/app/src/main.ts", "run")],
+      },
+      "packages/app/src/nested/target.ts": {
+        content: "export function aliasTarget() {}",
+        symbols: [appTarget],
+      },
+      "packages/js-only/src/main.js": {
+        content: importerContent,
+        symbols: [symbol("js-run", "packages/js-only/src/main.js", "run")],
+      },
+      "packages/js-only/src/nested/target.ts": {
+        content: "export function aliasTarget() {}",
+        symbols: [jsTarget],
+      },
+    };
+    const instance = new LocalModuleCallResolver({
+      filePaths: Object.keys(modules),
+      loadModule: async (filePath) => modules[filePath],
+      pathAliasesForImporter: (filePath) => aliasCache.getPathAliasesForImporter(filePath),
+    });
+    const site = callSite("aliasTarget", 2, 24);
+
+    await expect(instance.resolveCallTarget("src/main.ts", importerContent, site)).resolves.toEqual(rootTarget);
+    await expect(instance.resolveCallTarget("packages/app/src/main.ts", importerContent, site)).resolves.toEqual(appTarget);
+    await expect(instance.resolveCallTarget("packages/js-only/src/main.js", importerContent, site)).resolves.toEqual(jsTarget);
+    await expect(instance.resolveCallTarget("packages/app/src/main.ts", importerContent, site)).resolves.toEqual(appTarget);
+
+    const configState = aliasCache.getConfigState([
+      "src/main.ts",
+      "packages/app/src/main.ts",
+      "packages/js-only/src/main.js",
+    ]);
+    expect(configState).toContainEqual(["packages/app/tsconfig.json", configs.get("packages/app/tsconfig.json")]);
+    expect(configState).toContainEqual(["packages/config/base.json", configs.get("packages/config/base.json")]);
+    expect(configState).toContainEqual(["packages/js-only/tsconfig.json", null]);
+    expect(configState).not.toContainEqual(["packages/app/jsconfig.json", configs.get("packages/app/jsconfig.json")]);
+    expect([...loadCounts.values()].every((count) => count === 1)).toBe(true);
   });
 
   it("rejects cyclic, package-based, and project-escaping tsconfig extends paths", () => {
