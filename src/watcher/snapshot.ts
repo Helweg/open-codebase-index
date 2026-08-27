@@ -7,6 +7,7 @@ import * as path from "node:path";
 
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
+import { shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
 
 export interface FileSnapshotEntry {
   readonly size: number;
@@ -45,7 +46,10 @@ export async function buildFileSnapshotScan(
 
   const includeFile = async (filePath: string): Promise<void> => {
     const normalizedPath = path.resolve(filePath);
-    if (!shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter)) return;
+    if (
+      !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter)
+      && !shouldTrackLocalModuleConfigPath(normalizedPath, normalizedProjectRoot, ignoreFilter)
+    ) return;
 
     const stat = await readStatIfFile(normalizedPath, unreadablePrefixes);
     if (stat) snapshot.set(normalizedPath, { size: stat.size, mtimeMs: stat.mtimeMs });
@@ -112,9 +116,11 @@ export async function buildFileSnapshotForPathScan(
 
   const includeFile = async (filePath: string): Promise<void> => {
     const normalizedPath = path.resolve(filePath);
-    if (!explicitConfigPaths.has(normalizedPath) && !shouldIncludeFile(
-      normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter,
-    )) return;
+    if (
+      !explicitConfigPaths.has(normalizedPath)
+      && !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter)
+      && !shouldTrackLocalModuleConfigPath(normalizedPath, normalizedProjectRoot, ignoreFilter)
+    ) return;
     const stat = await readStatIfFile(normalizedPath, unreadablePrefixes);
     if (stat) snapshot.set(normalizedPath, { size: stat.size, mtimeMs: stat.mtimeMs });
   };

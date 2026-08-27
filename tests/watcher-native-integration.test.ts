@@ -18,6 +18,27 @@ async function waitForChange(
   }, { timeout: EVENT_TIMEOUT_MS, interval: 25 });
 }
 
+async function writeUntilChangeObserved(
+  write: (attempt: number) => void,
+  assertion: () => void,
+): Promise<void> {
+  const startedAt = Date.now();
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (Date.now() - startedAt < EVENT_TIMEOUT_MS) {
+    write(attempt++);
+    try {
+      await vi.waitFor(assertion, { timeout: 2_500, interval: 25 });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError;
+}
+
 describe("native FileWatcher", () => {
   let projectRoot: string;
   let watcher: FileWatcher | undefined;
@@ -73,8 +94,36 @@ describe("native FileWatcher", () => {
     });
     await watcher.waitUntilReady();
 
-    fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    fs.writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"] }));
-    await waitForChange(changes, configPath, "add");
+    await writeUntilChangeObserved(
+      (attempt) => {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.writeFileSync(configPath, JSON.stringify({ include: ["src/**/*.ts"], attempt }));
+      },
+      () => expect(changes).toContainEqual({ path: configPath, type: "add" }),
+    );
+  });
+
+  it("tracks nested tsconfig changes outside source include patterns", async () => {
+    const changes: FileChange[] = [];
+    const configPath = path.join(projectRoot, "packages", "app", "tsconfig.json");
+    watcher = new FileWatcher(
+      projectRoot,
+      parseConfig({ include: ["**/*.ts"] }),
+      "codex",
+      { backend: "native" },
+    );
+
+    watcher.start(async (batch) => {
+      changes.push(...batch);
+    });
+    await watcher.waitUntilReady();
+
+    await writeUntilChangeObserved(
+      (attempt) => {
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        fs.writeFileSync(configPath, JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }));
+      },
+      () => expect(changes).toContainEqual({ path: configPath, type: "add" }),
+    );
   });
 });

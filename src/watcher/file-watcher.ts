@@ -7,6 +7,7 @@ import type { CodebaseIndexConfig } from "../config/schema.js";
 import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
+import { shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
 import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
 
@@ -423,6 +424,12 @@ export class FileWatcher {
 
     if (this.isProjectConfigPath(filePath)) {
       this.updateConfigPathState(filePath);
+      this.pendingChanges.set(filePath, type);
+      this.scheduleFlush();
+      return;
+    }
+
+    if (shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)) {
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
       return;
