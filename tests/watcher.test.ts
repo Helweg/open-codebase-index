@@ -185,6 +185,31 @@ describe("FileWatcher", () => {
       expect(changes.some((c) => c.path.endsWith("root.ts"))).toBe(true);
     });
 
+    it("watches nested jsconfig changes outside source include patterns with Chokidar", async () => {
+      const changes: FileChange[] = [];
+      const configPath = path.join(tempDir, "packages", "app", "jsconfig.json");
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ compilerOptions: { baseUrl: "./src" } }));
+      watcher = new FileWatcher(
+        tempDir,
+        createTestConfig({ include: ["**/*.ts"] }),
+        "codex",
+        { backend: "chokidar" },
+      );
+
+      watcher.start(async (batch) => {
+        changes.push(...batch);
+      });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => {
+          fs.writeFileSync(configPath, JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }));
+        },
+        () => expect(changes).toContainEqual({ path: configPath, type: "change" }),
+      );
+    });
+
     it("should watch codex-native config without watching codex index files", async () => {
       const changes: FileChange[] = [];
       fs.mkdirSync(path.join(tempDir, ".codebase-index", "index"), { recursive: true });
@@ -308,6 +333,30 @@ describe("FileWatcher", () => {
 
       await combinedWatcher.stop();
       resolveIndex?.();
+    });
+
+    it("reindexes when an existing nested tsconfig changes outside source include patterns", async () => {
+      const configPath = path.join(tempDir, "packages", "app", "tsconfig.json");
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, JSON.stringify({ compilerOptions: { baseUrl: "./src" } }));
+      const indexer = { index: vi.fn().mockResolvedValue(undefined) };
+      const combinedWatcher = createWatcherWithIndexer(
+        () => indexer,
+        tempDir,
+        createTestConfig({ include: ["**/*.ts"] }),
+        "codex",
+      );
+
+      await combinedWatcher.whenReady();
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          configPath,
+          JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }),
+        ),
+        () => expect(indexer.index).toHaveBeenCalledOnce(),
+      );
+
+      await combinedWatcher.stop();
     });
 
     it("coalesces file-triggered reindex requests while one is running", async () => {

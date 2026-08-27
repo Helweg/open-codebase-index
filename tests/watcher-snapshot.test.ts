@@ -92,6 +92,29 @@ describe("watcher snapshot builder", () => {
     }
   });
 
+  it("tracks nested TypeScript and JavaScript configs while honoring ignored paths", async () => {
+    const tsConfig = path.join(projectRoot, "packages", "app", "tsconfig.json");
+    const jsConfig = path.join(projectRoot, "packages", "web", "jsconfig.json");
+    const ignoredConfig = path.join(projectRoot, "generated", "tsconfig.json");
+    fs.mkdirSync(path.dirname(tsConfig), { recursive: true });
+    fs.mkdirSync(path.dirname(jsConfig), { recursive: true });
+    fs.mkdirSync(path.dirname(ignoredConfig), { recursive: true });
+    fs.writeFileSync(tsConfig, "{}");
+    fs.writeFileSync(jsConfig, "{}");
+    fs.writeFileSync(ignoredConfig, "{}");
+    fs.writeFileSync(path.join(projectRoot, ".gitignore"), "generated/\n");
+
+    const snapshot = await buildFileSnapshot(
+      projectRoot,
+      { include: ["**/*.ts"], additionalInclude: [], exclude: [] },
+      [],
+    );
+
+    expect(snapshot.has(tsConfig)).toBe(true);
+    expect(snapshot.has(jsConfig)).toBe(true);
+    expect(snapshot.has(ignoredConfig)).toBe(false);
+  });
+
   it("limits traversal depth using config.indexing.maxDepth", async () => {
     const rootFile = path.join(projectRoot, "root.ts");
     const nestedLevelOne = path.join(projectRoot, "level-one", "nested.ts");
