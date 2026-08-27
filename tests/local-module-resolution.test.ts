@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   LocalModuleCallResolver,
+  getTsConfigModuleResolutionConfigPaths,
   parseTsConfigForModuleResolution,
+  resolveTsConfigForModuleResolution,
   type LocalModuleData,
 } from "../src/indexer/local-module-resolution.js";
 import type { CallSiteData, SymbolData } from "../src/native/index.js";
@@ -250,6 +252,55 @@ describe("LocalModuleCallResolver", () => {
         { pattern: "@foo/*", targets: ["foo/*"] },
       ],
     });
+  });
+
+  it("resolves aliases inherited through a local tsconfig extends chain", async () => {
+    const configs = new Map([
+      ["tsconfig.json", JSON.stringify({ extends: "./config/base" })],
+      ["config/base.json", JSON.stringify({
+        compilerOptions: {
+          baseUrl: "../src",
+          paths: { "@core/*": ["core/*"] },
+        },
+      })],
+    ]);
+    const aliases = resolveTsConfigForModuleResolution("tsconfig.json", (configPath) => configs.get(configPath));
+    expect(aliases).toEqual({
+      baseUrl: "src",
+      aliases: [{ pattern: "@core/*", targets: ["core/*"], baseUrl: "src" }],
+    });
+    expect(getTsConfigModuleResolutionConfigPaths("tsconfig.json", (configPath) => configs.get(configPath)))
+      .toEqual(["config/base.json", "tsconfig.json"]);
+
+    const main = [
+      'import { inheritedTarget } from "@core/target";',
+      "export function run() { return inheritedTarget(); }",
+    ].join("\n");
+    const inheritedTarget = symbol("inherited", "src/core/target.ts", "inheritedTarget");
+    const instance = new LocalModuleCallResolver({
+      filePaths: ["src/main.ts", "src/core/target.ts"],
+      loadModule: async (filePath) => ({
+        "src/main.ts": { content: main, symbols: [symbol("run", "src/main.ts", "run")] },
+        "src/core/target.ts": { content: "export function inheritedTarget() {}", symbols: [inheritedTarget] },
+      })[filePath],
+      tsConfigPathAliases: aliases,
+    });
+
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("inheritedTarget", 2, 31)))
+      .resolves.toEqual(inheritedTarget);
+  });
+
+  it("rejects cyclic, package-based, and project-escaping tsconfig extends paths", () => {
+    const cyclicConfigs = new Map([
+      ["tsconfig.json", JSON.stringify({ extends: "./config/base" })],
+      ["config/base.json", JSON.stringify({ extends: "../tsconfig" })],
+    ]);
+    expect(resolveTsConfigForModuleResolution("tsconfig.json", (configPath) => cyclicConfigs.get(configPath)))
+      .toBeUndefined();
+    expect(resolveTsConfigForModuleResolution("tsconfig.json", () => JSON.stringify({ extends: "@company/tsconfig" })))
+      .toBeUndefined();
+    expect(resolveTsConfigForModuleResolution("tsconfig.json", () => JSON.stringify({ extends: "../outside" })))
+      .toBeUndefined();
   });
 
   it("abstains when tsconfig does not define paths", () => {
