@@ -7,7 +7,11 @@ import type { CodebaseIndexConfig } from "../config/schema.js";
 import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
-import { LocalModuleConfigTracker, shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
+import {
+  LocalModuleConfigTracker,
+  shouldTrackLocalModuleConfigPath,
+  shouldTrackLocalModulePackagePath,
+} from "./local-module-config.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
 import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
 
@@ -350,6 +354,7 @@ export class FileWatcher {
       || filePath === path.join(this.projectRoot, ".gitignore")
       || (filePath !== null && (
         shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+        || shouldTrackLocalModulePackagePath(filePath, this.projectRoot)
         || this.localModuleConfigTracker.has(filePath)
       ))
     ) {
@@ -450,6 +455,7 @@ export class FileWatcher {
 
     if (
       shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+      || shouldTrackLocalModulePackagePath(filePath, this.projectRoot)
       || this.localModuleConfigTracker.has(filePath)
     ) {
       this.localModuleConfigTracker.refresh();

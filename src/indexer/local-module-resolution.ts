@@ -61,6 +61,14 @@ export interface LocalModulePathAliases {
   aliases: readonly LocalModulePathAlias[];
 }
 
+/** A project-local package manifest whose source entry points may form graph edges. */
+export interface LocalWorkspacePackage {
+  name: string;
+  rootPath: string;
+  entryPoints: ReadonlyMap<string, readonly string[]>;
+  restrictsSubpaths: boolean;
+}
+
 export interface LocalModuleData {
   content: string;
   symbols: readonly SymbolData[];
@@ -71,6 +79,7 @@ export interface LocalModuleResolverOptions {
   loadModule: (filePath: string) => Promise<LocalModuleData | undefined>;
   tsConfigPathAliases?: LocalModulePathAliases;
   pathAliasesForImporter?: (filePath: string) => LocalModulePathAliases | undefined;
+  workspacePackages?: readonly LocalWorkspacePackage[];
 }
 
 export type LocalModuleResolutionConfigState = ReadonlyArray<readonly [path: string, content: string | null]>;
@@ -554,6 +563,126 @@ function trimLeadingCurrentDir(candidatePath: string): string {
   return candidatePath.startsWith("./") ? candidatePath.slice(2) : candidatePath;
 }
 
+function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
+  if (rootPath === ".") return isProjectLocalPath(candidatePath);
+  return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}/`);
+}
+
+function resolveWorkspacePackageTarget(rootPath: string, target: string): string | undefined {
+  if (!target.startsWith("./")) return undefined;
+  const resolved = trimLeadingCurrentDir(normalizeFilePath(path.posix.join(rootPath, target)));
+  return isProjectLocalPath(resolved) && isPathWithinRoot(resolved, rootPath) ? resolved : undefined;
+}
+
+function packageExportTargets(value: unknown): string[] | undefined {
+  if (typeof value === "string") return [value];
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+
+  const conditions = value as Record<string, unknown>;
+  const targets: string[] = [];
+  for (const condition of ["types", "import", "default", "require"] as const) {
+    const nested = packageExportTargets(conditions[condition]);
+    if (nested) targets.push(...nested);
+  }
+  return targets.length > 0 ? [...new Set(targets)] : undefined;
+}
+
+/**
+ * Parses only source-facing, project-local package metadata. It deliberately
+ * excludes package-manager lookup and arbitrary export conditions so callers
+ * never resolve a graph edge through node_modules or an unsafe path.
+ */
+export function parseLocalWorkspacePackage(
+  manifestPath: string,
+  manifestText: string | undefined,
+): LocalWorkspacePackage | undefined {
+  if (manifestText === undefined) return undefined;
+
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText) as unknown;
+  } catch {
+    return undefined;
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) return undefined;
+
+  const document = manifest as Record<string, unknown>;
+  const name = typeof document.name === "string" ? document.name.trim() : "";
+  const normalizedManifestPath = trimLeadingCurrentDir(normalizeFilePath(manifestPath));
+  if (!name || !isProjectLocalPath(normalizedManifestPath) || path.posix.basename(normalizedManifestPath) !== "package.json") {
+    return undefined;
+  }
+
+  const rootPath = path.posix.dirname(normalizedManifestPath);
+  const entryPoints = new Map<string, readonly string[]>();
+  const addEntryPoint = (specifierPath: string, value: unknown): void => {
+    const targets = packageExportTargets(value)
+      ?.map((target) => resolveWorkspacePackageTarget(rootPath, target))
+      .filter((target): target is string => target !== undefined);
+    if (targets && targets.length > 0) entryPoints.set(specifierPath, [...new Set(targets)]);
+  };
+
+  const exportsValue = document.exports;
+  let restrictsSubpaths = false;
+  if (exportsValue !== undefined) {
+    restrictsSubpaths = true;
+    if (typeof exportsValue === "string") {
+      addEntryPoint(".", exportsValue);
+    } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
+      const exportMap = exportsValue as Record<string, unknown>;
+      const keys = Object.keys(exportMap);
+      if (keys.some((key) => key.startsWith("."))) {
+        for (const [specifierPath, target] of Object.entries(exportMap)) {
+          if (specifierPath === "." || (specifierPath.startsWith("./") && !specifierPath.includes("*"))) {
+            addEntryPoint(specifierPath, target);
+          }
+        }
+      } else {
+        addEntryPoint(".", exportsValue);
+      }
+    }
+  }
+
+  if (!entryPoints.has(".")) {
+    for (const field of ["types", "module", "main"] as const) {
+      if (typeof document[field] === "string") addEntryPoint(".", document[field]);
+    }
+  }
+
+  return { name, rootPath, entryPoints, restrictsSubpaths };
+}
+
+/**
+ * Discovers package manifests only on ancestor paths of indexed source files.
+ * This is bounded by known project sources and never scans node_modules.
+ */
+export function getLocalWorkspacePackageManifestPaths(importerFilePaths: readonly string[]): readonly string[] {
+  const manifestPaths = new Set<string>();
+  for (const importerFilePath of importerFilePaths) {
+    const normalized = trimLeadingCurrentDir(normalizeFilePath(importerFilePath));
+    if (!isProjectLocalPath(normalized) || normalized === ".") continue;
+
+    let directory = path.posix.dirname(normalized);
+    while (true) {
+      manifestPaths.add(directory === "." ? "package.json" : `${directory}/package.json`);
+      if (directory === ".") break;
+      const parent = path.posix.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  return [...manifestPaths].sort();
+}
+
+export function getLocalWorkspacePackages(
+  importerFilePaths: readonly string[],
+  loadManifest: (manifestPath: string) => string | undefined,
+): readonly LocalWorkspacePackage[] {
+  return getLocalWorkspacePackageManifestPaths(importerFilePaths)
+    .map((manifestPath) => parseLocalWorkspacePackage(manifestPath, loadManifest(manifestPath)))
+    .filter((workspacePackage): workspacePackage is LocalWorkspacePackage => workspacePackage !== undefined);
+}
+
 function isIdentifierStart(char: string): boolean {
   return /[A-Za-z_$]/u.test(char);
 }
@@ -857,6 +986,7 @@ export class LocalModuleCallResolver {
   private readonly exportCache = new Map<string, SymbolData[]>();
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
   private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
+  private readonly workspacePackages = new Map<string, LocalWorkspacePackage | null>();
 
   constructor(options: LocalModuleResolverOptions) {
     for (const filePath of options.filePaths) {
@@ -866,6 +996,10 @@ export class LocalModuleCallResolver {
     this.loadModule = options.loadModule;
     this.tsConfigPathAliases = options.tsConfigPathAliases;
     this.pathAliasesForImporter = options.pathAliasesForImporter;
+    for (const workspacePackage of options.workspacePackages ?? []) {
+      const existing = this.workspacePackages.get(workspacePackage.name);
+      this.workspacePackages.set(workspacePackage.name, existing === undefined ? workspacePackage : null);
+    }
   }
 
   seedModule(filePath: string, data: LocalModuleData): void {
@@ -946,11 +1080,29 @@ export class LocalModuleCallResolver {
       return aliasCandidates;
     }
 
-    if (!pathAliases || pathAliases.aliases.length === 0) {
-      return [];
-    }
+    return this.resolveModuleSpecifierFromWorkspacePackage(specifier);
+  }
 
-    return [];
+  private resolveModuleSpecifierFromWorkspacePackage(specifier: string): string[] {
+    const packageNames = [...this.workspacePackages.keys()]
+      .filter((name) => specifier === name || specifier.startsWith(`${name}/`))
+      .sort((left, right) => right.length - left.length || left.localeCompare(right));
+    const packageName = packageNames[0];
+    if (!packageName) return [];
+
+    const workspacePackage = this.workspacePackages.get(packageName);
+    if (!workspacePackage) return [];
+
+    const suffix = specifier.slice(packageName.length);
+    const exportPath = suffix.length === 0 ? "." : `.${suffix}`;
+    const entryPoints = workspacePackage.entryPoints.get(exportPath);
+    if (entryPoints) {
+      return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint)))].sort();
+    }
+    if (workspacePackage.restrictsSubpaths) return [];
+    if (suffix.length === 0) return [];
+
+    return this.resolveModuleCandidates(path.posix.join(workspacePackage.rootPath, suffix));
   }
 
   private resolveModuleSpecifierFromAliases(

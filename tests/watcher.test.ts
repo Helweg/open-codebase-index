@@ -239,6 +239,32 @@ describe("FileWatcher", () => {
       );
     });
 
+    it("watches a nested package manifest outside source include patterns with Chokidar", async () => {
+      const packageManifest = path.join(tempDir, "packages", "shared", "package.json");
+      fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
+      fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(
+        tempDir,
+        createTestConfig({ include: ["**/*.ts"] }),
+        "codex",
+        { backend: "chokidar" },
+      );
+
+      watcher.start(async (batch) => {
+        changes.push(...batch);
+      });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          packageManifest,
+          JSON.stringify({ name: "@scope/shared", main: `./src-${attempt}/index.ts` }),
+        ),
+        () => expect(changes).toContainEqual({ path: packageManifest, type: "change" }),
+      );
+    });
+
     it("should watch codex-native config without watching codex index files", async () => {
       const changes: FileChange[] = [];
       fs.mkdirSync(path.join(tempDir, ".codebase-index", "index"), { recursive: true });

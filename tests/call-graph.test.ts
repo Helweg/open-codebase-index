@@ -2684,6 +2684,54 @@ main() {
       }
     });
 
+    it("resolves project-local workspace package imports and reprocesses unchanged importers after manifest changes", async () => {
+      const projectDir = path.join(tempDir, "workspace-package-resolution-project");
+      const appDir = path.join(projectDir, "apps", "web", "src");
+      const packageDir = path.join(projectDir, "packages", "shared", "src");
+      fs.mkdirSync(appDir, { recursive: true });
+      fs.mkdirSync(packageDir, { recursive: true });
+      fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({ name: "workspace-root" }));
+      fs.writeFileSync(
+        path.join(appDir, "main.ts"),
+        'import { packageTarget } from "@scope/shared";\nexport function runWorkspacePackage() { packageTarget(); }',
+      );
+      fs.writeFileSync(path.join(packageDir, "index.ts"), "export function packageTarget() {}");
+      fs.writeFileSync(path.join(packageDir, "alternate.ts"), "export function packageTarget() {}");
+      const packageManifestPath = path.join(projectDir, "packages", "shared", "package.json");
+      fs.writeFileSync(packageManifestPath, JSON.stringify({
+        name: "@scope/shared",
+        exports: { ".": "./src/index.ts" },
+      }));
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        const resolvedTargetPath = async (): Promise<string | undefined> => {
+          const symbols = await indexer.getSymbolsForBranch();
+          const caller = symbols.find((symbol) => symbol.name === "runWorkspacePackage");
+          const edge = (await indexer.getCallees(caller!.id)).find(
+            (candidate) => candidate.targetName === "packageTarget",
+          );
+          return symbols.find((symbol) => symbol.id === edge?.toSymbolId)?.filePath;
+        };
+
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toMatch(/packages[/\\]shared[/\\]src[/\\]index\.ts$/u);
+
+        const embeddingCallsBeforeManifestChange = fetchSpy.mock.calls.length;
+        fs.writeFileSync(packageManifestPath, JSON.stringify({
+          name: "@scope/shared",
+          exports: { ".": "./src/alternate.ts" },
+        }));
+        await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toMatch(/packages[/\\]shared[/\\]src[/\\]alternate\.ts$/u);
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("re-resolves unchanged importers when nearest configs and their extends chain change", async () => {
       const projectDir = path.join(tempDir, "nearest-local-module-config-project");
       const appDir = path.join(projectDir, "packages", "app");

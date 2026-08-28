@@ -28,7 +28,7 @@ function symbolExtractorMetadataKey(catalogIdentity: string): string {
 
 function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: string): void {
   const suffix = hashContent(catalogIdentity).slice(0, 24);
-  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "5");
+  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "6");
   database.setMetadata(`index.parser.swiftVersion.${suffix}`, "1");
   database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
   database.setMetadata(symbolExtractorMetadataKey(catalogIdentity), "1");
@@ -132,7 +132,6 @@ describe("pr_impact tool", () => {
 
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
-
     db.upsertSymbol({
       id: "sym_a",
       filePath: "src/a.ts",
@@ -506,6 +505,14 @@ describe("pr_impact tool", () => {
 
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
+    for (const [catalogIdentity, commit] of [
+      ["feature-branch", "1111111111111111111111111111111111111111"],
+      ["other-branch", "2222222222222222222222222222222222222222"],
+      ["third-branch", "3333333333333333333333333333333333333333"],
+    ] as const) {
+      setBranchMigrationMetadataCurrent(db, catalogIdentity);
+      db.setMetadata(branchCommitMetadataKey(catalogIdentity), commit);
+    }
 
     db.upsertSymbol({
       id: "sym_a",
@@ -602,6 +609,13 @@ describe("pr_impact tool", () => {
 
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
+    for (const [catalogIdentity, commit] of [
+      ["feature-branch", "1111111111111111111111111111111111111111"],
+      ["other-branch", "2222222222222222222222222222222222222222"],
+    ] as const) {
+      setBranchMigrationMetadataCurrent(db, catalogIdentity);
+      db.setMetadata(branchCommitMetadataKey(catalogIdentity), commit);
+    }
 
     const filePath = "src/a.ts";
 

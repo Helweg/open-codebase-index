@@ -157,4 +157,30 @@ describe("native FileWatcher", () => {
     fs.rmSync(baseConfig);
     await waitForChange(changes, baseConfig, "unlink");
   });
+
+  it("tracks nested package manifest changes outside source include patterns", async () => {
+    const changes: FileChange[] = [];
+    const packageManifest = path.join(projectRoot, "packages", "shared", "package.json");
+    fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
+    fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+    watcher = new FileWatcher(
+      projectRoot,
+      parseConfig({ include: ["**/*.ts"] }),
+      "codex",
+      { backend: "native" },
+    );
+
+    watcher.start(async (batch) => {
+      changes.push(...batch);
+    });
+    await watcher.waitUntilReady();
+
+    await writeUntilChangeObserved(
+      (attempt) => fs.writeFileSync(
+        packageManifest,
+        JSON.stringify({ name: "@scope/shared", main: `./src-${attempt}/index.ts` }),
+      ),
+      () => expect(changes).toContainEqual({ path: packageManifest, type: "change" }),
+    );
+  });
 });
