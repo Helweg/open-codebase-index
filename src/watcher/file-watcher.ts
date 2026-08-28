@@ -7,7 +7,7 @@ import type { CodebaseIndexConfig } from "../config/schema.js";
 import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
-import { shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
+import { LocalModuleConfigTracker, shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
 import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
 
@@ -55,6 +55,7 @@ export class FileWatcher {
   private nativeReconcileTimer: NodeJS.Timeout | null = null;
   private nativeInvalidatedPaths: Map<string | null, boolean> = new Map();
   private configPathStates: Map<string, ConfigPathState> = new Map();
+  private localModuleConfigTracker: LocalModuleConfigTracker;
 
   constructor(projectRoot: string, config: CodebaseIndexConfig, host: HostMode, options: FileWatcherOptions = {}) {
     this.projectRoot = projectRoot;
@@ -64,6 +65,7 @@ export class FileWatcher {
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
       : getProjectConfigCandidatePaths(projectRoot, host);
+    this.localModuleConfigTracker = new LocalModuleConfigTracker(projectRoot, config);
   }
 
   start(handler: ChangeHandler): void {
@@ -72,6 +74,7 @@ export class FileWatcher {
     }
 
     this.onChanges = handler;
+    this.localModuleConfigTracker.refresh();
     this.pollingFallbackAttempted = false;
     this.resetReady();
     if (this.shouldUseNativeWatcher()) {
@@ -125,6 +128,7 @@ export class FileWatcher {
     reportsStartupReady = true,
   ): void {
     let reportedStartupReady = false;
+    this.localModuleConfigTracker.refresh();
     this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
@@ -283,7 +287,11 @@ export class FileWatcher {
 
   private async createNativeWatcher(): Promise<void> {
     const generation = ++this.nativeSetupGeneration;
-    const reconciler = new FileSnapshotReconciler(this.projectRoot, this.config, this.projectConfigPaths);
+    const reconciler = new FileSnapshotReconciler(
+      this.projectRoot,
+      this.config,
+      () => [...this.projectConfigPaths, ...this.localModuleConfigTracker.getPaths()],
+    );
     const watcher = new NativeRecursiveWatcher(
       this.projectRoot,
       (filePath) => this.scheduleNativeReconciliation(generation, filePath),
@@ -336,6 +344,17 @@ export class FileWatcher {
 
   private scheduleNativeReconciliation(generation: number, filePath: string | null): void {
     if (!this.isCurrentNativeSetup(generation)) return;
+
+    if (
+      filePath === null
+      || filePath === path.join(this.projectRoot, ".gitignore")
+      || (filePath !== null && (
+        shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+        || this.localModuleConfigTracker.has(filePath)
+      ))
+    ) {
+      this.localModuleConfigTracker.refresh();
+    }
 
     const requiresFullReconciliation = filePath === path.join(this.projectRoot, ".gitignore");
     const invalidatedPath = requiresFullReconciliation ? null : filePath;
@@ -429,7 +448,11 @@ export class FileWatcher {
       return;
     }
 
-    if (shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)) {
+    if (
+      shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+      || this.localModuleConfigTracker.has(filePath)
+    ) {
+      this.localModuleConfigTracker.refresh();
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
       return;

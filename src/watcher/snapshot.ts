@@ -27,7 +27,7 @@ export interface FileSnapshotScan {
 export async function buildFileSnapshot(
   projectRoot: string,
   config: SnapshotFilterConfig,
-  configPaths: string[] = [],
+  configPaths: readonly string[] = [],
 ): Promise<FileSnapshotMap> {
   return (await buildFileSnapshotScan(projectRoot, config, configPaths)).entries;
 }
@@ -35,7 +35,7 @@ export async function buildFileSnapshot(
 export async function buildFileSnapshotScan(
   projectRoot: string,
   config: SnapshotFilterConfig,
-  configPaths: string[] = [],
+  configPaths: readonly string[] = [],
 ): Promise<FileSnapshotScan> {
   const normalizedProjectRoot = path.resolve(projectRoot);
   const ignoreFilter = createIgnoreFilter(normalizedProjectRoot);
@@ -89,7 +89,7 @@ export async function buildFileSnapshotScan(
 export async function buildFileSnapshotForPath(
   projectRoot: string,
   config: SnapshotFilterConfig,
-  configPaths: string[],
+  configPaths: readonly string[],
   targetPath: string,
 ): Promise<FileSnapshotMap> {
   return (await buildFileSnapshotForPathScan(projectRoot, config, configPaths, targetPath)).entries;
@@ -98,7 +98,7 @@ export async function buildFileSnapshotForPath(
 export async function buildFileSnapshotForPathScan(
   projectRoot: string,
   config: SnapshotFilterConfig,
-  configPaths: string[],
+  configPaths: readonly string[],
   targetPath: string,
 ): Promise<FileSnapshotScan> {
   const normalizedProjectRoot = path.resolve(projectRoot);
@@ -170,7 +170,7 @@ export function completeFileSnapshot(previous: FileSnapshotMap, scan: FileSnapsh
 async function includeExplicitConfigPaths(
   snapshot: Map<string, FileSnapshotEntry>,
   unreadablePrefixes: Set<string>,
-  configPaths: string[],
+  configPaths: readonly string[],
 ): Promise<void> {
   for (const configPath of [...new Set(configPaths.map((value) => path.resolve(value)))]) {
     if (snapshot.has(configPath)) continue;
@@ -182,7 +182,7 @@ async function includeExplicitConfigPaths(
 async function includeExplicitConfigPathsInPath(
   snapshot: Map<string, FileSnapshotEntry>,
   unreadablePrefixes: Set<string>,
-  configPaths: string[],
+  configPaths: readonly string[],
   targetPath: string,
 ): Promise<void> {
   await includeExplicitConfigPaths(

@@ -210,6 +210,35 @@ describe("FileWatcher", () => {
       );
     });
 
+    it("watches an arbitrary local extends target with Chokidar", async () => {
+      const appConfig = path.join(tempDir, "packages", "app", "tsconfig.json");
+      const baseConfig = path.join(tempDir, "packages", "config", "base.json");
+      fs.mkdirSync(path.dirname(appConfig), { recursive: true });
+      fs.mkdirSync(path.dirname(baseConfig), { recursive: true });
+      fs.writeFileSync(appConfig, JSON.stringify({ extends: "../config/base" }));
+      fs.writeFileSync(baseConfig, JSON.stringify({ compilerOptions: { baseUrl: "./src" } }));
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(
+        tempDir,
+        createTestConfig({ include: ["**/*.ts"] }),
+        "codex",
+        { backend: "chokidar" },
+      );
+
+      watcher.start(async (batch) => {
+        changes.push(...batch);
+      });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          baseConfig,
+          JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }),
+        ),
+        () => expect(changes).toContainEqual({ path: baseConfig, type: "change" }),
+      );
+    });
+
     it("should watch codex-native config without watching codex index files", async () => {
       const changes: FileChange[] = [];
       fs.mkdirSync(path.join(tempDir, ".codebase-index", "index"), { recursive: true });
@@ -351,6 +380,33 @@ describe("FileWatcher", () => {
       await writeUntilObserved(
         (attempt) => fs.writeFileSync(
           configPath,
+          JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }),
+        ),
+        () => expect(indexer.index).toHaveBeenCalledOnce(),
+      );
+
+      await combinedWatcher.stop();
+    });
+
+    it("reindexes when an inherited local extends config changes", async () => {
+      const appConfig = path.join(tempDir, "packages", "app", "tsconfig.json");
+      const baseConfig = path.join(tempDir, "packages", "config", "base.json");
+      fs.mkdirSync(path.dirname(appConfig), { recursive: true });
+      fs.mkdirSync(path.dirname(baseConfig), { recursive: true });
+      fs.writeFileSync(appConfig, JSON.stringify({ extends: "../config/base" }));
+      fs.writeFileSync(baseConfig, JSON.stringify({ compilerOptions: { baseUrl: "./src" } }));
+      const indexer = { index: vi.fn().mockResolvedValue(undefined) };
+      const combinedWatcher = createWatcherWithIndexer(
+        () => indexer,
+        tempDir,
+        createTestConfig({ include: ["**/*.ts"] }),
+        "codex",
+      );
+
+      await combinedWatcher.whenReady();
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          baseConfig,
           JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }),
         ),
         () => expect(indexer.index).toHaveBeenCalledOnce(),
