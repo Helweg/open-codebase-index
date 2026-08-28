@@ -388,6 +388,38 @@ export function getTsConfigModuleResolutionConfigPaths(
   return visit(configPath) ? chain : undefined;
 }
 
+/**
+ * Lists project-local config files that can affect a root config, including a
+ * missing or malformed local `extends` target. Unlike the strict resolver,
+ * this is suitable for watch registration: a later create or repair must be
+ * observed so module resolution can be recomputed.
+ */
+export function getTsConfigModuleResolutionConfigDependencyPaths(
+  configPath: string,
+  loadConfig: (configPath: string) => string | undefined,
+): readonly string[] {
+  const dependencies: string[] = [];
+  const visiting = new Set<string>();
+
+  const visit = (candidate: string): void => {
+    const normalized = trimLeadingCurrentDir(normalizeFilePath(candidate));
+    if (!isProjectLocalPath(normalized) || visiting.has(normalized)) return;
+
+    visiting.add(normalized);
+    dependencies.push(normalized);
+    const configText = loadConfig(normalized);
+    const document = configText === undefined ? undefined : parseTsConfigDocument(configText);
+    if (document?.extendsPath !== undefined) {
+      const parentPath = resolveLocalExtendsPath(normalized, document.extendsPath);
+      if (parentPath) visit(parentPath);
+    }
+    visiting.delete(normalized);
+  };
+
+  visit(configPath);
+  return dependencies;
+}
+
 /** Resolves aliases through a local relative `extends` chain, parent first. */
 export function resolveTsConfigForModuleResolution(
   configPath: string,

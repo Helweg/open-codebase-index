@@ -4,6 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { buildFileSnapshot } from "../src/watcher/snapshot.js";
+import { LocalModuleConfigTracker } from "../src/watcher/local-module-config.js";
 
 describe("watcher snapshot builder", () => {
   let projectRoot: string;
@@ -113,6 +114,39 @@ describe("watcher snapshot builder", () => {
     expect(snapshot.has(tsConfig)).toBe(true);
     expect(snapshot.has(jsConfig)).toBe(true);
     expect(snapshot.has(ignoredConfig)).toBe(false);
+  });
+
+  it("tracks existing and missing local extends targets with arbitrary JSON names", () => {
+    const appConfig = path.join(projectRoot, "packages", "app", "tsconfig.json");
+    const baseConfig = path.join(projectRoot, "packages", "config", "base.json");
+    const missingConfig = path.join(projectRoot, "packages", "config", "missing.json");
+    fs.mkdirSync(path.dirname(appConfig), { recursive: true });
+    fs.mkdirSync(path.dirname(baseConfig), { recursive: true });
+    fs.writeFileSync(appConfig, JSON.stringify({ extends: "../config/base" }));
+    fs.writeFileSync(baseConfig, JSON.stringify({ extends: "./missing" }));
+
+    const tracker = new LocalModuleConfigTracker(projectRoot, {});
+    tracker.refresh();
+
+    expect(tracker.has(appConfig)).toBe(true);
+    expect(tracker.has(baseConfig)).toBe(true);
+    expect(tracker.has(missingConfig)).toBe(true);
+  });
+
+  it("does not track a local extends target hidden by gitignore", () => {
+    const appConfig = path.join(projectRoot, "packages", "app", "tsconfig.json");
+    const ignoredConfig = path.join(projectRoot, "generated", "base.json");
+    fs.mkdirSync(path.dirname(appConfig), { recursive: true });
+    fs.mkdirSync(path.dirname(ignoredConfig), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, ".gitignore"), "generated/\n");
+    fs.writeFileSync(appConfig, JSON.stringify({ extends: "../../generated/base" }));
+    fs.writeFileSync(ignoredConfig, "{}");
+
+    const tracker = new LocalModuleConfigTracker(projectRoot, {});
+    tracker.refresh();
+
+    expect(tracker.has(appConfig)).toBe(true);
+    expect(tracker.has(ignoredConfig)).toBe(false);
   });
 
   it("limits traversal depth using config.indexing.maxDepth", async () => {

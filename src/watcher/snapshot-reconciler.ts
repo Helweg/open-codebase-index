@@ -17,6 +17,7 @@ export type SnapshotInvalidation = string | null | {
   path: string | null;
   forceChange?: boolean;
 };
+type ConfigPathsProvider = readonly string[] | (() => readonly string[]);
 
 export class FileSnapshotReconciler {
   private snapshot: FileSnapshotMap | null = null;
@@ -25,11 +26,11 @@ export class FileSnapshotReconciler {
   constructor(
     private readonly projectRoot: string,
     private readonly config: SnapshotFilterConfig,
-    private readonly configPaths: string[],
+    private readonly configPaths: ConfigPathsProvider,
   ) {}
 
   async initialize(): Promise<void> {
-    this.snapshot = (await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)).entries;
+    this.snapshot = (await buildFileSnapshotScan(this.projectRoot, this.config, this.getConfigPaths())).entries;
   }
 
   async reconcile(invalidations: readonly SnapshotInvalidation[] = []): Promise<FileChange[]> {
@@ -50,7 +51,7 @@ export class FileSnapshotReconciler {
         .map((invalidation) => invalidation.path)
         .filter((filePath): filePath is string => filePath !== null);
       const scan = scopedPaths.length === 0 || scopedPaths.length !== normalizedInvalidations.length
-        ? await buildFileSnapshotScan(this.projectRoot, this.config, this.configPaths)
+        ? await buildFileSnapshotScan(this.projectRoot, this.config, this.getConfigPaths())
         : await this.reconcilePaths(previousSnapshot, scopedPaths);
       const nextSnapshot = completeFileSnapshot(previousSnapshot, scan);
       const forcedChanges = new Set(normalizedInvalidations
@@ -79,7 +80,7 @@ export class FileSnapshotReconciler {
         if (isWithinPath(scope, previousPath)) entries.delete(previousPath);
       }
 
-      const scopedScan = await buildFileSnapshotForPathScan(this.projectRoot, this.config, this.configPaths, scope);
+      const scopedScan = await buildFileSnapshotForPathScan(this.projectRoot, this.config, this.getConfigPaths(), scope);
       for (const [filePath, entry] of scopedScan.entries) entries.set(filePath, entry);
       for (const unreadablePrefix of scopedScan.unreadablePrefixes) unreadablePrefixes.add(unreadablePrefix);
     }
@@ -92,5 +93,9 @@ export class FileSnapshotReconciler {
     return uniquePaths.filter((candidate, index) => !uniquePaths.slice(0, index).some(
       (ancestor) => isWithinPath(ancestor, candidate),
     ));
+  }
+
+  private getConfigPaths(): readonly string[] {
+    return typeof this.configPaths === "function" ? this.configPaths() : this.configPaths;
   }
 }

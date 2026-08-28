@@ -126,4 +126,35 @@ describe("native FileWatcher", () => {
       () => expect(changes).toContainEqual({ path: configPath, type: "add" }),
     );
   });
+
+  it("tracks the lifecycle of a missing arbitrary local extends target", async () => {
+    const changes: FileChange[] = [];
+    const appConfig = path.join(projectRoot, "packages", "app", "tsconfig.json");
+    const baseConfig = path.join(projectRoot, "packages", "config", "base.json");
+    fs.mkdirSync(path.dirname(appConfig), { recursive: true });
+    fs.writeFileSync(appConfig, JSON.stringify({ extends: "../config/base" }));
+    watcher = new FileWatcher(
+      projectRoot,
+      parseConfig({ include: ["**/*.ts"] }),
+      "codex",
+      { backend: "native" },
+    );
+
+    watcher.start(async (batch) => {
+      changes.push(...batch);
+    });
+    await watcher.waitUntilReady();
+
+    await writeUntilChangeObserved(
+      (attempt) => {
+        fs.mkdirSync(path.dirname(baseConfig), { recursive: true });
+        fs.writeFileSync(baseConfig, JSON.stringify({ compilerOptions: { baseUrl: `./src-${attempt}` } }));
+      },
+      () => expect(changes).toContainEqual({ path: baseConfig, type: "add" }),
+    );
+
+    changes.length = 0;
+    fs.rmSync(baseConfig);
+    await waitForChange(changes, baseConfig, "unlink");
+  });
 });

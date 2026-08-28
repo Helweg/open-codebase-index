@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
+  getTsConfigModuleResolutionConfigDependencyPaths,
   getTsConfigModuleResolutionConfigPaths,
   parseTsConfigForModuleResolution,
   resolveTsConfigForModuleResolution,
@@ -289,6 +290,17 @@ describe("LocalModuleCallResolver", () => {
 
     await expect(instance.resolveCallTarget("src/main.ts", main, callSite("inheritedTarget", 2, 31)))
       .resolves.toEqual(inheritedTarget);
+  });
+
+  it("retains missing local extends targets as watcher dependencies", () => {
+    const configs = new Map([
+      ["packages/app/tsconfig.json", JSON.stringify({ extends: "../config/base" })],
+    ]);
+
+    expect(getTsConfigModuleResolutionConfigDependencyPaths(
+      "packages/app/tsconfig.json",
+      (configPath) => configs.get(configPath),
+    )).toEqual(["packages/app/tsconfig.json", "packages/config/base.json"]);
   });
 
   it("uses the nearest importer config and caches config reads and extends resolution", async () => {
