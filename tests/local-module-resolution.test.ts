@@ -5,6 +5,7 @@ import {
   TsConfigPathAliasCache,
   getTsConfigModuleResolutionConfigDependencyPaths,
   getTsConfigModuleResolutionConfigPaths,
+  getLocalWorkspacePackages,
   parseTsConfigForModuleResolution,
   resolveTsConfigForModuleResolution,
   type LocalModuleData,
@@ -29,14 +30,73 @@ function callSite(calleeName: string, line = 2, column = 2, callType: CallSiteDa
   return { calleeName, line, column, callType, confidence: "Direct" };
 }
 
-function resolver(modules: Record<string, LocalModuleData>): LocalModuleCallResolver {
+function resolver(
+  modules: Record<string, LocalModuleData>,
+  workspaceManifestTexts: Record<string, string> = {},
+): LocalModuleCallResolver {
   return new LocalModuleCallResolver({
     filePaths: Object.keys(modules),
     loadModule: async (filePath) => modules[filePath],
+    workspacePackages: getLocalWorkspacePackages(
+      Object.keys(modules),
+      (manifestPath) => workspaceManifestTexts[manifestPath],
+    ),
   });
 }
 
 describe("LocalModuleCallResolver", () => {
+  it("resolves declared project-local workspace package roots and exact exports", async () => {
+    const main = [
+      'import { rootTarget } from "@scope/shared";',
+      'import { featureTarget } from "@scope/shared/feature";',
+      "export function run() { rootTarget(); featureTarget(); }",
+    ].join("\n");
+    const rootTarget = symbol("root", "packages/shared/src/index.ts", "rootTarget");
+    const featureTarget = symbol("feature", "packages/shared/src/feature.ts", "featureTarget");
+    const instance = resolver({
+      "apps/web/src/main.ts": { content: main, symbols: [symbol("run", "apps/web/src/main.ts", "run")] },
+      "packages/shared/src/index.ts": { content: "export function rootTarget() {}", symbols: [rootTarget] },
+      "packages/shared/src/feature.ts": { content: "export function featureTarget() {}", symbols: [featureTarget] },
+    }, {
+      "packages/shared/package.json": JSON.stringify({
+        name: "@scope/shared",
+        exports: { ".": "./src/index.ts", "./feature": "./src/feature.ts" },
+      }),
+    });
+
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("rootTarget", 3, 24)))
+      .resolves.toEqual(rootTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("featureTarget", 3, 38)))
+      .resolves.toEqual(featureTarget);
+  });
+
+  it("uses safe package-relative subpaths without exports and abstains for external or ambiguous packages", async () => {
+    const main = [
+      'import { nestedTarget } from "shared-package/nested";',
+      'import { externalTarget } from "external-package";',
+      'import { duplicateTarget } from "duplicate-package";',
+      "export function run() { nestedTarget(); externalTarget(); duplicateTarget(); }",
+    ].join("\n");
+    const nestedTarget = symbol("nested", "packages/shared/nested.ts", "nestedTarget");
+    const instance = resolver({
+      "apps/web/main.ts": { content: main, symbols: [symbol("run", "apps/web/main.ts", "run")] },
+      "packages/shared/nested.ts": { content: "export function nestedTarget() {}", symbols: [nestedTarget] },
+      "packages/a/index.ts": { content: "export function duplicateTarget() {}", symbols: [] },
+      "packages/b/index.ts": { content: "export function duplicateTarget() {}", symbols: [] },
+    }, {
+      "packages/shared/package.json": JSON.stringify({ name: "shared-package" }),
+      "packages/a/package.json": JSON.stringify({ name: "duplicate-package", main: "./index.ts" }),
+      "packages/b/package.json": JSON.stringify({ name: "duplicate-package", main: "./index.ts" }),
+    });
+
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("nestedTarget", 4, 24)))
+      .resolves.toEqual(nestedTarget);
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("externalTarget", 4, 40)))
+      .resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("duplicateTarget", 4, 58)))
+      .resolves.toBeUndefined();
+  });
+
   it("resolves direct, aliased, default, and namespace imports", async () => {
     const main = [
       'import defaultTarget, { directTarget as localAlias } from "./target.js";',

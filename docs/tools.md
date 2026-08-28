@@ -147,7 +147,7 @@ Returns recent in-memory debug logs when debug logging is enabled.
 
 ### `call_graph`
 
-Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports and re-export chains, including aliases. Package imports, tsconfig path aliases, CommonJS-only exports, missing modules, and ambiguous module or star-export targets remain unresolved rather than being guessed.
+Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports, re-export chains, `tsconfig`/`jsconfig` path aliases, and project-local workspace package imports declared by `package.json` entry points. External packages, CommonJS-only exports, missing modules, malformed or unsafe package metadata, and ambiguous module, package, or star-export targets remain unresolved rather than being guessed.
 
 ### `call_graph_path`
 

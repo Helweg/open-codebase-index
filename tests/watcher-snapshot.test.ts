@@ -149,6 +149,17 @@ describe("watcher snapshot builder", () => {
     expect(tracker.has(ignoredConfig)).toBe(false);
   });
 
+  it("tracks project-local package manifests as module-resolution metadata", () => {
+    const packageManifest = path.join(projectRoot, "packages", "shared", "package.json");
+    fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
+    fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+
+    const tracker = new LocalModuleConfigTracker(projectRoot, {});
+    tracker.refresh();
+
+    expect(tracker.has(packageManifest)).toBe(true);
+  });
+
   it("limits traversal depth using config.indexing.maxDepth", async () => {
     const rootFile = path.join(projectRoot, "root.ts");
     const nestedLevelOne = path.join(projectRoot, "level-one", "nested.ts");

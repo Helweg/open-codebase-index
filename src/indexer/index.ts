@@ -112,6 +112,8 @@ import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
 import {
+  getLocalWorkspacePackageManifestPaths,
+  getLocalWorkspacePackages,
   isJavaScriptFamilyFilePath,
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
@@ -185,7 +187,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "5";
+const CALL_GRAPH_RESOLUTION_VERSION = "6";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -4301,21 +4303,31 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
-    const localModuleResolutionCache = new TsConfigPathAliasCache((configPath) => {
+    const localModuleResolutionFileText = (configPath: string): string | undefined => {
       try {
         return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
       } catch {
         return undefined;
       }
-    });
+    };
+    const localModuleResolutionCache = new TsConfigPathAliasCache(localModuleResolutionFileText);
     const localModuleImporterPaths = files.flatMap((file) => {
       if (!isPathWithinRoot(file.path, this.materializedProjectRoot)) return [];
       const relativePath = path.relative(this.materializedProjectRoot, file.path).split(path.sep).join("/");
       return isJavaScriptFamilyFilePath(relativePath) ? [relativePath] : [];
     });
-    this.localModuleResolutionConfigHash = hashContent(JSON.stringify(
-      localModuleResolutionCache.getConfigState(localModuleImporterPaths),
-    ));
+    const localWorkspacePackageManifestPaths = getLocalWorkspacePackageManifestPaths(localModuleImporterPaths);
+    const localWorkspacePackages = getLocalWorkspacePackages(
+      localModuleImporterPaths,
+      localModuleResolutionFileText,
+    );
+    this.localModuleResolutionConfigHash = hashContent(JSON.stringify({
+      tsconfig: localModuleResolutionCache.getConfigState(localModuleImporterPaths),
+      packageManifests: localWorkspacePackageManifestPaths.map((manifestPath) => [
+        manifestPath,
+        localModuleResolutionFileText(manifestPath) ?? null,
+      ]),
+    }));
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -4516,6 +4528,7 @@ export class Indexer {
         }
         return localModuleResolutionCache.getPathAliasesForImporter(filePath);
       },
+      workspacePackages: localWorkspacePackages,
     });
     let writeTransactionActive = false;
 

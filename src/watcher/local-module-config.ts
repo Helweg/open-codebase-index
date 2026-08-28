@@ -7,6 +7,7 @@ import { createIgnoreFilter } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 
 const LOCAL_MODULE_CONFIG_NAMES = new Set(["tsconfig.json", "jsconfig.json"]);
+const LOCAL_MODULE_PACKAGE_MANIFEST_NAME = "package.json";
 type IgnoreFilter = ReturnType<typeof createIgnoreFilter>;
 export interface LocalModuleConfigTrackerOptions {
   indexing?: { maxDepth?: number };
@@ -25,6 +26,18 @@ export function shouldTrackLocalModuleConfigPath(
 ): boolean {
   return (
     LOCAL_MODULE_CONFIG_NAMES.has(path.basename(filePath).toLowerCase())
+    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, ignoreFilter)
+  );
+}
+
+/** Whether a project-local package manifest can affect workspace import resolution. */
+export function shouldTrackLocalModulePackagePath(
+  filePath: string,
+  projectRoot: string,
+  ignoreFilter: IgnoreFilter = createIgnoreFilter(projectRoot),
+): boolean {
+  return (
+    path.basename(filePath).toLowerCase() === LOCAL_MODULE_PACKAGE_MANIFEST_NAME
     && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, ignoreFilter)
   );
 }
@@ -64,6 +77,7 @@ export class LocalModuleConfigTracker {
     const root = path.resolve(this.projectRoot);
     const ignoreFilter = createIgnoreFilter(root);
     const roots: string[] = [];
+    const nextPaths = new Set<string>();
     const maxDepth = this.options.indexing?.maxDepth ?? -1;
 
     const walk = (directoryPath: string, depth: number): void => {
@@ -84,14 +98,18 @@ export class LocalModuleConfigTracker {
           continue;
         }
 
-        if (entry.isFile() && shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter)) {
-          roots.push(relativePath.split(path.sep).join("/"));
+        if (entry.isFile()) {
+          if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter)) {
+            roots.push(relativePath.split(path.sep).join("/"));
+          }
+          if (shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter)) {
+            nextPaths.add(filePath);
+          }
         }
       }
     };
 
     walk(root, 0);
-    const nextPaths = new Set<string>();
     const readConfig = (relativePath: string): string | undefined => {
       try {
         return readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
