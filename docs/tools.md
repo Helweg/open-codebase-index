@@ -147,7 +147,7 @@ Returns recent in-memory debug logs when debug logging is enabled.
 
 ### `call_graph`
 
-Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports, re-export chains, `tsconfig`/`jsconfig` path aliases, and project-local workspace package imports declared by `package.json` entry points. External packages, CommonJS-only exports, missing modules, malformed or unsafe package metadata, and ambiguous module, package, or star-export targets remain unresolved rather than being guessed.
+Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports, re-export chains, `tsconfig`/`jsconfig` path aliases, and project-local package imports selected by root workspace declarations or ancestor compatibility when no declaration exists. Package entry points support exact and bounded single-wildcard `exports`. Conditional exports use the first active `node`, `import`, or `default` branch in declaration order. Exact, null, and unsupported export declarations block broader wildcard fallbacks, and wildcard precedence follows Node's package-export specificity. External packages, CommonJS-only exports, missing modules, malformed, encoded-traversal, `node_modules`, escaping, or unsafe package metadata, and ambiguous module, package, or star-export targets remain unresolved rather than being guessed.
 
 ### `call_graph_path`
 

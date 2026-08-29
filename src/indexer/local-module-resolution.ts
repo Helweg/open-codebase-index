@@ -13,6 +13,7 @@ const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".cjs",
 ] as const;
 const JAVASCRIPT_RUNTIME_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
+const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "import", "default"]);
 const TYPESCRIPT_SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
 const DECLARATION_MODIFIERS = new Set(["abstract", "async", "declare"]);
 const CLASS_SYMBOL_KINDS = new Set(["class", "class_declaration", "class_definition"]);
@@ -62,10 +63,16 @@ export interface LocalModulePathAliases {
 }
 
 /** A project-local package manifest whose source entry points may form graph edges. */
+export interface LocalWorkspacePackageExportPattern {
+  specifierPath: string;
+  targets: readonly string[];
+}
+
 export interface LocalWorkspacePackage {
   name: string;
   rootPath: string;
   entryPoints: ReadonlyMap<string, readonly string[]>;
+  exportPatterns: readonly LocalWorkspacePackageExportPattern[];
   restrictsSubpaths: boolean;
 }
 
@@ -568,6 +575,74 @@ function trimLeadingCurrentDir(candidatePath: string): string {
   return candidatePath.startsWith("./") ? candidatePath.slice(2) : candidatePath;
 }
 
+const MAX_WORKSPACE_EXPORT_PATTERNS = 256;
+const MAX_WORKSPACE_EXPORT_PATH_LENGTH = 512;
+const MAX_WORKSPACE_PACKAGE_NAME_LENGTH = 214;
+const WORKSPACE_PACKAGE_NAME_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._~-]*$/u;
+
+function wildcardCount(value: string): number {
+  return [...value].filter((char) => char === "*").length;
+}
+
+function hasSafePackagePathSegments(value: string): boolean {
+  if (
+    value.length === 0
+    || value.includes("\\")
+    || value.includes("\0")
+    || path.posix.isAbsolute(value)
+    || /^[A-Za-z]:\//u.test(value)
+  ) {
+    return false;
+  }
+
+  return value.split("/").every((segment) => {
+    if (segment === "") return false;
+
+    let decodedSegment: string;
+    try {
+      decodedSegment = decodeURIComponent(segment);
+    } catch {
+      return false;
+    }
+
+    const normalizedSegment = decodedSegment.toLowerCase();
+    return decodedSegment !== ""
+      && !decodedSegment.includes("/")
+      && !decodedSegment.includes("\\")
+      && !decodedSegment.includes("\0")
+      && normalizedSegment !== "."
+      && normalizedSegment !== ".."
+      && normalizedSegment !== "node_modules";
+  });
+}
+
+function isSafePackageExportPath(value: string, expectedWildcards: 0 | 1): boolean {
+  return value.length <= MAX_WORKSPACE_EXPORT_PATH_LENGTH
+    && value.startsWith("./")
+    && wildcardCount(value) === expectedWildcards
+    && hasSafePackagePathSegments(value.slice(2));
+}
+
+function isSafeWorkspacePackageName(value: string): boolean {
+  if (
+    value.length === 0
+    || value.length > MAX_WORKSPACE_PACKAGE_NAME_LENGTH
+    || value.includes("*")
+    || /\s/u.test(value)
+  ) {
+    return false;
+  }
+
+  const segments = value.split("/");
+  if (value.startsWith("@")) {
+    return segments.length === 2
+      && segments[0].length > 1
+      && WORKSPACE_PACKAGE_NAME_SEGMENT.test(segments[0].slice(1))
+      && WORKSPACE_PACKAGE_NAME_SEGMENT.test(segments[1]);
+  }
+  return segments.length === 1 && WORKSPACE_PACKAGE_NAME_SEGMENT.test(segments[0]);
+}
+
 function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
   if (rootPath === ".") return isProjectLocalPath(candidatePath);
   return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}/`);
@@ -765,22 +840,66 @@ export function isLocalWorkspacePackageManifestPath(
 }
 
 function resolveWorkspacePackageTarget(rootPath: string, target: string): string | undefined {
-  if (!target.startsWith("./")) return undefined;
+  if (!isSafePackageExportPath(target, 0)) return undefined;
   const resolved = trimLeadingCurrentDir(normalizeFilePath(path.posix.join(rootPath, target)));
   return isProjectLocalPath(resolved) && isPathWithinRoot(resolved, rootPath) ? resolved : undefined;
 }
 
-function packageExportTargets(value: unknown): string[] | undefined {
-  if (typeof value === "string") return [value];
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+type PackageExportTargetResolution =
+  | { kind: "blocked" | "no-match" | "unsupported" }
+  | { kind: "resolved"; target: string };
+
+function isValidPackageConditionName(condition: string): boolean {
+  return condition.length > 0
+    && !condition.startsWith(".")
+    && !condition.includes(",")
+    && !/^(?:0|[1-9][0-9]*)$/u.test(condition);
+}
+
+function resolveStaticEsmPackageExportTarget(value: unknown): PackageExportTargetResolution {
+  if (typeof value === "string") return { kind: "resolved", target: value };
+  if (value === null) return { kind: "blocked" };
+  if (typeof value !== "object" || Array.isArray(value)) return { kind: "unsupported" };
 
   const conditions = value as Record<string, unknown>;
-  const targets: string[] = [];
-  for (const condition of ["types", "import", "default", "require"] as const) {
-    const nested = packageExportTargets(conditions[condition]);
-    if (nested) targets.push(...nested);
+  if (!Object.keys(conditions).every(isValidPackageConditionName)) return { kind: "unsupported" };
+
+  // Node resolves the first active condition in declaration order. Static ESM
+  // call graphs activate only the built-in node, import, and default branches.
+  for (const [condition, target] of Object.entries(conditions)) {
+    if (!STATIC_ESM_EXPORT_CONDITIONS.has(condition)) continue;
+    const resolution = resolveStaticEsmPackageExportTarget(target);
+    if (resolution.kind !== "no-match") return resolution;
   }
-  return targets.length > 0 ? [...new Set(targets)] : undefined;
+  return { kind: "no-match" };
+}
+
+function comparePackageExportPatterns(
+  left: LocalWorkspacePackageExportPattern,
+  right: LocalWorkspacePackageExportPattern,
+): number {
+  const leftWildcard = left.specifierPath.indexOf("*");
+  const rightWildcard = right.specifierPath.indexOf("*");
+  const leftBaseLength = leftWildcard === -1 ? left.specifierPath.length : leftWildcard + 1;
+  const rightBaseLength = rightWildcard === -1 ? right.specifierPath.length : rightWildcard + 1;
+  return rightBaseLength - leftBaseLength
+    || right.specifierPath.length - left.specifierPath.length;
+}
+
+function matchPackageExportPattern(specifierPath: string, pattern: string): string | undefined {
+  const wildcard = pattern.indexOf("*");
+  if (wildcard === -1 || wildcard !== pattern.lastIndexOf("*")) return undefined;
+
+  const prefix = pattern.slice(0, wildcard);
+  const suffix = pattern.slice(wildcard + 1);
+  if (
+    specifierPath.length < prefix.length + suffix.length
+    || !specifierPath.startsWith(prefix)
+    || !specifierPath.endsWith(suffix)
+  ) {
+    return undefined;
+  }
+  return specifierPath.slice(prefix.length, specifierPath.length - suffix.length);
 }
 
 /**
@@ -804,48 +923,92 @@ export function parseLocalWorkspacePackage(
 
   const document = manifest as Record<string, unknown>;
   const name = typeof document.name === "string" ? document.name.trim() : "";
-  const normalizedManifestPath = trimLeadingCurrentDir(normalizeFilePath(manifestPath));
-  if (!name || !isProjectLocalPath(normalizedManifestPath) || path.posix.basename(normalizedManifestPath) !== "package.json") {
+  const manifestPathWithoutCurrentDir = trimLeadingCurrentDir(manifestPath);
+  if (!hasSafePackagePathSegments(manifestPathWithoutCurrentDir)) return undefined;
+  const normalizedManifestPath = trimLeadingCurrentDir(normalizeFilePath(manifestPathWithoutCurrentDir));
+  if (
+    !isSafeWorkspacePackageName(name)
+    || !isProjectLocalPath(normalizedManifestPath)
+    || path.posix.basename(normalizedManifestPath) !== "package.json"
+  ) {
     return undefined;
   }
 
   const rootPath = path.posix.dirname(normalizedManifestPath);
   const entryPoints = new Map<string, readonly string[]>();
-  const addEntryPoint = (specifierPath: string, value: unknown): void => {
-    const targets = packageExportTargets(value)
-      ?.map((target) => resolveWorkspacePackageTarget(rootPath, target))
-      .filter((target): target is string => target !== undefined);
-    if (targets && targets.length > 0) entryPoints.set(specifierPath, [...new Set(targets)]);
+  const exportPatterns: LocalWorkspacePackageExportPattern[] = [];
+  let exportPatternsOverflowed = false;
+  const addEntryPoint = (specifierPath: string, value: unknown, preserveDeclaration = false): void => {
+    const resolution = resolveStaticEsmPackageExportTarget(value);
+    const target = resolution.kind === "resolved"
+      ? resolveWorkspacePackageTarget(rootPath, resolution.target)
+      : undefined;
+    if (target !== undefined) {
+      entryPoints.set(specifierPath, [target]);
+    } else if (preserveDeclaration) {
+      entryPoints.set(specifierPath, []);
+    }
+  };
+  const addExportPattern = (specifierPath: string, value: unknown): void => {
+    if (!isSafePackageExportPath(specifierPath, 1)) return;
+    if (exportPatterns.length >= MAX_WORKSPACE_EXPORT_PATTERNS) {
+      exportPatternsOverflowed = true;
+      return;
+    }
+
+    const resolution = resolveStaticEsmPackageExportTarget(value);
+    exportPatterns.push({
+      specifierPath,
+      targets: resolution.kind === "resolved" && isSafePackageExportPath(resolution.target, 1)
+        ? [resolution.target]
+        : [],
+    });
   };
 
+  const hasExports = Object.hasOwn(document, "exports");
   const exportsValue = document.exports;
   let restrictsSubpaths = false;
-  if (exportsValue !== undefined) {
+  if (hasExports) {
     restrictsSubpaths = true;
     if (typeof exportsValue === "string") {
-      addEntryPoint(".", exportsValue);
+      addEntryPoint(".", exportsValue, true);
     } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
       const exportMap = exportsValue as Record<string, unknown>;
       const keys = Object.keys(exportMap);
-      if (keys.some((key) => key.startsWith("."))) {
-        for (const [specifierPath, target] of Object.entries(exportMap)) {
-          if (specifierPath === "." || (specifierPath.startsWith("./") && !specifierPath.includes("*"))) {
-            addEntryPoint(specifierPath, target);
+      const hasSubpathKeys = keys.some((key) => key.startsWith("."));
+      const hasConditionKeys = keys.some((key) => !key.startsWith("."));
+      const hasInvalidSubpathKeys = keys.some((key) => key.startsWith(".")
+        && key !== "."
+        && !key.startsWith("./"));
+      if (!hasInvalidSubpathKeys && !(hasSubpathKeys && hasConditionKeys)) {
+        if (hasSubpathKeys) {
+          for (const [specifierPath, target] of Object.entries(exportMap)) {
+            if (specifierPath === "." || isSafePackageExportPath(specifierPath, 0)) {
+              addEntryPoint(specifierPath, target, true);
+            } else if (isSafePackageExportPath(specifierPath, 1)) {
+              addExportPattern(specifierPath, target);
+            }
           }
+        } else {
+          addEntryPoint(".", exportsValue, true);
         }
-      } else {
-        addEntryPoint(".", exportsValue);
       }
     }
   }
 
-  if (!entryPoints.has(".")) {
+  if (!hasExports && !entryPoints.has(".")) {
     for (const field of ["types", "module", "main"] as const) {
       if (typeof document[field] === "string") addEntryPoint(".", document[field]);
     }
   }
 
-  return { name, rootPath, entryPoints, restrictsSubpaths };
+  return {
+    name,
+    rootPath,
+    entryPoints,
+    exportPatterns: exportPatternsOverflowed ? [] : exportPatterns.sort(comparePackageExportPatterns),
+    restrictsSubpaths,
+  };
 }
 
 /**
@@ -1306,9 +1469,29 @@ export class LocalModuleCallResolver {
 
     const suffix = specifier.slice(packageName.length);
     const exportPath = suffix.length === 0 ? "." : `.${suffix}`;
-    const entryPoints = workspacePackage.entryPoints.get(exportPath);
-    if (entryPoints) {
+    if (exportPath !== "." && !isSafePackageExportPath(exportPath, 0)) return [];
+
+    if (workspacePackage.entryPoints.has(exportPath)) {
+      const entryPoints = workspacePackage.entryPoints.get(exportPath) ?? [];
       return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint)))].sort();
+    }
+
+    const matchedPattern = workspacePackage.exportPatterns
+      .map((exportPattern) => ({
+        exportPattern,
+        wildcard: matchPackageExportPattern(exportPath, exportPattern.specifierPath),
+      }))
+      .find((match) => match.wildcard !== undefined);
+    if (matchedPattern?.wildcard !== undefined) {
+      const wildcard = matchedPattern.wildcard;
+      const targets = matchedPattern.exportPattern.targets.flatMap((targetPattern) => {
+        const target = resolveWorkspacePackageTarget(
+          workspacePackage.rootPath,
+          this.replaceWildcard(targetPattern, wildcard),
+        );
+        return target ? this.resolveModuleCandidates(target) : [];
+      });
+      return [...new Set(targets)].sort();
     }
     if (workspacePackage.restrictsSubpaths) return [];
     if (suffix.length === 0) return [];
