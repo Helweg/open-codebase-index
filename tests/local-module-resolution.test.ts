@@ -174,6 +174,161 @@ describe("LocalModuleCallResolver", () => {
       .resolves.toEqual(featureTarget);
   });
 
+  it("applies Node-style static ESM workspace export conditions conservatively", async () => {
+    const main = [
+      'import { defaultFirstTarget } from "@scope/conditions/default-first";',
+      'import { nodeFirstTarget } from "@scope/conditions/node-first";',
+      'import { nestedFallbackTarget } from "@scope/conditions/nested-fallback";',
+      'import { inactiveBranchTarget } from "@scope/conditions/inactive-branches";',
+      'import { blockedTarget } from "@scope/conditions/blocked";',
+      'import { unsafeTarget } from "@scope/conditions/unsafe";',
+      'import { arrayTarget } from "@scope/conditions/array";',
+      'import { mixedTarget } from "@scope/conditions/mixed";',
+      'import { invalidConditionTarget } from "@scope/conditions/invalid-condition";',
+      'import { legacyTarget } from "@scope/legacy-blocked";',
+      "export function run() {",
+      "  defaultFirstTarget();",
+      "  nodeFirstTarget();",
+      "  nestedFallbackTarget();",
+      "  inactiveBranchTarget();",
+      "  blockedTarget();",
+      "  unsafeTarget();",
+      "  arrayTarget();",
+      "  mixedTarget();",
+      "  invalidConditionTarget();",
+      "  legacyTarget();",
+      "}",
+    ].join("\n");
+    const defaultFirstTarget = symbol("default", "packages/conditions/src/default.ts", "defaultFirstTarget");
+    const nodeFirstTarget = symbol("node", "packages/conditions/src/node.ts", "nodeFirstTarget");
+    const nestedFallbackTarget = symbol(
+      "nested-fallback",
+      "packages/conditions/src/nested-fallback.ts",
+      "nestedFallbackTarget",
+    );
+    const inactiveBranchTarget = symbol(
+      "inactive-branches",
+      "packages/conditions/src/inactive-branches.ts",
+      "inactiveBranchTarget",
+    );
+    const instance = resolver({
+      "apps/web/src/main.ts": { content: main, symbols: [symbol("run", "apps/web/src/main.ts", "run")] },
+      "packages/conditions/src/default.ts": {
+        content: "export function defaultFirstTarget() {}",
+        symbols: [defaultFirstTarget],
+      },
+      "packages/conditions/src/import.ts": {
+        content: "export function defaultFirstTarget() {}",
+        symbols: [symbol("import", "packages/conditions/src/import.ts", "defaultFirstTarget")],
+      },
+      "packages/conditions/src/node.ts": {
+        content: "export function nodeFirstTarget() {}",
+        symbols: [nodeFirstTarget],
+      },
+      "packages/conditions/src/node-import.ts": {
+        content: "export function nodeFirstTarget() {}",
+        symbols: [symbol("node-import", "packages/conditions/src/node-import.ts", "nodeFirstTarget")],
+      },
+      "packages/conditions/src/nested-fallback.ts": {
+        content: "export function nestedFallbackTarget() {}",
+        symbols: [nestedFallbackTarget],
+      },
+      "packages/conditions/src/inactive-branches.ts": {
+        content: "export function inactiveBranchTarget() {}",
+        symbols: [inactiveBranchTarget],
+      },
+      "packages/conditions/src/blocked-fallback.ts": {
+        content: "export function blockedTarget() {}",
+        symbols: [symbol("blocked", "packages/conditions/src/blocked-fallback.ts", "blockedTarget")],
+      },
+      "packages/conditions/src/unsafe-fallback.ts": {
+        content: "export function unsafeTarget() {}",
+        symbols: [symbol("unsafe", "packages/conditions/src/unsafe-fallback.ts", "unsafeTarget")],
+      },
+      "packages/conditions/src/array-fallback.ts": {
+        content: "export function arrayTarget() {}",
+        symbols: [symbol("array", "packages/conditions/src/array-fallback.ts", "arrayTarget")],
+      },
+      "packages/conditions/src/mixed-fallback.ts": {
+        content: "export function mixedTarget() {}",
+        symbols: [symbol("mixed", "packages/conditions/src/mixed-fallback.ts", "mixedTarget")],
+      },
+      "packages/conditions/src/invalid-condition-fallback.ts": {
+        content: "export function invalidConditionTarget() {}",
+        symbols: [symbol(
+          "invalid-condition",
+          "packages/conditions/src/invalid-condition-fallback.ts",
+          "invalidConditionTarget",
+        )],
+      },
+      "packages/legacy/src/main.ts": {
+        content: "export function legacyTarget() {}",
+        symbols: [symbol("legacy", "packages/legacy/src/main.ts", "legacyTarget")],
+      },
+    }, {
+      "packages/conditions/package.json": JSON.stringify({
+        name: "@scope/conditions",
+        exports: {
+          "./default-first": {
+            default: "./src/default.ts",
+            import: "./src/import.ts",
+          },
+          "./node-first": {
+            node: "./src/node.ts",
+            import: "./src/node-import.ts",
+          },
+          "./nested-fallback": {
+            node: { require: "./src/missing-cjs.ts" },
+            default: "./src/nested-fallback.ts",
+          },
+          "./inactive-branches": {
+            types: "./src/missing-types.ts",
+            require: "./src/missing-cjs.ts",
+            browser: "./src/missing-browser.ts",
+            import: "./src/inactive-branches.ts",
+          },
+          "./blocked": { node: null, default: "./src/blocked-fallback.ts" },
+          "./unsafe": { node: "./../outside.ts", default: "./src/unsafe-fallback.ts" },
+          "./array": { node: ["./src/missing-array.ts"], default: "./src/array-fallback.ts" },
+          "./mixed": {
+            node: { ".": "./src/missing-root.ts", import: "./src/missing-import.ts" },
+            default: "./src/mixed-fallback.ts",
+          },
+          "./invalid-condition": {
+            "10": "./src/missing-numeric.ts",
+            default: "./src/invalid-condition-fallback.ts",
+          },
+        },
+      }),
+      "packages/legacy/package.json": JSON.stringify({
+        name: "@scope/legacy-blocked",
+        exports: null,
+        module: "./src/main.ts",
+        main: "./src/main.ts",
+      }),
+    });
+
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("defaultFirstTarget", 12, 2)))
+      .resolves.toEqual(defaultFirstTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nodeFirstTarget", 13, 2)))
+      .resolves.toEqual(nodeFirstTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nestedFallbackTarget", 14, 2)))
+      .resolves.toEqual(nestedFallbackTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("inactiveBranchTarget", 15, 2)))
+      .resolves.toEqual(inactiveBranchTarget);
+    for (const [calleeName, line] of [
+      ["blockedTarget", 16],
+      ["unsafeTarget", 17],
+      ["arrayTarget", 18],
+      ["mixedTarget", 19],
+      ["invalidConditionTarget", 20],
+      ["legacyTarget", 21],
+    ] as const) {
+      await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(calleeName, line, 2)))
+        .resolves.toBeUndefined();
+    }
+  });
+
   it("uses safe package-relative subpaths without exports and abstains for external or ambiguous packages", async () => {
     const main = [
       'import { nestedTarget } from "shared-package/nested";',

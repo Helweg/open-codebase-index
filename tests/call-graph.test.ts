@@ -2762,6 +2762,113 @@ main() {
       }
     });
 
+    it("applies static ESM workspace export conditions through the public Indexer", async () => {
+      const projectDir = path.join(tempDir, "conditional-workspace-exports-project");
+      const writeProjectFile = (relativePath: string, content: string): void => {
+        const filePath = path.join(projectDir, relativePath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, content);
+      };
+
+      writeProjectFile("package.json", JSON.stringify({ name: "workspace-root" }));
+      writeProjectFile("apps/web/src/main.ts", [
+        'import { defaultFirstTarget } from "@scope/conditions/default-first";',
+        'import { nodeFirstTarget } from "@scope/conditions/node-first";',
+        'import { nestedFallbackTarget } from "@scope/conditions/nested-fallback";',
+        'import { blockedTarget } from "@scope/conditions/blocked";',
+        'import { unsafeTarget } from "@scope/conditions/unsafe";',
+        'import { arrayTarget } from "@scope/conditions/array";',
+        'import { mixedTarget } from "@scope/mixed";',
+        'import { legacyTarget } from "@scope/legacy-blocked";',
+        "export function runConditionalExports() {",
+        "  defaultFirstTarget();",
+        "  nodeFirstTarget();",
+        "  nestedFallbackTarget();",
+        "  blockedTarget();",
+        "  unsafeTarget();",
+        "  arrayTarget();",
+        "  mixedTarget();",
+        "  legacyTarget();",
+        "}",
+      ].join("\n"));
+      writeProjectFile("packages/conditions/package.json", JSON.stringify({
+        name: "@scope/conditions",
+        exports: {
+          "./default-first": {
+            default: "./src/default.ts",
+            import: "./src/import.ts",
+          },
+          "./node-first": {
+            node: "./src/node.ts",
+            import: "./src/node-import.ts",
+          },
+          "./nested-fallback": {
+            node: { require: "./src/missing-cjs.ts" },
+            default: "./src/nested-fallback.ts",
+          },
+          "./blocked": { node: null, default: "./src/blocked-fallback.ts" },
+          "./unsafe": { node: "./../outside.ts", default: "./src/unsafe-fallback.ts" },
+          "./array": { node: ["./src/missing-array.ts"], default: "./src/array-fallback.ts" },
+        },
+      }));
+      writeProjectFile("packages/conditions/src/default.ts", "export function defaultFirstTarget() {}");
+      writeProjectFile("packages/conditions/src/import.ts", "export function defaultFirstTarget() {}");
+      writeProjectFile("packages/conditions/src/node.ts", "export function nodeFirstTarget() {}");
+      writeProjectFile("packages/conditions/src/node-import.ts", "export function nodeFirstTarget() {}");
+      writeProjectFile("packages/conditions/src/nested-fallback.ts", "export function nestedFallbackTarget() {}");
+      writeProjectFile("packages/conditions/src/blocked-fallback.ts", "export function blockedTarget() {}");
+      writeProjectFile("packages/conditions/src/unsafe-fallback.ts", "export function unsafeTarget() {}");
+      writeProjectFile("packages/conditions/src/array-fallback.ts", "export function arrayTarget() {}");
+      writeProjectFile("packages/mixed/package.json", JSON.stringify({
+        name: "@scope/mixed",
+        exports: { ".": "./src/root.ts", import: "./src/import.ts" },
+        main: "./src/root.ts",
+      }));
+      writeProjectFile("packages/mixed/src/root.ts", "export function mixedTarget() {}");
+      writeProjectFile("packages/mixed/src/import.ts", "export function mixedTarget() {}");
+      writeProjectFile("packages/legacy/package.json", JSON.stringify({
+        name: "@scope/legacy-blocked",
+        exports: null,
+        main: "./src/main.ts",
+      }));
+      writeProjectFile("packages/legacy/src/main.ts", "export function legacyTarget() {}");
+
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        await indexer.index();
+        const symbols = await indexer.getSymbolsForBranch();
+        const caller = symbols.find((symbol) => symbol.name === "runConditionalExports");
+        expect(caller).toBeDefined();
+        const edges = await indexer.getCallees(caller!.id);
+        const edgeFor = (targetName: string): CallEdgeData => {
+          const edge = edges.find((candidate) => candidate.targetName === targetName);
+          expect(edge).toBeDefined();
+          return edge!;
+        };
+        const resolvedPathFor = (targetName: string): string | undefined => {
+          const edge = edgeFor(targetName);
+          return symbols.find((symbol) => symbol.id === edge.toSymbolId)?.filePath;
+        };
+
+        expect(resolvedPathFor("defaultFirstTarget"))
+          .toMatch(/packages[/\\]conditions[/\\]src[/\\]default\.ts$/u);
+        expect(resolvedPathFor("nodeFirstTarget"))
+          .toMatch(/packages[/\\]conditions[/\\]src[/\\]node\.ts$/u);
+        expect(resolvedPathFor("nestedFallbackTarget"))
+          .toMatch(/packages[/\\]conditions[/\\]src[/\\]nested-fallback\.ts$/u);
+        for (const targetName of ["blockedTarget", "unsafeTarget", "arrayTarget", "mixedTarget", "legacyTarget"]) {
+          const edge = edgeFor(targetName);
+          expect(edge).toMatchObject({ isResolved: false });
+          expect(edge.toSymbolId).toBeUndefined();
+        }
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("re-resolves unchanged importers when nearest configs and their extends chain change", async () => {
       const projectDir = path.join(tempDir, "nearest-local-module-config-project");
       const appDir = path.join(projectDir, "packages", "app");
@@ -2893,7 +3000,7 @@ main() {
           col: edge!.col,
           isResolved: false,
         });
-        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "4");
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "6");
         database.close();
         const embeddingCallsBeforeMigration = fetchSpy.mock.calls.length;
 
