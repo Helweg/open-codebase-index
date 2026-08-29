@@ -239,10 +239,19 @@ describe("FileWatcher", () => {
       );
     });
 
-    it("watches a nested package manifest outside source include patterns with Chokidar", async () => {
+    it("watches only root-declared workspace manifests and refreshes ownership with Chokidar", async () => {
+      const rootManifest = path.join(tempDir, "package.json");
       const packageManifest = path.join(tempDir, "packages", "shared", "package.json");
-      fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
+      const excludedManifest = path.join(tempDir, "packages", "private", "package.json");
+      const newlyDeclaredManifest = path.join(tempDir, "tools", "private", "package.json");
+      for (const manifestPath of [packageManifest, excludedManifest, newlyDeclaredManifest]) {
+        fs.mkdirSync(path.join(path.dirname(manifestPath), "src"), { recursive: true });
+        fs.writeFileSync(path.join(path.dirname(manifestPath), "src", "index.ts"), "export const value = 1;");
+      }
+      fs.writeFileSync(rootManifest, JSON.stringify({ workspaces: ["packages/*", "!packages/private"] }));
       fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+      fs.writeFileSync(excludedManifest, JSON.stringify({ name: "excluded", main: "./src/index.ts" }));
+      fs.writeFileSync(newlyDeclaredManifest, JSON.stringify({ name: "private", main: "./src/index.ts" }));
       const changes: FileChange[] = [];
       watcher = new FileWatcher(
         tempDir,
@@ -257,11 +266,36 @@ describe("FileWatcher", () => {
       await watcher.waitUntilReady();
 
       await writeUntilObserved(
-        (attempt) => fs.writeFileSync(
-          packageManifest,
-          JSON.stringify({ name: "@scope/shared", main: `./src-${attempt}/index.ts` }),
-        ),
+        (attempt) => {
+          fs.writeFileSync(
+            packageManifest,
+            JSON.stringify({ name: "@scope/shared", main: `./src-${attempt}/index.ts` }),
+          );
+          fs.writeFileSync(
+            excludedManifest,
+            JSON.stringify({ name: "excluded", main: `./src-${attempt}/index.ts` }),
+          );
+        },
         () => expect(changes).toContainEqual({ path: packageManifest, type: "change" }),
+      );
+      expect(changes.some((change) => change.path === excludedManifest)).toBe(false);
+
+      changes.length = 0;
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          rootManifest,
+          JSON.stringify({ attempt, workspaces: { packages: ["tools/*"] } }),
+        ),
+        () => expect(changes).toContainEqual({ path: rootManifest, type: "change" }),
+      );
+
+      changes.length = 0;
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(
+          newlyDeclaredManifest,
+          JSON.stringify({ name: "private", main: `./updated-${attempt}/index.ts` }),
+        ),
+        () => expect(changes).toContainEqual({ path: newlyDeclaredManifest, type: "change" }),
       );
     });
 

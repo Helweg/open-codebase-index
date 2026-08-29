@@ -466,6 +466,7 @@ export type IndexFreshnessReason =
   | "incompatible"
   | "failed-batches"
   | "files-changed"
+  | "metadata-changed"
   | "branch-changed"
   | "migration-required";
 
@@ -473,6 +474,12 @@ export interface IndexFreshnessResult {
   readable: boolean;
   current: boolean;
   reason: IndexFreshnessReason;
+}
+
+interface LocalModuleResolutionState {
+  configHash: string;
+  pathAliasCache: TsConfigPathAliasCache;
+  workspacePackages: ReturnType<typeof getLocalWorkspacePackages>;
 }
 
 type InitializationMode = "none" | "reader" | "writer";
@@ -4159,6 +4166,33 @@ export class Indexer {
     });
   }
 
+  private getLocalModuleResolutionState(files: readonly { path: string }[]): LocalModuleResolutionState {
+    const loadFileText = (configPath: string): string | undefined => {
+      try {
+        return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
+      } catch {
+        return undefined;
+      }
+    };
+    const pathAliasCache = new TsConfigPathAliasCache(loadFileText);
+    const importerPaths = files.flatMap((file) => {
+      if (!isPathWithinRoot(file.path, this.materializedProjectRoot)) return [];
+      const relativePath = path.relative(this.materializedProjectRoot, file.path).split(path.sep).join("/");
+      return isJavaScriptFamilyFilePath(relativePath) ? [relativePath] : [];
+    });
+    const workspaceManifestPaths = getLocalWorkspacePackageManifestPaths(importerPaths, loadFileText);
+    const workspacePackages = getLocalWorkspacePackages(importerPaths, loadFileText);
+    const configHash = hashContent(JSON.stringify({
+      tsconfig: pathAliasCache.getConfigState(importerPaths),
+      packageManifests: workspaceManifestPaths.map((manifestPath) => [
+        manifestPath,
+        loadFileText(manifestPath) ?? null,
+      ]),
+    }));
+
+    return { configHash, pathAliasCache, workspacePackages };
+  }
+
   async indexBranchIfMissing(
     branch: string,
     commit: string,
@@ -4303,31 +4337,8 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
-    const localModuleResolutionFileText = (configPath: string): string | undefined => {
-      try {
-        return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
-      } catch {
-        return undefined;
-      }
-    };
-    const localModuleResolutionCache = new TsConfigPathAliasCache(localModuleResolutionFileText);
-    const localModuleImporterPaths = files.flatMap((file) => {
-      if (!isPathWithinRoot(file.path, this.materializedProjectRoot)) return [];
-      const relativePath = path.relative(this.materializedProjectRoot, file.path).split(path.sep).join("/");
-      return isJavaScriptFamilyFilePath(relativePath) ? [relativePath] : [];
-    });
-    const localWorkspacePackageManifestPaths = getLocalWorkspacePackageManifestPaths(localModuleImporterPaths);
-    const localWorkspacePackages = getLocalWorkspacePackages(
-      localModuleImporterPaths,
-      localModuleResolutionFileText,
-    );
-    this.localModuleResolutionConfigHash = hashContent(JSON.stringify({
-      tsconfig: localModuleResolutionCache.getConfigState(localModuleImporterPaths),
-      packageManifests: localWorkspacePackageManifestPaths.map((manifestPath) => [
-        manifestPath,
-        localModuleResolutionFileText(manifestPath) ?? null,
-      ]),
-    }));
+    const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    this.localModuleResolutionConfigHash = localModuleResolutionState.configHash;
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -4524,11 +4535,11 @@ export class Indexer {
           const materializedPath = this.toMaterializedFilePath(filePath);
           if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
           const relativePath = path.relative(this.materializedProjectRoot, materializedPath).split(path.sep).join("/");
-          return localModuleResolutionCache.getPathAliasesForImporter(relativePath);
+          return localModuleResolutionState.pathAliasCache.getPathAliasesForImporter(relativePath);
         }
-        return localModuleResolutionCache.getPathAliasesForImporter(filePath);
+        return localModuleResolutionState.pathAliasCache.getPathAliasesForImporter(filePath);
       },
-      workspacePackages: localWorkspacePackages,
+      workspacePackages: localModuleResolutionState.workspacePackages,
     });
     let writeTransactionActive = false;
 
@@ -5793,6 +5804,13 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
       },
     );
+    const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    if (
+      database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
+      !== localModuleResolutionState.configHash
+    ) {
+      return { readable: true, current: false, reason: "metadata-changed" };
+    }
     const currentFileHashes = new Map<string, string>();
     for (const file of files) {
       let hash: string;

@@ -2672,6 +2672,10 @@ main() {
             },
           },
         }));
+        await expect(indexer.getIndexFreshness()).resolves.toMatchObject({
+          current: false,
+          reason: "metadata-changed",
+        });
         await indexer.index();
 
         const refreshedEdge = await edgeFrom("runDeterministic", "deterministicTarget");
@@ -2684,13 +2688,17 @@ main() {
       }
     });
 
-    it("resolves project-local workspace package imports and reprocesses unchanged importers after manifest changes", async () => {
+    it("resolves only root-declared workspace packages and reprocesses unchanged importers after config changes", async () => {
       const projectDir = path.join(tempDir, "workspace-package-resolution-project");
       const appDir = path.join(projectDir, "apps", "web", "src");
       const packageDir = path.join(projectDir, "packages", "shared", "src");
       fs.mkdirSync(appDir, { recursive: true });
       fs.mkdirSync(packageDir, { recursive: true });
-      fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({ name: "workspace-root" }));
+      const rootManifestPath = path.join(projectDir, "package.json");
+      fs.writeFileSync(rootManifestPath, JSON.stringify({
+        name: "workspace-root",
+        workspaces: ["packages/*", "!packages/shared"],
+      }));
       fs.writeFileSync(
         path.join(appDir, "main.ts"),
         'import { packageTarget } from "@scope/shared";\nexport function runWorkspacePackage() { packageTarget(); }',
@@ -2716,13 +2724,35 @@ main() {
         };
 
         await indexer.index();
+        await expect(resolvedTargetPath()).resolves.toBeUndefined();
+        await expect(indexer.getIndexFreshness()).resolves.toMatchObject({
+          current: true,
+          reason: "current",
+        });
+
+        const embeddingCallsBeforeWorkspaceChange = fetchSpy.mock.calls.length;
+        fs.writeFileSync(rootManifestPath, JSON.stringify({
+          name: "workspace-root",
+          workspaces: { packages: ["packages/*"] },
+        }));
+        await expect(indexer.getIndexFreshness()).resolves.toMatchObject({
+          current: false,
+          reason: "metadata-changed",
+        });
+        await indexer.index();
         await expect(resolvedTargetPath()).resolves.toMatch(/packages[/\\]shared[/\\]src[/\\]index\.ts$/u);
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeWorkspaceChange);
+        await expect(indexer.getIndexFreshness()).resolves.toMatchObject({ current: true });
 
         const embeddingCallsBeforeManifestChange = fetchSpy.mock.calls.length;
         fs.writeFileSync(packageManifestPath, JSON.stringify({
           name: "@scope/shared",
           exports: { ".": "./src/alternate.ts" },
         }));
+        await expect(indexer.getIndexFreshness()).resolves.toMatchObject({
+          current: false,
+          reason: "metadata-changed",
+        });
         await indexer.index();
         await expect(resolvedTargetPath()).resolves.toMatch(/packages[/\\]shared[/\\]src[/\\]alternate\.ts$/u);
         expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);

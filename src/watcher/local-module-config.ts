@@ -2,14 +2,22 @@ import type { Dirent } from "node:fs";
 import { readFileSync, readdirSync } from "node:fs";
 import * as path from "node:path";
 
-import { getTsConfigModuleResolutionConfigDependencyPaths } from "../indexer/local-module-resolution.js";
-import { createIgnoreFilter } from "../utils/files.js";
+import {
+  getLocalWorkspacePackageManifestPaths,
+  getTsConfigModuleResolutionConfigDependencyPaths,
+  isJavaScriptFamilyFilePath,
+  isLocalWorkspacePackageManifestPath,
+} from "../indexer/local-module-resolution.js";
+import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 
 const LOCAL_MODULE_CONFIG_NAMES = new Set(["tsconfig.json", "jsconfig.json"]);
 const LOCAL_MODULE_PACKAGE_MANIFEST_NAME = "package.json";
 type IgnoreFilter = ReturnType<typeof createIgnoreFilter>;
 export interface LocalModuleConfigTrackerOptions {
+  include?: string[];
+  additionalInclude?: string[];
+  exclude?: string[];
   indexing?: { maxDepth?: number };
 }
 
@@ -64,9 +72,13 @@ function shouldTrackProjectLocalJsonConfigPath(
   return !ignoreFilter.ignores(relativePath);
 }
 
-/** Tracks conventional configs and their safe local relative `extends` dependencies. */
+/**
+ * Tracks conventional configs, safe local `extends` dependencies, and workspace
+ * manifests derived only from included JavaScript/TypeScript source ancestors.
+ */
 export class LocalModuleConfigTracker {
   private trackedPaths = new Set<string>();
+  private rootPackageManifestText: string | undefined;
 
   constructor(
     private readonly projectRoot: string,
@@ -77,8 +89,19 @@ export class LocalModuleConfigTracker {
     const root = path.resolve(this.projectRoot);
     const ignoreFilter = createIgnoreFilter(root);
     const roots: string[] = [];
+    const importerPaths: string[] = [];
     const nextPaths = new Set<string>();
     const maxDepth = this.options.indexing?.maxDepth ?? -1;
+    const includePatterns = [...(this.options.include ?? []), ...(this.options.additionalInclude ?? [])];
+    const excludePatterns = this.options.exclude ?? [];
+    const readConfig = (relativePath: string): string | undefined => {
+      try {
+        return readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
+      } catch {
+        return undefined;
+      }
+    };
+    const rootPackageManifestText = readConfig(LOCAL_MODULE_PACKAGE_MANIFEST_NAME);
 
     const walk = (directoryPath: string, depth: number): void => {
       let entries: Dirent[];
@@ -102,21 +125,22 @@ export class LocalModuleConfigTracker {
           if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter)) {
             roots.push(relativePath.split(path.sep).join("/"));
           }
-          if (shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter)) {
-            nextPaths.add(filePath);
+          if (
+            includePatterns.length > 0
+            && isJavaScriptFamilyFilePath(relativePath)
+            && shouldIncludeFile(filePath, root, includePatterns, excludePatterns, ignoreFilter)
+          ) {
+            importerPaths.push(relativePath.split(path.sep).join("/"));
           }
         }
       }
     };
 
     walk(root, 0);
-    const readConfig = (relativePath: string): string | undefined => {
-      try {
-        return readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
-      } catch {
-        return undefined;
-      }
-    };
+
+    for (const manifestPath of getLocalWorkspacePackageManifestPaths(importerPaths, readConfig)) {
+      nextPaths.add(path.resolve(root, ...manifestPath.split("/")));
+    }
 
     for (const rootConfig of roots) {
       for (const dependency of getTsConfigModuleResolutionConfigDependencyPaths(rootConfig, readConfig)) {
@@ -126,7 +150,17 @@ export class LocalModuleConfigTracker {
         }
       }
     }
+    this.rootPackageManifestText = rootPackageManifestText;
     this.trackedPaths = nextPaths;
+  }
+
+  shouldTrackPackagePath(filePath: string): boolean {
+    const root = path.resolve(this.projectRoot);
+    const ignoreFilter = createIgnoreFilter(root);
+    if (!shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter)) return false;
+
+    const relativePath = path.relative(root, filePath).split(path.sep).join("/");
+    return isLocalWorkspacePackageManifestPath(relativePath, this.rootPackageManifestText);
   }
 
   has(filePath: string): boolean {
