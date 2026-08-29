@@ -28,7 +28,7 @@ function symbolExtractorMetadataKey(catalogIdentity: string): string {
 
 function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: string): void {
   const suffix = hashContent(catalogIdentity).slice(0, 24);
-  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "7");
+  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "8");
   database.setMetadata(`index.parser.swiftVersion.${suffix}`, "1");
   database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
   database.setMetadata(symbolExtractorMetadataKey(catalogIdentity), "1");

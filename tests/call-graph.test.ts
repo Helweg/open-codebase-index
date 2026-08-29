@@ -2762,6 +2762,116 @@ main() {
       }
     });
 
+    it("resolves safe workspace export patterns and refreshes blocking declarations and migrations", async () => {
+      const projectDir = path.join(tempDir, "workspace-package-resolution-project");
+      const appDir = path.join(projectDir, "apps", "web", "src");
+      const packageDir = path.join(projectDir, "packages", "shared", "src");
+      fs.mkdirSync(appDir, { recursive: true });
+      fs.mkdirSync(path.join(packageDir, "features"), { recursive: true });
+      fs.mkdirSync(path.join(packageDir, "alternate"), { recursive: true });
+      fs.mkdirSync(path.join(projectDir, "packages", "outside"), { recursive: true });
+      fs.writeFileSync(path.join(projectDir, "package.json"), JSON.stringify({ name: "workspace-root" }));
+      fs.writeFileSync(
+        path.join(appDir, "main.ts"),
+        [
+          'import { packageTarget } from "@scope/shared/features/current";',
+          'import { blockedTarget } from "@scope/shared/features/blocked";',
+          'import { unsafeTarget } from "@scope/shared/unsafe/current";',
+          "export function runWorkspacePackage() { packageTarget(); blockedTarget(); unsafeTarget(); }",
+        ].join("\n"),
+      );
+      fs.writeFileSync(path.join(packageDir, "features", "current.ts"), "export function packageTarget() {}");
+      fs.writeFileSync(path.join(packageDir, "features", "blocked.ts"), "export function blockedTarget() {}");
+      fs.writeFileSync(path.join(packageDir, "alternate", "current.ts"), "export function packageTarget() {}");
+      fs.writeFileSync(path.join(projectDir, "packages", "outside", "current.ts"), "export function unsafeTarget() {}");
+      const packageManifestPath = path.join(projectDir, "packages", "shared", "package.json");
+      fs.writeFileSync(packageManifestPath, JSON.stringify({
+        name: "@scope/shared",
+        exports: {
+          "./features/blocked": null,
+          "./features/*": "./src/features/*.ts",
+          "./unsafe/*": "./../outside/*.ts",
+        },
+      }));
+      const fetchSpy = mockEmbeddings();
+      let indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      try {
+        const edgeFor = async (targetName: string): Promise<CallEdgeData | undefined> => {
+          const symbols = await indexer.getSymbolsForBranch();
+          const caller = symbols.find((symbol) => symbol.name === "runWorkspacePackage");
+          return (await indexer.getCallees(caller!.id)).find((candidate) => candidate.targetName === targetName);
+        };
+        const resolvedTargetPath = async (targetName: string): Promise<string | undefined> => {
+          const symbols = await indexer.getSymbolsForBranch();
+          const edge = await edgeFor(targetName);
+          return symbols.find((symbol) => symbol.id === edge?.toSymbolId)?.filePath;
+        };
+
+        await indexer.index();
+        await expect(resolvedTargetPath("packageTarget")).resolves.toMatch(
+          /packages[/\\]shared[/\\]src[/\\]features[/\\]current\.ts$/u,
+        );
+        await expect(edgeFor("blockedTarget")).resolves.toMatchObject({ isResolved: false });
+        await expect(edgeFor("unsafeTarget")).resolves.toMatchObject({ isResolved: false });
+
+        const embeddingCallsBeforeManifestChange = fetchSpy.mock.calls.length;
+        fs.writeFileSync(packageManifestPath, JSON.stringify({
+          name: "@scope/shared",
+          exports: {
+            "./features/current": null,
+            "./features/*": "./src/alternate/*.ts",
+          },
+        }));
+        await indexer.index();
+        await expect(edgeFor("packageTarget")).resolves.toMatchObject({ isResolved: false });
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);
+
+        fs.writeFileSync(packageManifestPath, JSON.stringify({
+          name: "@scope/shared",
+          exports: { "./features/*": "./src/alternate/*.ts" },
+        }));
+        await indexer.index();
+        await expect(resolvedTargetPath("packageTarget")).resolves.toMatch(
+          /packages[/\\]shared[/\\]src[/\\]alternate[/\\]current\.ts$/u,
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);
+
+        const resolvedEdge = await edgeFor("packageTarget");
+        expect(resolvedEdge?.isResolved).toBe(true);
+        await indexer.close();
+
+        const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        database.upsertCallEdge({
+          id: resolvedEdge!.id,
+          fromSymbolId: resolvedEdge!.fromSymbolId,
+          targetName: resolvedEdge!.targetName,
+          callType: resolvedEdge!.callType,
+          confidence: resolvedEdge!.confidence,
+          line: resolvedEdge!.line,
+          col: resolvedEdge!.col,
+          isResolved: false,
+        });
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "7");
+        database.close();
+
+        indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+        await indexer.index();
+        await expect(resolvedTargetPath("packageTarget")).resolves.toMatch(
+          /packages[/\\]shared[/\\]src[/\\]alternate[/\\]current\.ts$/u,
+        );
+        expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);
+
+        await indexer.close();
+        const migratedDatabase = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
+        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("8");
+        migratedDatabase.close();
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
     it("applies static ESM workspace export conditions through the public Indexer", async () => {
       const projectDir = path.join(tempDir, "conditional-workspace-exports-project");
       const writeProjectFile = (relativePath: string, content: string): void => {

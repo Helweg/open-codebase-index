@@ -7,6 +7,7 @@ import {
   getTsConfigModuleResolutionConfigDependencyPaths,
   getTsConfigModuleResolutionConfigPaths,
   getLocalWorkspacePackages,
+  parseLocalWorkspacePackage,
   parseTsConfigForModuleResolution,
   resolveTsConfigForModuleResolution,
   type LocalModuleData,
@@ -327,6 +328,287 @@ describe("LocalModuleCallResolver", () => {
       await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(calleeName, line, 2)))
         .resolves.toBeUndefined();
     }
+  });
+
+  it("does not bypass null or subpath-only exports with legacy root entry fields", async () => {
+    const main = [
+      'import { nullRootTarget } from "null-root-package";',
+      'import { restrictedRootTarget } from "restricted-root-package";',
+      "export function run() { nullRootTarget(); restrictedRootTarget(); }",
+    ].join("\n");
+    const instance = resolver({
+      "apps/web/src/main.ts": { content: main, symbols: [symbol("run", "apps/web/src/main.ts", "run")] },
+      "packages/null-root/src/index.ts": {
+        content: "export function nullRootTarget() {}",
+        symbols: [symbol("null-root", "packages/null-root/src/index.ts", "nullRootTarget")],
+      },
+      "packages/restricted-root/src/index.ts": {
+        content: "export function restrictedRootTarget() {}",
+        symbols: [symbol("restricted-root", "packages/restricted-root/src/index.ts", "restrictedRootTarget")],
+      },
+    }, {
+      "packages/null-root/package.json": JSON.stringify({
+        name: "null-root-package",
+        exports: null,
+        main: "./src/index.ts",
+      }),
+      "packages/restricted-root/package.json": JSON.stringify({
+        name: "restricted-root-package",
+        exports: { "./feature": "./src/index.ts" },
+        main: "./src/index.ts",
+      }),
+    });
+
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nullRootTarget", 3, 24)))
+      .resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("restrictedRootTarget", 3, 42)))
+      .resolves.toBeUndefined();
+  });
+
+  it("uses Node-compatible wildcard specificity with exact exports taking precedence", async () => {
+    const main = [
+      'import { generalTarget } from "@scope/shared/features/general";',
+      'import { specificTarget } from "@scope/shared/features/internal/suffix-long";',
+      'import { exactTarget } from "@scope/shared/features/internal/exact";',
+      "export function run() {",
+      "  generalTarget();",
+      "  specificTarget();",
+      "  exactTarget();",
+      "}",
+    ].join("\n");
+    const generalTarget = symbol("general", "packages/shared/src/general/general.ts", "generalTarget");
+    const specificTarget = symbol("specific", "packages/shared/src/by-prefix/suffix-long.ts", "specificTarget");
+    const exactTarget = symbol("exact", "packages/shared/src/exact.ts", "exactTarget");
+    const instance = resolver({
+      "apps/web/src/main.ts": { content: main, symbols: [symbol("run", "apps/web/src/main.ts", "run")] },
+      "packages/shared/src/general/general.ts": {
+        content: "export function generalTarget() {}",
+        symbols: [generalTarget],
+      },
+      "packages/shared/src/by-trailer/internal.ts": {
+        content: "export function specificTarget() {}",
+        symbols: [symbol("trailer-specific", "packages/shared/src/by-trailer/internal.ts", "specificTarget")],
+      },
+      "packages/shared/src/by-prefix/suffix-long.ts": {
+        content: "export function specificTarget() {}",
+        symbols: [specificTarget],
+      },
+      "packages/shared/src/general/internal/exact.ts": {
+        content: "export function exactTarget() {}",
+        symbols: [symbol("general-exact", "packages/shared/src/general/internal/exact.ts", "exactTarget")],
+      },
+      "packages/shared/src/internal/exact.ts": {
+        content: "export function exactTarget() {}",
+        symbols: [symbol("specific-exact", "packages/shared/src/internal/exact.ts", "exactTarget")],
+      },
+      "packages/shared/src/exact.ts": { content: "export function exactTarget() {}", symbols: [exactTarget] },
+    }, {
+      "packages/shared/package.json": JSON.stringify({
+        name: "@scope/shared",
+        exports: {
+          "./features/internal/exact": "./src/exact.ts",
+          "./features/*": "./src/general/*.ts",
+          "./features/*/suffix-long": "./src/by-trailer/*.ts",
+          "./features/internal/*": "./src/by-prefix/*.ts",
+        },
+      }),
+    });
+
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("generalTarget", 5, 2)))
+      .resolves.toEqual(generalTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("specificTarget", 6, 2)))
+      .resolves.toEqual(specificTarget);
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("exactTarget", 7, 2)))
+      .resolves.toEqual(exactTarget);
+  });
+
+  it("bounds wildcard export maps and fails closed when the limit is exceeded", () => {
+    const exports = Object.fromEntries(
+      Array.from({ length: 257 }, (_, index) => [`./feature-${index}/*`, `./src/feature-${index}/*.ts`]),
+    );
+    exports["."] = "./src/index.ts";
+
+    const workspacePackage = parseLocalWorkspacePackage(
+      "packages/shared/package.json",
+      JSON.stringify({ name: "shared-package", exports }),
+    );
+
+    expect(workspacePackage?.entryPoints.get(".")).toEqual(["packages/shared/src/index.ts"]);
+    expect(workspacePackage?.exportPatterns).toEqual([]);
+  });
+
+  it("blocks broader fallbacks and rejects malformed, external, and ambiguous wildcard mappings", async () => {
+    const main = [
+      'import { unsafeKeyTarget } from "shared-package/../outside";',
+      'import { noStarTarget } from "shared-package/no-star/value";',
+      'import { multiStarTarget } from "shared-package/multi/value";',
+      'import { escapingTarget } from "shared-package/escape/outside";',
+      'import { traversalTarget } from "shared-package/capture/../outside";',
+      'import { encodedTraversalTarget } from "shared-package/capture/%2e%2e/outside";',
+      'import { encodedTarget } from "shared-package/encoded/value";',
+      'import { nodeModulesTarget } from "shared-package/modules/value";',
+      'import { exactNullTarget } from "shared-package/exact-null";',
+      'import { exactUnsafeTarget } from "shared-package/exact-unsafe";',
+      'import { exactMixedTarget } from "shared-package/exact-mixed";',
+      'import { patternNullTarget } from "shared-package/private/value";',
+      'import { trailingSlashTarget } from "shared-package/";',
+      'import { conditionalTarget } from "shared-package/conditional/value";',
+      'import { ambiguousTarget } from "duplicate-package/features/value";',
+      'import { invalidNameTarget } from "invalid/name/value";',
+      "export function run() {",
+      "  unsafeKeyTarget(); noStarTarget(); multiStarTarget(); escapingTarget();",
+      "  traversalTarget(); encodedTraversalTarget(); encodedTarget(); nodeModulesTarget();",
+      "  exactNullTarget(); exactUnsafeTarget(); exactMixedTarget(); patternNullTarget(); trailingSlashTarget();",
+      "  conditionalTarget(); ambiguousTarget(); invalidNameTarget();",
+      "}",
+    ].join("\n");
+    const conditionalTarget = symbol("conditional", "packages/shared/src/value.ts", "conditionalTarget");
+    const instance = resolver({
+      "apps/web/main.ts": { content: main, symbols: [symbol("run", "apps/web/main.ts", "run")] },
+      "packages/shared/src/outside.ts": {
+        content: [
+          "export function unsafeKeyTarget() {}",
+          "export function traversalTarget() {}",
+          "export function encodedTraversalTarget() {}",
+        ].join("\n"),
+        symbols: [
+          symbol("unsafe-key", "packages/shared/src/outside.ts", "unsafeKeyTarget"),
+          symbol("traversal", "packages/shared/src/outside.ts", "traversalTarget"),
+          symbol("encoded-traversal", "packages/shared/src/outside.ts", "encodedTraversalTarget"),
+        ],
+      },
+      "packages/shared/src/%2e%2e/outside.ts": {
+        content: "export function encodedTraversalTarget() {}",
+        symbols: [
+          symbol("encoded-traversal-literal", "packages/shared/src/%2e%2e/outside.ts", "encodedTraversalTarget"),
+        ],
+      },
+      "packages/shared/src/%2e%2e/value.ts": {
+        content: "export function encodedTarget() {}",
+        symbols: [symbol("encoded-literal", "packages/shared/src/%2e%2e/value.ts", "encodedTarget")],
+      },
+      "packages/shared/src/node_modules/value.ts": {
+        content: "export function nodeModulesTarget() {}",
+        symbols: [symbol("node-modules", "packages/shared/src/node_modules/value.ts", "nodeModulesTarget")],
+      },
+      "packages/shared/src/fixed.ts": {
+        content: "export function noStarTarget() {}",
+        symbols: [symbol("no-star", "packages/shared/src/fixed.ts", "noStarTarget")],
+      },
+      "packages/shared/src/value/value.ts": {
+        content: "export function multiStarTarget() {}",
+        symbols: [symbol("multi-star", "packages/shared/src/value/value.ts", "multiStarTarget")],
+      },
+      "packages/outside.ts": {
+        content: "export function escapingTarget() {}\nexport function encodedTarget() {}",
+        symbols: [
+          symbol("escaping", "packages/outside.ts", "escapingTarget"),
+          symbol("encoded", "packages/outside.ts", "encodedTarget"),
+        ],
+      },
+      "packages/shared/src/exact-null.ts": {
+        content: "export function exactNullTarget() {}",
+        symbols: [symbol("exact-null", "packages/shared/src/exact-null.ts", "exactNullTarget")],
+      },
+      "packages/shared/src/exact-unsafe.ts": {
+        content: "export function exactUnsafeTarget() {}",
+        symbols: [symbol("exact-unsafe", "packages/shared/src/exact-unsafe.ts", "exactUnsafeTarget")],
+      },
+      "packages/shared/src/exact-mixed.ts": {
+        content: "export function exactMixedTarget() {}",
+        symbols: [symbol("exact-mixed", "packages/shared/src/exact-mixed.ts", "exactMixedTarget")],
+      },
+      "packages/shared/src/private/value.ts": {
+        content: "export function patternNullTarget() {}",
+        symbols: [symbol("pattern-null", "packages/shared/src/private/value.ts", "patternNullTarget")],
+      },
+      "packages/shared/src/.ts": {
+        content: "export function trailingSlashTarget() {}",
+        symbols: [symbol("trailing-slash", "packages/shared/src/.ts", "trailingSlashTarget")],
+      },
+      "packages/shared/src/value.ts": {
+        content: "export function conditionalTarget() {}",
+        symbols: [conditionalTarget],
+      },
+      "packages/a/src/value.ts": {
+        content: "export function ambiguousTarget() {}",
+        symbols: [symbol("ambiguous-a", "packages/a/src/value.ts", "ambiguousTarget")],
+      },
+      "packages/b/src/value.ts": {
+        content: "export function ambiguousTarget() {}",
+        symbols: [symbol("ambiguous-b", "packages/b/src/value.ts", "ambiguousTarget")],
+      },
+      "packages/invalid/src/value.ts": {
+        content: "export function invalidNameTarget() {}",
+        symbols: [symbol("invalid-name", "packages/invalid/src/value.ts", "invalidNameTarget")],
+      },
+    }, {
+      "packages/shared/package.json": JSON.stringify({
+        name: "shared-package",
+        exports: {
+          "./../*": "./src/*.ts",
+          "./no-star/*": "./src/fixed.ts",
+          "./multi/*": "./src/*/*.ts",
+          "./escape/*": "./../*.ts",
+          "./capture/*": "./src/*.ts",
+          "./encoded/*": "./src/%2e%2e/*.ts",
+          "./modules/*": "./src/node_modules/*.ts",
+          "./exact-null": null,
+          "./exact-unsafe": "./../exact-unsafe.ts",
+          "./exact-mixed": { types: "./src/exact-mixed.ts", import: "external-package" },
+          "./private/*": null,
+          "./*": "./src/*.ts",
+          "./conditional/*": { import: "./src/*.ts", default: "./src/fixed.ts" },
+        },
+      }),
+      "packages/a/package.json": JSON.stringify({
+        name: "duplicate-package",
+        exports: { "./features/*": "./src/*.ts" },
+      }),
+      "packages/b/package.json": JSON.stringify({
+        name: "duplicate-package",
+        exports: { "./features/*": "./src/*.ts" },
+      }),
+      "packages/invalid/package.json": JSON.stringify({
+        name: "invalid/name",
+        exports: { "./*": "./src/*.ts" },
+      }),
+    });
+
+    for (const name of [
+      "unsafeKeyTarget",
+      "noStarTarget",
+      "multiStarTarget",
+      "escapingTarget",
+      "traversalTarget",
+      "encodedTraversalTarget",
+      "encodedTarget",
+      "nodeModulesTarget",
+      "exactNullTarget",
+      "exactUnsafeTarget",
+      "exactMixedTarget",
+      "patternNullTarget",
+      "trailingSlashTarget",
+      "ambiguousTarget",
+      "invalidNameTarget",
+    ]) {
+      await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(name, 20, 2)))
+        .resolves.toBeUndefined();
+    }
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("conditionalTarget", 20, 2)))
+      .resolves.toEqual(conditionalTarget);
+  });
+
+  it("rejects unsafe workspace package manifest paths and names", () => {
+    const manifest = JSON.stringify({ name: "safe-package", exports: { "./*": "./src/*.ts" } });
+
+    expect(parseLocalWorkspacePackage("../packages/shared/package.json", manifest)).toBeUndefined();
+    expect(parseLocalWorkspacePackage("node_modules/shared/package.json", manifest)).toBeUndefined();
+    expect(parseLocalWorkspacePackage("C:/packages/shared/package.json", manifest)).toBeUndefined();
+    expect(parseLocalWorkspacePackage(
+      "packages/shared/package.json",
+      JSON.stringify({ name: "node:fs", exports: { "./*": "./src/*.ts" } }),
+    )).toBeUndefined();
   });
 
   it("uses safe package-relative subpaths without exports and abstains for external or ambiguous packages", async () => {
