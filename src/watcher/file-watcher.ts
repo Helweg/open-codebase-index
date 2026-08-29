@@ -10,7 +10,6 @@ import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js
 import {
   LocalModuleConfigTracker,
   shouldTrackLocalModuleConfigPath,
-  shouldTrackLocalModulePackagePath,
 } from "./local-module-config.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
 import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
@@ -354,7 +353,7 @@ export class FileWatcher {
       || filePath === path.join(this.projectRoot, ".gitignore")
       || (filePath !== null && (
         shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
-        || shouldTrackLocalModulePackagePath(filePath, this.projectRoot)
+        || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
         || this.localModuleConfigTracker.has(filePath)
       ))
     ) {
@@ -455,7 +454,7 @@ export class FileWatcher {
 
     if (
       shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
-      || shouldTrackLocalModulePackagePath(filePath, this.projectRoot)
+      || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
       || this.localModuleConfigTracker.has(filePath)
     ) {
       this.localModuleConfigTracker.refresh();

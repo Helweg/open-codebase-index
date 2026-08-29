@@ -550,7 +550,12 @@ export class TsConfigPathAliasCache {
 }
 
 function isProjectLocalPath(candidatePath: string): boolean {
-  if (path.posix.isAbsolute(candidatePath) || candidatePath === ".." || candidatePath.startsWith("../")) {
+  if (
+    path.posix.isAbsolute(candidatePath)
+    || /^[A-Za-z]:\//u.test(candidatePath)
+    || candidatePath === ".."
+    || candidatePath.startsWith("../")
+  ) {
     return false;
   }
   return true;
@@ -566,6 +571,197 @@ function trimLeadingCurrentDir(candidatePath: string): string {
 function isPathWithinRoot(candidatePath: string, rootPath: string): boolean {
   if (rootPath === ".") return isProjectLocalPath(candidatePath);
   return candidatePath === rootPath || candidatePath.startsWith(`${rootPath}/`);
+}
+
+interface WorkspacePattern {
+  pattern: string;
+  excluded: boolean;
+}
+
+interface WorkspacePatternSelection {
+  declared: boolean;
+  patterns: readonly WorkspacePattern[];
+}
+
+const MAX_WORKSPACE_PATTERNS = 256;
+const MAX_WORKSPACE_PATTERN_LENGTH = 256;
+const MAX_WORKSPACE_PATTERN_SEGMENTS = 64;
+const UNSUPPORTED_WORKSPACE_GLOB_CHARACTERS = new Set(["[", "]", "{", "}", "(", ")", "\0"]);
+
+/**
+ * Supported workspace globs are deliberately small and deterministic:
+ * `*` and `?` stay within one path segment, while `**` is accepted only as
+ * a complete segment. A single leading `!` excludes matching packages.
+ * Provably external and node_modules patterns are ignored. Character classes,
+ * braces, extglobs, and ambiguous traversal syntax fail the declaration closed.
+ */
+function normalizeWorkspacePattern(value: unknown): WorkspacePattern | null | undefined {
+  if (typeof value !== "string") return undefined;
+
+  const trimmed = value.trim().replaceAll("\\", "/").replace(/\/+$/u, "");
+  const excluded = trimmed.startsWith("!");
+  const rawPattern = excluded ? trimmed.slice(1).trim() : trimmed;
+  if (
+    path.posix.isAbsolute(rawPattern)
+    || /^[A-Za-z]:\//u.test(rawPattern)
+    || rawPattern === ".."
+    || rawPattern.startsWith("../")
+    || rawPattern.split("/").includes("node_modules")
+  ) {
+    return null;
+  }
+  if (
+    !rawPattern
+    || rawPattern.startsWith("!")
+    || rawPattern.length > MAX_WORKSPACE_PATTERN_LENGTH
+    || Array.from(rawPattern).some((character) => UNSUPPORTED_WORKSPACE_GLOB_CHARACTERS.has(character))
+  ) {
+    return undefined;
+  }
+
+  const normalized = trimLeadingCurrentDir(rawPattern.replace(/\/{2,}/gu, "/"));
+  const segments = normalized.split("/");
+  if (
+    normalized === "."
+    || !isProjectLocalPath(normalized)
+    || segments.length > MAX_WORKSPACE_PATTERN_SEGMENTS
+    || segments.some((segment) =>
+      !segment
+      || segment === "."
+      || segment === ".."
+      || (segment.includes("**") && segment !== "**")
+    )
+  ) {
+    return undefined;
+  }
+  return { pattern: normalized, excluded };
+}
+
+function rootWorkspacePatterns(manifestText: string | undefined): WorkspacePatternSelection {
+  if (manifestText === undefined) return { declared: false, patterns: [] };
+
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(manifestText) as unknown;
+  } catch {
+    return { declared: true, patterns: [] };
+  }
+  if (typeof manifest !== "object" || manifest === null || Array.isArray(manifest)) {
+    return { declared: true, patterns: [] };
+  }
+
+  const document = manifest as Record<string, unknown>;
+  if (!("workspaces" in document)) return { declared: false, patterns: [] };
+
+  const workspaces = document.workspaces;
+  const rawPatterns = Array.isArray(workspaces)
+    ? workspaces
+    : typeof workspaces === "object" && workspaces !== null && !Array.isArray(workspaces)
+      ? (workspaces as Record<string, unknown>).packages
+      : undefined;
+  if (!Array.isArray(rawPatterns) || rawPatterns.length > MAX_WORKSPACE_PATTERNS) {
+    return { declared: true, patterns: [] };
+  }
+
+  const patterns = rawPatterns.map(normalizeWorkspacePattern);
+  if (patterns.some((pattern) => pattern === undefined)) {
+    return { declared: true, patterns: [] };
+  }
+  const supportedPatterns = patterns.filter((pattern): pattern is WorkspacePattern => pattern !== null);
+  return {
+    declared: true,
+    patterns: [...new Map(supportedPatterns.map((pattern) => [
+      `${pattern.excluded}:${pattern.pattern}`,
+      pattern,
+    ])).values()],
+  };
+}
+
+function workspaceSegmentMatches(candidate: string, pattern: string): boolean {
+  let candidateIndex = 0;
+  let patternIndex = 0;
+  let wildcardIndex = -1;
+  let wildcardCandidateIndex = -1;
+
+  while (candidateIndex < candidate.length) {
+    if (patternIndex < pattern.length && (pattern[patternIndex] === "?" || pattern[patternIndex] === candidate[candidateIndex])) {
+      candidateIndex += 1;
+      patternIndex += 1;
+    } else if (patternIndex < pattern.length && pattern[patternIndex] === "*") {
+      wildcardIndex = patternIndex;
+      wildcardCandidateIndex = candidateIndex;
+      patternIndex += 1;
+    } else if (wildcardIndex !== -1) {
+      patternIndex = wildcardIndex + 1;
+      wildcardCandidateIndex += 1;
+      candidateIndex = wildcardCandidateIndex;
+    } else {
+      return false;
+    }
+  }
+
+  while (patternIndex < pattern.length && pattern[patternIndex] === "*") patternIndex += 1;
+  return patternIndex === pattern.length;
+}
+
+function workspacePathMatches(candidatePath: string, pattern: string): boolean {
+  const candidateSegments = candidatePath.split("/");
+  const patternSegments = pattern.split("/");
+  const memo = new Map<string, boolean>();
+
+  const matches = (candidateIndex: number, patternIndex: number): boolean => {
+    const key = `${candidateIndex}:${patternIndex}`;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
+
+    let result: boolean;
+    if (patternIndex === patternSegments.length) {
+      result = candidateIndex === candidateSegments.length;
+    } else if (patternSegments[patternIndex] === "**") {
+      result = matches(candidateIndex, patternIndex + 1)
+        || (candidateIndex < candidateSegments.length && matches(candidateIndex + 1, patternIndex));
+    } else {
+      result = candidateIndex < candidateSegments.length
+        && workspaceSegmentMatches(candidateSegments[candidateIndex], patternSegments[patternIndex])
+        && matches(candidateIndex + 1, patternIndex + 1);
+    }
+
+    memo.set(key, result);
+    return result;
+  };
+
+  return matches(0, 0);
+}
+
+function isSafeWorkspaceManifestPath(manifestPath: string): boolean {
+  const normalized = trimLeadingCurrentDir(normalizeFilePath(manifestPath));
+  return isProjectLocalPath(normalized)
+    && path.posix.basename(normalized) === "package.json"
+    && !normalized.split("/").includes("node_modules");
+}
+
+/**
+ * Whether a project-local manifest is owned by the root package manager workspace.
+ * Nested manifests never contribute workspace patterns. Without a root declaration,
+ * ancestor-based discovery remains available for backwards compatibility.
+ */
+export function isLocalWorkspacePackageManifestPath(
+  manifestPath: string,
+  rootManifestText: string | undefined,
+): boolean {
+  const normalized = trimLeadingCurrentDir(normalizeFilePath(manifestPath));
+  if (!isSafeWorkspaceManifestPath(normalized)) return false;
+  if (normalized === "package.json") return true;
+
+  const selection = rootWorkspacePatterns(rootManifestText);
+  if (!selection.declared) return true;
+
+  const packageDirectory = path.posix.dirname(normalized);
+  const matchingPatterns = selection.patterns.filter(({ pattern }) =>
+    workspacePathMatches(packageDirectory, pattern)
+  );
+  return matchingPatterns.some(({ excluded }) => !excluded)
+    && !matchingPatterns.some(({ excluded }) => excluded);
 }
 
 function resolveWorkspacePackageTarget(rootPath: string, target: string): string | undefined {
@@ -653,32 +849,47 @@ export function parseLocalWorkspacePackage(
 }
 
 /**
- * Discovers package manifests only on ancestor paths of indexed source files.
+ * Discovers package manifests only on ancestor paths of indexed source files,
+ * then applies root-owned package-manager workspace patterns when declared.
  * This is bounded by known project sources and never scans node_modules.
  */
-export function getLocalWorkspacePackageManifestPaths(importerFilePaths: readonly string[]): readonly string[] {
+export function getLocalWorkspacePackageManifestPaths(
+  importerFilePaths: readonly string[],
+  loadManifest: (manifestPath: string) => string | undefined,
+): readonly string[] {
   const manifestPaths = new Set<string>();
   for (const importerFilePath of importerFilePaths) {
     const normalized = trimLeadingCurrentDir(normalizeFilePath(importerFilePath));
-    if (!isProjectLocalPath(normalized) || normalized === ".") continue;
+    if (
+      !isProjectLocalPath(normalized)
+      || normalized === "."
+      || normalized.split("/").includes("node_modules")
+    ) {
+      continue;
+    }
 
     let directory = path.posix.dirname(normalized);
     while (true) {
-      manifestPaths.add(directory === "." ? "package.json" : `${directory}/package.json`);
+      const manifestPath = directory === "." ? "package.json" : `${directory}/package.json`;
+      if (isSafeWorkspaceManifestPath(manifestPath)) manifestPaths.add(manifestPath);
       if (directory === ".") break;
       const parent = path.posix.dirname(directory);
       if (parent === directory) break;
       directory = parent;
     }
   }
-  return [...manifestPaths].sort();
+
+  const rootManifestText = loadManifest("package.json");
+  return [...manifestPaths]
+    .filter((manifestPath) => isLocalWorkspacePackageManifestPath(manifestPath, rootManifestText))
+    .sort();
 }
 
 export function getLocalWorkspacePackages(
   importerFilePaths: readonly string[],
   loadManifest: (manifestPath: string) => string | undefined,
 ): readonly LocalWorkspacePackage[] {
-  return getLocalWorkspacePackageManifestPaths(importerFilePaths)
+  return getLocalWorkspacePackageManifestPaths(importerFilePaths, loadManifest)
     .map((manifestPath) => parseLocalWorkspacePackage(manifestPath, loadManifest(manifestPath)))
     .filter((workspacePackage): workspacePackage is LocalWorkspacePackage => workspacePackage !== undefined);
 }

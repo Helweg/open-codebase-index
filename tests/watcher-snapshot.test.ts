@@ -149,15 +149,31 @@ describe("watcher snapshot builder", () => {
     expect(tracker.has(ignoredConfig)).toBe(false);
   });
 
-  it("tracks project-local package manifests as module-resolution metadata", () => {
+  it("tracks only workspace manifests selected by included source ancestors", () => {
+    const rootManifest = path.join(projectRoot, "package.json");
     const packageManifest = path.join(projectRoot, "packages", "shared", "package.json");
-    fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
-    fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+    const excludedManifest = path.join(projectRoot, "packages", "private", "package.json");
+    const unrelatedManifest = path.join(projectRoot, "tools", "unrelated", "package.json");
+    for (const manifestPath of [packageManifest, excludedManifest, unrelatedManifest]) {
+      fs.mkdirSync(path.join(path.dirname(manifestPath), "src"), { recursive: true });
+      fs.writeFileSync(path.join(path.dirname(manifestPath), "src", "index.ts"), "export const value = 1;");
+      fs.writeFileSync(manifestPath, JSON.stringify({ name: path.basename(path.dirname(manifestPath)) }));
+    }
+    fs.writeFileSync(rootManifest, JSON.stringify({
+      workspaces: ["packages/*", "!packages/private"],
+    }));
 
-    const tracker = new LocalModuleConfigTracker(projectRoot, {});
+    const tracker = new LocalModuleConfigTracker(projectRoot, {
+      include: ["**/*.ts"],
+      additionalInclude: [],
+      exclude: [],
+    });
     tracker.refresh();
 
+    expect(tracker.has(rootManifest)).toBe(true);
     expect(tracker.has(packageManifest)).toBe(true);
+    expect(tracker.has(excludedManifest)).toBe(false);
+    expect(tracker.has(unrelatedManifest)).toBe(false);
   });
 
   it("limits traversal depth using config.indexing.maxDepth", async () => {

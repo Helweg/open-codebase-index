@@ -160,9 +160,12 @@ describe("native FileWatcher", () => {
 
   it("tracks nested package manifest changes outside source include patterns", async () => {
     const changes: FileChange[] = [];
+    const rootManifest = path.join(projectRoot, "package.json");
     const packageManifest = path.join(projectRoot, "packages", "shared", "package.json");
-    fs.mkdirSync(path.dirname(packageManifest), { recursive: true });
+    fs.mkdirSync(path.join(path.dirname(packageManifest), "src"), { recursive: true });
+    fs.writeFileSync(rootManifest, JSON.stringify({ workspaces: { packages: ["packages/*"] } }));
     fs.writeFileSync(packageManifest, JSON.stringify({ name: "@scope/shared", main: "./src/index.ts" }));
+    fs.writeFileSync(path.join(path.dirname(packageManifest), "src", "index.ts"), "export const value = 1;");
     watcher = new FileWatcher(
       projectRoot,
       parseConfig({ include: ["**/*.ts"] }),

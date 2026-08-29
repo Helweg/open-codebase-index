@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
+  getLocalWorkspacePackageManifestPaths,
   getTsConfigModuleResolutionConfigDependencyPaths,
   getTsConfigModuleResolutionConfigPaths,
   getLocalWorkspacePackages,
@@ -11,6 +12,109 @@ import {
   type LocalModuleData,
 } from "../src/indexer/local-module-resolution.js";
 import type { CallSiteData, SymbolData } from "../src/native/index.js";
+
+describe("local workspace package manifest discovery", () => {
+  const importerPaths = [
+    "apps/web/src/main.ts",
+    "packages/shared/src/index.ts",
+    "packages/private/src/index.ts",
+  ];
+
+  it("uses only root package.json workspace array or object patterns when declared", () => {
+    expect(getLocalWorkspacePackageManifestPaths(importerPaths, (manifestPath) =>
+      manifestPath === "package.json"
+        ? JSON.stringify({ workspaces: ["packages/shared", "apps/*"] })
+        : undefined
+    )).toEqual([
+      "apps/web/package.json",
+      "package.json",
+      "packages/shared/package.json",
+    ]);
+
+    expect(getLocalWorkspacePackageManifestPaths(importerPaths, (manifestPath) =>
+      manifestPath === "package.json"
+        ? JSON.stringify({ workspaces: { packages: ["packages/*", "!packages/private"] } })
+        : undefined
+    )).toEqual([
+      "package.json",
+      "packages/shared/package.json",
+    ]);
+  });
+
+  it("rejects outside and node_modules paths without scanning beyond known importers", () => {
+    const paths = getLocalWorkspacePackageManifestPaths([
+      "../outside/src/index.ts",
+      "/absolute/src/index.ts",
+      "C:\\outside\\src\\index.ts",
+      "node_modules/external/src/index.ts",
+      "packages/safe/src/index.ts",
+    ], (manifestPath) => manifestPath === "package.json"
+      ? JSON.stringify({
+        workspaces: ["../outside/*", "/absolute/*", "C:\\outside\\*", "node_modules/*", "packages/*"],
+      })
+      : undefined);
+
+    expect(paths).toEqual(["package.json", "packages/safe/package.json"]);
+  });
+
+  it("supports only bounded segment globs and applies exclusions across array and object forms", () => {
+    const paths = getLocalWorkspacePackageManifestPaths([
+      "apps/web/src/main.ts",
+      "packages/deep/nested/src/index.ts",
+      "packages/private/src/index.ts",
+    ], (manifestPath) => manifestPath === "package.json"
+      ? JSON.stringify({
+        workspaces: {
+          packages: ["apps/w?b", "packages/**/nested", "packages/private", "!packages/private"],
+        },
+      })
+      : undefined);
+
+    expect(paths).toEqual([
+      "apps/web/package.json",
+      "package.json",
+      "packages/deep/nested/package.json",
+    ]);
+  });
+
+  it("fails closed for malformed manifests or unsupported workspace glob syntax", () => {
+    const discover = (rootManifestText: string): readonly string[] =>
+      getLocalWorkspacePackageManifestPaths(importerPaths, (manifestPath) =>
+        manifestPath === "package.json" ? rootManifestText : undefined
+      );
+
+    expect(discover("{")).toEqual(["package.json"]);
+    expect(discover(JSON.stringify({ workspaces: ["packages/*", "!packages/{private,secret}"] })))
+      .toEqual(["package.json"]);
+    expect(discover(JSON.stringify({ workspaces: ["packages/*", "packages/**/../private"] })))
+      .toEqual(["package.json"]);
+    expect(discover(JSON.stringify({ workspaces: ["packages/*", 42] })))
+      .toEqual(["package.json"]);
+    expect(discover(JSON.stringify({
+      workspaces: ["packages/*", ...Array.from({ length: 256 }, (_, index) => `other/${index}`)],
+    }))).toEqual(["package.json"]);
+  });
+
+  it("loads only root and source-ancestor manifests selected by the root declaration", () => {
+    const loadedPaths: string[] = [];
+    const manifests: Record<string, string> = {
+      "package.json": JSON.stringify({ workspaces: ["packages/*"] }),
+      "packages/shared/package.json": JSON.stringify({ name: "@scope/shared" }),
+      "tools/unrelated/package.json": JSON.stringify({ name: "unrelated" }),
+    };
+
+    getLocalWorkspacePackages(["packages/shared/src/index.ts"], (manifestPath) => {
+      loadedPaths.push(manifestPath);
+      return manifests[manifestPath];
+    });
+
+    expect(new Set(loadedPaths)).toEqual(new Set([
+      "package.json",
+      "packages/shared/package.json",
+    ]));
+    expect(loadedPaths).not.toContain("tools/unrelated/package.json");
+  });
+});
 
 function symbol(id: string, filePath: string, name: string, kind = "function_declaration"): SymbolData {
   return {
