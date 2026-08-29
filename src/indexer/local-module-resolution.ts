@@ -2,6 +2,14 @@ import type { CallSiteData, SymbolData } from "../native/types.js";
 
 import * as path from "node:path";
 
+import {
+  createGoDirectCallClassifier,
+  isGoFilePath,
+  isGoPackageResolutionEligible,
+  isGoTestFilePath,
+  parseGoPackageName,
+} from "./go-package-resolution.js";
+
 const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".ts",
   ".tsx",
@@ -1354,9 +1362,11 @@ function namespaceQualifier(content: string, site: CallSiteData): string | undef
 
 export class LocalModuleCallResolver {
   private readonly modulePaths = new Set<string>();
+  private readonly goPackagePaths = new Set<string>();
   private readonly loadModule: LocalModuleResolverOptions["loadModule"];
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
+  private readonly goCallClassifiers = new Map<string, (site: CallSiteData) => boolean>();
   private readonly exportCache = new Map<string, SymbolData[]>();
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
   private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
@@ -1366,6 +1376,7 @@ export class LocalModuleCallResolver {
     for (const filePath of options.filePaths) {
       const normalized = normalizeFilePath(filePath);
       if (isJavaScriptFamilyFilePath(normalized)) this.modulePaths.add(normalized);
+      if (isGoFilePath(normalized)) this.goPackagePaths.add(normalized);
     }
     this.loadModule = options.loadModule;
     this.tsConfigPathAliases = options.tsConfigPathAliases;
@@ -1378,9 +1389,14 @@ export class LocalModuleCallResolver {
 
   seedModule(filePath: string, data: LocalModuleData): void {
     const normalized = normalizeFilePath(filePath);
-    if (!this.modulePaths.has(normalized)) return;
+    if (!this.modulePaths.has(normalized) && !this.goPackagePaths.has(normalized)) return;
     this.moduleData.set(normalized, Promise.resolve(data));
-    this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
+    if (this.modulePaths.has(normalized)) {
+      this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
+    }
+    if (this.goPackagePaths.has(normalized)) {
+      this.goCallClassifiers.set(normalized, createGoDirectCallClassifier(data.content, data.symbols));
+    }
     for (const key of this.exportCache.keys()) {
       if (key.startsWith(`${normalized}\0`)) this.exportCache.delete(key);
     }
@@ -1392,6 +1408,9 @@ export class LocalModuleCallResolver {
     site: CallSiteData,
   ): Promise<SymbolData | undefined> {
     const importer = normalizeFilePath(importerFilePath);
+    if (this.goPackagePaths.has(importer)) {
+      return this.resolveGoPackageCallTarget(importer, importerContent, site);
+    }
     if (!this.modulePaths.has(importer)) return undefined;
     const record = await this.getModuleRecord(importer, importerContent);
     if (!record) return undefined;
@@ -1411,6 +1430,52 @@ export class LocalModuleCallResolver {
           namespaceCallType,
         ));
       }
+    }
+
+    const unique = deduplicateSymbols(candidates);
+    return unique.length === 1 ? unique[0] : undefined;
+  }
+
+  private async resolveGoPackageCallTarget(
+    importerFilePath: string,
+    importerContent: string,
+    site: CallSiteData,
+  ): Promise<SymbolData | undefined> {
+    const importerData = await this.getModuleData(importerFilePath);
+    if (!importerData || !isGoPackageResolutionEligible(importerFilePath, importerContent)) {
+      return undefined;
+    }
+    const classifyCall = this.goCallClassifiers.get(importerFilePath)
+      ?? createGoDirectCallClassifier(importerContent, importerData.symbols);
+    this.goCallClassifiers.set(importerFilePath, classifyCall);
+    if (!classifyCall(site)) return undefined;
+
+    const packageName = parseGoPackageName(importerContent);
+    if (!packageName) return undefined;
+
+    const importerDirectory = path.posix.dirname(importerFilePath);
+    const importerIsTest = isGoTestFilePath(importerFilePath);
+    const candidates: SymbolData[] = [];
+    for (const targetPath of this.goPackagePaths) {
+      if (
+        targetPath === importerFilePath
+        || path.posix.dirname(targetPath) !== importerDirectory
+        || (!importerIsTest && isGoTestFilePath(targetPath))
+      ) {
+        continue;
+      }
+
+      const targetData = await this.getModuleData(targetPath);
+      if (
+        !targetData
+        || !isGoPackageResolutionEligible(targetPath, targetData.content)
+        || parseGoPackageName(targetData.content) !== packageName
+      ) {
+        continue;
+      }
+      candidates.push(...targetData.symbols.filter((symbol) =>
+        symbol.name === site.calleeName && symbol.kind === "function_declaration"
+      ));
     }
 
     const unique = deduplicateSymbols(candidates);

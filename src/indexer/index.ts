@@ -187,7 +187,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "8";
+const CALL_GRAPH_RESOLUTION_VERSION = "9";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
