@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-29
+
 ### Added
 
 - **Source-backed architecture context**: Added the portable `architecture_context` tool across OpenCode, MCP, and Pi. It produces deterministic, token-bounded repository maps with source-derived responsibility excerpts, cited community and boundary evidence, strict query and directory focus, graph-sparse source-directory fallback, uncertainty notes, precise follow-up tool calls, and optional Git-backed recent activity. Architecture planning evaluation now measures graded evidence relevance and actual response token cost.
