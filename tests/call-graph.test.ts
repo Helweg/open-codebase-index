@@ -199,6 +199,24 @@ function migrationMetadataKey(prefix: string, catalogIdentity = "default"): stri
       expect(callNames).toContain("fetchData");
     });
 
+    it("preserves Go direct and selector call extraction coordinates", () => {
+      const content = [
+        "package worker",
+        "",
+        "func Run() {",
+        '  _ = "é"; Direct(); other.Direct()',
+        "}",
+      ].join("\n");
+      const calls = extractCalls(content, "go").filter((call) => call.calleeName === "Direct");
+
+      expect(calls).toHaveLength(2);
+      expect(calls.map((call) => call.callType)).toEqual(["Call", "Call"]);
+      expect(calls.map((call) => call.column)).toEqual([
+        Buffer.byteLength('  _ = "é"; ', "utf8"),
+        Buffer.byteLength('  _ = "é"; Direct(); other.', "utf8"),
+      ]);
+    });
+
     describe("php call extraction", () => {
       it("should extract direct function calls", () => {
         const content = fs.readFileSync(path.join(fixturesDir, "php-simple-calls.php"), "utf-8");
@@ -2507,7 +2525,7 @@ main() {
     });
   });
 
-  describe("local TypeScript and JavaScript module resolution", () => {
+  describe("local module resolution", () => {
     function mockEmbeddings(): ReturnType<typeof vi.spyOn> {
       return vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init?) => {
         const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
@@ -2852,7 +2870,7 @@ main() {
           col: resolvedEdge!.col,
           isResolved: false,
         });
-        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "7");
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "8");
         database.close();
 
         indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
@@ -2864,7 +2882,7 @@ main() {
 
         await indexer.close();
         const migratedDatabase = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("8");
+        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("9");
         migratedDatabase.close();
       } finally {
         await indexer.close();
@@ -3127,6 +3145,154 @@ main() {
           toSymbolId: migratedTarget!.id,
         });
         expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeMigration);
+      } finally {
+        await indexer.close();
+        fetchSpy.mockRestore();
+      }
+    });
+
+    it("refreshes conservative Go package edges through the public Indexer API", async () => {
+      const projectDir = path.join(tempDir, "go-package-resolution-project");
+      const packageDir = path.join(projectDir, "worker");
+      fs.mkdirSync(path.join(projectDir, "other"), { recursive: true });
+      fs.mkdirSync(packageDir, { recursive: true });
+      const callerContent = [
+        "package worker",
+        "",
+        "func Run(Shadowed func()) {",
+        "  Shared()",
+        "  other.Shared()",
+        "  Shadowed()",
+        "  TestOnly()",
+        "  Tagged()",
+        "  Platform()",
+        "  SameFile()",
+        "  other.SameFile()",
+        "}",
+        "",
+        "func SameFile() {}",
+      ].join("\n");
+      fs.writeFileSync(path.join(packageDir, "caller.go"), callerContent);
+      fs.writeFileSync(path.join(packageDir, "shadowed.go"), "package worker\n\nfunc Shadowed() {}\n");
+      fs.writeFileSync(path.join(packageDir, "helpers_test.go"), "package worker\n\nfunc TestOnly() {}\n");
+      fs.writeFileSync(
+        path.join(packageDir, "tagged.go"),
+        "//go:build custom\n\npackage worker\n\nfunc Tagged() {}\n",
+      );
+      fs.writeFileSync(path.join(packageDir, "platform_linux.go"), "package worker\n\nfunc Platform() {}\n");
+      fs.writeFileSync(path.join(packageDir, "different-package.go"), "package other\n\nfunc Shared() {}\n");
+      fs.writeFileSync(path.join(projectDir, "other", "decoy.go"), "package worker\n\nfunc Shared() {}\n");
+      const targetPath = path.join(packageDir, "target.go");
+      const duplicatePath = path.join(packageDir, "duplicate.go");
+      const fetchSpy = mockEmbeddings();
+      const indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
+
+      const embeddedInputs = (): string[] => fetchSpy.mock.calls.flatMap(([, init]) => {
+        const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+        return Array.isArray(body.input) ? body.input : body.input ? [body.input] : [];
+      });
+      const graphState = async (): Promise<{
+        caller: SymbolData;
+        target: SymbolData | undefined;
+        sameFile: SymbolData;
+        edges: CallEdgeData[];
+      }> => {
+        const symbols = await indexer.getSymbolsForBranch();
+        const caller = symbols.find((symbol) => symbol.name === "Run");
+        if (!caller) throw new Error("Missing Go caller symbol");
+        const sameFile = symbols.find((symbol) =>
+          symbol.name === "SameFile" && symbol.filePath.endsWith("worker/caller.go")
+        );
+        if (!sameFile) throw new Error("Missing same-file Go target symbol");
+        return {
+          caller,
+          target: symbols.find((symbol) =>
+            symbol.name === "Shared" && symbol.filePath.endsWith("worker/target.go")
+          ),
+          sameFile,
+          edges: await indexer.getCallees(caller.id),
+        };
+      };
+
+      try {
+        await indexer.index();
+        let state = await graphState();
+        expect(state.target).toBeUndefined();
+        expect(state.edges.filter((edge) => edge.targetName === "Shared")).toMatchObject([
+          { line: 4, isResolved: false },
+          { line: 5, isResolved: false },
+        ]);
+        for (const targetName of ["Shadowed", "TestOnly", "Tagged", "Platform"]) {
+          expect(state.edges.find((edge) => edge.targetName === targetName)).toMatchObject({
+            isResolved: false,
+          });
+        }
+
+        expect(state.edges.find((edge) => edge.targetName === "SameFile" && edge.line === 10)).toMatchObject({
+          isResolved: true,
+          toSymbolId: state.sameFile.id,
+        });
+        const qualifiedSameFileEdge = state.edges.find(
+          (edge) => edge.targetName === "SameFile" && edge.line === 11,
+        );
+        expect(qualifiedSameFileEdge).toMatchObject({ isResolved: false });
+        expect(qualifiedSameFileEdge?.toSymbolId).toBeUndefined();
+
+        fetchSpy.mockClear();
+        fs.writeFileSync(targetPath, "// package worker is documented here.\npackage worker\n\nfunc Shared() {}\n");
+        await indexer.index();
+        state = await graphState();
+        expect(state.target).toBeDefined();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)).toMatchObject({
+          isResolved: true,
+          toSymbolId: state.target!.id,
+        });
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 5)).toMatchObject({
+          isResolved: false,
+        });
+        await expect(indexer.getCallersForSymbol(state.target!.id, "Shared", false)).resolves.toMatchObject([
+          { fromSymbolId: state.caller.id, line: 4, isResolved: true },
+        ]);
+        expect(embeddedInputs().some((input) => input.includes("func Run"))).toBe(false);
+
+        fetchSpy.mockClear();
+        fs.writeFileSync(targetPath, "package other\n\nfunc Shared() {}\n");
+        await indexer.index();
+        state = await graphState();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)).toMatchObject({
+          isResolved: false,
+        });
+        expect(embeddedInputs().some((input) => input.includes("func Run"))).toBe(false);
+
+        fs.writeFileSync(targetPath, "package worker\n\nfunc Shared() {}\n");
+        await indexer.index();
+        state = await graphState();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)?.isResolved).toBe(true);
+
+        fetchSpy.mockClear();
+        fs.writeFileSync(duplicatePath, "package worker\n\nfunc Shared() {}\n");
+        await indexer.index();
+        state = await graphState();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)).toMatchObject({
+          isResolved: false,
+        });
+        expect(embeddedInputs().some((input) => input.includes("func Run"))).toBe(false);
+
+        fetchSpy.mockClear();
+        fs.unlinkSync(duplicatePath);
+        await indexer.index();
+        state = await graphState();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)?.isResolved).toBe(true);
+        expect(fetchSpy).not.toHaveBeenCalled();
+
+        fetchSpy.mockClear();
+        fs.unlinkSync(targetPath);
+        await indexer.index();
+        state = await graphState();
+        expect(state.edges.find((edge) => edge.targetName === "Shared" && edge.line === 4)).toMatchObject({
+          isResolved: false,
+        });
+        expect(fetchSpy).not.toHaveBeenCalled();
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();

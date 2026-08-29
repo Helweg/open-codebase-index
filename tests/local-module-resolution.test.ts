@@ -12,7 +12,7 @@ import {
   resolveTsConfigForModuleResolution,
   type LocalModuleData,
 } from "../src/indexer/local-module-resolution.js";
-import type { CallSiteData, SymbolData } from "../src/native/index.js";
+import { extractCalls, parseFiles, type CallSiteData, type SymbolData } from "../src/native/index.js";
 
 describe("local workspace package manifest discovery", () => {
   const importerPaths = [
@@ -127,12 +127,33 @@ function symbol(id: string, filePath: string, name: string, kind = "function_dec
     startCol: 0,
     endLine: 3,
     endCol: 0,
-    language: filePath.endsWith(".js") ? "javascript" : "typescript",
+    language: filePath.endsWith(".go")
+      ? "go"
+      : filePath.endsWith(".js") ? "javascript" : "typescript",
   };
 }
 
 function callSite(calleeName: string, line = 2, column = 2, callType: CallSiteData["callType"] = "Call"): CallSiteData {
   return { calleeName, line, column, callType, confidence: "Direct" };
+}
+
+function goModule(filePath: string, content: string): LocalModuleData {
+  const parsed = parseFiles([{ path: filePath, content }])[0];
+  return {
+    content,
+    symbols: parsed.symbols.map((parsedSymbol, index) => ({
+      ...parsedSymbol,
+      id: `go_${index}_${parsedSymbol.name}`,
+      filePath,
+    })),
+  };
+}
+
+function goCall(content: string, calleeName: string, occurrence = 0): CallSiteData {
+  const sites = extractCalls(content, "go").filter((site) => site.calleeName === calleeName);
+  const site = sites[occurrence];
+  if (!site) throw new Error(`Missing Go call ${calleeName} at occurrence ${occurrence}`);
+  return site;
 }
 
 function resolver(
@@ -150,6 +171,157 @@ function resolver(
 }
 
 describe("LocalModuleCallResolver", () => {
+  it("resolves only direct unshadowed Go function calls in the same directory and package", async () => {
+    const caller = [
+      "package worker",
+      "",
+      "func Run(Shared func()) {",
+      "  Shared()",
+      "}",
+      "",
+      "func Direct() {",
+      "  Target()",
+      '  _ = "é"; other.Target()',
+      "}",
+    ].join("\n");
+    const target = "package worker\n\nfunc Target() {}\nfunc Shared() {}\n";
+    const targetSymbol = goModule("worker/target.go", target).symbols.find((entry) => entry.name === "Target");
+    const instance = resolver({
+      "worker/caller.go": goModule("worker/caller.go", caller),
+      "worker/target.go": goModule("worker/target.go", target),
+      "worker/other-package.go": goModule("worker/other-package.go", "package other\n\nfunc Target() {}\n"),
+      "other/decoy.go": goModule("other/decoy.go", "package worker\n\nfunc Target() {}\n"),
+    });
+
+    await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, "Target", 0)))
+      .resolves.toEqual(targetSymbol);
+    await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, "Target", 1)))
+      .resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, "Shared")))
+      .resolves.toBeUndefined();
+  });
+
+  it("abstains for Go short declarations, reserved init calls, build constraints, and test-only targets", async () => {
+    const caller = [
+      "package worker",
+      "",
+      "func Run() {",
+      "  Shadowed := func() {}",
+      "  Shadowed()",
+      "  init()",
+      "  Tagged()",
+      "  Platform()",
+      "  TestOnly()",
+      "  CgoOnly()",
+      "  HiddenOnly()",
+      "  UppercaseOnly()",
+      "}",
+    ].join("\n");
+    const modules = {
+      "worker/caller.go": goModule("worker/caller.go", caller),
+      "worker/shadowed.go": goModule("worker/shadowed.go", "package worker\n\nfunc Shadowed() {}\n"),
+      "worker/init.go": goModule("worker/init.go", "package worker\n\nfunc init() {}\n"),
+      "worker/tagged.go": goModule(
+        "worker/tagged.go",
+        "//go:build custom\n\npackage worker\n\nfunc Tagged() {}\n",
+      ),
+      "worker/platform_linux.go": goModule(
+        "worker/platform_linux.go",
+        "package worker\n\nfunc Platform() {}\n",
+      ),
+      "worker/helpers_test.go": goModule(
+        "worker/helpers_test.go",
+        "package worker\n\nfunc TestOnly() {}\n",
+      ),
+      "worker/cgo.go": goModule(
+        "worker/cgo.go",
+        'package worker\n\nimport "C"\n\nfunc CgoOnly() {}\n',
+      ),
+      "worker/_hidden.go": goModule(
+        "worker/_hidden.go",
+        "package worker\n\nfunc HiddenOnly() {}\n",
+      ),
+      "worker/uppercase.GO": goModule(
+        "worker/uppercase.GO",
+        "package worker\n\nfunc UppercaseOnly() {}\n",
+      ),
+    };
+    const instance = resolver(modules);
+
+    for (const name of [
+      "Shadowed",
+      "init",
+      "Tagged",
+      "Platform",
+      "TestOnly",
+      "CgoOnly",
+      "HiddenOnly",
+      "UppercaseOnly",
+    ]) {
+      await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, name)))
+        .resolves.toBeUndefined();
+    }
+  });
+
+  it("abstains for explicit Go local declarations and build-constrained importers", async () => {
+    const caller = [
+      "package worker",
+      "",
+      "func Explicit() {",
+      "  var (",
+      "    ignored int",
+      "    Bound = func() {}",
+      "  )",
+      "  Bound()",
+      "}",
+      "",
+      "func LocalType() {",
+      "  type Converted func()",
+      "  Converted()",
+      "}",
+    ].join("\n");
+    const platformCaller = "package worker\n\nfunc PlatformRun() { Production() }\n";
+    const taggedCaller = "// +build custom\n\npackage worker\n\nfunc TaggedRun() { Production() }\n";
+    const production = goModule("worker/production.go", "package worker\n\nfunc Production() {}\n");
+    const instance = resolver({
+      "worker/caller.go": goModule("worker/caller.go", caller),
+      "worker/bound.go": goModule("worker/bound.go", "package worker\n\nfunc Bound() {}\nfunc Converted() {}\n"),
+      "worker/caller_linux.go": goModule("worker/caller_linux.go", platformCaller),
+      "worker/tagged-caller.go": goModule("worker/tagged-caller.go", taggedCaller),
+      "worker/production.go": production,
+    });
+
+    await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, "Bound")))
+      .resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("worker/caller.go", caller, goCall(caller, "Converted")))
+      .resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget(
+      "worker/caller_linux.go",
+      platformCaller,
+      goCall(platformCaller, "Production"),
+    )).resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget(
+      "worker/tagged-caller.go",
+      taggedCaller,
+      goCall(taggedCaller, "Production"),
+    )).resolves.toBeUndefined();
+  });
+
+  it("allows same-package Go tests to call eligible production and test helpers", async () => {
+    const caller = "package worker\n\nfunc TestRun() { Production(); TestHelper() }\n";
+    const production = goModule("worker/production.go", "package worker\n\nfunc Production() {}\n");
+    const helper = goModule("worker/helper_test.go", "package worker\n\nfunc TestHelper() {}\n");
+    const instance = resolver({
+      "worker/caller_test.go": goModule("worker/caller_test.go", caller),
+      "worker/production.go": production,
+      "worker/helper_test.go": helper,
+    });
+
+    await expect(instance.resolveCallTarget("worker/caller_test.go", caller, goCall(caller, "Production")))
+      .resolves.toEqual(production.symbols.find((entry) => entry.name === "Production"));
+    await expect(instance.resolveCallTarget("worker/caller_test.go", caller, goCall(caller, "TestHelper")))
+      .resolves.toEqual(helper.symbols.find((entry) => entry.name === "TestHelper"));
+  });
   it("resolves declared project-local workspace package roots and exact exports", async () => {
     const main = [
       'import { rootTarget } from "@scope/shared";',

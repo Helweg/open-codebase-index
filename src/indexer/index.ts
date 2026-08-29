@@ -111,6 +111,7 @@ import {
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
+import { createGoDirectCallClassifier, isGoFilePath } from "./go-package-resolution.js";
 import {
   getLocalWorkspacePackageManifestPaths,
   getLocalWorkspacePackages,
@@ -187,7 +188,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "8";
+const CALL_GRAPH_RESOLUTION_VERSION = "9";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -4356,6 +4357,15 @@ export class Indexer {
       && isJavaScriptFamilyFilePath(filePath)
       && !currentStoredFilePaths.has(filePath)
     );
+    const changedGoPackageDirectories = new Set(
+      Array.from(this.fileHashCache.keys()).flatMap((filePath) =>
+        (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
+          && isGoFilePath(filePath)
+          && !currentStoredFilePaths.has(filePath)
+          ? [path.posix.dirname(filePath.split(path.sep).join("/"))]
+          : []
+      ),
+    );
 
     for (const file of files) {
       const storedPath = this.toStoredFilePath(file.path);
@@ -4388,13 +4398,21 @@ export class Indexer {
       if (!cachedHashMatches && isJavaScriptFamilyFilePath(storedPath)) {
         javaScriptGraphSourcesChanged = true;
       }
+      if (!cachedHashMatches && isGoFilePath(storedPath)) {
+        changedGoPackageDirectories.add(path.posix.dirname(storedPath.split(path.sep).join("/")));
+      }
       const needsCallGraphRefresh = cachedHashMatches
-        && (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged)
         && (
-          isJavaScriptFamilyFilePath(storedPath)
-          || database.getChunksByFile(storedPath).some((chunk) =>
-            chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+          (
+            (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged)
+            && (
+              isJavaScriptFamilyFilePath(storedPath)
+              || database.getChunksByFile(storedPath).some((chunk) =>
+                chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
+              )
+            )
           )
+          || (needsCallGraphResolutionMigration && isGoFilePath(storedPath))
         );
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
@@ -4421,6 +4439,22 @@ export class Indexer {
     if (javaScriptGraphSourcesChanged) {
       for (const [storedPath, descriptor] of allFileDescriptors) {
         if (!isJavaScriptFamilyFilePath(storedPath) || changedFilePathSet.has(storedPath)) continue;
+        unchangedFilePaths.delete(storedPath);
+        changedFileDescriptors.push(descriptor);
+        changedFilePathSet.add(storedPath);
+      }
+    }
+
+    if (changedGoPackageDirectories.size > 0) {
+      for (const [storedPath, descriptor] of allFileDescriptors) {
+        const normalizedStoredPath = storedPath.split(path.sep).join("/");
+        if (
+          !isGoFilePath(normalizedStoredPath)
+          || !changedGoPackageDirectories.has(path.posix.dirname(normalizedStoredPath))
+          || changedFilePathSet.has(storedPath)
+        ) {
+          continue;
+        }
         unchangedFilePaths.delete(storedPath);
         changedFileDescriptors.push(descriptor);
         changedFilePathSet.add(storedPath);
@@ -4751,14 +4785,23 @@ export class Indexer {
             symbolsByName.set(key, symbols);
           }
 
-          for (const site of extractCalls(loadedFile.content, fileLanguage)) {
+          const callSites = extractCalls(loadedFile.content, fileLanguage);
+          const classifyGoCall = fileLanguage === "go"
+            ? createGoDirectCallClassifier(loadedFile.content, fileSymbols)
+            : undefined;
+          for (const site of callSites) {
             const enclosingSymbol = findEnclosingSymbol(fileSymbols, site.line, site.column);
             if (!enclosingSymbol) {
               continue;
             }
 
+            const isSupportedGoCall = classifyGoCall?.(site) ?? false;
             let candidates = symbolsByName.get(normalizeSymbolKey(site.calleeName));
-            if (fileLanguage === "php" && candidates) {
+            if (fileLanguage === "go") {
+              candidates = isSupportedGoCall
+                ? candidates?.filter((candidate) => candidate.kind === "function_declaration")
+                : undefined;
+            } else if (fileLanguage === "php" && candidates) {
               if (site.callType === "Constructor") {
                 candidates = candidates.filter((candidate) => PHP_CLASS_SYMBOL_CHUNK_TYPES.has(candidate.kind));
               } else if (site.callType === "Call") {
@@ -4772,7 +4815,7 @@ export class Indexer {
             if (
               !resolvedTarget
               && (!candidates || candidates.length === 0)
-              && isJavaScriptFamilyFilePath(parsed.path)
+              && (isJavaScriptFamilyFilePath(parsed.path) || isSupportedGoCall)
             ) {
               resolvedTarget = await localModuleResolver.resolveCallTarget(
                 parsed.path,
