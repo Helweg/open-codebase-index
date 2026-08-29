@@ -2870,7 +2870,7 @@ main() {
           col: resolvedEdge!.col,
           isResolved: false,
         });
-        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "7");
+        database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "8");
         database.close();
 
         indexer = new Indexer(projectDir, createIndexerConfig(), "opencode");
@@ -2882,7 +2882,7 @@ main() {
 
         await indexer.close();
         const migratedDatabase = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("8");
+        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("9");
         migratedDatabase.close();
       } finally {
         await indexer.close();
@@ -3232,9 +3232,11 @@ main() {
           isResolved: true,
           toSymbolId: state.sameFile.id,
         });
-        expect(state.edges.find((edge) => edge.targetName === "SameFile" && edge.line === 11)).toMatchObject({
-          isResolved: false,
-        });
+        const qualifiedSameFileEdge = state.edges.find(
+          (edge) => edge.targetName === "SameFile" && edge.line === 11,
+        );
+        expect(qualifiedSameFileEdge).toMatchObject({ isResolved: false });
+        expect(qualifiedSameFileEdge?.toSymbolId).toBeUndefined();
 
         fetchSpy.mockClear();
         fs.writeFileSync(targetPath, "// package worker is documented here.\npackage worker\n\nfunc Shared() {}\n");
