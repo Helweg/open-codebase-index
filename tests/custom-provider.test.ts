@@ -8,6 +8,19 @@ import pRetry from "p-retry";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import {
+  OperationCancelledError,
+  ProviderRequestError,
+} from "../src/utils/operation-control.js";
+
+function getRejectedError<T>(promise: Promise<T>): Promise<Error> {
+  return promise.then<Error>(
+    () => {
+      throw new Error("Expected promise to reject");
+    },
+    (error: unknown) => error instanceof Error ? error : new Error(String(error)),
+  );
+}
 
 describe("CustomEmbeddingProvider", () => {
   let fetchSpy: ReturnType<typeof vi.spyOn>;
@@ -20,20 +33,6 @@ describe("CustomEmbeddingProvider", () => {
       throw new Error("Expected custom provider info");
     }
     return info;
-  }
-
-  function getRejectedError<T>(promise: Promise<T>): Promise<Error> {
-    return promise.then<Error>(
-      () => {
-        throw new Error("Expected promise to reject");
-      },
-      (error: unknown) => {
-        if (error instanceof Error) {
-          return error;
-        }
-        return new Error(String(error));
-      }
-    );
   }
 
   beforeEach(() => {
@@ -176,7 +175,7 @@ describe("CustomEmbeddingProvider", () => {
     fetchSpy.mockResolvedValueOnce(new Response("Rate limited", { status: 429 }));
 
     const provider = createProvider();
-    await expect(provider.embedQuery("test")).rejects.toThrow("Custom embedding API error: 429");
+    await expect(provider.embedQuery("test")).rejects.toThrow("Custom embedding provider returned HTTP 429.");
   });
 
   it("should throw on unexpected response format", async () => {
@@ -230,9 +229,10 @@ describe("CustomEmbeddingProvider", () => {
     }), { status: 200 }));
 
     const provider = createProvider();
-    await expect(provider.embedQuery("test")).rejects.toThrow(
-      "Dimension mismatch: customProvider.dimensions is 768, but the API returned vectors with 1024 dimensions"
-    );
+    await expect(provider.embedQuery("test")).rejects.toMatchObject({
+      kind: "malformed_response",
+      retryable: false,
+    });
   });
 
   it("should always throw on dimension mismatch, even after a successful call", async () => {
@@ -251,10 +251,11 @@ describe("CustomEmbeddingProvider", () => {
     const result1 = await provider.embedQuery("first");
     expect(result1.embedding).toHaveLength(768);
 
-    // Second call throws on dimension mismatch
-    await expect(provider.embedQuery("second")).rejects.toThrow(
-      "Dimension mismatch: customProvider.dimensions is 768, but the API returned vectors with 512 dimensions"
-    );
+    // Second call still rejects the incompatible provider contract.
+    await expect(provider.embedQuery("second")).rejects.toMatchObject({
+      kind: "malformed_response",
+      retryable: false,
+    });
   });
 
   it("should use configurable timeout", async () => {
@@ -302,8 +303,8 @@ describe("CustomEmbeddingProvider", () => {
     const provider = createProvider();
     const error = await getRejectedError(provider.embedQuery("test"));
     expect(error).toBeInstanceOf(CustomProviderNonRetryableError);
-    expect(error.message).toContain("non-retryable");
     expect(error.message).toContain("401");
+    expect(error.message).not.toContain("Unauthorized");
   });
 
   it("should throw non-retryable error on 400 Bad Request", async () => {
@@ -347,9 +348,10 @@ describe("CustomEmbeddingProvider", () => {
     }), { status: 200 }));
 
     const provider = createProvider();
-    await expect(provider.embedBatch(["text1", "text2", "text3"])).rejects.toThrow(
-      "Embedding count mismatch: sent 3 texts but received 2 embeddings"
-    );
+    await expect(provider.embedBatch(["text1", "text2", "text3"])).rejects.toMatchObject({
+      kind: "malformed_response",
+      retryable: false,
+    });
   });
 
   it("should throw on embedding count mismatch (more than expected)", async () => {
@@ -363,9 +365,10 @@ describe("CustomEmbeddingProvider", () => {
     }), { status: 200 }));
 
     const provider = createProvider();
-    await expect(provider.embedBatch(["text1"])).rejects.toThrow(
-      "Embedding count mismatch: sent 1 texts but received 2 embeddings"
-    );
+    await expect(provider.embedBatch(["text1"])).rejects.toMatchObject({
+      kind: "malformed_response",
+      retryable: false,
+    });
   });
 
   it("should throw AbortError with timeout message when fetch is aborted", async () => {
@@ -382,15 +385,47 @@ describe("CustomEmbeddingProvider", () => {
     const provider = createEmbeddingProvider(info);
 
     await expect(provider.embedQuery("test")).rejects.toThrow(
-      "Custom embedding API request timed out after 5000ms for http://localhost:11434/v1/embeddings"
+      "Custom embedding provider request timed out after 5000ms."
     );
   });
 
-  it("should re-throw non-AbortError fetch failures as-is", async () => {
+  it("keeps the provider timeout active while reading the response body", async () => {
+    vi.useFakeTimers();
+    try {
+      fetchSpy.mockImplementation(async (_url, init) => ({
+        ok: true,
+        status: 200,
+        json: async () => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          }, { once: true });
+        }),
+      }) as Response);
+      const provider = createEmbeddingProvider(createCustomProviderInfo({
+        baseUrl: "http://localhost:11434/v1",
+        model: "nomic-embed-text",
+        dimensions: 768,
+        timeoutMs: 1000,
+      }));
+      const assertion = expect(provider.embedQuery("test"))
+        .rejects.toThrow("Custom embedding provider request timed out after 1000ms.");
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(1000);
+      await assertion;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("redacts non-AbortError fetch failures", async () => {
     fetchSpy.mockRejectedValueOnce(new TypeError("fetch failed"));
 
     const provider = createProvider();
-    await expect(provider.embedQuery("test")).rejects.toThrow("fetch failed");
+    const error = await getRejectedError(provider.embedQuery("test"));
+    expect(error).toBeInstanceOf(ProviderRequestError);
+    expect(error.message).toBe("Custom embedding provider request failed.");
+    expect(error.message).not.toContain("fetch failed");
   });
 
   it("should not retry on CustomProviderNonRetryableError via pRetry shouldRetry", async () => {
@@ -562,11 +597,14 @@ describe("OllamaEmbeddingProvider", () => {
     expect(calls).toBe(1);
   });
 
-  it("rethrows non-context ollama errors", async () => {
+  it("redacts non-context ollama errors", async () => {
     fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ error: "boom" }), { status: 500 }));
 
     const provider = createOllamaProvider();
-    await expect(provider.embedBatch(["hello"])).rejects.toThrow("Ollama embedding API error: 500");
+    const error = await getRejectedError(provider.embedBatch(["hello"]));
+    expect(error).toBeInstanceOf(ProviderRequestError);
+    expect(error.message).toBe("Ollama embedding provider returned HTTP 500.");
+    expect(error.message).not.toContain("boom");
   });
 
   it("aborts ollama embedding requests after the bounded timeout", async () => {
@@ -587,6 +625,29 @@ describe("OllamaEmbeddingProvider", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does not fall back to per-text requests after caller cancellation", async () => {
+    let calls = 0;
+    let markRequestStarted: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    fetchSpy.mockImplementation(async (_url, init) => {
+      calls += 1;
+      markRequestStarted?.();
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+      });
+    });
+    const controller = new AbortController();
+    const provider = createOllamaProvider();
+    const operation = provider.embedBatch(["first", "second"], { signal: controller.signal });
+    await requestStarted;
+    controller.abort();
+
+    await expect(operation).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(calls).toBe(1);
   });
 
   it("rejects ollama embeddings with the wrong vector dimensions", async () => {

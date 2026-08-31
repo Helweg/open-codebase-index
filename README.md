@@ -174,6 +174,9 @@ OpenCode project config lives at `.opencode/codebase-index.json`. Codex, Pi, and
     "minScore": 0.1,
     "fusionStrategy": "rrf",
     "rerankTopN": 20
+  },
+  "mcp": {
+    "stallTimeoutMs": 300000
   }
 }
 ```
@@ -204,6 +207,8 @@ Start with:
 4. a forced rebuild only when status reports incompatibility or corruption
 
 Common provider, native module, stale index, branch, and performance issues are covered in [Troubleshooting](TROUBLESHOOTING.md).
+
+MCP operations report structured, redacted failures and durable phase diagnostics through `index_status`. If a client has already lost its stdio transport, start a fresh client session before retrying.
 
 ## Evaluation and performance
 

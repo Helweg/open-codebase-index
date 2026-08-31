@@ -16,6 +16,7 @@ const PROJECT_OVERRIDE_KEYS = [
   "search",
   "debug",
   "effectivenessMetrics",
+  "mcp",
   "scope",
 ] as const;
 
@@ -84,7 +85,7 @@ function validateConfigLayerShape(rawConfig: unknown, filePath: string): Record<
     throw new Error(`Config file ${filePath} field 'exclude' must be an array of strings.`);
   }
 
-  for (const section of ["customProvider", "indexing", "search", "debug", "effectivenessMetrics", "reranker"] as const) {
+  for (const section of ["customProvider", "indexing", "search", "debug", "effectivenessMetrics", "reranker", "mcp"] as const) {
     const value = rawConfig[section];
     if (value !== undefined && !isRecord(value)) {
       throw new Error(`Config file ${filePath} field '${section}' must be an object.`);

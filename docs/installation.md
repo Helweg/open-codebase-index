@@ -98,6 +98,8 @@ codex plugin add codebase-index@helweg-plugins
 
 Restart or open a new thread in the target workspace. The plugin bundles MCP configuration, session guidance, and the `codebase-search` skill.
 
+If Codex reports `Transport closed`, inspect `index_status` from a new thread or client session. Server-side cancellation and durable diagnostics cannot make a client reuse a stdio transport that it has already closed.
+
 For local plugin development from this checkout:
 
 ```bash

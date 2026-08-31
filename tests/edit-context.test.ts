@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { countContextTokens } from "../src/tools/utils.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 const operationMocks = vi.hoisted(() => ({
   getCallGraphData: vi.fn(),
@@ -191,5 +192,26 @@ describe("codebase edit context", () => {
     expect(result.text).toContain("Risk: symbol \"missingSymbol\" could not be resolved");
     expect(result.text).toContain("src/auth-policy.ts");
     expect(result.details.resolution).toBe("not_found");
+  });
+
+  it("does not format resolved evidence after the operation is cancelled", async () => {
+    const controller = new AbortController();
+    operationMocks.getCallGraphData.mockImplementation(async (_root, _host, args) => ({
+      direction: args.direction,
+      resolution: resolved,
+      callers: [],
+      callees: [],
+    }));
+    operationMocks.implementationLookup.mockImplementation(async () => {
+      controller.abort();
+      return [source];
+    });
+
+    await expect(resolveCodebaseEditContext(
+      "/repo",
+      "jcode",
+      { query: "tighten token validation", symbol: "validateToken" },
+      { signal: controller.signal },
+    )).rejects.toBeInstanceOf(OperationCancelledError);
   });
 });

@@ -1,6 +1,7 @@
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { HostMode } from "../config/host.js";
 import type { Indexer, IndexProgress, IndexStats } from "../indexer/index.js";
+import type { OperationControl } from "./operation-control.js";
 import type { BackgroundIndexingPolicy } from "./power-source.js";
 import { existsSync, realpathSync } from "fs";
 import * as os from "os";
@@ -18,6 +19,10 @@ import {
 } from "./background-worker.js";
 import { hasProjectMarker } from "./files.js";
 import { createBackgroundIndexingPolicy } from "./power-source.js";
+import {
+  raceWithOperationSignal,
+  throwIfOperationAborted,
+} from "./operation-control.js";
 
 export type AutoIndexCoordinatorState =
   | "idle"
@@ -90,8 +95,21 @@ interface IndexRequest {
   allowDisabledAutoIndex?: boolean;
   checkFreshness: boolean;
   force: boolean;
+  hasIndependentOwner?: boolean;
+  manualConsumerIds?: Set<symbol>;
   onProgress?: (progress: IndexProgress) => void;
   source: AutoIndexSource;
+}
+
+type RetrievalActivityControl = Pick<
+  OperationControl,
+  "heartbeat" | "reportProgress" | "setPhase"
+>;
+
+interface RetrievalActivitySubscriber {
+  control: RetrievalActivityControl;
+  queue: Promise<void>;
+  lastPhase?: string;
 }
 
 const MAX_RETRY_DELAY_MS = 10_000;
@@ -246,13 +264,23 @@ function requestPriority(request: IndexRequest): number {
   return 1;
 }
 
+function requestHasIndependentOwner(request: IndexRequest): boolean {
+  return request.hasIndependentOwner ?? request.source !== "manual";
+}
+
 function mergeRequests(current: IndexRequest | null, next: IndexRequest): IndexRequest {
   if (!current) return next;
   const preferred = requestPriority(next) > requestPriority(current) ? next : current;
+  const manualConsumerIds = new Set([
+    ...(current.manualConsumerIds ?? []),
+    ...(next.manualConsumerIds ?? []),
+  ]);
   return {
     allowDisabledAutoIndex: current.allowDisabledAutoIndex || next.allowDisabledAutoIndex,
     checkFreshness: current.checkFreshness && next.checkFreshness,
     force: current.force || next.force,
+    hasIndependentOwner: requestHasIndependentOwner(current) || requestHasIndependentOwner(next),
+    ...(manualConsumerIds.size > 0 ? { manualConsumerIds } : {}),
     onProgress: next.onProgress ?? current.onProgress,
     source: preferred.source,
   };
@@ -261,7 +289,7 @@ function mergeRequests(current: IndexRequest | null, next: IndexRequest): IndexR
 class AutoIndexCoordinator {
   private registration: AutoIndexRegistration;
   private status: AutoIndexStatusSnapshot;
-  private activation: Promise<void> = Promise.resolve();
+  private activation: Promise<void> | null = null;
   private inFlight: Promise<CoordinatedIndexResult> | null = null;
   private activeRequest: IndexRequest | null = null;
   private batteryCheck: Promise<CoordinatedIndexResult> | null = null;
@@ -272,6 +300,16 @@ class AutoIndexCoordinator {
   private pendingRequest: IndexRequest | null = null;
   private pendingFollowUp: Promise<CoordinatedIndexResult> | null = null;
   private abortController: AbortController | null = null;
+  private readonly manualConsumerIds = new Set<symbol>();
+  private readonly activeManualConsumerIds = new Set<symbol>();
+  private activeHasIndependentOwner = false;
+  private readonly manualProgressListeners = new Map<symbol, (progress: IndexProgress) => void>();
+  private readonly manualPhaseListeners = new Map<symbol, NonNullable<
+    NonNullable<Parameters<Indexer["index"]>[1]>["setPhase"]
+  >>();
+  private readonly manualHeartbeatListeners = new Map<symbol, () => void | Promise<void>>();
+  private readonly manualProviderErrorListeners = new Map<symbol, NonNullable<Parameters<Indexer["index"]>[1]>["onProviderError"]>();
+  private readonly retrievalActivitySubscribers = new Map<symbol, RetrievalActivitySubscriber>();
   private stopped = false;
 
   constructor(registration: AutoIndexRegistration) {
@@ -308,7 +346,12 @@ class AutoIndexCoordinator {
   }
 
   activateAfter(activation: Promise<void>): void {
-    this.activation = activation;
+    const pendingActivation = activation.then(() => {
+      if (this.activation === pendingActivation) {
+        this.activation = null;
+      }
+    });
+    this.activation = pendingActivation;
   }
 
   snapshot(): AutoIndexStatusSnapshot {
@@ -316,6 +359,20 @@ class AutoIndexCoordinator {
     return {
       ...this.status,
       progress: this.status.progress ? { ...this.status.progress } : undefined,
+    };
+  }
+
+  subscribeRetrievalActivity(control: RetrievalActivityControl | undefined): () => void {
+    if (!control?.heartbeat && !control?.reportProgress && !control?.setPhase) {
+      return () => undefined;
+    }
+    const id = Symbol("retrieval-activity-subscriber");
+    this.retrievalActivitySubscribers.set(id, {
+      control,
+      queue: Promise.resolve(),
+    });
+    return () => {
+      this.retrievalActivitySubscribers.delete(id);
     };
   }
 
@@ -333,7 +390,77 @@ class AutoIndexCoordinator {
     if (this.stopped) {
       return Promise.resolve({ outcome: "stopped" });
     }
-    return this.activation.then(() => this.enqueueBatteryAwareRequest(request));
+    return this.activation
+      ? this.activation.then(() => this.enqueueBatteryAwareRequest(request))
+      : this.enqueueBatteryAwareRequest(request);
+  }
+
+  requestManual(
+    force: boolean,
+    onProgress?: (progress: IndexProgress) => void,
+    signal?: AbortSignal,
+    heartbeat?: () => void | Promise<void>,
+    onProviderError?: NonNullable<Parameters<Indexer["index"]>[1]>["onProviderError"],
+    setPhase?: NonNullable<Parameters<Indexer["index"]>[1]>["setPhase"],
+  ): Promise<CoordinatedIndexResult> {
+    const attach = async (): Promise<CoordinatedIndexResult> => {
+      throwIfOperationAborted(signal);
+      const consumerId = Symbol("manual-index-consumer");
+      this.manualConsumerIds.add(consumerId);
+      if (onProgress) this.manualProgressListeners.set(consumerId, onProgress);
+      if (setPhase) this.manualPhaseListeners.set(consumerId, setPhase);
+      if (heartbeat) this.manualHeartbeatListeners.set(consumerId, heartbeat);
+      if (onProviderError) this.manualProviderErrorListeners.set(consumerId, onProviderError);
+      const request: IndexRequest = {
+        checkFreshness: !force,
+        force,
+        hasIndependentOwner: false,
+        manualConsumerIds: new Set([consumerId]),
+        source: "manual",
+      };
+      let detached = false;
+      const detach = (): void => {
+        if (detached) return;
+        detached = true;
+        this.manualConsumerIds.delete(consumerId);
+        this.manualProgressListeners.delete(consumerId);
+        this.manualPhaseListeners.delete(consumerId);
+        this.manualHeartbeatListeners.delete(consumerId);
+        this.manualProviderErrorListeners.delete(consumerId);
+        const wasActive = this.activeManualConsumerIds.delete(consumerId);
+        if (wasActive && this.activeManualConsumerIds.size === 0 && !this.activeHasIndependentOwner) {
+          this.abortController?.abort();
+        }
+        if (this.pendingRequest?.manualConsumerIds?.delete(consumerId) === true
+          && this.pendingRequest.manualConsumerIds.size === 0) {
+          if (requestHasIndependentOwner(this.pendingRequest)) {
+            this.pendingRequest = {
+              ...this.pendingRequest,
+              force: false,
+              manualConsumerIds: undefined,
+              onProgress: undefined,
+              source: "watcher",
+            };
+          } else {
+            this.pendingRequest = null;
+          }
+        }
+      };
+      signal?.addEventListener("abort", detach, { once: true });
+      const job = this.enqueueBatteryAwareRequest(request);
+
+      try {
+        return await raceWithOperationSignal(job, signal);
+      } finally {
+        signal?.removeEventListener("abort", detach);
+        detach();
+      }
+    };
+
+    const activation = this.activation;
+    return activation
+      ? raceWithOperationSignal(activation, signal).then(attach)
+      : attach();
   }
 
   private enqueueBatteryAwareRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
@@ -366,11 +493,15 @@ class AutoIndexCoordinator {
     if (this.inFlight) {
       if (request.force && !this.activeRequest?.force) {
         this.pendingRequest = mergeRequests(this.pendingRequest, request);
-        this.abortController?.abort();
         const active = this.inFlight;
         return active.then(() => {
           if (this.stopped) return { outcome: "stopped" };
-          return this.inFlight ?? this.startRequest(request);
+          const hasLiveManualConsumer = Array.from(request.manualConsumerIds ?? [])
+            .some((consumerId) => this.manualConsumerIds.has(consumerId));
+          if (!requestHasIndependentOwner(request) && !hasLiveManualConsumer) {
+            return { outcome: "stopped" };
+          }
+          return this.pendingFollowUp ?? this.inFlight ?? { outcome: "stopped" };
         });
       }
       if (request.source === "watcher") {
@@ -380,6 +511,14 @@ class AutoIndexCoordinator {
           if (this.stopped) return { outcome: "stopped" };
           return this.pendingFollowUp ?? { outcome: "stopped" };
         });
+      }
+      if (requestHasIndependentOwner(request)) {
+        this.activeHasIndependentOwner = true;
+      }
+      for (const consumerId of request.manualConsumerIds ?? []) {
+        if (this.manualConsumerIds.has(consumerId)) {
+          this.activeManualConsumerIds.add(consumerId);
+        }
       }
       return this.inFlight;
     }
@@ -425,10 +564,21 @@ class AutoIndexCoordinator {
   }
 
   private startRequest(request: IndexRequest): Promise<CoordinatedIndexResult> {
-    if (this.stopped || !this.canRun(request)) {
+    const hasLiveManualConsumer = Array.from(request.manualConsumerIds ?? [])
+      .some((consumerId) => this.manualConsumerIds.has(consumerId));
+    if (this.stopped
+      || !this.canRun(request)
+      || (!requestHasIndependentOwner(request) && !hasLiveManualConsumer)) {
       return Promise.resolve({ outcome: "stopped" });
     }
     this.activeRequest = request;
+    this.activeManualConsumerIds.clear();
+    for (const consumerId of request.manualConsumerIds ?? []) {
+      if (this.manualConsumerIds.has(consumerId)) {
+        this.activeManualConsumerIds.add(consumerId);
+      }
+    }
+    this.activeHasIndependentOwner = requestHasIndependentOwner(request);
     const job = this.run(request);
     this.inFlight = job;
     void job.then(() => {
@@ -436,13 +586,17 @@ class AutoIndexCoordinator {
       this.inFlight = null;
       this.activeRequest = null;
       this.abortController = null;
+      this.activeManualConsumerIds.clear();
+      this.activeHasIndependentOwner = false;
       if (this.batteryIndexJob === job) {
         this.batteryIndexJob = null;
         this.batteryCheck = null;
       }
       const pending = this.pendingRequest;
       this.pendingRequest = null;
-      if (pending && !this.stopped) {
+      const hasLiveManualConsumer = Array.from(pending?.manualConsumerIds ?? [])
+        .some((consumerId) => this.manualConsumerIds.has(consumerId));
+      if (pending && !this.stopped && (requestHasIndependentOwner(pending) || hasLiveManualConsumer)) {
         const followUp = this.request(pending);
         this.pendingFollowUp = followUp;
         void followUp.then(() => {
@@ -501,6 +655,9 @@ class AutoIndexCoordinator {
         const stats = await operation((progress) => {
           this.throwIfCancelled(controller.signal);
           request.onProgress?.(progress);
+          for (const consumerId of this.activeManualConsumerIds) {
+            this.manualProgressListeners.get(consumerId)?.(progress);
+          }
           this.status.progress = {
             phase: progress.phase,
             filesProcessed: progress.filesProcessed,
@@ -510,6 +667,26 @@ class AutoIndexCoordinator {
             percentage: calculatePercentage(progress),
           };
           this.status.updatedAt = now();
+          this.notifyRetrievalProgress(progress);
+        }, {
+          signal: controller.signal,
+          setPhase: async (phase) => {
+            this.notifyRetrievalPhase(phase);
+            await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
+              await this.manualPhaseListeners.get(consumerId)?.(phase);
+            }));
+          },
+          heartbeat: async () => {
+            this.notifyRetrievalHeartbeat();
+            await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
+              await this.manualHeartbeatListeners.get(consumerId)?.();
+            }));
+          },
+          onProviderError: (error) => {
+            for (const consumerId of this.activeManualConsumerIds) {
+              this.manualProviderErrorListeners.get(consumerId)?.(error);
+            }
+          },
         });
         this.throwIfCancelled(controller.signal);
         if (request.source === "startup" || request.source === "retrieval") {
@@ -546,6 +723,9 @@ class AutoIndexCoordinator {
               source: undefined,
             });
             return { outcome: "stopped" };
+          }
+          if (request.source === "manual") {
+            this.setState("stopped", { completedAt: now(), progress: undefined });
           }
           return { outcome: "stopped" };
         }
@@ -605,6 +785,54 @@ class AutoIndexCoordinator {
       updatedAt: now(),
       blockedReason: this.registration.blockedReason,
     };
+  }
+
+  private enqueueRetrievalActivity(
+    id: symbol,
+    subscriber: RetrievalActivitySubscriber,
+    task: (subscriber: RetrievalActivitySubscriber) => Promise<void>,
+  ): void {
+    subscriber.queue = subscriber.queue.then(async () => {
+      if (this.retrievalActivitySubscribers.get(id) !== subscriber) return;
+      await task(subscriber);
+    }).catch(() => {
+      this.retrievalActivitySubscribers.delete(id);
+    });
+  }
+
+  private notifyRetrievalPhase(phase: string): void {
+    for (const [id, subscriber] of this.retrievalActivitySubscribers) {
+      this.enqueueRetrievalActivity(id, subscriber, async (active) => {
+        if (active.lastPhase === phase) return;
+        active.lastPhase = phase;
+        await active.control.setPhase?.(phase);
+      });
+    }
+  }
+
+  private notifyRetrievalHeartbeat(): void {
+    for (const [id, subscriber] of this.retrievalActivitySubscribers) {
+      this.enqueueRetrievalActivity(id, subscriber, async (active) => {
+        await active.control.heartbeat?.();
+      });
+    }
+  }
+
+  private notifyRetrievalProgress(progress: IndexProgress): void {
+    for (const [id, subscriber] of this.retrievalActivitySubscribers) {
+      this.enqueueRetrievalActivity(id, subscriber, async (active) => {
+        if (active.control.reportProgress) {
+          active.lastPhase = progress.phase;
+          await active.control.reportProgress(calculatePercentage(progress), progress.phase);
+          return;
+        }
+        if (active.lastPhase !== progress.phase) {
+          active.lastPhase = progress.phase;
+          await active.control.setPhase?.(progress.phase);
+        }
+        await active.control.heartbeat?.();
+      });
+    }
   }
 
   private throwIfCancelled(signal: AbortSignal): void {
@@ -835,13 +1063,19 @@ export function runCoordinatedIndex(
   host: HostMode,
   force: boolean,
   onProgress?: (progress: IndexProgress) => void,
+  signal?: AbortSignal,
+  heartbeat?: () => void | Promise<void>,
+  onProviderError?: NonNullable<Parameters<Indexer["index"]>[1]>["onProviderError"],
+  setPhase?: NonNullable<Parameters<Indexer["index"]>[1]>["setPhase"],
 ): Promise<CoordinatedIndexResult> | null {
-  return getCoordinator(projectRoot, host)?.request({
-    checkFreshness: !force,
+  return getCoordinator(projectRoot, host)?.requestManual(
     force,
     onProgress,
-    source: "manual",
-  }) ?? null;
+    signal,
+    heartbeat,
+    onProviderError,
+    setPhase,
+  ) ?? null;
 }
 
 export function getAutoIndexStatus(
@@ -855,11 +1089,11 @@ export function getAutoIndexStatus(
   };
 }
 
-export async function waitForAutoIndexForRetrieval(
+async function waitForAutoIndexForRetrievalFromCoordinator(
   projectRoot: string,
   host: HostMode,
+  coordinator: AutoIndexCoordinator | null,
 ): Promise<AutoIndexRetrievalResult> {
-  const coordinator = getCoordinator(projectRoot, host);
   if (!coordinator) return { ready: true };
   const initial = coordinator.snapshot();
   if (!initial.enabled) return { ready: true };
@@ -918,6 +1152,19 @@ export async function waitForAutoIndexForRetrieval(
     ready: false,
     text: `Automatic indexing is ${status.state}. Retry shortly or call index_status for progress. You can also run index_codebase explicitly.`,
   };
+}
+
+export function waitForAutoIndexForRetrieval(
+  projectRoot: string,
+  host: HostMode,
+  control?: Pick<OperationControl, "heartbeat" | "reportProgress" | "setPhase" | "signal">,
+): Promise<AutoIndexRetrievalResult> {
+  const coordinator = getCoordinator(projectRoot, host);
+  const detach = coordinator?.subscribeRetrievalActivity(control) ?? (() => undefined);
+  return raceWithOperationSignal(
+    waitForAutoIndexForRetrievalFromCoordinator(projectRoot, host, coordinator),
+    control?.signal,
+  ).finally(detach);
 }
 
 export async function stopAutoIndex(

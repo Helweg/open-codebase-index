@@ -588,6 +588,7 @@ class BackgroundWorkerController {
   private teardownRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private transition: Promise<void> = Promise.resolve();
   private stopPromise: Promise<void> | null = null;
+  private stopDrainPromise: Promise<void> | null = null;
   private stopped = false;
   private stopping = false;
   private losingLeadership = false;
@@ -779,6 +780,11 @@ class BackgroundWorkerController {
     return completion;
   }
 
+  async waitForStopCompletion(): Promise<void> {
+    await (this.stopPromise ?? Promise.resolve());
+    await (this.stopDrainPromise ?? Promise.resolve());
+  }
+
   private canRun(): boolean {
     return this.config.indexing.autoIndex || this.hooks.watcherFactory != null;
   }
@@ -848,22 +854,24 @@ class BackgroundWorkerController {
     lease: BackgroundWorkerLease,
     completion: Promise<void>,
   ): void {
-    void completion.then(
-      () => {
-        void this.enqueue(async () => {
-          if (this.lease !== lease || !this.stopping) return;
-          this.leaderWorkStopped = true;
-          this.releaseStoppedLease(lease);
-        }).catch((error: unknown) => {
-          console.error("[codebase-index] Failed to release background worker lease after automatic indexing stopped:", error);
-          this.scheduleTeardownRetry();
-        });
-      },
+    const drain = completion.then(
+      () => this.enqueue(async () => {
+        if (this.lease !== lease || !this.stopping) return;
+        this.leaderWorkStopped = true;
+        this.releaseStoppedLease(lease);
+      }).catch((error: unknown) => {
+        console.error("[codebase-index] Failed to release background worker lease after automatic indexing stopped:", error);
+        this.scheduleTeardownRetry();
+        throw error;
+      }),
       (error: unknown) => {
         console.error("[codebase-index] Failed while waiting for automatic indexing to stop:", error);
         this.scheduleTeardownRetry();
+        throw error;
       },
     );
+    this.stopDrainPromise = drain;
+    void drain.catch(() => undefined);
   }
 
   private releaseStoppedLease(lease: BackgroundWorkerLease): void {
@@ -877,6 +885,7 @@ class BackgroundWorkerController {
   }
 
   private finishStoppedLease(): void {
+    this.stopDrainPromise = null;
     this.leaderWorkStopped = false;
     this.stopAutoIndexOnTeardown = true;
     this.stopping = false;
@@ -1125,12 +1134,17 @@ export function isBackgroundWorkerStopping(projectRoot: string, host: HostMode):
   return key !== undefined && workers.get(key)?.isStopping() === true;
 }
 
-export async function stopBackgroundWorker(projectRoot: string, host: HostMode): Promise<void> {
+export async function stopBackgroundWorker(
+  projectRoot: string,
+  host: HostMode,
+  waitForCompletion = false,
+): Promise<void> {
   const projectKey = projectLookupKey(projectRoot, host);
   const key = workerKeysByProject.get(projectKey);
   const worker = key ? workers.get(key) : undefined;
   if (!worker) return;
   await worker.stop();
+  if (waitForCompletion) await worker.waitForStopCompletion();
 }
 
 export async function resetBackgroundWorkersForTests(): Promise<void> {

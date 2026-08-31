@@ -2,6 +2,8 @@ import { execFile } from "child_process";
 import * as path from "path";
 import { promisify } from "util";
 
+import { throwIfOperationAborted } from "../utils/operation-control.js";
+
 const execFileAsync = promisify(execFile);
 
 export interface GitBlameMetadata {
@@ -66,17 +68,21 @@ export async function getChunkGitBlame(
   projectRoot: string,
   filePath: string,
   startLine: number,
-  endLine: number
+  endLine: number,
+  signal?: AbortSignal,
 ): Promise<GitBlameMetadata | undefined> {
+  throwIfOperationAborted(signal);
   const relativePath = path.relative(projectRoot, filePath);
   try {
     const { stdout } = await execFileAsync(
       "git",
       ["blame", "--line-porcelain", "-L", `${startLine},${endLine}`, "--", relativePath],
-      { cwd: projectRoot, timeout: 30000 }
+      { cwd: projectRoot, timeout: 30000, signal }
     );
+    throwIfOperationAborted(signal);
     return parseGitBlamePorcelain(stdout);
   } catch {
+    throwIfOperationAborted(signal);
     return undefined;
   }
 }

@@ -10,6 +10,7 @@ import { readFailedBatchRecords } from "../src/indexer/failed-state-persistence.
 import { Indexer } from "../src/indexer/index.js";
 import { Database, InvertedIndex, VectorStore } from "../src/native/index.js";
 import { hashContent } from "../src/native/index.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 function canonicalPath(filePath: string): string {
   return fs.realpathSync.native(filePath);
@@ -154,6 +155,48 @@ describe("indexer clearIndex force rebuild", () => {
     expect(embeddingBuffer).not.toBeNull();
     const floatCount = embeddingBuffer!.byteLength / Float32Array.BYTES_PER_ELEMENT;
     expect(floatCount).toBe(4);
+  });
+
+  it("releases the mutation lease when force indexing is cancelled at the clear barrier", async () => {
+    const indexer = createIndexer(tempDir, 8);
+    await indexer.index();
+    const barrier = Promise.withResolvers<void>();
+    const enteredBarrier = Promise.withResolvers<void>();
+    const internals = indexer as unknown as {
+      removeProjectRuntimeStateArtifacts: () => Promise<void>;
+    };
+    const originalRemove = internals.removeProjectRuntimeStateArtifacts.bind(indexer);
+    internals.removeProjectRuntimeStateArtifacts = async (): Promise<void> => {
+      enteredBarrier.resolve();
+      await barrier.promise;
+      await originalRemove();
+    };
+    const controller = new AbortController();
+
+    const operation = indexer.forceIndex(undefined, { signal: controller.signal });
+    await enteredBarrier.promise;
+    controller.abort();
+    barrier.resolve();
+
+    await expect(operation).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(fs.existsSync(path.join(tempDir, ".opencode", "index", "indexing.lock"))).toBe(false);
+  });
+
+  it("releases the mutation lease when a health-check heartbeat cancels the operation", async () => {
+    const indexer = createIndexer(tempDir, 8);
+    await indexer.index();
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => {
+      controller.abort();
+    });
+
+    await expect(indexer.healthCheck({
+      signal: controller.signal,
+      heartbeat,
+    })).rejects.toBeInstanceOf(OperationCancelledError);
+
+    expect(heartbeat).toHaveBeenCalled();
+    expect(fs.existsSync(path.join(tempDir, ".opencode", "index", "indexing.lock"))).toBe(false);
   });
 
   it("removes a deleted file indexed through a symlinked global project root", async () => {

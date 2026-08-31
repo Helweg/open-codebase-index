@@ -127,6 +127,8 @@ Finds code analogous to a supplied snippet. Useful for duplicate detection, patt
 
 Reports readiness, chunk counts, compatibility, current provider/model, and index health information.
 
+MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
+
 ### `index_codebase`
 
 Creates or updates the index. Incremental indexing is the default. Use `force: true` only for a required full rebuild. `estimateOnly` reports estimated embedding work without indexing. `dryRun` parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index — a read-only preflight.
@@ -142,6 +144,28 @@ Returns process-lifetime operational metrics and enabled privacy-safe effectiven
 ### `index_logs`
 
 Returns recent in-memory debug logs when debug logging is enabled.
+
+### MCP errors and progress
+
+Every MCP handler failure returns `isError: true`, a concise English instruction, and a redacted structured error:
+
+```json
+{
+  "error": {
+    "schemaVersion": 1,
+    "code": "OPERATION_TIMEOUT",
+    "operation": "index_codebase",
+    "phase": "embedding",
+    "durationMs": 123,
+    "retryable": true,
+    "nextAction": "Check index_status for the stalled phase, then retry the operation."
+  }
+}
+```
+
+Codes are `OPERATION_TIMEOUT`, `OPERATION_CANCELLED`, `PROVIDER_ERROR`, `INDEX_BUSY`, `INDEX_UNAVAILABLE`, and `INTERNAL_ERROR`. Provider timeouts, HTTP 429, and HTTP 5xx failures are retryable. Other HTTP 4xx failures and internal errors are not. Tool arguments, queries, paths, provider URLs, response bodies, raw causes, and secrets are never copied into this structure.
+
+When the caller supplies a progress token, long-running operations reuse that exact token and emit serialized, strictly increasing progress from `0` through `100` with `total: 100`. No progress notification is emitted without a token. Raw progress still refreshes the inactivity deadline even when rounding produces no new percentage.
 
 ## Call graph and impact tools
 

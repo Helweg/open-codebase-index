@@ -1,4 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { ShapeOutput, ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import {
@@ -55,24 +57,47 @@ import {
   searchCodebaseWithEffectiveness,
 } from "../../tools/operations.js";
 import type { McpServerRuntime } from "./shared.js";
+import { executeMcpOperation, type McpOperationExtra } from "./operation-execution.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
+import type { OperationControl } from "../../utils/operation-control.js";
+import { runOperationPhase } from "../../utils/operation-control.js";
 
 function allowNullAsUndefined<T extends z.ZodTypeAny>(schema: T): T {
   return z.preprocess((value) => (value === null ? undefined : value), schema) as unknown as T;
 }
 
 // Knowledge-base operations report failures as plain strings prefixed with "Error: " (for
-// example a missing directory or a blocked sensitive directory) instead of throwing. Surface
-// those to MCP clients as isError so they can distinguish a refusal from success. Informational
-// results such as "Knowledge base already configured" or "Knowledge base not found" do not use
-// the prefix and remain successful results.
+// example a missing directory or a blocked sensitive directory) instead of throwing. Mark those
+// as errors so the central MCP wrapper can replace their potentially sensitive text with the
+// structured redacted envelope. Informational results such as "Knowledge base already configured"
+// or "Knowledge base not found" do not use the prefix and remain successful results.
 function knowledgeBaseResult(text: string): { content: Array<{ type: "text"; text: string }>; isError?: true } {
   const content = [{ type: "text" as const, text }];
   return text.startsWith("Error: ") ? { content, isError: true } : { content };
 }
 
+function registerMcpTool<Shape extends ZodRawShapeCompat>(
+  server: McpServer,
+  runtime: McpServerRuntime,
+  name: string,
+  description: string,
+  schema: Shape,
+  handler: (
+    args: ShapeOutput<Shape>,
+    control: OperationControl,
+  ) => CallToolResult | Promise<CallToolResult>,
+): void {
+  const callback = async (args: ShapeOutput<Shape>, extra: McpOperationExtra): Promise<CallToolResult> => executeMcpOperation(
+    runtime,
+    name,
+    extra,
+    (control) => handler(args, control),
+  );
+  Reflect.apply(server.tool, server, [name, description, schema, callback]);
+}
+
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_CONTEXT,
     "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for a definition; or provide only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
     {
@@ -96,8 +121,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       ).describe(`Maximum response tokens for this context pack (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),
       diagnostic: z.boolean().optional().describe("Collect diagnostic routing and search traces without changing normal text output."),
     },
-    async (args) => {
-      const result = await executeCodebaseContext(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeCodebaseContext(runtime.projectRoot, runtime.host, args, control);
       return {
         content: [{ type: "text", text: result.text }],
         ...(args.diagnostic ? { structuredContent: result.details } : {}),
@@ -105,7 +130,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_EDIT_CONTEXT,
     "PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when resolution is unsafe.",
     {
@@ -119,14 +144,14 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       tokenBudget: allowNullAsUndefined(z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
         .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)),
     },
-    async (args) => {
-      const result = await executeCodebaseEditContext(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeCodebaseEditContext(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_SEARCH,
     "FULL-CONTENT semantic retrieval. Use after codebase_peek when you need implementation text, not as the default first step. For exact identifiers or exhaustive matches use grep instead.",
     {
@@ -141,7 +166,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
       blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
-    async (args) => {
+    async (args, control) => {
       return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "search", args.query, {
         limit: args.limit ?? 5,
         fileType: args.fileType,
@@ -157,11 +182,11 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
           ? "No matching code found. Try a different query or run index_codebase first."
           : `Found ${results.length} results for "${args.query}":\n\n${formatSearchResults(results, "score")}`;
         return { output: { content: [{ type: "text" as const, text }] }, text };
-      });
+      }, control);
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_PEEK,
     "DIRECT LOW-TOKEN semantic location lookup for unfamiliar-code discovery. Prefer codebase_context when the request may involve definitions or graph navigation; use this specialized tool when you only need conceptual locations.",
     {
@@ -175,7 +200,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
       blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
-    async (args) => {
+    async (args, control) => {
       return searchCodebaseWithEffectiveness(runtime.projectRoot, runtime.host, "peek", args.query, {
         limit: args.limit ?? 10,
         fileType: args.fileType,
@@ -191,11 +216,11 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
           ? "No matching code found. Try a different query or run index_codebase first."
           : `Found ${results.length} locations for "${args.query}":\n\n${formatCodebasePeek(results)}`;
         return { output: { content: [{ type: "text" as const, text }] }, text };
-      });
+      }, control);
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_CODEBASE,
     "Create or refresh the semantic index. Call index_status first when readiness is unknown, then use this tool only if the index is missing, stale, or incompatible. Incremental by default; force=true rebuilds everything.",
     {
@@ -204,45 +229,46 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       dryRun: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Parse the file set and report the exact embedding token total without indexing. Read-only; the index is not changed. The total is the value 'Tokens used' climbs to for a force index (and an upper bound for an incremental)."),
       verbose: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Show detailed info about skipped files and parsing failures"),
     },
-    async (args) => {
-      const result = await executeIndexCodebase(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeIndexCodebase(runtime.projectRoot, runtime.host, args, undefined, control);
+      if (result.error !== undefined) throw result.error;
       return { content: [{ type: "text", text: result.text }], ...(result.isError ? { isError: true } : {}) };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_STATUS,
     "START HERE once per repository task when index readiness or freshness is unknown. Reports whether semantic retrieval is ready, chunk counts, compatibility, and the embedding provider. If ready, continue with codebase_peek or implementation_lookup; otherwise run index_codebase.",
     {},
-    async () => {
-      const result = await executeIndexStatus(runtime.projectRoot, runtime.host);
+    async (_args, control) => {
+      const result = await executeIndexStatus(runtime.projectRoot, runtime.host, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_HEALTH_CHECK,
     "Check index health and remove stale entries from deleted files. Run this to clean up the index after files have been deleted.",
     {},
-    async () => {
-      const result = await executeIndexHealthCheck(runtime.projectRoot, runtime.host);
+    async (_args, control) => {
+      const result = await executeIndexHealthCheck(runtime.projectRoot, runtime.host, control);
       return { content: [{ type: "text" as const, text: result.text }], ...(result.isError ? { isError: true } : {}) };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_METRICS,
     "Get operational metrics plus opt-in privacy-safe repository-tool effectiveness counters. Metrics are memory-only. Set reset=true to clear them before reading. Operational metrics require debug.enabled=true and debug.metrics=true. Privacy-safe aggregates require only effectivenessMetrics.enabled=true.",
     {
       reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
     },
-    async (args) => {
-      const result = await executeIndexMetrics(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeIndexMetrics(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_LOGS,
     "Get recent debug logs from the codebase indexer. Requires debug.enabled=true in config.",
     {
@@ -254,13 +280,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         z.enum(INDEX_LOG_LEVELS).optional(),
       ).describe("Filter by minimum log level"),
     },
-    async (args) => {
-      const result = await executeIndexLogs(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeIndexLogs(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.FIND_SIMILAR,
     "Use when you already have a code snippet and need analogous implementations, duplicates, patterns, or refactoring candidates. For a natural-language concept without example code, start with codebase_peek instead.",
     {
@@ -273,7 +299,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       blameSince: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or after this date"),
       blameUntil: allowNullAsUndefined(z.string().optional()).describe("Filter to chunks last changed on or before this date"),
     },
-    async (args) => {
+    async (args, control) => {
       const results = await findSimilarCode(runtime.projectRoot, runtime.host, args.code, {
         limit: args.limit ?? 10,
         fileType: args.fileType,
@@ -282,7 +308,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         excludeFile: args.excludeFile,
         blameSince: args.blameSince,
         blameUntil: args.blameUntil,
-      });
+      }, control);
 
       if (results.length === 0) {
         return { content: [{ type: "text", text: "No similar code found. Try a different snippet or run index_codebase first." }] };
@@ -292,7 +318,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.IMPLEMENTATION_LOOKUP,
     "FIRST TOOL only for known-symbol definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Do not use for callers, callees, dependency paths, or code flow; use codebase_context with direction or from/to for those questions.",
     {
@@ -301,13 +327,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py')"),
       directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils')"),
     },
-    async (args) => {
-      const result = await executeImplementationLookup(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeImplementationLookup(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CALL_GRAPH,
     "Find direct callers or callees by function or method name. Unique names resolve automatically; when duplicate names are reported, retry with filePath."
       + " Supports relationship types: Call, MethodCall, Constructor, Import, Inherits, Implements.",
@@ -322,13 +348,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         z.enum(RELATIONSHIP_TYPES).optional(),
       ).describe("Filter by relationship type. Omit to show all."),
     },
-    async (args) => {
-      const result = await executeCallGraph(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeCallGraph(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CALL_GRAPH_PATH,
     "Find the shortest known call path between two named functions or methods. Unique names resolve automatically; when duplicate endpoints are reported, retry with fromFilePath or toFilePath.",
     {
@@ -338,12 +364,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       toFilePath: allowNullAsUndefined(z.string().optional()).describe("Optional target file path used to disambiguate duplicate target names"),
       maxDepth: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum traversal depth (default: 10)"),
     },
-    async (args) => {
-      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeCallGraphPath(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.PR_IMPACT,
     "FIRST TOOL for pull-request or branch blast-radius questions. Analyzes changed files, affected symbols, transitive dependencies, communities, hub nodes, conflicts, and risk before merging.",
     {
@@ -356,25 +382,20 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         z.enum(["callers", "callees", "both"]).optional().default("both"),
       ).describe("Call-graph traversal direction: 'callers' for upstream, 'callees' for downstream, 'both' for union (default: both)"),
     },
-    async (args) => {
-      try {
-        const result = await getPrImpact(runtime.projectRoot, runtime.host, {
-          pr: args.pr,
-          branch: args.branch,
-          maxDepth: args.maxDepth,
-          hubThreshold: args.hubThreshold,
-          checkConflicts: args.checkConflicts,
-          direction: args.direction,
-        });
-        return { content: [{ type: "text", text: formatPrImpact(result) }] };
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        return { content: [{ type: "text", text: `Error analyzing PR impact: ${message}` }] };
-      }
+    async (args, control) => {
+      const result = await getPrImpact(runtime.projectRoot, runtime.host, {
+        pr: args.pr,
+        branch: args.branch,
+        maxDepth: args.maxDepth,
+        hubThreshold: args.hubThreshold,
+        checkConflicts: args.checkConflicts,
+        direction: args.direction,
+      }, control);
+      return { content: [{ type: "text", text: formatPrImpact(result) }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.ARCHITECTURE_CONTEXT,
     "Repository-scale architecture map backed by cited graph symbols and relationships. Use before focused retrieval when module boundaries or entry points are needed.",
     {
@@ -384,13 +405,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       includeRecentActivity: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Include recent activity when available"),
       tokenBudget: allowNullAsUndefined(z.number().int().min(128).max(4000).optional().default(1200)).describe("Maximum response token budget"),
     },
-    async (args) => {
-      const result = await executeArchitectureContext(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeArchitectureContext(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.CODE_COMMUNITIES,
     "Discover natural module boundaries and hub symbols using graph community detection. " +
     "Clusters symbols by call-graph connectivity, reports community memberships, identifies " +
@@ -403,13 +424,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       minCoupling: allowNullAsUndefined(z.number().int().min(CODE_COMMUNITIES_MIN_COUPLING).optional().default(CODE_COMMUNITIES_MIN_COUPLING)).describe("Minimum distinct cross-community connection count to report a coupling (default: 1)"),
       couplingLimit: allowNullAsUndefined(z.number().int().min(1).max(CODE_COMMUNITIES_MAX_COUPLING_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT)).describe("Maximum number of couplings to return (default: 20)"),
     },
-    async (args) => {
-      const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args);
+    async (args, control) => {
+      const result = await executeCodeCommunities(runtime.projectRoot, runtime.host, args, control);
       return { content: [{ type: "text", text: result.text }] };
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.ADD_KNOWLEDGE_BASE,
     "Add a folder as a knowledge base to the semantic search index. The folder is indexed "
       + "alongside the project code on the next index run. Provide an absolute path or a path "
@@ -422,25 +443,27 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     {
       path: z.string().describe("Path to the folder to add as a knowledge base (absolute or relative to the project root)"),
     },
-    async (args) => {
+    async (args, control) => {
+      await runOperationPhase(control, "updating_config");
       const result = addKnowledgeBase(runtime.projectRoot, runtime.host, args.path);
       return knowledgeBaseResult(result);
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.LIST_KNOWLEDGE_BASES,
     "List the configured knowledge base folders that the index includes alongside the project "
       + "code. The list is the union of project-local and user-global knowledge bases; each entry "
       + "shows the resolved path and whether it exists.",
     {},
-    async () => {
+    async (_args, control) => {
+      await runOperationPhase(control, "reading_config");
       const result = listKnowledgeBases(runtime.projectRoot, runtime.host);
       return knowledgeBaseResult(result);
     },
   );
 
-  server.tool(
+  registerMcpTool(server, runtime,
     TOOL_NAME.REMOVE_KNOWLEDGE_BASE,
     "Remove a knowledge base folder from the semantic search index and refresh the index. The "
       + "path must match a project-local configured path exactly. Knowledge bases inherited from "
@@ -448,7 +471,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     {
       path: z.string().describe("Path of the knowledge base to remove (must match a project-local configured path exactly)"),
     },
-    async (args) => {
+    async (args, control) => {
+      await runOperationPhase(control, "updating_config");
       const result = removeKnowledgeBase(runtime.projectRoot, runtime.host, args.path.trim());
       return knowledgeBaseResult(result);
     },

@@ -13,7 +13,7 @@ import {
   isArchitecturePathInDirectory,
   selectArchitectureFocusedSymbols,
 } from "./architecture-context.js";
-import { getRecentGitActivity } from "./visualize/activity.js";
+import { getRecentGitActivityAbortable } from "./visualize/activity.js";
 import { transformForVisualization } from "./visualize/transform.js";
 import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
@@ -60,6 +60,12 @@ import {
   safelyRecordToolEffectiveness,
   type IndexBusyResult,
 } from "./operation-runtime.js";
+import type { OperationControl } from "../utils/operation-control.js";
+import {
+  raceWithOperationSignal,
+  runOperationPhase,
+  throwIfOperationAborted,
+} from "../utils/operation-control.js";
 
 
 type SearchResult = Awaited<ReturnType<Indexer["search"]>>[number];
@@ -186,15 +192,21 @@ function exactSymbolSearchResults(
   projectRoot: string,
   query: string,
   options: { limit?: number; fileType?: string; directory?: string },
+  signal?: AbortSignal,
 ): SearchResult[] {
   const name = query.trim();
   const limit = options.limit ?? 5;
-  return symbols
-    .filter((symbol) => symbolNameMatches(symbol, name))
-    .filter((symbol) => exactSymbolMatchesScope(symbol, projectRoot, options))
+  throwIfOperationAborted(signal);
+  const matching = symbols.filter((symbol) => {
+    throwIfOperationAborted(signal);
+    return symbolNameMatches(symbol, name) && exactSymbolMatchesScope(symbol, projectRoot, options);
+  });
+  throwIfOperationAborted(signal);
+  return matching
     .sort((left, right) => left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine)
     .slice(0, limit)
     .map((symbol) => {
+      throwIfOperationAborted(signal);
       let content = "[File not accessible]";
       try {
         content = readFileSync(symbol.filePath, "utf-8")
@@ -242,13 +254,18 @@ function resolveCallGraphSymbol(
   requestedName: string,
   requestedFilePath?: string,
   requestedSymbolId?: string,
+  signal?: AbortSignal,
 ): CallGraphSymbolResolution {
+  throwIfOperationAborted(signal);
   const name = requestedName.trim();
   const filePath = trimOrUndefined(requestedFilePath);
   const symbolId = trimOrUndefined(requestedSymbolId);
 
   if (symbolId) {
-    const symbol = symbols.find((candidate) => candidate.id === symbolId);
+    const symbol = symbols.find((candidate) => {
+      throwIfOperationAborted(signal);
+      return candidate.id === symbolId;
+    });
     if (symbol) {
       return resolvedSymbol(symbol, projectRoot, "symbolId");
     }
@@ -262,9 +279,15 @@ function resolveCallGraphSymbol(
     };
   }
 
-  const nameCandidates = symbols.filter((symbol) => symbolNameMatches(symbol, name));
+  const nameCandidates = symbols.filter((symbol) => {
+    throwIfOperationAborted(signal);
+    return symbolNameMatches(symbol, name);
+  });
   const matchingCandidates = filePath
-    ? nameCandidates.filter((symbol) => filePathMatches(symbol.filePath, filePath))
+    ? nameCandidates.filter((symbol) => {
+      throwIfOperationAborted(signal);
+      return filePathMatches(symbol.filePath, filePath);
+    })
     : nameCandidates;
 
   if (matchingCandidates.length === 1) {
@@ -303,8 +326,11 @@ export async function searchCodebase(
     blameUntil?: string;
     trace?: (trace: SearchTrace) => void;
   } = {},
+  control?: OperationControl,
 ): Promise<SearchResult[]> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "embedding_query");
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.search(query, options.limit, {
     fileType: options.fileType,
@@ -319,6 +345,9 @@ export async function searchCodebase(
     blameSince: options.blameSince,
     blameUntil: options.blameUntil,
     trace: options.trace,
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
   });
 }
 
@@ -329,11 +358,12 @@ export async function searchCodebaseWithEffectiveness<T>(
   query: string,
   options: Parameters<typeof searchCodebase>[3],
   render: (results: SearchResult[]) => { output: T; text: string },
+  control?: OperationControl,
 ): Promise<T> {
   const metricsEnabled = isToolEffectivenessEnabled(projectRoot, host);
   const startedAt = metricsEnabled ? performance.now() : 0;
   try {
-    const results = await searchCodebase(projectRoot, host, query, options);
+    const results = await searchCodebase(projectRoot, host, query, options, control);
     const rendered = render(results);
     if (metricsEnabled) {
       safelyRecordToolEffectiveness({
@@ -378,8 +408,11 @@ export async function findSimilarCode(
     blameSince?: string;
     blameUntil?: string;
   } = {},
+  control?: OperationControl,
 ): Promise<Awaited<ReturnType<Indexer["findSimilar"]>>> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "embedding_query");
   const indexer = getIndexerForProject(projectRoot, host);
   return indexer.findSimilar(code, options.limit, {
     fileType: options.fileType,
@@ -388,6 +421,9 @@ export async function findSimilarCode(
     excludeFile: options.excludeFile,
     blameSince: options.blameSince,
     blameUntil: options.blameUntil,
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
   });
 }
 
@@ -402,23 +438,36 @@ export async function implementationLookup(
     exactSymbol?: boolean;
     trace?: (trace: SearchTrace) => void;
   } = {},
+  control?: OperationControl,
 ): Promise<SearchResult[]> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, options.exactSymbol ? "resolving_symbol" : "embedding_query");
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
   if (options.exactSymbol) {
-    return exactSymbolSearchResults(
-      await indexer.getCallGraphSymbols(),
+    const results = exactSymbolSearchResults(
+      await indexer.getCallGraphSymbols({
+        signal: control?.signal,
+        setPhase: control?.setPhase,
+        heartbeat: control?.heartbeat,
+      }),
       root,
       query,
       options,
+      control?.signal,
     );
+    throwIfOperationAborted(control?.signal);
+    return results;
   }
   return indexer.search(query, options.limit, {
     fileType: options.fileType,
     directory: options.directory,
     definitionIntent: true,
     trace: options.trace,
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
   });
 }
 
@@ -432,11 +481,16 @@ export async function getCallGraphData(
     filePath?: string;
     relationshipType?: "Call" | "MethodCall" | "Constructor" | "Import" | "Inherits" | "Implements";
   },
+  control?: OperationControl,
 ): Promise<CallGraphDataResult> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "resolving_graph");
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
-  return getCallGraphDataForIndexer(indexer, root, params);
+  const result = await getCallGraphDataForIndexer(indexer, root, params, control);
+  throwIfOperationAborted(control?.signal);
+  return result;
 }
 
 export async function getCallGraphDataForIndexer(
@@ -449,25 +503,46 @@ export async function getCallGraphDataForIndexer(
     filePath?: string;
     relationshipType?: "Call" | "MethodCall" | "Constructor" | "Import" | "Inherits" | "Implements";
   },
+  control?: OperationControl,
 ): Promise<CallGraphDataResult> {
-  const symbols = await indexer.getCallGraphSymbols();
-  const resolution = resolveCallGraphSymbol(symbols, projectRoot, params.name, params.filePath, params.symbolId);
+  const operationOptions = {
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
+  };
+  const symbols = await indexer.getCallGraphSymbols(operationOptions);
+  const resolution = resolveCallGraphSymbol(
+    symbols,
+    projectRoot,
+    params.name,
+    params.filePath,
+    params.symbolId,
+    control?.signal,
+  );
   const direction = params.direction === "callees" ? "callees" : "callers";
   if (resolution.status !== "resolved") {
     return { direction, resolution, callers: [], callees: [], relationshipType: params.relationshipType };
   }
 
   if (params.direction === "callees") {
-    const callees = await indexer.getCallees(resolution.symbolId, params.relationshipType);
+    const callees = await indexer.getCallees(
+      resolution.symbolId,
+      params.relationshipType,
+      operationOptions,
+    );
     return { direction: "callees", resolution, callees, callers: [], relationshipType: params.relationshipType };
   }
 
-  const includeUnresolved = symbols.filter((symbol) => symbolNameMatches(symbol, resolution.name)).length === 1;
+  const includeUnresolved = symbols.filter((symbol) => {
+    throwIfOperationAborted(control?.signal);
+    return symbolNameMatches(symbol, resolution.name);
+  }).length === 1;
   const callers = await indexer.getCallersForSymbol(
     resolution.symbolId,
     resolution.name,
     includeUnresolved,
     params.relationshipType,
+    operationOptions,
   );
   return { direction: "callers", resolution, callers, callees: [], relationshipType: params.relationshipType };
 }
@@ -480,13 +555,21 @@ export async function getCallGraphPath(
   maxDepth?: number,
   fromFilePath?: string,
   toFilePath?: string,
+  control?: OperationControl,
 ): Promise<CallGraphPathResult> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "resolving_graph");
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
-  const symbols = await indexer.getCallGraphSymbols();
-  const fromResolution = resolveCallGraphSymbol(symbols, root, from, fromFilePath);
-  const toResolution = resolveCallGraphSymbol(symbols, root, to, toFilePath);
+  const operationOptions = {
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
+  };
+  const symbols = await indexer.getCallGraphSymbols(operationOptions);
+  const fromResolution = resolveCallGraphSymbol(symbols, root, from, fromFilePath, undefined, control?.signal);
+  const toResolution = resolveCallGraphSymbol(symbols, root, to, toFilePath, undefined, control?.signal);
   if (fromResolution.status !== "resolved" || toResolution.status !== "resolved") {
     return { from: fromResolution, to: toResolution, path: [] };
   }
@@ -495,7 +578,9 @@ export async function getCallGraphPath(
     fromResolution.symbolId,
     toResolution.symbolId,
     maxDepth,
+    operationOptions,
   );
+  throwIfOperationAborted(control?.signal);
   return { from: fromResolution, to: toResolution, path };
 }
 
@@ -504,26 +589,50 @@ export async function runIndexCodebase(
   host: HostMode,
   args: { force?: boolean; estimateOnly?: boolean; dryRun?: boolean; verbose?: boolean },
   onProgress?: ProgressCb,
+  control?: OperationControl,
 ): Promise<
   | { kind: "estimate"; estimate: CostEstimate }
   | { kind: "dryrun"; dryrun: DryRunEstimate }
-  | { kind: "stats"; stats: IndexStats }
+  | { kind: "stats"; stats: IndexStats; providerError?: import("../utils/operation-control.js").ProviderRequestError }
   | IndexMessageResult
   | IndexBusyResult
 > {
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
+  await runOperationPhase(control, "preparing_index");
+  let providerError: import("../utils/operation-control.js").ProviderRequestError | undefined;
+  const onProviderError = (error: import("../utils/operation-control.js").ProviderRequestError): void => {
+    providerError ??= error;
+  };
 
   try {
     if (args.estimateOnly) {
-      return { kind: "estimate", estimate: await indexer.estimateCost() };
+      const estimate = await raceWithOperationSignal(
+        indexer.estimateCost({
+          signal: control?.signal,
+          setPhase: control?.setPhase,
+          heartbeat: control?.heartbeat,
+        }),
+        control?.signal,
+      );
+      return { kind: "estimate", estimate };
     }
 
     if (args.dryRun) {
-      return { kind: "dryrun", dryrun: await indexer.dryRunCost() };
+      const dryrun = await raceWithOperationSignal(
+        indexer.dryRunCost({
+          signal: control?.signal,
+          setPhase: control?.setPhase,
+          heartbeat: control?.heartbeat,
+        }),
+        control?.signal,
+      );
+      return { kind: "dryrun", dryrun };
     }
 
     const coordinated = runCoordinatedIndex(root, host, args.force ?? false, (progress) => {
+      const percentage = calculatePercentage(progress);
+      void control?.reportProgress?.(percentage, progress.phase);
       if (onProgress) {
         void onProgress(formatProgressTitle(progress), {
           phase: progress.phase,
@@ -531,17 +640,43 @@ export async function runIndexCodebase(
           totalFiles: progress.totalFiles,
           chunksProcessed: progress.chunksProcessed,
           totalChunks: progress.totalChunks,
-          percentage: calculatePercentage(progress),
+          percentage,
         });
       }
-    });
+    }, control?.signal, control?.heartbeat, onProviderError, control?.setPhase);
     if (!coordinated) {
-      const operation = args.force ? indexer.forceIndex.bind(indexer) : indexer.index.bind(indexer);
-      return { kind: "stats", stats: await operation() };
+      const directProgress = (progress: Parameters<NonNullable<Parameters<Indexer["index"]>[0]>>[0]): void => {
+        const percentage = calculatePercentage(progress);
+        void control?.reportProgress?.(percentage, progress.phase);
+        if (onProgress) {
+          void onProgress(formatProgressTitle(progress), {
+            phase: progress.phase,
+            filesProcessed: progress.filesProcessed,
+            totalFiles: progress.totalFiles,
+            chunksProcessed: progress.chunksProcessed,
+            totalChunks: progress.totalChunks,
+            percentage,
+          });
+        }
+      };
+      const stats = args.force
+        ? await indexer.forceIndex(directProgress, {
+          signal: control?.signal,
+          setPhase: control?.setPhase,
+          heartbeat: control?.heartbeat,
+          onProviderError,
+        })
+        : await indexer.index(directProgress, {
+          signal: control?.signal,
+          setPhase: control?.setPhase,
+          heartbeat: control?.heartbeat,
+          onProviderError,
+        });
+      return { kind: "stats", stats, ...(providerError ? { providerError } : {}) };
     }
-    const result = await coordinated;
+    const result = await raceWithOperationSignal(coordinated, control?.signal);
     if (result.outcome === "ready" && result.stats) {
-      return { kind: "stats", stats: result.stats };
+      return { kind: "stats", stats: result.stats, ...(providerError ? { providerError } : {}) };
     }
     if (result.outcome === "ready" && result.skipped) {
       return { kind: "message", text: "The existing index is healthy and current; no indexing was needed." };
@@ -558,26 +693,45 @@ export async function runIndexCodebase(
   }
 }
 
-export async function getIndexStatus(projectRoot: string | undefined, host: HostMode): Promise<IndexStatusResult> {
+export async function getIndexStatus(
+  projectRoot: string | undefined,
+  host: HostMode,
+  control?: OperationControl,
+): Promise<IndexStatusResult> {
+  await runOperationPhase(control, "reading_status");
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
+  const status = await indexer.getStatus();
+  throwIfOperationAborted(control?.signal);
   return {
-    ...await indexer.getStatus(),
+    ...status,
     autoIndex: getAutoIndexStatus(root, host),
   };
 }
 
-export async function getIndexHealthCheck(projectRoot: string | undefined, host: HostMode): Promise<HealthCheckResult> {
+export async function getIndexHealthCheck(
+  projectRoot: string | undefined,
+  host: HostMode,
+  control?: OperationControl,
+): Promise<HealthCheckResult> {
+  await runOperationPhase(control, "checking_index");
   const indexer = getIndexerForProject(projectRoot, host);
-  return indexer.healthCheck();
+  const result = await indexer.healthCheck({
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
+  });
+  throwIfOperationAborted(control?.signal);
+  return result;
 }
 
 export async function runIndexHealthCheck(
   projectRoot: string | undefined,
   host: HostMode,
+  control?: OperationControl,
 ): Promise<{ kind: "health"; health: HealthCheckResult } | IndexBusyResult> {
   try {
-    return { kind: "health", health: await getIndexHealthCheck(projectRoot, host) };
+    return { kind: "health", health: await getIndexHealthCheck(projectRoot, host, control) };
   } catch (error) {
     const busyResult = getIndexBusyResult(error);
     if (!busyResult) throw error;
@@ -596,31 +750,56 @@ export async function getPrImpact(
     checkConflicts?: boolean;
     direction?: "callers" | "callees" | "both";
   },
+  control?: OperationControl,
 ): Promise<PrImpactResult> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "analyzing_impact");
   const indexer = getIndexerForProject(projectRoot, host);
-  return indexer.getPrImpact({
-    pr: params.pr,
-    branch: params.branch,
-    maxDepth: params.maxDepth,
-    hubThreshold: params.hubThreshold,
-    checkConflicts: params.checkConflicts,
-    direction: params.direction,
-  });
+  const result = await indexer.getPrImpact(
+    {
+      pr: params.pr,
+      branch: params.branch,
+      maxDepth: params.maxDepth,
+      hubThreshold: params.hubThreshold,
+      checkConflicts: params.checkConflicts,
+      direction: params.direction,
+    },
+    (progress) => {
+      const percentage = calculatePercentage(progress);
+      void control?.reportProgress?.(percentage, progress.phase);
+    },
+    {
+      signal: control?.signal,
+      setPhase: control?.setPhase,
+      heartbeat: control?.heartbeat,
+    },
+  );
+  throwIfOperationAborted(control?.signal);
+  return result;
 }
 
 export async function getCodeCommunities(
   projectRoot: string | undefined,
   host: HostMode,
   params: SharedCodeCommunitiesArgs,
+  control?: OperationControl,
 ): Promise<import("./format-communities.js").CodeCommunitiesResult> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "analyzing_communities");
   const indexer = getIndexerForProject(projectRoot, host);
+  const operationOptions = {
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
+  };
   const [communities, centrality, couplings] = await Promise.all([
-    indexer.detectCommunities(params.branch),
-    indexer.computeCentrality(params.branch),
-    indexer.detectCommunityCouplings(params.branch),
+    indexer.detectCommunities(params.branch, undefined, operationOptions),
+    indexer.computeCentrality(params.branch, operationOptions),
+    indexer.detectCommunityCouplings(params.branch, operationOptions),
   ]);
+  throwIfOperationAborted(control?.signal);
   return buildCodeCommunitiesResult(communities, centrality, couplings, {
     minSize: Math.max(CODE_COMMUNITIES_MIN_SIZE, Math.floor(params.minSize ?? CODE_COMMUNITIES_MIN_SIZE)),
     limit: Math.min(
@@ -916,59 +1095,96 @@ export async function getArchitectureContext(
   projectRoot: string | undefined,
   host: HostMode,
   params: SharedArchitectureContextArgs,
+  control?: OperationControl,
 ): Promise<import("./architecture-context.js").ArchitectureContextResult> {
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host);
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  await runOperationPhase(control, "building_architecture");
   const indexer = getIndexerForProject(projectRoot, host);
-  return getArchitectureContextForIndexer(indexer, getProjectRoot(projectRoot, host), params);
+  const result = await getArchitectureContextForIndexer(
+    indexer,
+    getProjectRoot(projectRoot, host),
+    params,
+    control,
+  );
+  throwIfOperationAborted(control?.signal);
+  return result;
 }
 
 export async function getArchitectureContextForIndexer(
   indexer: Indexer,
   projectRoot: string,
   params: SharedArchitectureContextArgs,
+  control?: OperationControl,
 ): Promise<import("./architecture-context.js").ArchitectureContextResult> {
+  const operationOptions = {
+    signal: control?.signal,
+    setPhase: control?.setPhase,
+    heartbeat: control?.heartbeat,
+  };
   const [communities, centrality, couplings, visualization] = await Promise.all([
-    indexer.detectCommunities(),
-    indexer.computeCentrality(),
-    indexer.detectCommunityCouplings(),
-    indexer.getVisualizationData({ directory: params.directory ?? undefined }),
+    indexer.detectCommunities(undefined, undefined, operationOptions),
+    indexer.computeCentrality(undefined, operationOptions),
+    indexer.detectCommunityCouplings(undefined, operationOptions),
+    indexer.getVisualizationData({
+      directory: params.directory ?? undefined,
+      ...operationOptions,
+    }),
   ]);
+  throwIfOperationAborted(control?.signal);
   let focusedSymbols: SymbolData[] = [];
   if (params.query?.trim()) {
     const results = await indexer.search(params.query.trim(), 24, {
       metadataOnly: true,
       directory: params.directory ?? undefined,
       prioritizeSourcePaths: true,
+      signal: control?.signal,
+      setPhase: control?.setPhase,
+      heartbeat: control?.heartbeat,
     });
+    throwIfOperationAborted(control?.signal);
     focusedSymbols = selectArchitectureFocusedSymbols(
       results,
       visualization.symbols,
       params.depth,
+      control?.signal,
     );
   }
 
+  throwIfOperationAborted(control?.signal);
   const queryRequested = Boolean(params.query?.trim());
-  const focusIds = new Set(focusedSymbols.map((symbol) => symbol.id));
+  const focusIds = new Set(focusedSymbols.map((symbol) => {
+    throwIfOperationAborted(control?.signal);
+    return symbol.id;
+  }));
   const focusedCommunityIds = new Set(
-    communities.filter((member) => focusIds.has(member.symbolId)).map((member) => member.communityId),
+    communities.filter((member) => {
+      throwIfOperationAborted(control?.signal);
+      return focusIds.has(member.symbolId);
+    }).map((member) => member.communityId),
   );
   const communityBySymbolId = new Map(communities.map((member) => [member.symbolId, member.communityId]));
-  const scopedSymbols = visualization.symbols.filter((symbol) =>
-    isArchitecturePathInDirectory(symbol.filePath, params.directory, projectRoot)
-    && (!queryRequested
-      || focusIds.has(symbol.id)
-      || focusedCommunityIds.has(communityBySymbolId.get(symbol.id) ?? -1))
-  );
+  const scopedSymbols = visualization.symbols.filter((symbol) => {
+    throwIfOperationAborted(control?.signal);
+    return isArchitecturePathInDirectory(symbol.filePath, params.directory, projectRoot)
+      && (!queryRequested
+        || focusIds.has(symbol.id)
+        || focusedCommunityIds.has(communityBySymbolId.get(symbol.id) ?? -1));
+  });
   const scopedSymbolIds = new Set(scopedSymbols.map((symbol) => symbol.id));
-  const scopedEdges = visualization.edges.filter((edge) => scopedSymbolIds.has(edge.fromSymbolId));
+  const scopedEdges = visualization.edges.filter((edge) => {
+    throwIfOperationAborted(control?.signal);
+    return scopedSymbolIds.has(edge.fromSymbolId);
+  });
   const recentActivity = params.includeRecentActivity
-    ? getRecentGitActivity(
+    ? (await getRecentGitActivityAbortable(
       transformForVisualization(scopedSymbols, visualization.edges, {
         directory: params.directory ?? undefined,
         includeOrphans: true,
       }),
       projectRoot,
-    ).slice(0, 3).map((change) => ({
+      control?.signal,
+    )).slice(0, 3).map((change) => ({
       title: change.title,
       date: change.when,
       commit: change.source.replace(/^commit\s+/, ""),

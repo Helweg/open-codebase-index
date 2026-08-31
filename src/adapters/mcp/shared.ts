@@ -1,4 +1,5 @@
 import type { HostMode } from "../../config/host.js";
+import type { McpRuntimeDiagnostics } from "./runtime-diagnostics.js";
 
 export const MAX_CONTENT_LINES = 30;
 
@@ -14,4 +15,5 @@ export function truncateContent(content: string): string {
 export interface McpServerRuntime {
   projectRoot: string;
   host: HostMode;
+  diagnostics: McpRuntimeDiagnostics;
 }

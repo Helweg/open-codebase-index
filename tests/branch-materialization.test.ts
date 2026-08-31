@@ -9,6 +9,7 @@ import {
   isValidGitRemoteName,
   withMaterializedBranch,
 } from "../src/git/branch-materialization.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 function git(cwd: string, args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -236,6 +237,25 @@ describe("branch materialization", () => {
         throw new Error("injected indexing failure");
       },
     )).rejects.toThrow("injected indexing failure");
+
+    expect(fs.existsSync(path.dirname(materializedPath))).toBe(false);
+    expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
+    expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);
+  });
+
+  it("cleans up the temporary worktree when the caller cancels", async () => {
+    const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
+    const controller = new AbortController();
+    let materializedPath = "";
+
+    await expect(withMaterializedBranch(
+      { projectRoot: repo, branch: "feature", signal: controller.signal },
+      async (worktreePath) => {
+        materializedPath = worktreePath;
+        controller.abort();
+        return "ignored";
+      },
+    )).rejects.toBeInstanceOf(OperationCancelledError);
 
     expect(fs.existsSync(path.dirname(materializedPath))).toBe(false);
     expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);

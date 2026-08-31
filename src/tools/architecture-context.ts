@@ -11,6 +11,7 @@ import { readFileSync } from "node:fs";
 import * as path from "node:path";
 
 import { estimateTokens } from "../utils/cost.js";
+import { throwIfOperationAborted } from "../utils/operation-control.js";
 import { formatCallGraphCoverage } from "../indexer/call-graph-coverage.js";
 import { deriveModules } from "./visualize/modules.js";
 
@@ -173,6 +174,7 @@ export function selectArchitectureFocusedSymbols(
   results: ArchitectureSearchEvidence[],
   symbols: SymbolData[],
   depth = ARCHITECTURE_CONTEXT_DEFAULT_DEPTH,
+  signal?: AbortSignal,
 ): SymbolData[] {
   const normalizedDepth = Math.max(1, Math.min(ARCHITECTURE_CONTEXT_MAX_DEPTH, Math.floor(depth)));
   const topScore = results[0]?.score ?? 0;
@@ -180,10 +182,14 @@ export function selectArchitectureFocusedSymbols(
   const selectedIds = new Set<string>();
 
   for (const [index, result] of results.entries()) {
+    throwIfOperationAborted(signal);
     if (index >= normalizedDepth * 3) break;
     if (index >= 2 && topScore > 0 && result.score < topScore * 0.55) continue;
 
-    const fileSymbols = symbols.filter((symbol) => sameFile(symbol.filePath, result.filePath));
+    const fileSymbols = symbols.filter((symbol) => {
+      throwIfOperationAborted(signal);
+      return sameFile(symbol.filePath, result.filePath);
+    });
     const ranked = fileSymbols.slice().sort((left, right) => {
       const leftNameMatch = result.name !== undefined && left.name === result.name ? 1 : 0;
       const rightNameMatch = result.name !== undefined && right.name === result.name ? 1 : 0;

@@ -7,6 +7,7 @@ import { Indexer } from "../src/indexer/index.js";
 import { code_communities, initializeTools } from "../src/tools/index.js";
 import type { Database } from "../src/native/index.js";
 import { buildCodeCommunitiesResult, formatCodeCommunities } from "../src/tools/format-communities.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 vi.mock("child_process", () => ({
   execFile: vi.fn(),
@@ -472,5 +473,19 @@ describe("code_communities tool", () => {
     expect(centrality.length).toBe(3);
     expect(centrality[0]).toHaveProperty("callerCount");
     expect(centrality[0]).toHaveProperty("calleeCount");
+  });
+
+  it("checks cancellation after native community calculations and emits activity", async () => {
+    const indexer = await createIndexer();
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => {
+      controller.abort();
+    });
+
+    await expect(indexer.detectCommunities("main", undefined, {
+      signal: controller.signal,
+      heartbeat,
+    })).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(heartbeat).toHaveBeenCalled();
   });
 });

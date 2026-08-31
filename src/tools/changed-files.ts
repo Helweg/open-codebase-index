@@ -9,6 +9,7 @@ import {
   resolveGitCommit,
   resolveLocalPullRequestRefs,
 } from "../git/branch-materialization.js";
+import { throwIfOperationAborted } from "../utils/operation-control.js";
 
 const execFileAsync = promisify(execFile);
 const GH_PR_VIEW_FIELDS = [
@@ -44,6 +45,7 @@ export interface GetChangedFilesOptions {
   branch?: string;
   projectRoot: string;
   baseBranch?: string;
+  signal?: AbortSignal;
 }
 
 interface GhRepositoryOwner {
@@ -91,19 +93,22 @@ export function createPullRequestCatalogIdentity(
 export async function getChangedFiles(
   opts: GetChangedFilesOptions,
 ): Promise<ChangedFilesResult> {
-  const { pr, branch, projectRoot, baseBranch = "main" } = opts;
+  const { pr, branch, projectRoot, baseBranch = "main", signal } = opts;
+  throwIfOperationAborted(signal);
 
   if (pr !== undefined) {
-    return getChangedFilesForPr(pr, projectRoot);
+    return getChangedFilesForPr(pr, projectRoot, signal);
   }
 
-  return getChangedFilesForBranch(branch, projectRoot, baseBranch);
+  return getChangedFilesForBranch(branch, projectRoot, baseBranch, signal);
 }
 
 async function getChangedFilesForPr(
   pr: number,
   projectRoot: string,
+  signal?: AbortSignal,
 ): Promise<ChangedFilesResult> {
+  throwIfOperationAborted(signal);
   if (!Number.isInteger(pr) || pr <= 0) {
     throw new Error(`Pull request number must be a positive integer: ${pr}`);
   }
@@ -113,8 +118,9 @@ async function getChangedFilesForPr(
     const { stdout } = await execFileAsync(
       "gh",
       ["pr", "view", String(pr), "--json", GH_PR_VIEW_FIELDS],
-      { cwd: projectRoot, timeout: 30000, encoding: "utf8" },
+      { cwd: projectRoot, timeout: 30000, encoding: "utf8", signal },
     );
+    throwIfOperationAborted(signal);
 
     const data = JSON.parse(stdout) as GhPrViewResponse;
     const baseRepository = getRepositoryFromPrUrl(data.url, pr);
@@ -151,10 +157,11 @@ async function getChangedFilesForPr(
       headRepositoryIdentity,
     };
   } catch (error) {
+    throwIfOperationAborted(signal);
     ghError = error;
   }
 
-  const localRefs = await resolveLocalPullRequestRefs(projectRoot, pr);
+  const localRefs = await resolveLocalPullRequestRefs(projectRoot, pr, signal);
   if (!localRefs?.baseCommit) {
     const ghFailure = ghError === undefined
       ? "gh returned incomplete PR head/base metadata"
@@ -168,7 +175,7 @@ async function getChangedFilesForPr(
   const localRepositoryIdentity = getLocalRepositoryIdentity(projectRoot);
   const headRepositoryIdentity = `${localRepositoryIdentity}/refs/pull/${pr}/head`;
   return {
-    files: await getDiffFiles(projectRoot, localRefs.baseCommit, localRefs.headCommit),
+    files: await getDiffFiles(projectRoot, localRefs.baseCommit, localRefs.headCommit, signal),
     baseBranch: localRefs.baseCommit,
     source: "git",
     catalogIdentity: createPullRequestCatalogIdentity(
@@ -242,23 +249,25 @@ async function getChangedFilesForBranch(
   branch: string | undefined,
   projectRoot: string,
   baseBranch: string,
+  signal?: AbortSignal,
 ): Promise<ChangedFilesResult> {
-  const targetBranch = branch || (await getCurrentBranch(projectRoot));
+  throwIfOperationAborted(signal);
+  const targetBranch = branch || (await getCurrentBranch(projectRoot, signal));
   assertValidGitRefName(baseBranch, "Base branch");
   assertValidGitRefName(targetBranch, "Branch name");
 
-  const resolvedBase = await resolveGitCommit(projectRoot, baseBranch);
+  const resolvedBase = await resolveGitCommit(projectRoot, baseBranch, signal);
   if (!resolvedBase) {
     throw new Error(`Could not resolve base branch ${JSON.stringify(baseBranch)} to a commit.`);
   }
-  const resolvedHead = await resolveGitCommit(projectRoot, targetBranch);
+  const resolvedHead = await resolveGitCommit(projectRoot, targetBranch, signal);
   if (!resolvedHead) {
     throw new Error(`Could not resolve branch ${JSON.stringify(targetBranch)} to a commit.`);
   }
-  const mergeBase = await getMergeBase(projectRoot, resolvedBase, resolvedHead);
+  const mergeBase = await getMergeBase(projectRoot, resolvedBase, resolvedHead, signal);
 
   return {
-    files: await getDiffFiles(projectRoot, mergeBase, resolvedHead),
+    files: await getDiffFiles(projectRoot, mergeBase, resolvedHead, signal),
     baseBranch,
     source: "git",
     catalogIdentity: targetBranch,
@@ -271,24 +280,29 @@ async function getDiffFiles(
   projectRoot: string,
   baseRef: string,
   headRef: string,
+  signal?: AbortSignal,
 ): Promise<string[]> {
+  throwIfOperationAborted(signal);
   if (!isFullGitCommit(baseRef) || !isFullGitCommit(headRef)) {
     throw new Error("Changed-file diff requires fully resolved commit OIDs.");
   }
   const { stdout } = await execFileAsync(
     "git",
     ["diff", "--name-only", "-z", `${baseRef}...${headRef}`, "--"],
-    { cwd: projectRoot, timeout: 30000, encoding: "utf8" },
+    { cwd: projectRoot, timeout: 30000, encoding: "utf8", signal },
   );
+  throwIfOperationAborted(signal);
   return normalizeFiles(stdout.split("\0"), projectRoot);
 }
 
-async function getCurrentBranch(projectRoot: string): Promise<string> {
+async function getCurrentBranch(projectRoot: string, signal?: AbortSignal): Promise<string> {
+  throwIfOperationAborted(signal);
   const { stdout } = await execFileAsync(
     "git",
     ["branch", "--show-current"],
-    { cwd: projectRoot, timeout: 30000, encoding: "utf8" },
+    { cwd: projectRoot, timeout: 30000, encoding: "utf8", signal },
   );
+  throwIfOperationAborted(signal);
   return stdout.trim() || "HEAD";
 }
 
@@ -296,12 +310,15 @@ async function getMergeBase(
   projectRoot: string,
   baseCommit: string,
   headCommit: string,
+  signal?: AbortSignal,
 ): Promise<string> {
+  throwIfOperationAborted(signal);
   const { stdout } = await execFileAsync(
     "git",
     ["merge-base", "--", baseCommit, headCommit],
-    { cwd: projectRoot, timeout: 30000, encoding: "utf8" },
+    { cwd: projectRoot, timeout: 30000, encoding: "utf8", signal },
   );
+  throwIfOperationAborted(signal);
   const commit = stdout.trim().toLowerCase();
   if (!isFullGitCommit(commit)) {
     throw new Error("git merge-base did not return a full commit OID.");

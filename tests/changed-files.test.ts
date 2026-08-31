@@ -7,6 +7,7 @@ import {
   createPullRequestCatalogIdentity,
   getChangedFiles,
 } from "../src/tools/changed-files.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 vi.mock("child_process", () => ({
   execFile: vi.fn(),
@@ -213,6 +214,28 @@ describe("getChangedFiles", () => {
         "github.com/fork-owner/fork-project",
       ),
       files: ["src/pr.ts", "tests/pr.test.ts"],
+    });
+  });
+
+  it("cancels gh PR metadata lookup without falling back to local refs", async () => {
+    const controller = new AbortController();
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (_cmd: string, _args: string[], options: { signal?: AbortSignal }, callback: (error: Error) => void) => {
+        options.signal?.addEventListener("abort", () => {
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          callback(error);
+        }, { once: true });
+      },
+    );
+
+    const operation = getChangedFiles({ pr: 42, projectRoot, signal: controller.signal });
+    controller.abort();
+
+    await expect(operation).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(execFile).toHaveBeenCalledOnce();
+    expect((execFile as unknown as ReturnType<typeof vi.fn>).mock.calls[0]?.[2]).toMatchObject({
+      signal: controller.signal,
     });
   });
 

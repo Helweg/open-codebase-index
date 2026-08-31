@@ -19,6 +19,10 @@ import {
 } from "../src/tools/operations.js";
 import { MCP_SERVER_CURRENT_NAME } from "../src/identity-catalog.js";
 import { MCP_TOOL_NAMES } from "../src/tools/tool-names.js";
+import {
+  OperationCancelledError,
+  ProviderRequestError,
+} from "../src/utils/operation-control.js";
 
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
@@ -401,6 +405,7 @@ describe("createMcpServer", () => {
 describe("MCP server tools and prompts", () => {
   let client: Client;
   let server: ReturnType<typeof createMcpServer>;
+  let serverTransport: ReturnType<typeof InMemoryTransport.createLinkedPair>[1];
 
   beforeEach(async () => {
     resetProcessEffectivenessMetrics();
@@ -449,7 +454,9 @@ describe("MCP server tools and prompts", () => {
     server = createMcpServer("/tmp/test-project", config, "opencode");
     client = new Client({ name: "test-client", version: "1.0.0" });
 
-    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const transports = InMemoryTransport.createLinkedPair();
+    const clientTransport = transports[0];
+    serverTransport = transports[1];
     await Promise.all([
       server.connect(serverTransport),
       client.connect(clientTransport),
@@ -462,7 +469,7 @@ describe("MCP server tools and prompts", () => {
     fs.rmSync(testMainRepo, { recursive: true, force: true });
   });
 
-  it("should register all 18 tools", async () => {
+  it("should register every MCP tool", async () => {
     const tools = await client.listTools();
 
     expect(tools.tools).toHaveLength(MCP_TOOL_NAMES.length);
@@ -913,7 +920,12 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain("Path (2 hops)");
     const indexer = indexerMockState.instances.at(-1);
-    expect(indexer?.findCallPathBySymbolIds).toHaveBeenCalledWith("from-node-id", "to-node-id", 7);
+    expect(indexer?.findCallPathBySymbolIds).toHaveBeenCalledWith(
+      "from-node-id",
+      "to-node-id",
+      7,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("should keep conceptual and graph responses within the minimum token budget", async () => {
@@ -1030,6 +1042,108 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("Indexed chunks");
     expect(content[0].text).toContain("50");
     expect(content[0].text).toContain("Compatibility: Index is compatible");
+    expect(result.structuredContent).toMatchObject({
+      mcpDiagnostics: {
+        schemaVersion: 1,
+        activeOperations: [],
+      },
+    });
+  });
+
+  it("emits monotone in-memory progress with the exact caller token", async () => {
+    const send = vi.spyOn(serverTransport, "send");
+    const indexer = (await import("../src/tools/operations.js"))
+      .getIndexerForProject("/tmp/test-project", "opencode");
+    vi.mocked(indexer.index).mockImplementationOnce(async (onProgress) => {
+      onProgress?.({
+        phase: "scanning",
+        filesProcessed: 0,
+        totalFiles: 1,
+        chunksProcessed: 0,
+        totalChunks: 1,
+      });
+      onProgress?.({
+        phase: "embedding",
+        filesProcessed: 1,
+        totalFiles: 1,
+        chunksProcessed: 0,
+        totalChunks: 1,
+      });
+      onProgress?.({
+        phase: "complete",
+        filesProcessed: 1,
+        totalFiles: 1,
+        chunksProcessed: 1,
+        totalChunks: 1,
+      });
+      return mockIndexResult;
+    });
+
+    const result = await client.callTool({
+      name: "index_codebase",
+      arguments: {},
+      _meta: { progressToken: "caller-token" },
+    });
+
+    expect(result.isError).not.toBe(true);
+    const progress = send.mock.calls
+      .map(([message]) => message)
+      .filter((message) => "method" in message && message.method === "notifications/progress")
+      .map((message) => "params" in message ? message.params : undefined);
+    expect(progress).toEqual([
+      { progressToken: "caller-token", progress: 0, total: 100 },
+      { progressToken: "caller-token", progress: 20, total: 100 },
+      { progressToken: "caller-token", progress: 100, total: 100 },
+    ]);
+  });
+
+  it("propagates in-memory client cancellation to the handler and clears its diagnostic", async () => {
+    const indexer = (await import("../src/tools/operations.js"))
+      .getIndexerForProject("/tmp/test-project", "opencode");
+    let handlerSignal: AbortSignal | undefined;
+    let markHandlerStarted: (() => void) | undefined;
+    const handlerStarted = new Promise<void>((resolve) => {
+      markHandlerStarted = resolve;
+    });
+    vi.mocked(indexer.index).mockImplementationOnce(async (_onProgress, options) => {
+      handlerSignal = options?.signal;
+      markHandlerStarted?.();
+      await new Promise<void>((_resolve, reject) => {
+        if (!options?.signal) {
+          reject(new Error("Expected the MCP operation signal."));
+          return;
+        }
+        const rejectCancellation = (): void => reject(new OperationCancelledError());
+        if (options.signal.aborted) rejectCancellation();
+        else options.signal.addEventListener("abort", rejectCancellation, { once: true });
+      });
+      return mockIndexResult;
+    });
+
+    const controller = new AbortController();
+    const call = client.callTool(
+      { name: "index_codebase", arguments: {} },
+      undefined,
+      { signal: controller.signal },
+    );
+    await handlerStarted;
+
+    const activeStatus = await client.callTool({ name: "index_status", arguments: {} });
+    expect(activeStatus.structuredContent).toMatchObject({
+      mcpDiagnostics: {
+        activeOperations: [expect.objectContaining({ operation: "index_codebase", status: "active" })],
+      },
+    });
+
+    controller.abort(new Error("client cancellation test"));
+    await expect(call).rejects.toThrow("client cancellation test");
+    await vi.waitFor(() => expect(handlerSignal?.aborted).toBe(true));
+    await vi.waitFor(async () => {
+      const settledStatus = await client.callTool({ name: "index_status", arguments: {} });
+      expect(settledStatus.structuredContent).toMatchObject({
+        mcpDiagnostics: { activeOperations: [] },
+      });
+    });
   });
 
   it("should surface failed batch diagnostics in index_codebase output", async () => {
@@ -1055,6 +1169,37 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain("INDEXING WARNING");
     expect(content[0].text).toContain("failed-batches.json");
+  });
+
+  it("returns a redacted structured provider error after preserving partial indexing work", async () => {
+    const providerError = new ProviderRequestError({
+      statusCode: 500,
+      message: "private provider URL=https://user:secret@example.invalid/body",
+    });
+    const indexer = (await import("../src/tools/operations.js"))
+      .getIndexerForProject("/tmp/test-project", "opencode");
+    vi.mocked(indexer.index).mockImplementationOnce(async (_onProgress, options) => {
+      options?.onProviderError?.(providerError);
+      return {
+        ...mockIndexResult,
+        indexedChunks: 4,
+        failedChunks: 1,
+        failedBatchesPath: "/private/index/failed-batches.json",
+      };
+    });
+
+    const result = await client.callTool({ name: "index_codebase", arguments: {} });
+
+    expect(result).toMatchObject({
+      isError: true,
+      structuredContent: {
+        error: { code: "PROVIDER_ERROR", retryable: true, operation: "index_codebase" },
+      },
+    });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("example.invalid");
+    expect(serialized).not.toContain("failed-batches.json");
+    expect(serialized).not.toContain("secret");
   });
 
   it("keeps manual MCP indexing available when battery pausing is enabled", async () => {
@@ -1107,6 +1252,14 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("PID 4242");
     expect(content[0].text).toContain("operation index");
     expect(content[0].text).toContain(owner.startedAt);
+    expect(result.structuredContent).toMatchObject({
+      error: {
+        schemaVersion: 1,
+        code: "INDEX_BUSY",
+        operation: "index_codebase",
+        retryable: true,
+      },
+    });
   });
 
   it("should explain when an unreadable lock requires manual verification", async () => {
@@ -1412,7 +1565,13 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].type).toBe("text");
     expect(content[0].text).toContain("called by 1 function");
     const indexer = indexerMockState.instances[0];
-    expect(indexer.getCallersForSymbol).toHaveBeenCalledWith("sym_validate", "validateToken", true, undefined);
+    expect(indexer.getCallersForSymbol).toHaveBeenCalledWith(
+      "sym_validate",
+      "validateToken",
+      true,
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("should report bounded candidate locations instead of unioning duplicate names", async () => {
@@ -1444,7 +1603,11 @@ describe("MCP server tools and prompts", () => {
     });
     const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
     expect(text).toContain('"run" at src/nested/b.ts:1 calls 1 function');
-    expect(indexer.getCallees).toHaveBeenCalledWith("sym_run_b", undefined);
+    expect(indexer.getCallees).toHaveBeenCalledWith(
+      "sym_run_b",
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("should return a concise missing-name result", async () => {
@@ -1465,7 +1628,11 @@ describe("MCP server tools and prompts", () => {
       name: "call_graph",
       arguments: { name: "run", direction: "callees", symbolId: " sym_run_b " },
     });
-    expect(indexer.getCallees).toHaveBeenCalledWith("sym_run_b", undefined);
+    expect(indexer.getCallees).toHaveBeenCalledWith(
+      "sym_run_b",
+      undefined,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("should disambiguate both path endpoints with normalized file paths", async () => {
@@ -1485,7 +1652,12 @@ describe("MCP server tools and prompts", () => {
         toFilePath: " ./src/nested//finish.ts ",
       },
     });
-    expect(indexer.findCallPathBySymbolIds).toHaveBeenCalledWith("sym_start_b", "sym_finish_b", 10);
+    expect(indexer.findCallPathBySymbolIds).toHaveBeenCalledWith(
+      "sym_start_b",
+      "sym_finish_b",
+      10,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it("should get search prompt", async () => {

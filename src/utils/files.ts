@@ -3,6 +3,10 @@ import { existsSync, readFileSync, promises as fsPromises } from "fs";
 import * as path from "path";
 
 import { hasFilteredPathSegment, isBuildPathSegment, isHiddenPathSegment } from "./paths.js";
+import {
+  isOperationInterruption,
+  throwIfOperationAborted,
+} from "./operation-control.js";
 
 const PROJECT_MARKERS = [
   ".git",
@@ -158,6 +162,8 @@ function matchGlob(filePath: string, pattern: string): boolean {
 export interface WalkOptions {
   maxDepth: number;
   maxFilesPerDirectory: number;
+  signal?: AbortSignal;
+  heartbeat?: () => void | Promise<void>;
 }
 
 export async function* walkDirectory(
@@ -171,12 +177,16 @@ export async function* walkDirectory(
   options: WalkOptions,
   currentDepth: number = 0
 ): AsyncGenerator<{ path: string; size: number }> {
+  throwIfOperationAborted(options.signal);
   const entries = await fsPromises.readdir(dir, { withFileTypes: true });
+  throwIfOperationAborted(options.signal);
 
   const filesInDir: Array<{ path: string; size: number }> = [];
   const subdirs: Array<{ fullPath: string; relativePath: string }> = [];
 
   for (const entry of entries) {
+    throwIfOperationAborted(options.signal);
+    await options.heartbeat?.();
     const fullPath = path.join(dir, entry.name);
     const relativePath = toPosixRelativePath(path.relative(projectRoot, fullPath));
 
@@ -227,6 +237,8 @@ export async function* walkDirectory(
   filesInDir.sort((a, b) => a.size - b.size);
   const limitedFiles = filesInDir.slice(0, options.maxFilesPerDirectory);
   for (const f of limitedFiles) {
+    throwIfOperationAborted(options.signal);
+    await options.heartbeat?.();
     yield f;
   }
   for (let i = options.maxFilesPerDirectory; i < filesInDir.length; i++) {
@@ -236,6 +248,7 @@ export async function* walkDirectory(
   const canRecurse = options.maxDepth === -1 || currentDepth < options.maxDepth;
   if (canRecurse) {
     for (const sub of subdirs) {
+      throwIfOperationAborted(options.signal);
       yield* walkDirectory(
         sub.fullPath,
         projectRoot,
@@ -275,12 +288,15 @@ export async function collectFiles(
     opts,
     0
   )) {
+    throwIfOperationAborted(opts.signal);
+    await opts.heartbeat?.();
     files.push(file);
   }
 
   if (additionalRoots && additionalRoots.length > 0) {
     const normalizedRoots = new Set<string>();
     for (const kbRoot of additionalRoots) {
+      throwIfOperationAborted(opts.signal);
       const resolved = path.normalize(
         path.isAbsolute(kbRoot) ? kbRoot : path.resolve(projectRoot, kbRoot)
       );
@@ -288,6 +304,7 @@ export async function collectFiles(
     }
 
     for (const resolvedKbRoot of normalizedRoots) {
+      throwIfOperationAborted(opts.signal);
       try {
         const stat = await fsPromises.stat(resolvedKbRoot);
         if (!stat.isDirectory()) {
@@ -306,9 +323,13 @@ export async function collectFiles(
           opts,
           0
         )) {
+          throwIfOperationAborted(opts.signal);
+          await opts.heartbeat?.();
           files.push(file);
         }
-      } catch {
+      } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        throwIfOperationAborted(opts.signal);
         skipped.push({ path: resolvedKbRoot, reason: "excluded" });
       }
     }

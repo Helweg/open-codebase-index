@@ -110,6 +110,13 @@ import {
 } from "./failed-state-persistence.js";
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+import {
+  createProviderRequestSignal,
+  isOperationInterruption,
+  ProviderRequestError,
+  raceWithOperationSignal,
+  throwIfOperationAborted,
+} from "../utils/operation-control.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
 import { createGoDirectCallClassifier, isGoFilePath } from "./go-package-resolution.js";
 import {
@@ -121,6 +128,12 @@ import {
 } from "./local-module-resolution.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
+
+export function shouldRetryEmbeddingRequest(error: unknown): boolean {
+  return !isOperationInterruption(error)
+    && !(error instanceof CustomProviderNonRetryableError)
+    && !(error instanceof ProviderRequestError && error.retryable === false);
+}
 // Languages whose identifiers are case-insensitive at the language level.
 // The Rust call_extractor lowercases callee names for these languages (except
 // constructors and imports), so same-file resolution in this file must use
@@ -433,6 +446,16 @@ interface SearchOptions {
   blameSince?: string;
   blameUntil?: string;
   trace?: (trace: SearchTrace) => void;
+  signal?: AbortSignal;
+  setPhase?: (phase: string) => void | Promise<void>;
+  heartbeat?: () => void | Promise<void>;
+}
+
+export interface IndexOperationOptions {
+  signal?: AbortSignal;
+  setPhase?: (phase: string) => void | Promise<void>;
+  heartbeat?: () => void | Promise<void>;
+  onProviderError?: (error: ProviderRequestError) => void;
 }
 
 export interface HealthCheckResult {
@@ -1459,7 +1482,9 @@ export class Indexer {
   private async withIndexMutationLease<T>(
     operation: IndexMutationOperation,
     callback: (recoveredOwners: readonly IndexLockOwner[]) => Promise<T>,
+    signal?: AbortSignal,
   ): Promise<T> {
+    throwIfOperationAborted(signal);
     this.refreshBranchInfo();
     const lease = acquireIndexLock(this.indexPath, operation, {
       projectRoot: this.projectRoot,
@@ -1474,6 +1499,7 @@ export class Indexer {
     let callbackFailed = false;
     try {
       result = await callback(lease.recoveries.map(({ owner }) => owner));
+      throwIfOperationAborted(signal);
     } catch (error) {
       callbackFailed = true;
       callbackError = error;
@@ -1510,6 +1536,7 @@ export class Indexer {
       throw releaseError;
     }
     if (callbackFailed) throw callbackError;
+    throwIfOperationAborted(signal);
     return result as T;
   }
 
@@ -2606,6 +2633,10 @@ export class Indexer {
       forceSingleItemBatches?: boolean;
       onSucceeded?: (chunks: PendingChunk[]) => void;
       onProgress?: (progress: Readonly<PendingChunkBatchResult>) => void;
+      signal?: AbortSignal;
+      setPhase?: (phase: string) => void | Promise<void>;
+      heartbeat?: () => void | Promise<void>;
+      onProviderError?: (error: ProviderRequestError) => void;
     },
   ): Promise<PendingChunkBatchResult> {
     const result: PendingChunkBatchResult = {
@@ -2617,6 +2648,7 @@ export class Indexer {
     if (chunks.length === 0) {
       return result;
     }
+    throwIfOperationAborted(options.signal);
 
     const chunksNeedingEmbedding: PendingChunk[] = [];
     let cachedChunkCount = 0;
@@ -2674,44 +2706,68 @@ export class Indexer {
     let fatalError: unknown;
 
     for (const requestBatch of requestBatches) {
-      await options.queue.onSizeLessThan(Math.max(1, options.providerRateLimits.concurrency));
+      throwIfOperationAborted(options.signal);
+      try {
+        await raceWithOperationSignal(
+          options.queue.onSizeLessThan(Math.max(1, options.providerRateLimits.concurrency)),
+          options.signal,
+        );
+      } catch (error: unknown) {
+        await options.queue.onIdle();
+        throwIfOperationAborted(options.signal);
+        throw error;
+      }
       const task = options.queue.add(async () => {
+        throwIfOperationAborted(options.signal);
         if (options.rateLimitState.backoffMs > 0) {
-          await new Promise(resolve => setTimeout(resolve, options.rateLimitState.backoffMs));
+          await raceWithOperationSignal(
+            new Promise(resolve => setTimeout(resolve, options.rateLimitState.backoffMs)),
+            options.signal,
+          );
         }
 
         try {
-          const embeddingResult = await pRetry(
-            async () => {
-              const texts = requestBatch.map((request) => request.text);
-              return options.provider.embedBatch(texts);
-            },
-            {
-              retries: this.config.indexing.retries,
-              minTimeout: Math.max(this.config.indexing.retryDelayMs, options.providerRateLimits.minRetryMs),
-              maxTimeout: options.providerRateLimits.maxRetryMs,
-              factor: 2,
-              shouldRetry: (error) => !((error as { error?: Error }).error instanceof CustomProviderNonRetryableError),
-              onFailedAttempt: (error) => {
-                const message = getErrorMessage(error);
-                if (isRateLimitError(error)) {
-                  options.rateLimitState.backoffMs = Math.min(
-                    options.providerRateLimits.maxRetryMs,
-                    (options.rateLimitState.backoffMs || options.providerRateLimits.minRetryMs) * 2,
-                  );
-                  this.logger.embedding("warn", "Rate limited, backing off", {
-                    attempt: error.attemptNumber,
-                    retriesLeft: error.retriesLeft,
-                    backoffMs: options.rateLimitState.backoffMs,
-                  });
-                } else {
-                  this.logger.embedding("error", "Embedding batch failed", {
-                    attempt: error.attemptNumber,
-                    error: message,
-                  });
-                }
+          const embeddingResult = await raceWithOperationSignal(
+            pRetry(
+              async () => {
+                const texts = requestBatch.map((request) => request.text);
+                throwIfOperationAborted(options.signal);
+                return options.provider.embedBatch(texts, {
+                  signal: options.signal,
+                  setPhase: options.setPhase,
+                  heartbeat: options.heartbeat,
+                });
               },
-            },
+              {
+                signal: options.signal,
+                retries: this.config.indexing.retries,
+                minTimeout: Math.max(this.config.indexing.retryDelayMs, options.providerRateLimits.minRetryMs),
+                maxTimeout: options.providerRateLimits.maxRetryMs,
+                factor: 2,
+                shouldRetry: ({ error }) => shouldRetryEmbeddingRequest(error),
+                onFailedAttempt: (attempt) => {
+                  if (isOperationInterruption(attempt.error)) return;
+                  const message = getErrorMessage(attempt.error);
+                  if (isRateLimitError(attempt.error)) {
+                    options.rateLimitState.backoffMs = Math.min(
+                      options.providerRateLimits.maxRetryMs,
+                      (options.rateLimitState.backoffMs || options.providerRateLimits.minRetryMs) * 2,
+                    );
+                    this.logger.embedding("warn", "Rate limited, backing off", {
+                      attempt: attempt.attemptNumber,
+                      retriesLeft: attempt.retriesLeft,
+                      backoffMs: options.rateLimitState.backoffMs,
+                    });
+                  } else {
+                    this.logger.embedding("error", "Embedding batch failed", {
+                      attempt: attempt.attemptNumber,
+                      error: message,
+                    });
+                  }
+                },
+              },
+            ),
+            options.signal,
           );
 
           if (options.rateLimitState.backoffMs > 0) {
@@ -2789,6 +2845,11 @@ export class Indexer {
             tokens: embeddingResult.totalTokensUsed,
           });
         } catch (error) {
+          if (isOperationInterruption(error)) throw error;
+          throwIfOperationAborted(options.signal);
+          if (error instanceof ProviderRequestError) {
+            options.onProviderError?.(error);
+          }
           const failedChunks = getUniquePendingChunksFromRequests(requestBatch)
             .filter((chunk) => !completedChunkIds.has(chunk.id))
             .filter((chunk) => options.incrementRepeatedFailures || !result.failedChunkIds.has(chunk.id));
@@ -2820,13 +2881,14 @@ export class Indexer {
         }
 
         options.onProgress?.(result);
-      });
+      }, { signal: options.signal });
       void task.catch((error: unknown) => {
         fatalError ??= error;
       });
     }
 
     await options.queue.onIdle();
+    throwIfOperationAborted(options.signal);
     if (fatalError !== undefined) {
       throw fatalError;
     }
@@ -2880,6 +2942,9 @@ export class Indexer {
     options?: {
       definitionIntent?: boolean;
       hasIdentifierHints?: boolean;
+      signal?: AbortSignal;
+      setPhase?: (phase: string) => void | Promise<void>;
+      heartbeat?: () => void | Promise<void>;
     }
   ): Promise<RankedCandidate[]> {
     const reranker = this.config.reranker;
@@ -2928,6 +2993,7 @@ export class Indexer {
     try {
       const rerankedHead: RankedCandidate[] = [];
       for (const band of orderedBands) {
+        throwIfOperationAborted(options?.signal);
         const bandCandidates = grouped.get(band) ?? [];
         if (bandCandidates.length <= 1) {
           rerankedHead.push(...bandCandidates);
@@ -2940,7 +3006,13 @@ export class Indexer {
             text: await this.createRerankerDocumentText(candidate),
           }))
         );
-        const rankedIds = await this.callExternalReranker(query, documents, reranker);
+        const rankedIds = await this.callExternalReranker(
+          query,
+          documents,
+          reranker,
+          options?.signal,
+          options?.setPhase,
+        );
         if (rankedIds.length === 0) {
           rerankedHead.push(...bandCandidates);
           continue;
@@ -2971,6 +3043,8 @@ export class Indexer {
 
       return [...rerankedHead, ...tail];
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(options?.signal);
       this.logger.search("warn", "External reranker failed; using deterministic order", {
         provider: reranker.provider,
         model: reranker.model,
@@ -2983,7 +3057,9 @@ export class Indexer {
   private async callExternalReranker(
     query: string,
     documents: RerankDocumentPayload[],
-    reranker: RerankerConfig
+    reranker: RerankerConfig,
+    signal?: AbortSignal,
+    setPhase?: (phase: string) => void | Promise<void>,
   ): Promise<string[]> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -2992,46 +3068,63 @@ export class Indexer {
       headers.Authorization = `Bearer ${reranker.apiKey}`;
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), reranker.timeoutMs);
+    const requestSignal = createProviderRequestSignal(signal, reranker.timeoutMs);
     try {
-      const response = await fetch(`${reranker.baseUrl}/rerank`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: reranker.model,
-          query,
-          documents: documents.map((document) => document.text),
-          top_n: documents.length,
-          return_documents: false,
-        }),
-        signal: controller.signal,
-      });
+      await setPhase?.("reranking");
+      throwIfOperationAborted(signal);
+      return await raceWithOperationSignal((async () => {
+        const response = await fetch(`${reranker.baseUrl}/rerank`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: reranker.model,
+            query,
+            documents: documents.map((document) => document.text),
+            top_n: documents.length,
+            return_documents: false,
+          }),
+          signal: requestSignal.signal,
+        });
 
-      if (!response.ok) {
-        throw new Error(`Reranker API error: ${response.status} - ${await response.text()}`);
-      }
+        if (!response.ok) {
+          await response.text();
+          throw new ProviderRequestError({
+            statusCode: response.status,
+            message: `Reranking provider returned HTTP ${response.status}.`,
+          });
+        }
 
-      const body = await response.json() as {
-        results?: Array<{ index?: number; relevance_score?: number }>;
-      };
-      if (!Array.isArray(body.results)) {
-        throw new Error("Reranker API returned unexpected response format.");
-      }
+        let body: { results?: Array<{ index?: number; relevance_score?: number }> };
+        try {
+          body = await response.json() as typeof body;
+        } catch {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: "Reranking provider returned malformed JSON.",
+          });
+        }
+        if (!Array.isArray(body.results)) {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: "Reranking provider returned an invalid response.",
+          });
+        }
 
-      return body.results
-        .map((result) => {
-          const index = typeof result.index === "number" ? result.index : -1;
-          return documents[index]?.id;
-        })
-        .filter((id): id is string => typeof id === "string");
+        return body.results
+          .map((result) => {
+            const index = typeof result.index === "number" ? result.index : -1;
+            return documents[index]?.id;
+          })
+          .filter((id): id is string => typeof id === "string");
+      })(), requestSignal.signal);
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Reranker request timed out after ${reranker.timeoutMs}ms`);
-      }
-      throw error;
+      throwIfOperationAborted(requestSignal.signal);
+      if (error instanceof ProviderRequestError) throw error;
+      throw new ProviderRequestError({ retryable: true });
     } finally {
-      clearTimeout(timeout);
+      requestSignal.dispose();
     }
   }
 
@@ -4067,7 +4160,8 @@ export class Indexer {
     };
   }
 
-  async estimateCost(): Promise<CostEstimate> {
+  async estimateCost(options: IndexOperationOptions = {}): Promise<CostEstimate> {
+    throwIfOperationAborted(options.signal);
     const { configuredProviderInfo } = await this.ensureInitialized();
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
@@ -4077,7 +4171,12 @@ export class Indexer {
       this.config.exclude,
       this.config.indexing.maxFileSize,
       this.getMaterializedKnowledgeBases(),
-      { maxDepth: this.config.indexing.maxDepth, maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory }
+      {
+        maxDepth: this.config.indexing.maxDepth,
+        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        signal: options.signal,
+        heartbeat: options.heartbeat,
+      }
     );
 
     return createCostEstimate(files, configuredProviderInfo);
@@ -4091,7 +4190,8 @@ export class Indexer {
   // an upper bound because cached chunks are counted here but not re-embedded.
   // Used by index_codebase(dryRun:true) to give a stable, monotonic progress
   // denominator that matches the live "Tokens used" basis.
-  async dryRunCost(): Promise<DryRunEstimate> {
+  async dryRunCost(options: IndexOperationOptions = {}): Promise<DryRunEstimate> {
+    throwIfOperationAborted(options.signal);
     const { configuredProviderInfo } = await this.ensureInitialized();
     const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
@@ -4101,7 +4201,12 @@ export class Indexer {
       this.config.exclude,
       this.config.indexing.maxFileSize,
       this.getMaterializedKnowledgeBases(),
-      { maxDepth: this.config.indexing.maxDepth, maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory },
+      {
+        maxDepth: this.config.indexing.maxDepth,
+        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        signal: options.signal,
+        heartbeat: options.heartbeat,
+      },
     );
 
     let filesCount = 0;
@@ -4113,6 +4218,7 @@ export class Indexer {
     // then sum estimateTokens over the embedding text (createEmbeddingTexts)
     // — the identical basis the provider reports as "Tokens used".
     for (const batch of iterateOrderedFileBatches(files, (f) => f.size, this.fileBatchLimits)) {
+      throwIfOperationAborted(options.signal);
       const loadedFiles = await Promise.all(batch.map(async (f) => {
         try {
           return {
@@ -4161,10 +4267,20 @@ export class Indexer {
     return { filesCount, chunksCount, tokensToEmbed };
   }
 
-  async index(onProgress?: ProgressCallback): Promise<IndexStats> {
+  async index(onProgress?: ProgressCallback, options: IndexOperationOptions = {}): Promise<IndexStats> {
+    throwIfOperationAborted(options.signal);
     return this.withIndexMutationLease("index", async (recoveredOwners) => {
-      return this.indexUnlocked(onProgress, recoveredOwners);
-    });
+      throwIfOperationAborted(options.signal);
+      return this.indexUnlocked(
+        onProgress,
+        recoveredOwners,
+        false,
+        options.signal,
+        options.setPhase,
+        options.heartbeat,
+        options.onProviderError,
+      );
+    }, options.signal);
   }
 
   private getLocalModuleResolutionState(files: readonly { path: string }[]): LocalModuleResolutionState {
@@ -4198,7 +4314,9 @@ export class Indexer {
     branch: string,
     commit: string,
     onProgress?: ProgressCallback,
+    options: IndexOperationOptions = {},
   ): Promise<BranchIndexResult> {
+    throwIfOperationAborted(options.signal);
     if (!isFullGitCommit(commit)) {
       throw new Error(`Branch commit is invalid: ${JSON.stringify(commit)}`);
     }
@@ -4215,7 +4333,9 @@ export class Indexer {
     }
 
     return this.withIndexMutationLease("index", async (recoveredOwners) => {
+      throwIfOperationAborted(options.signal);
       const { database } = await this.ensureInitializedUnlocked(recoveredOwners);
+      throwIfOperationAborted(options.signal);
       if (branch !== this.currentBranch) {
         throw new Error(
           `Prepared Indexer branch mismatch: expected ${JSON.stringify(branch)}, got ${JSON.stringify(this.currentBranch)}.`,
@@ -4229,21 +4349,35 @@ export class Indexer {
         return { prepared: false };
       }
 
-      const stats = await this.indexUnlocked(onProgress, [], true);
+      const stats = await this.indexUnlocked(
+        onProgress,
+        [],
+        true,
+        options.signal,
+        options.setPhase,
+        options.heartbeat,
+        options.onProviderError,
+      );
       return { prepared: true, stats };
-    });
+    }, options.signal);
   }
 
   private async indexUnlocked(
     onProgress?: ProgressCallback,
     recoveredOwners: readonly IndexLockOwner[] = [],
     stateReady = false,
+    signal?: AbortSignal,
+    setPhase?: (phase: string) => void | Promise<void>,
+    heartbeat?: () => void | Promise<void>,
+    onProviderError?: (error: ProviderRequestError) => void,
   ): Promise<IndexStats> {
+    throwIfOperationAborted(signal);
     const { store, provider, invertedIndex, database, configuredProviderInfo } = stateReady
       ? this.requireLoadedIndexState()
       : await this.ensureInitializedUnlocked(recoveredOwners);
+    throwIfOperationAborted(signal);
     const materializedCommit = isGitRepo(this.materializedProjectRoot)
-      ? await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD")
+      ? await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD", signal)
       : null;
     if (this.expectedCommitOverride && materializedCommit !== this.expectedCommitOverride) {
       throw new Error(
@@ -4323,8 +4457,14 @@ export class Indexer {
       this.config.exclude,
       this.config.indexing.maxFileSize,
       this.getMaterializedKnowledgeBases(),
-      { maxDepth: this.config.indexing.maxDepth, maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory },
+      {
+        maxDepth: this.config.indexing.maxDepth,
+        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        signal,
+        heartbeat,
+      },
     );
+    throwIfOperationAborted(signal);
 
     stats.totalFiles = files.length;
     stats.skippedFiles = skipped.map((entry) => ({
@@ -4367,12 +4507,18 @@ export class Indexer {
       ),
     );
 
-    for (const file of files) {
+    for (const [fileIndex, file] of files.entries()) {
+      throwIfOperationAborted(signal);
+      if (fileIndex > 0 && fileIndex % 128 === 0) {
+        await heartbeat?.();
+        throwIfOperationAborted(signal);
+      }
       const storedPath = this.toStoredFilePath(file.path);
       let currentHash: string;
       try {
         currentHash = hashFile(file.path);
       } catch (error) {
+        throwIfOperationAborted(signal);
         // A file that is unreadable at the OS level (e.g., an LSM denial that
         // returns EPERM despite readable mode bits, or a permissions error)
         // must not abort the whole index. The hash step opens the file; a bare
@@ -4437,7 +4583,13 @@ export class Indexer {
     }
 
     if (javaScriptGraphSourcesChanged) {
+      let processedDescriptors = 0;
       for (const [storedPath, descriptor] of allFileDescriptors) {
+        if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
+          await heartbeat?.();
+          throwIfOperationAborted(signal);
+        }
+        processedDescriptors += 1;
         if (!isJavaScriptFamilyFilePath(storedPath) || changedFilePathSet.has(storedPath)) continue;
         unchangedFilePaths.delete(storedPath);
         changedFileDescriptors.push(descriptor);
@@ -4446,7 +4598,13 @@ export class Indexer {
     }
 
     if (changedGoPackageDirectories.size > 0) {
+      let processedDescriptors = 0;
       for (const [storedPath, descriptor] of allFileDescriptors) {
+        if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
+          await heartbeat?.();
+          throwIfOperationAborted(signal);
+        }
+        processedDescriptors += 1;
         const normalizedStoredPath = storedPath.split(path.sep).join("/");
         if (
           !isGoFilePath(normalizedStoredPath)
@@ -4461,7 +4619,13 @@ export class Indexer {
       }
     }
 
+    let processedCacheEntries = 0;
     for (const storedPath of allFileDescriptors.keys()) {
+      if (processedCacheEntries > 0 && processedCacheEntries % 256 === 0) {
+        await heartbeat?.();
+        throwIfOperationAborted(signal);
+      }
+      processedCacheEntries += 1;
       if (changedFilePathSet.has(storedPath)) {
         this.logger.recordCacheMiss();
       } else {
@@ -4485,7 +4649,13 @@ export class Indexer {
     const existingChunks = new Map<string, string>();
     const existingChunksByFile = new Map<string, Set<string>>();
     const existingMetadataById = new Map<string, ChunkMetadata>();
+    let processedMetadata = 0;
     for (const { key, metadata } of store.getAllMetadata()) {
+      if (processedMetadata > 0 && processedMetadata % 256 === 0) {
+        await heartbeat?.();
+        throwIfOperationAborted(signal);
+      }
+      processedMetadata += 1;
       if (scopedRoots && !this.isFileInCurrentScope(metadata.filePath, scopedRoots)) {
         continue;
       }
@@ -4545,9 +4715,11 @@ export class Indexer {
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       loadModule: async (filePath) => {
+        throwIfOperationAborted(signal);
         const descriptor = sourceDescriptorsByPath.get(filePath);
         if (!descriptor) return undefined;
         const content = await fsPromises.readFile(descriptor.materializedPath, "utf-8");
+        throwIfOperationAborted(signal);
         if (unchangedFilePaths.has(descriptor.storedPath)) {
           const symbols = database.getSymbolsByFile(descriptor.storedPath).filter((symbol) =>
             !restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)
@@ -4599,7 +4771,10 @@ export class Indexer {
             this.toMaterializedFilePath(chunk.filePath),
             chunk.startLine,
             chunk.endLine,
+            signal,
           );
+          await heartbeat?.();
+          throwIfOperationAborted(signal);
           const blameMetadata = metadataFromBlame(blame);
           if (!blameMetadata.blameSha) {
             continue;
@@ -4649,11 +4824,13 @@ export class Indexer {
         (descriptor) => descriptor.sourceBytes,
         this.fileBatchLimits,
       )) {
+        throwIfOperationAborted(signal);
         const loadedFiles = await Promise.all(descriptorBatch.map(async (descriptor) => ({
           path: descriptor.storedPath,
           content: await fsPromises.readFile(descriptor.materializedPath, "utf-8"),
           hash: descriptor.hash,
         })));
+        throwIfOperationAborted(signal);
         const loadedByPath = new Map(loadedFiles.map((file) => [file.path, file]));
         const descriptorByPath = new Map(descriptorBatch.map((descriptor) => [descriptor.storedPath, descriptor]));
         const parseStartTime = performance.now();
@@ -4709,8 +4886,13 @@ export class Indexer {
                   descriptor.materializedPath,
                   chunk.startLine,
                   chunk.endLine,
+                  signal,
                 )
               : blameFromChunkData(existingChunk);
+            if (gitBlameEnabled && existingContentHash !== contentHash) {
+              await heartbeat?.();
+              throwIfOperationAborted(signal);
+            }
             const blameMetadata = metadataFromBlame(blame);
             currentChunkIds.add(id);
 
@@ -4890,6 +5072,10 @@ export class Indexer {
             forceReembed: forceScopedReembed,
             reuseCachedEmbeddings: true,
             incrementRepeatedFailures: true,
+            signal,
+            setPhase,
+            heartbeat,
+            onProviderError,
             onSucceeded: (succeededChunks) => {
               database.addChunksToBranchBatch(
                 this.getBranchCatalogKey(),
@@ -4949,6 +5135,7 @@ export class Indexer {
         ({ chunk }) => Buffer.byteLength(chunk.content, "utf-8"),
         this.fileBatchLimits,
       )) {
+        throwIfOperationAborted(signal);
         const pendingChunks = retryBatch.map(({ chunk }) => chunk);
         const attemptCounts = new Map(retryBatch.map(({ chunk, attemptCount }) => [chunk.id, attemptCount]));
         for (const chunk of pendingChunks) {
@@ -4986,6 +5173,10 @@ export class Indexer {
           reuseCachedEmbeddings: true,
           incrementRepeatedFailures: true,
           forceSingleItemBatches: true,
+          signal,
+          setPhase,
+          heartbeat,
+          onProviderError,
           onSucceeded: (succeededChunks) => {
             database.addChunksToBranchBatch(
               this.getBranchCatalogKey(),
@@ -5074,6 +5265,7 @@ export class Indexer {
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
         this.indexCompatibility = { compatible: true };
+        throwIfOperationAborted(signal);
         database.commitWriteTransaction();
         writeTransactionActive = false;
         this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
@@ -5113,6 +5305,7 @@ export class Indexer {
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
         this.indexCompatibility = { compatible: true };
+        throwIfOperationAborted(signal);
         database.commitWriteTransaction();
         writeTransactionActive = false;
         this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
@@ -5159,6 +5352,7 @@ export class Indexer {
 
       store.save();
       this.saveInvertedIndex(invertedIndex);
+      throwIfOperationAborted(signal);
       database.commitWriteTransaction();
       writeTransactionActive = false;
       this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
@@ -5240,7 +5434,14 @@ export class Indexer {
     }
   }
 
-  private async getQueryEmbedding(query: string, provider: EmbeddingProviderInterface): Promise<number[]> {
+  private async getQueryEmbedding(
+    query: string,
+    provider: EmbeddingProviderInterface,
+    signal?: AbortSignal,
+    setPhase?: (phase: string) => void | Promise<void>,
+    heartbeat?: () => void | Promise<void>,
+  ): Promise<number[]> {
+    throwIfOperationAborted(signal);
     const now = Date.now();
     const cached = this.queryEmbeddingCache.get(query);
 
@@ -5263,7 +5464,8 @@ export class Indexer {
 
     this.logger.cache("debug", "Query embedding cache miss", { query: query.slice(0, 50) });
     this.logger.recordQueryCacheMiss();
-    const { embedding, tokensUsed } = await provider.embedQuery(query);
+    const { embedding, tokensUsed } = await provider.embedQuery(query, { signal, setPhase, heartbeat });
+    throwIfOperationAborted(signal);
     this.logger.recordEmbeddingApiCall(tokensUsed);
 
     if (this.queryEmbeddingCache.size >= this.maxQueryCacheSize) {
@@ -5443,7 +5645,9 @@ export class Indexer {
     limit?: number,
     options?: SearchOptions
   ): Promise<SearchResult[]> {
+    throwIfOperationAborted(options?.signal);
     const { store, provider, invertedIndex, database, readIssues, compatibility } = await this.ensureInitialized();
+    throwIfOperationAborted(options?.signal);
     this.requireReadableComponents(readIssues, "vectors", "database");
 
     if (!compatibility.compatible) {
@@ -5489,8 +5693,16 @@ export class Indexer {
     const embeddingQuery = stripFilePathHint(query);
     let embedding: number[] | undefined;
     try {
-      embedding = await this.getQueryEmbedding(embeddingQuery, provider);
+      embedding = await this.getQueryEmbedding(
+        embeddingQuery,
+        provider,
+        options?.signal,
+        options?.setPhase,
+        options?.heartbeat,
+      );
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(options?.signal);
       this.logger.warn("Query embedding failed; falling back to keyword-only search", {
         query,
         error: getErrorMessage(error),
@@ -5565,7 +5777,11 @@ export class Indexer {
     const rerankedCombined = await this.rerankCandidatesWithApi(query, combined, {
       definitionIntent: options?.definitionIntent === true,
       hasIdentifierHints: identifierHints.length > 0,
+      signal: options?.signal,
+      setPhase: options?.setPhase,
+      heartbeat: options?.heartbeat,
     });
+    throwIfOperationAborted(options?.signal);
     const fusionMs = performance.now() - fusionStartTime;
 
     const rescued = promoteIdentifierMatches(
@@ -5899,14 +6115,26 @@ export class Indexer {
     return { readable: true, current: true, reason: "current" };
   }
 
-  async forceIndex(onProgress?: ProgressCallback): Promise<IndexStats> {
+  async forceIndex(onProgress?: ProgressCallback, options: IndexOperationOptions = {}): Promise<IndexStats> {
+    throwIfOperationAborted(options.signal);
     return this.withIndexMutationLease("force-index", async (recoveredOwners) => {
+      throwIfOperationAborted(options.signal);
       await this.ensureInitializedUnlocked(recoveredOwners);
+      throwIfOperationAborted(options.signal);
       const recovery = this.beginClearRecoveryState();
-      await this.clearIndexUnlocked(recovery.compatibilityDecision);
+      await this.clearIndexUnlocked(recovery.compatibilityDecision, options.signal);
+      throwIfOperationAborted(options.signal);
       this.finishClearRecoveryState();
-      return this.indexUnlocked(onProgress, [], true);
-    });
+      return this.indexUnlocked(
+        onProgress,
+        [],
+        true,
+        options.signal,
+        options.setPhase,
+        options.heartbeat,
+        options.onProviderError,
+      );
+    }, options.signal);
   }
 
   async clearIndex(): Promise<void> {
@@ -6009,11 +6237,15 @@ export class Indexer {
 
   private async clearIndexUnlocked(
     recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
+    signal?: AbortSignal,
   ): Promise<void> {
+    throwIfOperationAborted(signal);
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
 
     if (this.config.scope === "global") {
+      throwIfOperationAborted(signal);
       this.clearGlobalIndexUnlocked(this.projectRoot, this.getScopedRoots(), recoveryDecision);
+      throwIfOperationAborted(signal);
       return;
     }
 
@@ -6031,7 +6263,9 @@ export class Indexer {
     this.saveInvertedIndex(invertedIndex);
 
     this.fileHashCache.clear();
+    throwIfOperationAborted(signal);
     await this.removeProjectRuntimeStateArtifacts();
+    throwIfOperationAborted(signal);
 
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
@@ -6050,34 +6284,45 @@ export class Indexer {
     database.deleteMetadata("index.updatedAt");
 
     this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
+    throwIfOperationAborted(signal);
   }
 
-  async healthCheck(): Promise<HealthCheckResult> {
+  async healthCheck(options: IndexOperationOptions = {}): Promise<HealthCheckResult> {
+    throwIfOperationAborted(options.signal);
     return this.withIndexMutationLease("health-check", async (recoveredOwners) => {
+      throwIfOperationAborted(options.signal);
       await this.ensureInitializedUnlocked(recoveredOwners);
-      return this.healthCheckUnlocked();
-    });
+      throwIfOperationAborted(options.signal);
+      return this.healthCheckUnlocked(options);
+    }, options.signal);
   }
 
-  private async healthCheckUnlocked(): Promise<HealthCheckResult> {
+  private async healthCheckUnlocked(options: IndexOperationOptions = {}): Promise<HealthCheckResult> {
+    throwIfOperationAborted(options.signal);
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
 
     this.logger.gc("info", "Starting health check");
 
     const allMetadata = store.getAllMetadata();
+    throwIfOperationAborted(options.signal);
     const filePathsToChunkKeys = new Map<string, string[]>();
 
-    for (const { key, metadata } of allMetadata) {
+    for (const [index, { key, metadata }] of allMetadata.entries()) {
+      throwIfOperationAborted(options.signal);
       const existing = filePathsToChunkKeys.get(metadata.filePath) || [];
       existing.push(key);
       filePathsToChunkKeys.set(metadata.filePath, existing);
+      if ((index + 1) % 256 === 0) await options.heartbeat?.();
     }
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
 
     const missingStoredFilePaths: string[] = [];
     const missingChunkKeys: string[] = [];
     const chunkKeysByRemovedFile = new Map<string, string[]>();
 
     for (const [filePath, chunkKeys] of filePathsToChunkKeys) {
+      throwIfOperationAborted(options.signal);
       if (!existsSync(this.toMaterializedFilePath(filePath))) {
         chunkKeysByRemovedFile.set(filePath, chunkKeys);
         for (const key of chunkKeys) {
@@ -6086,12 +6331,16 @@ export class Indexer {
         missingStoredFilePaths.push(filePath);
       }
     }
+    throwIfOperationAborted(options.signal);
 
     const branchCatalogKeys = this.getBranchCatalogKeys();
     for (const branchKey of branchCatalogKeys) {
+      throwIfOperationAborted(options.signal);
       database.deleteBranchChunksForBranch(branchKey, missingChunkKeys);
+      await options.heartbeat?.();
     }
     const referencedChunkKeys = new Set(database.getReferencedChunkIds(missingChunkKeys));
+    throwIfOperationAborted(options.signal);
     const removedChunkKeys = missingChunkKeys.filter((key) => !referencedChunkKeys.has(key));
 
     if (removedChunkKeys.length > 0) {
@@ -6100,6 +6349,7 @@ export class Indexer {
         invertedIndex.removeChunk(key);
       }
       database.deleteChunksByIds(removedChunkKeys);
+      throwIfOperationAborted(options.signal);
     }
 
     const missingSymbolIds = Array.from(new Set(
@@ -6108,9 +6358,12 @@ export class Indexer {
       )
     ));
     for (const branchKey of branchCatalogKeys) {
+      throwIfOperationAborted(options.signal);
       database.deleteBranchSymbolsForBranch(branchKey, missingSymbolIds);
+      await options.heartbeat?.();
     }
     const referencedSymbolIds = new Set(database.getReferencedSymbolIds(missingSymbolIds));
+    throwIfOperationAborted(options.signal);
     const removedSymbolIds = missingSymbolIds.filter((symbolId) => !referencedSymbolIds.has(symbolId));
     database.clearCallEdgeTargetsForSymbols(removedSymbolIds);
 
@@ -6124,6 +6377,7 @@ export class Indexer {
     if (removedCount > 0) {
       store.save();
       this.saveInvertedIndex(invertedIndex);
+      throwIfOperationAborted(options.signal);
     }
 
     let gcOrphanEmbeddings: number;
@@ -6132,11 +6386,18 @@ export class Indexer {
     let gcOrphanCallEdges: number;
 
     try {
+      throwIfOperationAborted(options.signal);
       gcOrphanEmbeddings = database.gcOrphanEmbeddings();
+      throwIfOperationAborted(options.signal);
       gcOrphanChunks = database.gcOrphanChunks();
+      throwIfOperationAborted(options.signal);
       gcOrphanSymbols = database.gcOrphanSymbols();
+      throwIfOperationAborted(options.signal);
       gcOrphanCallEdges = database.gcOrphanCallEdges();
+      throwIfOperationAborted(options.signal);
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(options.signal);
       if (!(await this.tryResetCorruptedIndex("running index health check", error))) {
         throw error;
       }
@@ -6342,9 +6603,14 @@ export class Indexer {
       filterByBranch?: boolean;
       blameSince?: string;
       blameUntil?: string;
+      signal?: AbortSignal;
+      setPhase?: (phase: string) => void | Promise<void>;
+      heartbeat?: () => void | Promise<void>;
     }
   ): Promise<SearchResult[]> {
+    throwIfOperationAborted(options?.signal);
     const { store, provider, database, readIssues, compatibility } = await this.ensureInitialized();
+    throwIfOperationAborted(options?.signal);
     this.requireReadableComponents(readIssues, "vectors", "database");
 
     if (!compatibility.compatible) {
@@ -6373,7 +6639,12 @@ export class Indexer {
     });
 
     const embeddingStartTime = performance.now();
-    const { embedding, tokensUsed } = await provider.embedDocument(code);
+    const { embedding, tokensUsed } = await provider.embedDocument(code, {
+      signal: options?.signal,
+      setPhase: options?.setPhase,
+      heartbeat: options?.heartbeat,
+    });
+    throwIfOperationAborted(options?.signal);
     const embeddingMs = performance.now() - embeddingStartTime;
     this.logger.recordEmbeddingApiCall(tokensUsed);
 
@@ -6497,17 +6768,22 @@ export class Indexer {
     targetName: string,
     includeUnresolved: boolean,
     callTypeFilter?: string,
+    options: IndexOperationOptions = {},
   ): Promise<CallEdgeData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const seen = new Set<string>();
     const results: CallEdgeData[] = [];
 
     for (const branchKey of this.getBranchCatalogKeys()) {
+      throwIfOperationAborted(options.signal);
       const branchSymbolIds = new Set(database.getBranchSymbolIds(branchKey));
       if (!branchSymbolIds.has(symbolId)) continue;
 
       for (const edge of database.getCallersWithContext(targetName, branchKey, callTypeFilter)) {
+        throwIfOperationAborted(options.signal);
         const matchesResolvedSymbol = edge.toSymbolId === symbolId;
         const safelyMatchesUnresolvedSymbol = includeUnresolved && !edge.toSymbolId;
         if ((!matchesResolvedSymbol && !safelyMatchesUnresolvedSymbol) || seen.has(edge.id)) continue;
@@ -6515,24 +6791,34 @@ export class Indexer {
         seen.add(edge.id);
         results.push(this.resolveCallEdgeFilePath(edge));
       }
+      await options.heartbeat?.();
     }
 
     return results;
   }
 
-  async getCallees(symbolId: string, callTypeFilter?: string): Promise<CallEdgeData[]> {
+  async getCallees(
+    symbolId: string,
+    callTypeFilter?: string,
+    options: IndexOperationOptions = {},
+  ): Promise<CallEdgeData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const seen = new Set<string>();
     const results: CallEdgeData[] = [];
 
     for (const branchKey of this.getBranchCatalogKeys()) {
+      throwIfOperationAborted(options.signal);
       for (const edge of database.getCallees(symbolId, branchKey, callTypeFilter)) {
+        throwIfOperationAborted(options.signal);
         if (!seen.has(edge.id)) {
           seen.add(edge.id);
           results.push(this.resolveCallEdgeFilePath(edge));
         }
       }
+      await options.heartbeat?.();
     }
 
     return results;
@@ -6557,12 +6843,16 @@ export class Indexer {
     fromSymbolId: string,
     toSymbolId: string,
     maxDepth = 10,
+    options: IndexOperationOptions = {},
   ): Promise<PathHopData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     let shortest: PathHopData[] = [];
 
     for (const branchKey of this.getBranchCatalogKeys()) {
+      throwIfOperationAborted(options.signal);
       const symbols = database.getSymbolsForBranch(branchKey);
       const symbolsById = new Map(symbols.map((symbol) => [symbol.id, symbol]));
       if (!symbolsById.has(fromSymbolId) || !symbolsById.has(toSymbolId)) continue;
@@ -6574,12 +6864,14 @@ export class Indexer {
       let found = fromSymbolId === toSymbolId;
 
       while (!found && queueIndex < queue.length) {
+        throwIfOperationAborted(options.signal);
         const current = queue[queueIndex++];
         if (current.depth >= maxDepth) continue;
 
         const currentSymbol = symbolsById.get(current.symbolId);
         if (!currentSymbol) continue;
         for (const edge of database.getCallees(current.symbolId, branchKey)) {
+          throwIfOperationAborted(options.signal);
           let nextSymbolId: string | undefined;
 
           if (edge.toSymbolId && symbolsById.has(edge.toSymbolId)) {
@@ -6608,6 +6900,7 @@ export class Indexer {
 
           queue.push({ symbolId: nextSymbolId, depth: current.depth + 1 });
         }
+        if (queueIndex % 128 === 0) await options.heartbeat?.();
       }
 
       if (!found) continue;
@@ -6633,20 +6926,26 @@ export class Indexer {
       if (path.length > 0 && (shortest.length === 0 || path.length < shortest.length)) {
         shortest = path;
       }
+      await options.heartbeat?.();
     }
 
     return shortest.map((hop) => this.resolveFilePathRecord(hop));
   }
 
-  async getCallGraphSymbols(): Promise<SymbolData[]> {
+  async getCallGraphSymbols(options: IndexOperationOptions = {}): Promise<SymbolData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const symbols = new Map<string, SymbolData>();
 
     for (const branchKey of this.getBranchCatalogKeys()) {
+      throwIfOperationAborted(options.signal);
       for (const symbol of database.getSymbolsForBranch(branchKey)) {
+        throwIfOperationAborted(options.signal);
         symbols.set(symbol.id, this.resolveFilePathRecord(symbol));
       }
+      await options.heartbeat?.();
     }
 
     return [...symbols.values()];
@@ -6681,34 +6980,84 @@ export class Indexer {
       .map((entry) => this.resolveFilePathRecord(entry));
   }
 
-  async detectCommunities(branch?: string, symbolIds?: string[]): Promise<CommunityData[]> {
+  async detectCommunities(
+    branch?: string,
+    symbolIds?: string[],
+    options: IndexOperationOptions = {},
+  ): Promise<CommunityData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
-    return database.detectCommunities(resolvedBranch, symbolIds)
-      .map((entry) => this.resolveFilePathRecord(entry));
+    const communities = database.detectCommunities(resolvedBranch, symbolIds);
+    throwIfOperationAborted(options.signal);
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
+    const result: CommunityData[] = [];
+    for (const [index, entry] of communities.entries()) {
+      result.push(this.resolveFilePathRecord(entry));
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
+    }
+    return result;
   }
 
-  async detectCommunityCouplings(branch?: string): Promise<CommunityCouplingData[]> {
+  async detectCommunityCouplings(
+    branch?: string,
+    options: IndexOperationOptions = {},
+  ): Promise<CommunityCouplingData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
-    return database.detectCommunityCouplings(resolvedBranch).map((entry) => ({
+    const couplings = database.detectCommunityCouplings(resolvedBranch);
+    throwIfOperationAborted(options.signal);
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
+    const result: CommunityCouplingData[] = [];
+    for (const [index, entry] of couplings.entries()) {
+      result.push({
       ...entry,
       relationships: (entry.relationships ?? entry.representativeRelationships ?? []).map((relationship) => ({
         ...relationship,
         fromFilePath: this.resolveStoredFilePath(relationship.fromFilePath),
         toFilePath: this.resolveStoredFilePath(relationship.toFilePath),
       })),
-    }));
+      });
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
+    }
+    return result;
   }
 
-  async computeCentrality(branch?: string): Promise<CentralityData[]> {
+  async computeCentrality(
+    branch?: string,
+    options: IndexOperationOptions = {},
+  ): Promise<CentralityData[]> {
+    throwIfOperationAborted(options.signal);
     const { database, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "database");
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
-    return database.computeCentrality(resolvedBranch)
-      .map((entry) => this.resolveFilePathRecord(entry));
+    const centrality = database.computeCentrality(resolvedBranch);
+    throwIfOperationAborted(options.signal);
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
+    const result: CentralityData[] = [];
+    for (const [index, entry] of centrality.entries()) {
+      result.push(this.resolveFilePathRecord(entry));
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
+    }
+    return result;
   }
 
   async getPrImpact(opts: {
@@ -6718,8 +7067,10 @@ export class Indexer {
     hubThreshold?: number;
     checkConflicts?: boolean;
     direction?: "callers" | "callees" | "both";
-  }, onPreparationProgress?: ProgressCallback): Promise<PrImpactResult> {
+  }, onPreparationProgress?: ProgressCallback, options: IndexOperationOptions = {}): Promise<PrImpactResult> {
+    throwIfOperationAborted(options.signal);
     const initialState = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     let database = initialState.database;
     const { readIssues } = initialState;
     this.requireReadableComponents(readIssues, "database");
@@ -6730,10 +7081,12 @@ export class Indexer {
       branch: opts.branch,
       projectRoot: this.projectRoot,
       baseBranch: this.baseBranch,
+      signal: options.signal,
     });
     const changedFiles = changedFilesResult.files;
     const headRefName = changedFilesResult.headRefName;
     const expectedCommit = changedFilesResult.headRef;
+    throwIfOperationAborted(options.signal);
 
     if (opts.pr !== undefined && headRefName === undefined) {
       throw new Error(
@@ -6776,6 +7129,7 @@ export class Indexer {
         totalChunks: 0,
       });
       this.resetLoadedIndexState();
+      throwIfOperationAborted(options.signal);
       const materialized = await withMaterializedBranch(
         {
           projectRoot: this.projectRoot,
@@ -6784,6 +7138,7 @@ export class Indexer {
           expectedCommit,
           pr: opts.pr,
           repository: changedFilesResult.baseRepository,
+          signal: options.signal,
         },
         async (worktreePath, info) => {
           const branchIndexer = new Indexer(this.projectRoot, this.config, this.host, {
@@ -6798,6 +7153,7 @@ export class Indexer {
               resolvedBranch,
               info.commit,
               onPreparationProgress,
+              options,
             );
           } finally {
             await branchIndexer.close();
@@ -6813,6 +7169,7 @@ export class Indexer {
       };
 
       const refreshedState = await this.ensureInitialized();
+      throwIfOperationAborted(options.signal);
       this.requireReadableComponents(refreshedState.readIssues, "database");
       database = refreshedState.database;
       branchSymbols = database.getSymbolsForBranch(branchKey);
@@ -6829,7 +7186,9 @@ export class Indexer {
     const toStoredChangedFiles = (filePaths: readonly string[]): string[] =>
       filePaths.map((filePath) => this.toStoredFilePath(path.resolve(this.projectRoot, filePath)));
     const storedChangedFiles = toStoredChangedFiles(changedFiles);
+    throwIfOperationAborted(options.signal);
     const directSymbols = database.getSymbolsForFiles(storedChangedFiles, branchKey);
+    throwIfOperationAborted(options.signal);
     const directIds = directSymbols.map((s) => s.id);
 
     const direction = opts.direction ?? "both";
@@ -6840,16 +7199,22 @@ export class Indexer {
       direction,
       maxDepth
     );
+    throwIfOperationAborted(options.signal);
 
     const affectedIdsSet = new Set<string>(directIds);
-    for (const caller of transitiveCallers) {
+    for (const [index, caller] of transitiveCallers.entries()) {
       affectedIdsSet.add(caller.symbolId);
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
     }
     const allAffectedIds = Array.from(affectedIdsSet);
 
     const communitiesData = database.detectCommunities(branchKey, allAffectedIds);
+    throwIfOperationAborted(options.signal);
     const communityMap = new Map<string, { label: string; symbolCount: number; directSymbols: Set<string> }>();
-    for (const c of communitiesData) {
+    for (const [index, c] of communitiesData.entries()) {
       if (!communityMap.has(c.communityLabel)) {
         communityMap.set(c.communityLabel, {
           label: c.communityLabel,
@@ -6862,6 +7227,10 @@ export class Indexer {
       if (directIds.includes(c.symbolId)) {
         entry.directSymbols.add(c.symbolId);
       }
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
     }
     const communities = Array.from(communityMap.values()).map((c) => ({
       label: c.label,
@@ -6870,15 +7239,23 @@ export class Indexer {
     }));
 
     const centralityData = database.computeCentrality(branchKey);
+    throwIfOperationAborted(options.signal);
     const hubThreshold = opts.hubThreshold ?? 10;
-    const hubNodes = centralityData
-      .filter((c) => directIds.includes(c.symbolId) && c.callerCount >= hubThreshold)
-      .map((c) => ({
-        id: c.symbolId,
-        name: c.symbolName,
-        callerCount: c.callerCount,
-        filePath: this.resolveStoredFilePath(c.filePath),
-      }));
+    const hubNodes: PrImpactResult["hubNodes"] = [];
+    for (const [index, centrality] of centralityData.entries()) {
+      if (directIds.includes(centrality.symbolId) && centrality.callerCount >= hubThreshold) {
+        hubNodes.push({
+          id: centrality.symbolId,
+          name: centrality.symbolName,
+          callerCount: centrality.callerCount,
+          filePath: this.resolveStoredFilePath(centrality.filePath),
+        });
+      }
+      if ((index + 1) % 256 === 0) {
+        await options.heartbeat?.();
+        throwIfOperationAborted(options.signal);
+      }
+    }
 
     const totalAffected = allAffectedIds.length;
     let riskLevel: "LOW" | "MEDIUM" | "HIGH";
@@ -6899,23 +7276,31 @@ export class Indexer {
     if (opts.checkConflicts) {
       conflictingPRs = [];
       try {
+        throwIfOperationAborted(options.signal);
         const { stdout } = await execFileAsync(
           "gh",
           ["pr", "list", "--state", "open", "--json", "number,headRefName", "--limit", "10000"],
-          { cwd: this.projectRoot, timeout: 30000 }
+          { cwd: this.projectRoot, timeout: 30000, signal: options.signal }
         );
+        throwIfOperationAborted(options.signal);
         const openPRs = JSON.parse(stdout) as Array<{ number: number; headRefName: string }>;
 
         const currentCommunityLabels = new Set(communities.map((c) => c.label));
         const allCommunitiesData = database.detectCommunities(branchKey);
+        throwIfOperationAborted(options.signal);
         const symbolToCommunity = new Map<string, string>();
         const structuralKey = (filePath: string, name: string): string =>
           `${filePath.toLowerCase()}:${name.toLowerCase()}`;
-        for (const c of allCommunitiesData) {
+        for (const [index, c] of allCommunitiesData.entries()) {
           symbolToCommunity.set(structuralKey(c.filePath, c.symbolName), c.communityLabel);
+          if ((index + 1) % 256 === 0) {
+            await options.heartbeat?.();
+            throwIfOperationAborted(options.signal);
+          }
         }
 
         for (const openPr of openPRs) {
+          throwIfOperationAborted(options.signal);
           if (openPr.number === opts.pr) continue;
 
           try {
@@ -6923,15 +7308,23 @@ export class Indexer {
               pr: openPr.number,
               projectRoot: this.projectRoot,
               baseBranch: this.baseBranch,
+              signal: options.signal,
             });
+            await options.heartbeat?.();
+            throwIfOperationAborted(options.signal);
             const otherStored = toStoredChangedFiles(otherChanged.files);
             const prBranchKey = this.getBranchCatalogKeyFor(otherChanged.catalogIdentity);
             const otherSymbols = database.getSymbolsForFiles(otherStored, prBranchKey);
+            throwIfOperationAborted(options.signal);
             const otherLabels = new Set<string>();
-            for (const sym of otherSymbols) {
+            for (const [index, sym] of otherSymbols.entries()) {
               const label = symbolToCommunity.get(structuralKey(sym.filePath, sym.name));
               if (label) {
                 otherLabels.add(label);
+              }
+              if ((index + 1) % 256 === 0) {
+                await options.heartbeat?.();
+                throwIfOperationAborted(options.signal);
               }
             }
             const overlapping = Array.from(otherLabels).filter((l) =>
@@ -6944,15 +7337,21 @@ export class Indexer {
                 overlappingCommunities: overlapping,
               });
             }
-          } catch {
+          } catch (error) {
+            if (isOperationInterruption(error)) throw error;
+            throwIfOperationAborted(options.signal);
             /* skip PRs we can't analyze */
           }
+          await options.heartbeat?.();
         }
-      } catch {
+      } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        throwIfOperationAborted(options.signal);
         /* gh CLI not available or failed; skip conflict detection */
       }
     }
 
+    throwIfOperationAborted(options.signal);
     return {
       indexPreparation,
       changedFiles,
@@ -6978,16 +7377,24 @@ export class Indexer {
     };
   }
 
-  async getVisualizationData(options?: { directory?: string }): Promise<{
+  async getVisualizationData(options: {
+    directory?: string;
+    signal?: AbortSignal;
+    setPhase?: (phase: string) => void | Promise<void>;
+    heartbeat?: () => void | Promise<void>;
+  } = {}): Promise<{
     symbols: SymbolData[];
     edges: CallEdgeData[];
   }> {
+    throwIfOperationAborted(options.signal);
     const { database, store, readIssues } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     this.requireReadableComponents(readIssues, "vectors", "database");
     const seenSymbols = new Map<string, SymbolData>();
     const seenEdges = new Map<string, CallEdgeData>();
 
     for (const branchKey of this.getBranchCatalogKeys()) {
+      throwIfOperationAborted(options.signal);
       // Get all symbol IDs on this branch
       const symbolIds = database.getBranchSymbolIds(branchKey);
       const symbolIdSet = new Set(symbolIds);
@@ -6997,6 +7404,7 @@ export class Indexer {
       const metadataMap = chunkIds.length > 0 ? store.getMetadataBatch(chunkIds) : new Map<string, import("../native/index.js").ChunkMetadata>();
       const filePaths = new Set<string>();
       for (const [, meta] of metadataMap) {
+        throwIfOperationAborted(options.signal);
         if (meta.filePath) filePaths.add(meta.filePath);
       }
 
@@ -7007,6 +7415,7 @@ export class Indexer {
 
       // Gather symbols from each file
       for (const filePath of filePaths) {
+        throwIfOperationAborted(options.signal);
         if (directory) {
           const absoluteFilePath = this.resolveStoredFilePath(filePath);
           const matchesRelative = filePath === directory || filePath.startsWith(directory + "/");
@@ -7026,12 +7435,14 @@ export class Indexer {
 
       // Gather edges from each symbol
       for (const symbolId of seenSymbols.keys()) {
+        throwIfOperationAborted(options.signal);
         for (const edge of database.getCallees(symbolId, branchKey)) {
           if (!seenEdges.has(edge.id)) {
             seenEdges.set(edge.id, this.resolveCallEdgeFilePath(edge));
           }
         }
       }
+      await options.heartbeat?.();
     }
 
     const symbols = [...seenSymbols.values()].sort((left, right) =>
@@ -7040,12 +7451,14 @@ export class Indexer {
       || left.startCol - right.startCol
       || left.id.localeCompare(right.id)
     );
+    throwIfOperationAborted(options.signal);
     const edges = [...seenEdges.values()].sort((left, right) =>
       left.fromSymbolId.localeCompare(right.fromSymbolId)
       || left.line - right.line
       || left.col - right.col
       || left.id.localeCompare(right.id)
     );
+    throwIfOperationAborted(options.signal);
     return { symbols, edges };
   }
 

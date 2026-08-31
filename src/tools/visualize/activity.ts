@@ -2,6 +2,8 @@ import { execFileSync } from "child_process";
 import * as path from "path";
 
 import type { VisualizationChange, VisualizationData, VisualizationNode } from "./types.js";
+import { runGitRaw } from "../../git/branch-resolution.js";
+import { isOperationInterruption, throwIfOperationAborted } from "../../utils/operation-control.js";
 
 interface FileActivity {
   churn: number;
@@ -36,6 +38,15 @@ export function getRecentGitActivity(data: VisualizationData, projectRoot: strin
   return activity.size > 0 ? buildGitChanges(data, activity, projectRoot) : [];
 }
 
+export async function getRecentGitActivityAbortable(
+  data: VisualizationData,
+  projectRoot: string,
+  signal?: AbortSignal,
+): Promise<VisualizationChange[]> {
+  const activity = await readGitActivityAbortable(projectRoot, signal);
+  return activity.size > 0 ? buildGitChanges(data, activity, projectRoot) : [];
+}
+
 function readGitActivity(projectRoot: string): Map<string, FileActivity> {
   try {
     const output = execFileSync(
@@ -45,6 +56,28 @@ function readGitActivity(projectRoot: string): Map<string, FileActivity> {
     );
     return parseGitActivity(output);
   } catch {
+    return new Map();
+  }
+}
+
+async function readGitActivityAbortable(
+  projectRoot: string,
+  signal?: AbortSignal,
+): Promise<Map<string, FileActivity>> {
+  throwIfOperationAborted(signal);
+  try {
+    const output = await runGitRaw(projectRoot, [
+      "log",
+      "--since=90.days",
+      "--numstat",
+      "--date=short",
+      "--pretty=format:__COMMIT__%x09%h%x09%ad%x09%s",
+    ], { signal });
+    throwIfOperationAborted(signal);
+    return parseGitActivity(output);
+  } catch (error) {
+    if (isOperationInterruption(error)) throw error;
+    throwIfOperationAborted(signal);
     return new Map();
   }
 }

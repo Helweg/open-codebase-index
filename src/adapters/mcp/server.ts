@@ -2,10 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ParsedCodebaseIndexConfig } from "../../config/schema.js";
 import type { HostMode } from "../../config/host.js";
+import { resolveProjectIndexPath } from "../../config/paths.js";
 import { MCP_SERVER_CURRENT_NAME } from "../../identity-catalog.js";
 import { getPackageVersion } from "../../package-metadata.js";
 import { registerMcpPrompts } from "./register-prompts.js";
 import { registerMcpTools } from "./register-tools.js";
+import { McpRuntimeDiagnostics } from "./runtime-diagnostics.js";
 import { initializeTools } from "../../tools/operations.js";
 import {
   attachBackgroundWorkerWatcher,
@@ -26,6 +28,11 @@ import {
 
 const mcpWorkerReferences = new Map<string, number>();
 const mcpWorkerTeardowns = new Map<string, Promise<void>>();
+const mcpOrderedShutdownMarkers = new WeakMap<McpServer, () => Promise<void>>();
+
+export function markMcpServerOrderedShutdown(server: McpServer): Promise<void> {
+  return mcpOrderedShutdownMarkers.get(server)?.() ?? Promise.resolve();
+}
 
 function retainMcpBackgroundWorker(projectRoot: string, host: HostMode): void {
   const key = getBackgroundWorkerProjectKey(projectRoot, host);
@@ -126,6 +133,7 @@ export function createMcpServer(
   });
 
   initializeTools(projectRoot, config, host, { preserveManagedWorker: true });
+  const diagnostics = new McpRuntimeDiagnostics(resolveProjectIndexPath(projectRoot, config.scope, host));
   const backgroundWorker = configureMcpBackgroundWorker(projectRoot, config, host);
   if (backgroundWorker.managesWorker) {
     retainMcpBackgroundWorker(projectRoot, host);
@@ -138,27 +146,49 @@ export function createMcpServer(
       : Promise.resolve();
     return stopCoordinationPromise;
   };
+  const markOrderedShutdown = (): Promise<void> => diagnostics.markOrderedShutdown();
+  mcpOrderedShutdownMarkers.set(server, markOrderedShutdown);
   const closeProtocol = server.server.close.bind(server.server);
-  server.server.close = async (): Promise<void> => {
-    await stopCoordination();
-    await closeProtocol();
+  let closePromise: Promise<void> | null = null;
+  const close = (): Promise<void> => {
+    closePromise ??= (async (): Promise<void> => {
+      const preparationResults = await Promise.allSettled([
+        markOrderedShutdown(),
+        stopCoordination(),
+      ]);
+      let protocolError: unknown;
+      try {
+        await closeProtocol();
+      } catch (error: unknown) {
+        protocolError = error;
+      }
+      const errors = preparationResults
+        .filter((result): result is PromiseRejectedResult => result.status === "rejected")
+        .map((result) => result.reason as unknown);
+      if (protocolError !== undefined) errors.push(protocolError);
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Failed to close the MCP server cleanly.");
+    })();
+    return closePromise;
   };
-  const closeServer = server.close.bind(server);
-  server.close = async (): Promise<void> => {
-    await stopCoordination();
-    await closeServer();
-  };
+  server.server.close = close;
+  server.close = close;
   const onServerClose = server.server.onclose;
   server.server.onclose = () => {
     onServerClose?.();
-    void stopCoordination().catch((error: unknown) => {
-      console.error("[codebase-index] Failed to stop MCP background worker after transport close:", error);
+    void Promise.allSettled([markOrderedShutdown(), stopCoordination()]).then((results) => {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          console.error("[codebase-index] Failed to stop MCP background worker after transport close:", result.reason);
+        }
+      }
     });
   };
 
   registerMcpTools(server, {
     projectRoot,
     host,
+    diagnostics,
   });
 
   registerMcpPrompts(server);

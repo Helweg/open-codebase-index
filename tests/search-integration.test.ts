@@ -1127,7 +1127,7 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     expect(warningLog).toHaveBeenCalledWith(
       "Query embedding failed; falling back to keyword-only search",
       expect.objectContaining({
-        error: "embedding endpoint unavailable",
+        error: "Custom embedding provider request failed.",
         action: expect.stringContaining("embedding provider"),
       })
     );

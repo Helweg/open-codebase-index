@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import pRetry from "p-retry";
 import {
   createCustomProviderInfo,
   detectEmbeddingProvider,
@@ -7,6 +8,9 @@ import {
 } from "../src/embeddings/detector.js";
 import { EMBEDDING_MODELS } from "../src/config/constants.js";
 import { GoogleEmbeddingProvider } from "../src/embeddings/providers/google.js";
+import { OpenAIEmbeddingProvider } from "../src/embeddings/providers/openai.js";
+import { shouldRetryEmbeddingRequest } from "../src/indexer/index.js";
+import { ProviderRequestError } from "../src/utils/operation-control.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -235,10 +239,11 @@ describe("GoogleEmbeddingProvider", () => {
     })));
     const provider = new GoogleEmbeddingProvider(
       { provider: "google", baseUrl: "https://example.test", apiKey: "test" },
-      EMBEDDING_MODELS.google["gemini-embedding-2"],
+      { ...EMBEDDING_MODELS.google["gemini-embedding-2"], dimensions: 2 },
     );
+    const setPhase = vi.fn(async () => undefined);
 
-    await provider.embedQuery("find the indexer");
+    await provider.embedQuery("find the indexer", { setPhase });
     await provider.embedDocument("export class Indexer {}");
 
     expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body)).requests[0]).toMatchObject({
@@ -247,5 +252,122 @@ describe("GoogleEmbeddingProvider", () => {
     expect(JSON.parse(String(fetchSpy.mock.calls[1][1]?.body)).requests[0]).toMatchObject({
       content: { parts: [{ text: "title: none | text: export class Indexer {}" }] },
     });
+    expect(setPhase).toHaveBeenCalledWith("embedding");
+  });
+
+  it("bounds the request while reading a response body", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => ({
+        ok: true,
+        status: 200,
+        json: async () => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        }),
+      }) as Response);
+      const provider = new GoogleEmbeddingProvider(
+        { provider: "google", baseUrl: "https://example.test", apiKey: "test" },
+        EMBEDDING_MODELS.google["gemini-embedding-2"],
+      );
+      const assertion = expect(provider.embedQuery("query"))
+        .rejects.toMatchObject({ timedOut: true, retryable: true });
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(120_000);
+      await assertion;
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { embeddings: [] },
+    { embeddings: [{ values: [0.1] }] },
+    { embeddings: [{ values: [0.1, Number.NaN] }] },
+  ])("rejects malformed vectors without exposing response data", async (body) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(body)));
+    const provider = new GoogleEmbeddingProvider(
+      { provider: "google", baseUrl: "https://secret.example", apiKey: "private" },
+      { ...EMBEDDING_MODELS.google["gemini-embedding-2"], dimensions: 2 },
+    );
+
+    const error = await provider.embedQuery("private query").catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ kind: "malformed_response", retryable: false });
+    expect(String(error)).not.toContain("secret.example");
+    expect(String(error)).not.toContain("private query");
+  });
+});
+
+describe("OpenAIEmbeddingProvider", () => {
+  it("bounds the request while reading a response body", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => ({
+        ok: true,
+        status: 200,
+        json: async () => new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+        }),
+      }) as Response);
+      const provider = new OpenAIEmbeddingProvider(
+        { provider: "openai", baseUrl: "https://example.test", apiKey: "test" },
+        EMBEDDING_MODELS.openai["text-embedding-3-small"],
+      );
+      const assertion = expect(provider.embedQuery("query"))
+        .rejects.toMatchObject({ timedOut: true, retryable: true });
+
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(120_000);
+      await assertion;
+      expect(fetchSpy).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    { data: [], usage: { total_tokens: 1 } },
+    { data: [{ embedding: [0.1] }], usage: { total_tokens: 1 } },
+    { data: [{ embedding: [0.1, Number.POSITIVE_INFINITY] }], usage: { total_tokens: 1 } },
+  ])("rejects malformed vectors without exposing response data", async (body) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify(body)));
+    const provider = new OpenAIEmbeddingProvider(
+      { provider: "openai", baseUrl: "https://secret.example", apiKey: "private" },
+      { ...EMBEDDING_MODELS.openai["text-embedding-3-small"], dimensions: 2 },
+    );
+
+    const error = await provider.embedQuery("private query").catch((reason: unknown) => reason);
+    expect(error).toMatchObject({ kind: "malformed_response", retryable: false });
+    expect(String(error)).not.toContain("secret.example");
+    expect(String(error)).not.toContain("private query");
+  });
+});
+
+describe("embedding request retries", () => {
+  it("does not retry non-retryable provider 4xx failures", async () => {
+    const request = vi.fn(async () => {
+      throw new ProviderRequestError({ statusCode: 400 });
+    });
+
+    await expect(pRetry(request, {
+      retries: 3,
+      minTimeout: 0,
+      shouldRetry: ({ error }) => shouldRetryEmbeddingRequest(error),
+    })).rejects.toBeInstanceOf(ProviderRequestError);
+    expect(request).toHaveBeenCalledOnce();
+  });
+
+  it.each([429, 500])("retries retryable provider status %i", async (statusCode) => {
+    const request = vi.fn(async () => {
+      throw new ProviderRequestError({ statusCode });
+    });
+
+    await expect(pRetry(request, {
+      retries: 2,
+      minTimeout: 0,
+      shouldRetry: ({ error }) => shouldRetryEmbeddingRequest(error),
+    })).rejects.toBeInstanceOf(ProviderRequestError);
+    expect(request).toHaveBeenCalledTimes(3);
   });
 });

@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ChunkMetadata } from "../src/native/index.js";
 import {
@@ -19,6 +19,7 @@ import {
   rerankResults,
 } from "../src/indexer/index.js";
 import { parseConfig } from "../src/config/schema.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 type Candidate = { id: string; score: number; metadata: ChunkMetadata };
 
@@ -632,6 +633,67 @@ describe("retrieval ranking", () => {
     globalThis.fetch = fetchSpy;
   });
 
+  it("cancels a blocked external reranker request without falling back", async () => {
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embed",
+        dimensions: 8,
+      },
+      reranker: {
+        enabled: true,
+        provider: "custom",
+        model: "mock-reranker",
+        baseUrl: "https://rerank.example/v1",
+        topN: 2,
+      },
+    });
+    const indexer = new Indexer("/repo", config, "opencode");
+    const candidates: Candidate[] = [
+      { id: "first", score: 0.9, metadata: meta({ filePath: "/repo/src/first.ts", name: "firstThing", chunkType: "function" }) },
+      { id: "second", score: 0.89, metadata: meta({ filePath: "/repo/src/second.ts", name: "secondThing", chunkType: "function" }) },
+    ];
+    const originalFetch = globalThis.fetch;
+    let requestSignal: AbortSignal | undefined;
+    let markRequestStarted: (() => void) | undefined;
+    const requestStarted = new Promise<void>((resolve) => {
+      markRequestStarted = resolve;
+    });
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      requestSignal = init?.signal ?? undefined;
+      markRequestStarted?.();
+      return new Promise<Response>((_resolve, reject) => {
+        if (!requestSignal) {
+          reject(new Error("Expected a reranker request signal."));
+          return;
+        }
+        const rejectCancellation = (): void => reject(requestSignal?.reason ?? new Error("cancelled"));
+        if (requestSignal.aborted) rejectCancellation();
+        else requestSignal.addEventListener("abort", rejectCancellation, { once: true });
+      });
+    }) as typeof fetch;
+
+    try {
+      const controller = new AbortController();
+      const reranking = (indexer as unknown as {
+        rerankCandidatesWithApi(
+          query: string,
+          items: Candidate[],
+          options?: { signal?: AbortSignal },
+        ): Promise<Candidate[]>;
+      }).rerankCandidatesWithApi("find first thing", candidates, { signal: controller.signal });
+      await requestStarted;
+      controller.abort();
+
+      await expect(reranking).rejects.toBeInstanceOf(OperationCancelledError);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("skips external reranker for definition-intent queries with identifier hints", async () => {
     const config = parseConfig({
       embeddingProvider: "custom",
@@ -727,15 +789,21 @@ describe("retrieval ranking", () => {
       { id: "docs-readme", score: 0.89, metadata: meta({ filePath: "/repo/README.md", name: "retrieval documentation", chunkType: "other", startLine: 1, endLine: 3 }) },
       { id: "docs-guide", score: 0.88, metadata: meta({ filePath: "/repo/docs/guide.md", name: "rankHybridResults guide", chunkType: "other", startLine: 1, endLine: 3 }) },
     ];
+    const setPhase = vi.fn(async () => undefined);
 
     const reranked = await (indexer as unknown as {
       rerankCandidatesWithApi(
         query: string,
         items: Candidate[],
-        options?: { definitionIntent?: boolean; hasIdentifierHints?: boolean }
+        options?: {
+          definitionIntent?: boolean;
+          hasIdentifierHints?: boolean;
+          setPhase?: (phase: string) => void | Promise<void>;
+        }
       ): Promise<Candidate[]>;
     }).rerankCandidatesWithApi("rankHybridResults documentation guide", candidates, {
       hasIdentifierHints: true,
+      setPhase,
     });
 
     expect(rerankCalled).toBe(true);
@@ -743,6 +811,7 @@ describe("retrieval ranking", () => {
     expect(rerankDocuments?.length).toBe(2);
     expect(rerankDocuments?.[0]).toContain("path: /repo/README.md");
     expect(rerankDocuments?.[1]).toContain("path: /repo/docs/guide.md");
+    expect(setPhase).toHaveBeenCalledWith("reranking");
     globalThis.fetch = fetchSpy;
   });
 
