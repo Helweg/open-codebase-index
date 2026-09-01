@@ -27,6 +27,7 @@ import {
 const { testMainRepo } = vi.hoisted(() => ({
   testMainRepo: `/tmp/codebase-index-mcp-vitest-main-repo-${process.pid}`,
 }));
+const supportsReadOnlyDirectoryTest = process.platform !== "win32" && process.getuid?.() !== 0;
 
 function returnedTokenBucket(tokens: number): keyof EffectivenessMetricsSnapshot["returnedTokenEstimate"] {
   if (tokens === 0) return "0";
@@ -1049,6 +1050,31 @@ describe("MCP server tools and prompts", () => {
       },
     });
   });
+
+  it.runIf(supportsReadOnlyDirectoryTest)(
+    "should execute index_status when diagnostics storage is not writable",
+    async () => {
+      const indexRoot = `${testMainRepo}/.opencode/index`;
+      fs.chmodSync(indexRoot, 0o555);
+
+      try {
+        const result = await client.callTool({ name: "index_status", arguments: {} });
+        const content = result.content as Array<{ type: string; text?: string }>;
+
+        expect(result.isError).not.toBe(true);
+        expect(content[0]?.text).toContain("Indexed chunks");
+        expect(result.structuredContent).toMatchObject({
+          mcpDiagnostics: {
+            schemaVersion: 1,
+            activeOperations: [],
+          },
+        });
+        expect(fs.existsSync(`${indexRoot}/mcp-runtime`)).toBe(false);
+      } finally {
+        fs.chmodSync(indexRoot, 0o755);
+      }
+    },
+  );
 
   it("emits monotone in-memory progress with the exact caller token", async () => {
     const send = vi.spyOn(serverTransport, "send");

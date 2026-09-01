@@ -50,6 +50,31 @@ describe("MCP runtime diagnostics", () => {
     await operation.complete();
   });
 
+  it("keeps tracking calls non-fatal if diagnostics storage becomes unavailable", async () => {
+    const diagnostics = new McpRuntimeDiagnostics(indexRoot);
+    const operation = await diagnostics.begin("index_codebase");
+    const runtimeDir = path.join(indexRoot, "mcp-runtime");
+    const [recordName] = fs.readdirSync(runtimeDir);
+    expect(recordName).toBeDefined();
+    const recordPath = path.join(runtimeDir, recordName!);
+    const persistedActiveOperation = fs.readFileSync(recordPath, "utf8");
+    fs.rmSync(recordPath, { force: true });
+    fs.mkdirSync(recordPath);
+
+    await expect(operation.setPhase("embedding")).resolves.toBeUndefined();
+    await expect(operation.heartbeat()).resolves.toBeUndefined();
+    await expect(operation.complete()).resolves.toBeUndefined();
+
+    fs.rmSync(recordPath, { recursive: true, force: true });
+    fs.writeFileSync(recordPath, persistedActiveOperation);
+    await expect(diagnostics.snapshot(undefined, 1000)).resolves.toEqual({
+      schemaVersion: 1,
+      activeOperations: [],
+    });
+    expect(fs.readdirSync(runtimeDir)).toEqual([]);
+    await expect(diagnostics.markOrderedShutdown()).resolves.toBeUndefined();
+  });
+
   it("tracks concurrent operations and marks stale activity only as suspected", async () => {
     const diagnostics = new McpRuntimeDiagnostics(indexRoot);
     const first = await diagnostics.begin("codebase_context");

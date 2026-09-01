@@ -65,6 +65,32 @@ export interface McpTrackedOperation {
   complete: () => Promise<void>;
 }
 
+function createUntrackedOperation(): McpTrackedOperation {
+  return {
+    id: randomUUID(),
+    setPhase: async () => undefined,
+    heartbeat: async () => undefined,
+    complete: async () => undefined,
+  };
+}
+
+function bestEffortTrackedOperation(operation: McpTrackedOperation): McpTrackedOperation {
+  const ignorePersistenceFailure = async (action: () => Promise<void>): Promise<void> => {
+    try {
+      await action();
+    } catch {
+      // Persistent diagnostics are optional and must not alter MCP tool behavior.
+      return;
+    }
+  };
+  return {
+    id: operation.id,
+    setPhase: (phase) => ignorePersistenceFailure(() => operation.setPhase(phase)),
+    heartbeat: () => ignorePersistenceFailure(() => operation.heartbeat()),
+    complete: () => ignorePersistenceFailure(() => operation.complete()),
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -180,6 +206,8 @@ class ProcessRuntimeStore {
   private readonly state: PersistedRuntimeState;
   private writeQueue: Promise<void> = Promise.resolve();
   private lastDiskHeartbeatAt = 0;
+  private persistenceRevision = 0;
+  private persistedRevision = 0;
 
   constructor(indexRoot: string) {
     this.runtimeDirectory = path.join(indexRoot, "mcp-runtime");
@@ -255,7 +283,10 @@ class ProcessRuntimeStore {
         interruptedFromActive(operation, "ordered_shutdown"),
       );
     }
-    if (interrupted.length === 0) return;
+    if (interrupted.length === 0) {
+      if (this.hasPendingPersistence()) await this.persist();
+      return;
+    }
     this.state.activeOperations = this.state.activeOperations.filter((entry) => entry.sessionId !== sessionId);
     try {
       await this.persist();
@@ -268,6 +299,7 @@ class ProcessRuntimeStore {
 
   async snapshot(excludedOperationId: string | undefined, stallTimeoutMs: number): Promise<McpDiagnosticsSnapshot> {
     await this.writeQueue;
+    if (this.hasPendingPersistence()) await this.persist();
     await this.ensureRuntimeDirectory();
 
     const activeOperations: McpActiveOperationDiagnostic[] = [];
@@ -360,11 +392,13 @@ class ProcessRuntimeStore {
   }
 
   private persist(): Promise<void> {
+    const revision = ++this.persistenceRevision;
     const write = this.writeQueue.then(async () => {
       this.state.updatedAt = new Date().toISOString();
       await this.ensureRuntimeDirectory();
       if (this.state.activeOperations.length === 0 && !this.state.latestInterruptedOperation) {
         await fs.rm(this.filePath, { force: true });
+        this.persistedRevision = revision;
         return;
       }
 
@@ -378,9 +412,14 @@ class ProcessRuntimeStore {
       } finally {
         await fs.rm(temporaryPath, { force: true });
       }
+      this.persistedRevision = revision;
     });
     this.writeQueue = write.catch(() => undefined);
     return write;
+  }
+
+  private hasPendingPersistence(): boolean {
+    return this.persistedRevision < this.persistenceRevision;
   }
 
   private async ensureRuntimeDirectory(): Promise<void> {
@@ -413,27 +452,39 @@ export class McpRuntimeDiagnostics {
       : () => indexRoot;
   }
 
-  begin(operation: string): Promise<McpTrackedOperation> {
-    return this.getCurrentStore().begin(this.sessionId, operation);
+  async begin(operation: string): Promise<McpTrackedOperation> {
+    try {
+      const tracked = await this.getCurrentStore().begin(this.sessionId, operation);
+      return bestEffortTrackedOperation(tracked);
+    } catch {
+      return createUntrackedOperation();
+    }
   }
 
-  snapshot(excludedOperationId: string | undefined, stallTimeoutMs: number): Promise<McpDiagnosticsSnapshot> {
-    return this.getCurrentStore().snapshot(excludedOperationId, stallTimeoutMs);
+  async snapshot(excludedOperationId: string | undefined, stallTimeoutMs: number): Promise<McpDiagnosticsSnapshot> {
+    try {
+      return await this.getCurrentStore().snapshot(excludedOperationId, stallTimeoutMs);
+    } catch {
+      return {
+        schemaVersion: DIAGNOSTICS_SCHEMA_VERSION,
+        activeOperations: [],
+      };
+    }
   }
 
   async markOrderedShutdown(): Promise<void> {
     if (this.orderedShutdownPromise) return this.orderedShutdownPromise;
-    const attempt = Promise.all(Array.from(
+    const attempt = Promise.allSettled(Array.from(
       this.stores,
       (store) => store.markSessionInterrupted(this.sessionId),
-    )).then(() => undefined);
+    )).then((results) => {
+      if (results.some((result) => result.status === "rejected")
+        && this.orderedShutdownPromise === attempt) {
+        this.orderedShutdownPromise = null;
+      }
+    });
     this.orderedShutdownPromise = attempt;
-    try {
-      await attempt;
-    } catch (error: unknown) {
-      if (this.orderedShutdownPromise === attempt) this.orderedShutdownPromise = null;
-      throw error;
-    }
+    await attempt;
   }
 
   private getCurrentStore(): ProcessRuntimeStore {
