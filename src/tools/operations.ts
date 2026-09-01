@@ -676,7 +676,12 @@ export async function runIndexCodebase(
     }
     const result = await raceWithOperationSignal(coordinated, control?.signal);
     if (result.outcome === "ready" && result.stats) {
-      return { kind: "stats", stats: result.stats, ...(providerError ? { providerError } : {}) };
+      const coordinatedProviderError = providerError ?? result.providerError;
+      return {
+        kind: "stats",
+        stats: result.stats,
+        ...(coordinatedProviderError ? { providerError: coordinatedProviderError } : {}),
+      };
     }
     if (result.outcome === "ready" && result.skipped) {
       return { kind: "message", text: "The existing index is healthy and current; no indexing was needed." };

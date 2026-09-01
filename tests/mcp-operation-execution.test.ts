@@ -616,6 +616,74 @@ describe("MCP operation execution", () => {
     expect(index).toHaveBeenCalledOnce();
   });
 
+  it("keeps a retrieval alive while its freshness preflight reports heartbeats", async () => {
+    const config = parseConfig({
+      mcp: { stallTimeoutMs: 1000 },
+      indexing: {
+        autoIndex: true,
+        autoIndexWaitMs: 2500,
+        requireProjectMarker: false,
+      },
+    });
+    configCache.set(getIndexerCacheKey(projectRoot, "jcode"), config);
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    let markPreflightStarted: (() => void) | undefined;
+    let markFirstHeartbeat: (() => void) | undefined;
+    let markSecondHeartbeat: (() => void) | undefined;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    const firstHeartbeat = new Promise<void>((resolve) => {
+      markFirstHeartbeat = resolve;
+    });
+    const secondHeartbeat = new Promise<void>((resolve) => {
+      markSecondHeartbeat = resolve;
+    });
+    const index = vi.fn(async () => {
+      throw new Error("Freshness should have avoided indexing.");
+    });
+    const getIndexFreshness = vi.fn(async (
+      options?: Parameters<Indexer["getIndexFreshness"]>[0],
+    ) => {
+      await options?.setPhase?.("scanning");
+      markPreflightStarted?.();
+      return new Promise<Awaited<ReturnType<Indexer["getIndexFreshness"]>>>((resolve) => {
+        setTimeout(() => {
+          void Promise.resolve(options?.heartbeat?.()).then(() => markFirstHeartbeat?.());
+        }, 700);
+        setTimeout(() => {
+          void Promise.resolve(options?.heartbeat?.()).then(() => markSecondHeartbeat?.());
+        }, 1400);
+        setTimeout(() => resolve({ readable: true, current: true, reason: "current" }), 1800);
+      });
+    });
+    configureAutoIndex(projectRoot, "jcode", config, () => ({
+      forceIndex: index,
+      getIndexFreshness,
+      getStatus: vi.fn(),
+      index,
+    }));
+
+    const operation = executeMcpOperation(runtime, "codebase_context", createExtra(), async (control) => {
+      await control.setPhase?.("waiting_for_index");
+      const result = await waitForAutoIndexForRetrieval(projectRoot, "jcode", control);
+      return success(result.ready ? "ready" : "not ready");
+    });
+    await preflightStarted;
+
+    await vi.advanceTimersByTimeAsync(700);
+    await firstHeartbeat;
+    await vi.advanceTimersByTimeAsync(700);
+    await secondHeartbeat;
+    await vi.advanceTimersByTimeAsync(400);
+
+    await expect(operation).resolves.toMatchObject({
+      content: [{ type: "text", text: "ready" }],
+    });
+    expect(getIndexFreshness).toHaveBeenCalledOnce();
+    expect(index).not.toHaveBeenCalled();
+  });
+
   it("preserves client cancellation when diagnostic completion does not settle", async () => {
     configCache.set(
       getIndexerCacheKey(projectRoot, "jcode"),

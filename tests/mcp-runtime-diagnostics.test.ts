@@ -88,6 +88,65 @@ describe("MCP runtime diagnostics", () => {
     });
   });
 
+  it("rebinds later operations to the current root and marks every used root on shutdown", async () => {
+    const firstRoot = path.join(tempDir, "first-index");
+    const secondRoot = path.join(tempDir, "second-index");
+    let currentRoot = firstRoot;
+    const diagnostics = new McpRuntimeDiagnostics(() => currentRoot);
+    const first = await diagnostics.begin("index_codebase");
+    await first.setPhase("embedding");
+
+    currentRoot = secondRoot;
+    const second = await diagnostics.begin("codebase_context");
+    await second.setPhase("embedding_query");
+
+    await expect(new McpRuntimeDiagnostics(firstRoot).snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [{ operation: "index_codebase", phase: "embedding" }],
+    });
+    await expect(diagnostics.snapshot(first.id, 1000)).resolves.toMatchObject({
+      activeOperations: [{ operation: "codebase_context", phase: "embedding_query" }],
+    });
+
+    await diagnostics.markOrderedShutdown();
+
+    await expect(new McpRuntimeDiagnostics(firstRoot).snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [],
+      latestInterruptedOperation: {
+        operation: "index_codebase",
+        phase: "embedding",
+        cause: "ordered_shutdown",
+      },
+    });
+    await expect(new McpRuntimeDiagnostics(secondRoot).snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [],
+      latestInterruptedOperation: {
+        operation: "codebase_context",
+        phase: "embedding_query",
+        cause: "ordered_shutdown",
+      },
+    });
+  });
+
+  it("completes an in-flight operation in the root captured when it began", async () => {
+    const firstRoot = path.join(tempDir, "captured-index");
+    const secondRoot = path.join(tempDir, "current-index");
+    let currentRoot = firstRoot;
+    const diagnostics = new McpRuntimeDiagnostics(() => currentRoot);
+    const first = await diagnostics.begin("index_codebase");
+
+    currentRoot = secondRoot;
+    const second = await diagnostics.begin("codebase_context");
+    await first.complete();
+
+    await expect(new McpRuntimeDiagnostics(firstRoot).snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [],
+    });
+    await expect(diagnostics.snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [{ operation: "codebase_context" }],
+    });
+    await second.complete();
+  });
+
   it("infers interruption only when a local PID is confirmed absent", async () => {
     const runtimeDir = path.join(indexRoot, "mcp-runtime");
     fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o700 });

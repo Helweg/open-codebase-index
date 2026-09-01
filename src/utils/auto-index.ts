@@ -1,7 +1,7 @@
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
 import type { HostMode } from "../config/host.js";
 import type { Indexer, IndexProgress, IndexStats } from "../indexer/index.js";
-import type { OperationControl } from "./operation-control.js";
+import type { OperationControl, ProviderRequestError } from "./operation-control.js";
 import type { BackgroundIndexingPolicy } from "./power-source.js";
 import { existsSync, realpathSync } from "fs";
 import * as os from "os";
@@ -65,6 +65,7 @@ export interface CoordinatedIndexResult {
   stats?: IndexStats;
   skipped?: boolean;
   error?: unknown;
+  providerError?: ProviderRequestError;
 }
 
 export interface AutoIndexRetrievalResult {
@@ -302,6 +303,7 @@ class AutoIndexCoordinator {
   private abortController: AbortController | null = null;
   private readonly manualConsumerIds = new Set<symbol>();
   private readonly activeManualConsumerIds = new Set<symbol>();
+  private activeProviderError: ProviderRequestError | undefined;
   private activeHasIndependentOwner = false;
   private readonly manualProgressListeners = new Map<symbol, (progress: IndexProgress) => void>();
   private readonly manualPhaseListeners = new Map<symbol, NonNullable<
@@ -447,9 +449,8 @@ class AutoIndexCoordinator {
         }
       };
       signal?.addEventListener("abort", detach, { once: true });
-      const job = this.enqueueBatteryAwareRequest(request);
-
       try {
+        const job = this.enqueueBatteryAwareRequest(request);
         return await raceWithOperationSignal(job, signal);
       } finally {
         signal?.removeEventListener("abort", detach);
@@ -518,6 +519,9 @@ class AutoIndexCoordinator {
       for (const consumerId of request.manualConsumerIds ?? []) {
         if (this.manualConsumerIds.has(consumerId)) {
           this.activeManualConsumerIds.add(consumerId);
+          if (this.activeProviderError) {
+            this.manualProviderErrorListeners.get(consumerId)?.(this.activeProviderError);
+          }
         }
       }
       return this.inFlight;
@@ -572,6 +576,7 @@ class AutoIndexCoordinator {
       return Promise.resolve({ outcome: "stopped" });
     }
     this.activeRequest = request;
+    this.activeProviderError = undefined;
     this.activeManualConsumerIds.clear();
     for (const consumerId of request.manualConsumerIds ?? []) {
       if (this.manualConsumerIds.has(consumerId)) {
@@ -587,6 +592,7 @@ class AutoIndexCoordinator {
       this.activeRequest = null;
       this.abortController = null;
       this.activeManualConsumerIds.clear();
+      this.activeProviderError = undefined;
       this.activeHasIndependentOwner = false;
       if (this.batteryIndexJob === job) {
         this.batteryIndexJob = null;
@@ -627,6 +633,24 @@ class AutoIndexCoordinator {
     const maxRetries = request.source === "manual"
       ? 0
       : this.registration.config.indexing.autoIndexMaxRetries;
+    const setOperationPhase = async (phase: string): Promise<void> => {
+      this.notifyRetrievalPhase(phase);
+      await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
+        await this.manualPhaseListeners.get(consumerId)?.(phase);
+      }));
+    };
+    const heartbeatOperation = async (): Promise<void> => {
+      this.notifyRetrievalHeartbeat();
+      await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
+        await this.manualHeartbeatListeners.get(consumerId)?.();
+      }));
+    };
+    const reportProviderError = (error: ProviderRequestError): void => {
+      this.activeProviderError ??= error;
+      for (const consumerId of this.activeManualConsumerIds) {
+        this.manualProviderErrorListeners.get(consumerId)?.(error);
+      }
+    };
     let retryAttempt = 0;
     while (true) {
       try {
@@ -634,7 +658,11 @@ class AutoIndexCoordinator {
         const indexer = this.registration.getIndexer();
         if (request.checkFreshness && !request.force) {
           if (indexer.getIndexFreshness) {
-            const freshness = await indexer.getIndexFreshness();
+            const freshness = await indexer.getIndexFreshness({
+              signal: controller.signal,
+              setPhase: setOperationPhase,
+              heartbeat: heartbeatOperation,
+            });
             this.throwIfCancelled(controller.signal);
             if (freshness.readable && freshness.current) {
               this.setState("ready", {
@@ -670,23 +698,9 @@ class AutoIndexCoordinator {
           this.notifyRetrievalProgress(progress);
         }, {
           signal: controller.signal,
-          setPhase: async (phase) => {
-            this.notifyRetrievalPhase(phase);
-            await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
-              await this.manualPhaseListeners.get(consumerId)?.(phase);
-            }));
-          },
-          heartbeat: async () => {
-            this.notifyRetrievalHeartbeat();
-            await Promise.all(Array.from(this.activeManualConsumerIds, async (consumerId) => {
-              await this.manualHeartbeatListeners.get(consumerId)?.();
-            }));
-          },
-          onProviderError: (error) => {
-            for (const consumerId of this.activeManualConsumerIds) {
-              this.manualProviderErrorListeners.get(consumerId)?.(error);
-            }
-          },
+          setPhase: setOperationPhase,
+          heartbeat: heartbeatOperation,
+          onProviderError: reportProviderError,
         });
         this.throwIfCancelled(controller.signal);
         if (request.source === "startup" || request.source === "retrieval") {
@@ -709,7 +723,11 @@ class AutoIndexCoordinator {
             : undefined,
           retryAttempt: undefined,
         });
-        return { outcome: "ready", stats };
+        return {
+          outcome: "ready",
+          stats,
+          ...(this.activeProviderError ? { providerError: this.activeProviderError } : {}),
+        };
       } catch (error) {
         if (error instanceof AutoIndexCancelledError || controller.signal.aborted) {
           if (this.stopped) {
@@ -1093,6 +1111,7 @@ async function waitForAutoIndexForRetrievalFromCoordinator(
   projectRoot: string,
   host: HostMode,
   coordinator: AutoIndexCoordinator | null,
+  control?: Pick<OperationControl, "heartbeat" | "setPhase" | "signal">,
 ): Promise<AutoIndexRetrievalResult> {
   if (!coordinator) return { ready: true };
   const initial = coordinator.snapshot();
@@ -1111,12 +1130,13 @@ async function waitForAutoIndexForRetrievalFromCoordinator(
   }
 
   try {
-    const readiness = await getSearchReadiness(coordinator);
+    const readiness = await getSearchReadiness(coordinator, control);
     if (readiness.searchable) {
       return { ready: true };
     }
     if (readiness.blocked) return unavailableSnapshotResult(readiness.reason);
   } catch {
+    throwIfOperationAborted(control?.signal);
     // The coordinator reports a sanitized actionable failure below.
   }
 
@@ -1124,14 +1144,15 @@ async function waitForAutoIndexForRetrievalFromCoordinator(
   if (job) {
     await withTimeout(job, coordinator.getWaitMs());
   } else if (isBackgroundWorkerManaged(projectRoot, host)) {
-    await waitForPublishedSnapshot(coordinator, coordinator.getWaitMs());
+    await waitForPublishedSnapshot(coordinator, coordinator.getWaitMs(), control);
   }
 
   try {
-    const readiness = await getSearchReadiness(coordinator);
+    const readiness = await getSearchReadiness(coordinator, control);
     if (readiness.searchable) return { ready: true };
     if (readiness.blocked) return unavailableSnapshotResult(readiness.reason);
   } catch {
+    throwIfOperationAborted(control?.signal);
     // The coordinator reports a sanitized actionable failure below.
   }
 
@@ -1162,7 +1183,7 @@ export function waitForAutoIndexForRetrieval(
   const coordinator = getCoordinator(projectRoot, host);
   const detach = coordinator?.subscribeRetrievalActivity(control) ?? (() => undefined);
   return raceWithOperationSignal(
-    waitForAutoIndexForRetrievalFromCoordinator(projectRoot, host, coordinator),
+    waitForAutoIndexForRetrievalFromCoordinator(projectRoot, host, coordinator, control),
     control?.signal,
   ).finally(detach);
 }
@@ -1205,10 +1226,19 @@ interface SearchReadiness {
   searchable: boolean;
 }
 
-async function getSearchReadiness(coordinator: AutoIndexCoordinator): Promise<SearchReadiness> {
+async function getSearchReadiness(
+  coordinator: AutoIndexCoordinator,
+  control?: Pick<OperationControl, "heartbeat" | "setPhase" | "signal">,
+): Promise<SearchReadiness> {
+  throwIfOperationAborted(control?.signal);
   const indexer = coordinator.getIndexer();
   if (indexer.getIndexFreshness) {
-    const freshness = await indexer.getIndexFreshness();
+    const freshness = await indexer.getIndexFreshness({
+      signal: control?.signal,
+      setPhase: control?.setPhase,
+      heartbeat: control?.heartbeat,
+    });
+    throwIfOperationAborted(control?.signal);
     const searchable = freshness.readable && freshness.current && freshness.reason === "current";
     return {
       blocked: freshness.reason === "unreadable"
@@ -1220,6 +1250,8 @@ async function getSearchReadiness(coordinator: AutoIndexCoordinator): Promise<Se
     };
   }
   const indexed = (await indexer.getStatus()).indexed;
+  await control?.heartbeat?.();
+  throwIfOperationAborted(control?.signal);
   return { blocked: false, searchable: indexed };
 }
 
@@ -1254,10 +1286,15 @@ function startRetrievalRefresh(
 async function waitForPublishedSnapshot(
   coordinator: AutoIndexCoordinator,
   waitMs: number,
+  control?: Pick<OperationControl, "heartbeat" | "setPhase" | "signal">,
 ): Promise<void> {
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
-    if ((await getSearchReadiness(coordinator)).searchable) return;
-    await new Promise<void>((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+    throwIfOperationAborted(control?.signal);
+    if ((await getSearchReadiness(coordinator, control)).searchable) return;
+    await raceWithOperationSignal(
+      new Promise<void>((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now()))),
+      control?.signal,
+    );
   }
 }

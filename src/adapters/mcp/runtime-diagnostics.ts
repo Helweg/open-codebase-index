@@ -403,24 +403,30 @@ function getProcessStore(indexRoot: string): ProcessRuntimeStore {
 
 export class McpRuntimeDiagnostics {
   private readonly sessionId = randomUUID();
-  private readonly store: ProcessRuntimeStore;
+  private readonly resolveIndexRoot: () => string;
+  private readonly stores = new Set<ProcessRuntimeStore>();
   private orderedShutdownPromise: Promise<void> | null = null;
 
-  constructor(indexRoot: string) {
-    this.store = getProcessStore(indexRoot);
+  constructor(indexRoot: string | (() => string)) {
+    this.resolveIndexRoot = typeof indexRoot === "function"
+      ? indexRoot
+      : () => indexRoot;
   }
 
   begin(operation: string): Promise<McpTrackedOperation> {
-    return this.store.begin(this.sessionId, operation);
+    return this.getCurrentStore().begin(this.sessionId, operation);
   }
 
   snapshot(excludedOperationId: string | undefined, stallTimeoutMs: number): Promise<McpDiagnosticsSnapshot> {
-    return this.store.snapshot(excludedOperationId, stallTimeoutMs);
+    return this.getCurrentStore().snapshot(excludedOperationId, stallTimeoutMs);
   }
 
   async markOrderedShutdown(): Promise<void> {
     if (this.orderedShutdownPromise) return this.orderedShutdownPromise;
-    const attempt = this.store.markSessionInterrupted(this.sessionId);
+    const attempt = Promise.all(Array.from(
+      this.stores,
+      (store) => store.markSessionInterrupted(this.sessionId),
+    )).then(() => undefined);
     this.orderedShutdownPromise = attempt;
     try {
       await attempt;
@@ -428,5 +434,11 @@ export class McpRuntimeDiagnostics {
       if (this.orderedShutdownPromise === attempt) this.orderedShutdownPromise = null;
       throw error;
     }
+  }
+
+  private getCurrentStore(): ProcessRuntimeStore {
+    const store = getProcessStore(this.resolveIndexRoot());
+    this.stores.add(store);
+    return store;
   }
 }

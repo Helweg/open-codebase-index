@@ -113,7 +113,9 @@ class MockIndexer {
   readable = false;
   freshness: IndexFreshnessResult = { readable: false, current: false, reason: "missing" };
   getStatus = vi.fn(async () => status(this.readable));
-  getIndexFreshness = vi.fn(async () => this.freshness);
+  getIndexFreshness = vi.fn(async (
+    _options?: Parameters<Indexer["getIndexFreshness"]>[0],
+  ) => this.freshness);
   index = vi.fn(async (
     onProgress?: (progress: IndexProgress) => void,
     _options?: Parameters<Indexer["index"]>[1],
@@ -202,6 +204,48 @@ describe("auto-index coordinator", () => {
 
     await expect(waitForAutoIndexForRetrieval(projectRoot, "pi")).resolves.toEqual({ ready: true });
     await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+  });
+
+  it("cancels a retrieval freshness check through the caller control", async () => {
+    const indexer = new MockIndexer();
+    let preflightSignal: AbortSignal | undefined;
+    let markPreflightStarted: (() => void) | undefined;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    indexer.getIndexFreshness.mockImplementation(async (options) => {
+      preflightSignal = options?.signal;
+      await options?.setPhase?.("scanning");
+      await options?.heartbeat?.();
+      markPreflightStarted?.();
+      return new Promise<IndexFreshnessResult>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new OperationCancelledError()),
+          { once: true },
+        );
+      });
+    });
+    configureAutoIndex(projectRoot, "pi", config(), () => indexer);
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => undefined);
+    const setPhase = vi.fn(async () => undefined);
+
+    const result = waitForAutoIndexForRetrieval(projectRoot, "pi", {
+      signal: controller.signal,
+      heartbeat,
+      setPhase,
+    });
+    await preflightStarted;
+
+    expect(preflightSignal).toBe(controller.signal);
+    expect(setPhase).toHaveBeenCalledWith("scanning");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    controller.abort();
+
+    await expect(result).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(preflightSignal?.aborted).toBe(true);
+    expect(indexer.index).not.toHaveBeenCalled();
   });
 
   it("does not serve a stale snapshot while its refresh is in flight", async () => {
@@ -352,6 +396,54 @@ describe("auto-index coordinator", () => {
     expect(setPhase).toHaveBeenCalledWith("embedding");
   });
 
+  it("propagates cancellation and activity through the coordinated freshness preflight", async () => {
+    const indexer = new MockIndexer();
+    let preflightSignal: AbortSignal | undefined;
+    let markPreflightStarted: (() => void) | undefined;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    indexer.getIndexFreshness.mockImplementation(async (options) => {
+      preflightSignal = options?.signal;
+      await options?.setPhase?.("scanning");
+      await options?.heartbeat?.();
+      markPreflightStarted?.();
+      return new Promise<IndexFreshnessResult>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new OperationCancelledError()),
+          { once: true },
+        );
+      });
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => undefined);
+    const setPhase = vi.fn(async () => undefined);
+
+    const result = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      controller.signal,
+      heartbeat,
+      undefined,
+      setPhase,
+    );
+    await preflightStarted;
+
+    expect(preflightSignal).toBeDefined();
+    expect(preflightSignal).not.toBe(controller.signal);
+    expect(setPhase).toHaveBeenCalledWith("scanning");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    controller.abort();
+
+    await expect(result).rejects.toBeInstanceOf(OperationCancelledError);
+    await vi.waitFor(() => expect(preflightSignal?.aborted).toBe(true));
+    expect(indexer.index).not.toHaveBeenCalled();
+  });
+
   it("delivers provider failures only to consumers still attached to shared indexing", async () => {
     const indexer = new MockIndexer();
     const indexing = deferred<IndexStats>();
@@ -395,6 +487,68 @@ describe("auto-index coordinator", () => {
     indexer.readable = true;
     indexing.resolve(stats());
     await expect(second).resolves.toMatchObject({ outcome: "ready" });
+  });
+
+  it("replays a provider failure to late consumers without leaking it into the next job", async () => {
+    const indexer = new MockIndexer();
+    const firstIndexing = deferred<IndexStats>();
+    const secondIndexing = deferred<IndexStats>();
+    let reportProviderError: ((error: ProviderRequestError) => void) | undefined;
+    indexer.index
+      .mockImplementationOnce(async (_onProgress, options) => {
+        reportProviderError = options?.onProviderError;
+        return firstIndexing.promise;
+      })
+      .mockImplementationOnce(async () => secondIndexing.promise);
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const firstError = vi.fn();
+    const first = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      undefined,
+      undefined,
+      firstError,
+    );
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const providerError = new ProviderRequestError({ statusCode: 500 });
+    reportProviderError?.(providerError);
+
+    const lateError = vi.fn();
+    const late = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      undefined,
+      undefined,
+      lateError,
+    );
+
+    expect(firstError).toHaveBeenCalledWith(providerError);
+    expect(lateError).toHaveBeenCalledWith(providerError);
+    firstIndexing.resolve(stats());
+    const [firstResult, lateResult] = await Promise.all([first, late]);
+    expect(firstResult.providerError).toBe(providerError);
+    expect(lateResult.providerError).toBe(providerError);
+
+    const nextError = vi.fn();
+    const next = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      true,
+      undefined,
+      undefined,
+      undefined,
+      nextError,
+    );
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+    secondIndexing.resolve(stats());
+
+    await expect(next).resolves.not.toHaveProperty("providerError");
+    expect(nextError).not.toHaveBeenCalled();
   });
 
   it("cancels an exclusively owned manual index after its caller detaches", async () => {

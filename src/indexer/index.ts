@@ -6033,8 +6033,13 @@ export class Indexer {
     };
   }
 
-  async getIndexFreshness(): Promise<IndexFreshnessResult> {
+  async getIndexFreshness(options: IndexOperationOptions = {}): Promise<IndexFreshnessResult> {
+    throwIfOperationAborted(options.signal);
+    await options.setPhase?.("scanning");
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
     const { store, database, readIssues, compatibility } = await this.ensureInitialized();
+    throwIfOperationAborted(options.signal);
     const blockingReadIssue = readIssues.some((issue) => issue.blocking);
     if (blockingReadIssue) {
       return { readable: false, current: false, reason: "unreadable" };
@@ -6051,6 +6056,7 @@ export class Indexer {
 
     this.fileHashCache.clear();
     this.loadFileHashCache();
+    throwIfOperationAborted(options.signal);
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
     const { files } = await collectFiles(
       this.materializedProjectRoot,
@@ -6061,9 +6067,14 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        signal: options.signal,
+        heartbeat: options.heartbeat,
       },
     );
+    throwIfOperationAborted(options.signal);
     const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
     if (
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== localModuleResolutionState.configHash
@@ -6072,6 +6083,7 @@ export class Indexer {
     }
     const currentFileHashes = new Map<string, string>();
     for (const file of files) {
+      throwIfOperationAborted(options.signal);
       let hash: string;
       try {
         hash = hashFile(file.path);
@@ -6085,7 +6097,9 @@ export class Indexer {
         });
         return { readable: false, current: false, reason: "unreadable" };
       }
+      throwIfOperationAborted(options.signal);
       currentFileHashes.set(this.toStoredFilePath(file.path), hash);
+      await options.heartbeat?.();
     }
 
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
@@ -6095,18 +6109,30 @@ export class Indexer {
     if (cachedFileHashes.size !== currentFileHashes.size) {
       return { readable: true, current: false, reason: "files-changed" };
     }
+    let comparedHashes = 0;
     for (const [filePath, currentHash] of currentFileHashes) {
+      throwIfOperationAborted(options.signal);
       if (cachedFileHashes.get(filePath) !== currentHash) {
         return { readable: true, current: false, reason: "files-changed" };
       }
+      comparedHashes += 1;
+      if (comparedHashes % 256 === 0) await options.heartbeat?.();
     }
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
 
     if (!this.areBranchMigrationVersionsCurrent(database)) {
       return { readable: true, current: false, reason: "migration-required" };
     }
 
     if (isGitRepo(this.materializedProjectRoot)) {
-      const currentCommit = await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD");
+      const currentCommit = await resolveLocalGitCommit(
+        this.materializedProjectRoot,
+        "HEAD",
+        options.signal,
+      );
+      await options.heartbeat?.();
+      throwIfOperationAborted(options.signal);
       if (this.getStoredBranchCommit(database) !== currentCommit) {
         return { readable: true, current: false, reason: "branch-changed" };
       }

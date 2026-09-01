@@ -5,6 +5,7 @@ import type { HostMode } from "../../config/host.js";
 import { resolveProjectIndexPath } from "../../config/paths.js";
 import { MCP_SERVER_CURRENT_NAME } from "../../identity-catalog.js";
 import { getPackageVersion } from "../../package-metadata.js";
+import { getRuntimeConfigForProject } from "../../tools/operation-runtime.js";
 import { registerMcpPrompts } from "./register-prompts.js";
 import { registerMcpTools } from "./register-tools.js";
 import { McpRuntimeDiagnostics } from "./runtime-diagnostics.js";
@@ -133,7 +134,11 @@ export function createMcpServer(
   });
 
   initializeTools(projectRoot, config, host, { preserveManagedWorker: true });
-  const diagnostics = new McpRuntimeDiagnostics(resolveProjectIndexPath(projectRoot, config.scope, host));
+  const diagnostics = new McpRuntimeDiagnostics(() => resolveProjectIndexPath(
+    projectRoot,
+    getRuntimeConfigForProject(projectRoot, host).scope,
+    host,
+  ));
   const backgroundWorker = configureMcpBackgroundWorker(projectRoot, config, host);
   if (backgroundWorker.managesWorker) {
     retainMcpBackgroundWorker(projectRoot, host);
