@@ -319,7 +319,7 @@ function changed(): number {
     ).toBe(true);
     for (const [prefix, version] of [
       ["index.callGraphResolutionVersion", "9"],
-      [swiftPrefix, "1"],
+      [swiftPrefix, "2"],
       ["index.parser.metalVersion", "1"],
     ] as const) {
       expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "main"))).toBe(version);

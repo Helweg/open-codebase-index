@@ -225,8 +225,33 @@ fn extract_chunks(
     }
 
     merge_small_chunks(&mut chunks);
+    if *language == Language::Swift {
+        deduplicate_chunks_by_span_and_content(&mut chunks);
+    }
 
     Ok(chunks)
+}
+
+fn deduplicate_chunks_by_span_and_content(chunks: &mut Vec<CodeChunk>) {
+    let keep = {
+        let mut seen = HashSet::with_capacity(chunks.len());
+        let mut keep = vec![false; chunks.len()];
+
+        for (index, chunk) in chunks.iter().enumerate().rev() {
+            if seen.insert((chunk.start_line, chunk.end_line, chunk.content.as_str())) {
+                keep[index] = true;
+            }
+        }
+
+        keep
+    };
+
+    let mut index = 0;
+    chunks.retain(|_| {
+        let retain = keep[index];
+        index += 1;
+        retain
+    });
 }
 
 fn extract_semantic_nodes(

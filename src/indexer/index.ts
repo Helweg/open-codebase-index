@@ -577,6 +577,15 @@ interface PendingChunkBatchResult {
   failedChunkIds: Set<string>;
 }
 
+function deduplicateLastById<T extends { id: string }>(items: T[]): T[] {
+  const lastIndexById = new Map<string, number>();
+  for (let index = 0; index < items.length; index++) {
+    lastIndexById.set(items[index]!.id, index);
+  }
+
+  return items.filter((item, index) => lastIndexById.get(item.id) === index);
+}
+
 function getFailedBatchGroupKey(record: Pick<SerializedFailedBatch, "error" | "attemptCount" | "lastAttempt">): string {
   return `${record.attemptCount}:${record.lastAttempt}:${record.error}`;
 }
@@ -688,7 +697,7 @@ const INDEX_METADATA_VERSION = "1";
 const PROJECT_PATH_STORAGE_VERSION = "2";
 const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
-const SWIFT_PARSER_VERSION = "1";
+const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "1";
 
@@ -2639,6 +2648,7 @@ export class Indexer {
       onProviderError?: (error: ProviderRequestError) => void;
     },
   ): Promise<PendingChunkBatchResult> {
+    chunks = deduplicateLastById(chunks);
     const result: PendingChunkBatchResult = {
       indexedChunks: 0,
       failedChunks: 0,
@@ -4875,8 +4885,12 @@ export class Indexer {
             this.config.indexing.semanticOnly,
           );
 
-          for (const chunk of chunksToProcess) {
-            const id = this.getPreparedChunkId(generateChunkId(parsed.path, chunk));
+          const chunksWithIds = deduplicateLastById(chunksToProcess.map((chunk) => ({
+            id: this.getPreparedChunkId(generateChunkId(parsed.path, chunk)),
+            chunk,
+          })));
+
+          for (const { id, chunk } of chunksWithIds) {
             const contentHash = generateChunkHash(chunk);
             const existingContentHash = existingChunks.get(id);
             const existingChunk = gitBlameEnabled ? database.getChunk(id) : null;

@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Cancellable and diagnosable MCP operations**: Added inactivity-based cancellation, exact-token monotone progress, redacted structured handler errors, and durable per-process phase diagnostics exposed by `index_status`. Shared indexing detaches cancelled callers without stopping work still awaited by another consumer, while exclusively owned cancelled work rolls back and releases its index lease. MCP SDK `1.29.0`, public tool names, package identities, and index formats remain unchanged.
 
+### Fixed
+
+- **Swift indexing stability**: Deduplicated identical Swift chunk windows before embedding, rejected duplicate native vector-store batch keys atomically, and bumped the Swift parser cache version so existing indexes are reparsed.
+
 ## [0.26.0] - 2026-08-29
 
 ### Added

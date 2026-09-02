@@ -413,6 +413,36 @@ public class AccountService {
       expect(methods.map((chunk) => chunk.name)).toEqual(["a", "b"]);
     });
 
+    it("should prefer nested Swift chunks when large declaration windows overlap exactly", () => {
+      const fixturePath = path.join(
+        process.cwd(),
+        "tests",
+        "fixtures",
+        "swift",
+        "DuplicateSemanticWindow.swift",
+      );
+      const content = fs.readFileSync(fixturePath, "utf-8");
+
+      const chunks = parseFile("LargeContainer.swift", content);
+      const duplicateKeys = new Set<string>();
+      const seenKeys = new Set<string>();
+      for (const chunk of chunks) {
+        const key = `${chunk.startLine}:${chunk.endLine}:${chunk.content}`;
+        if (seenKeys.has(key)) {
+          duplicateKeys.add(key);
+        }
+        seenKeys.add(key);
+      }
+
+      expect(duplicateKeys).toEqual(new Set());
+      expect(chunks.some(
+        (chunk) => chunk.chunkType === "method_declaration" && chunk.name === "nestedMethod",
+      )).toBe(true);
+      expect(chunks.find(
+        (chunk) => chunk.startLine === 19 && chunk.endLine === 30,
+      )).toMatchObject({ chunkType: "method_declaration", name: "nestedMethod" });
+    });
+
     it("should attach Swift line and block comments to declarations", () => {
       const chunks = parseFile(
         "Comments.swift",
@@ -1176,6 +1206,57 @@ const values = [1, 2].map(item => item * 2);
       expect(metadataMap.size).toBe(2);
       expect(metadataMap.get("chunk1")?.filePath).toBe("a.ts");
       expect(metadataMap.get("chunk3")?.chunkType).toBe("method");
+    });
+
+    it("should reject duplicate batch keys before mutating the store", () => {
+      const duplicateBatch = [
+        {
+          id: "duplicate",
+          vector: [1, 0, 0],
+          metadata: {
+            filePath: "container.swift",
+            startLine: 1,
+            endLine: 10,
+            chunkType: "enum_declaration",
+            language: "swift",
+            hash: "same-hash",
+          },
+        },
+        {
+          id: "duplicate",
+          vector: [0, 1, 0],
+          metadata: {
+            filePath: "container.swift",
+            startLine: 1,
+            endLine: 10,
+            chunkType: "method_declaration",
+            language: "swift",
+            hash: "same-hash",
+          },
+        },
+      ];
+
+      store.add("existing", [0, 0, 1], {
+        filePath: "existing.swift",
+        startLine: 1,
+        endLine: 1,
+        chunkType: "property_declaration",
+        language: "swift",
+        hash: "existing-hash",
+      });
+
+      expect(() => store.addBatch(duplicateBatch)).toThrow(/duplicate vector store keys/i);
+      expect(store.count()).toBe(1);
+      expect(store.getMetadata("existing")?.filePath).toBe("existing.swift");
+
+      store.addBatch([duplicateBatch[1]!]);
+      store.save();
+
+      const reloadedStore = new VectorStore(path.join(tempDir, "vectors"), 3);
+      reloadedStore.load();
+      expect(reloadedStore.count()).toBe(2);
+      expect(reloadedStore.getMetadata("existing")?.filePath).toBe("existing.swift");
+      expect(reloadedStore.getMetadata("duplicate")?.chunkType).toBe("method_declaration");
     });
 
     it("should replace existing keys when updating via batch", () => {
