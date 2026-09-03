@@ -1,9 +1,16 @@
 import type {
   DebugConfig,
   IndexingConfig,
+  McpConfig,
   RerankerProvider,
   SearchConfig,
 } from "./schema.js";
+
+export function getDefaultMcpConfig(): McpConfig {
+  return {
+    stallTimeoutMs: 300_000,
+  };
+}
 
 export function getDefaultIndexingConfig(): IndexingConfig {
   return {

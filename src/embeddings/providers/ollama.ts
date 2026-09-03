@@ -1,7 +1,18 @@
 import { type EmbeddingProviderModelInfo } from "../../config/schema.js";
 
 import { type ProviderCredentials } from "../detector.js";
-import { BaseEmbeddingProvider, type EmbeddingBatchResult } from "../provider-types.js";
+import {
+  BaseEmbeddingProvider,
+  type EmbeddingBatchResult,
+  type EmbeddingRequestOptions,
+} from "../provider-types.js";
+import {
+  createProviderRequestSignal,
+  isOperationInterruption,
+  ProviderRequestError,
+  raceWithOperationSignal,
+  throwIfOperationAborted,
+} from "../../utils/operation-control.js";
 
 export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProviderModelInfo["ollama"]> {
   private static readonly MIN_TRUNCATION_CHARS = 512;
@@ -32,6 +43,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   }
 
   private isContextLengthError(error: unknown): boolean {
+    if (error instanceof ProviderRequestError && error.kind === "context_length") return true;
     const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
     return (message.includes("context length") && (message.includes("exceed") || message.includes("exceeded") || message.includes("too long")))
       || message.includes("input length exceeds the context length")
@@ -42,6 +54,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   // does not provide it. embedBatch uses this to fall back to the legacy per-text
   // /api/embeddings path so old ollama installs do not regress.
   private isBatchEndpointUnavailableError(error: unknown): boolean {
+    if (error instanceof ProviderRequestError) return error.kind === "endpoint_unavailable";
     const message = error instanceof Error ? error.message : String(error);
     return message.includes("Ollama /api/embed not available");
   }
@@ -51,6 +64,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   // re-embeds each text cleanly. A text that then fails per-text is not isolated
   // here; it is isolated on the recovery run, which re-embeds one text per request.
   private isBatchValidationError(error: unknown): boolean {
+    if (error instanceof ProviderRequestError) return error.kind === "malformed_response";
     const message = error instanceof Error ? error.message : String(error);
     return message.includes("invalid embedding batch");
   }
@@ -100,10 +114,14 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     return candidates;
   }
 
-  private async embedSingleWithFallback(text: string): Promise<{ embedding: number[]; tokensUsed: number }> {
+  private async embedSingleWithFallback(
+    text: string,
+    options?: EmbeddingRequestOptions,
+  ): Promise<{ embedding: number[]; tokensUsed: number }> {
     try {
-      return await this.embedSingle(text);
+      return await this.embedSingle(text, options);
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
       if (!this.isContextLengthError(error)) {
         throw error;
       }
@@ -111,8 +129,10 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
       let lastError: unknown = error;
       for (const truncated of this.buildTruncationCandidates(text)) {
         try {
-          return await this.embedSingle(truncated);
+          throwIfOperationAborted(options?.signal);
+          return await this.embedSingle(truncated, options);
         } catch (retryError) {
+          if (isOperationInterruption(retryError)) throw retryError;
           if (!this.isContextLengthError(retryError)) {
             throw retryError;
           }
@@ -124,72 +144,109 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     }
   }
 
-  private async embedSingle(text: string): Promise<{ embedding: number[]; tokensUsed: number }> {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
+  private async embedSingle(
+    text: string,
+    options?: EmbeddingRequestOptions,
+  ): Promise<{ embedding: number[]; tokensUsed: number }> {
+    const requestSignal = createProviderRequestSignal(
+      options?.signal,
       OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS,
     );
-    let response: Response;
+    let responseReceived = false;
     try {
-      response = await fetch(`${this.credentials.baseUrl}/api/embeddings`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: this.modelInfo.model,
-          prompt: text,
-          truncate: false,
-        }),
-        signal: controller.signal,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(
-          `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
-        );
+      return await raceWithOperationSignal((async () => {
+        const response = await fetch(`${this.credentials.baseUrl}/api/embeddings`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: this.modelInfo.model,
+            prompt: text,
+            truncate: false,
+          }),
+          signal: requestSignal.signal,
+        });
+        responseReceived = true;
+
+        if (!response.ok) {
+          const body = await response.text();
+          const contextLength = body.toLowerCase().includes("context length");
+          throw new ProviderRequestError({
+            statusCode: response.status,
+            kind: contextLength ? "context_length" : undefined,
+            message: contextLength
+              ? "Ollama rejected an embedding because it exceeded the model context length."
+              : `Ollama embedding provider returned HTTP ${response.status}.`,
+          });
+        }
+
+        let data: { embedding?: unknown };
+        try {
+          data = (await response.json()) as { embedding?: unknown };
+        } catch {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: "Ollama embedding provider returned malformed JSON.",
+          });
+        }
+        if (
+          !Array.isArray(data.embedding)
+          || data.embedding.length !== this.modelInfo.dimensions
+          || data.embedding.some((value) => typeof value !== "number" || !Number.isFinite(value))
+        ) {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: `Ollama returned an invalid embedding; expected ${this.modelInfo.dimensions} finite dimensions.`,
+          });
+        }
+
+        return {
+          embedding: data.embedding,
+          tokensUsed: this.estimateTokens(text),
+        };
+      })(), requestSignal.signal);
+    } catch (error: unknown) {
+      if (requestSignal.signal.aborted) {
+        if (options?.signal?.aborted) throwIfOperationAborted(options.signal);
+        throw new ProviderRequestError({
+          timedOut: true,
+          retryable: true,
+          message: `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
+        });
       }
-      throw error;
+      if (error instanceof ProviderRequestError) throw error;
+      if (responseReceived) {
+        throw new ProviderRequestError({
+          kind: "malformed_response",
+          retryable: true,
+          message: "Ollama embedding provider returned an invalid response.",
+        });
+      }
+      throw new ProviderRequestError({
+        retryable: true,
+        message: "Ollama embedding provider request failed.",
+      });
     } finally {
-      clearTimeout(timeout);
+      requestSignal.dispose();
     }
-
-    if (!response.ok) {
-      const error = (await response.text()).slice(0, 500);
-      throw new Error(`Ollama embedding API error: ${response.status} - ${error}`);
-    }
-
-    const data = (await response.json()) as { embedding?: unknown };
-    if (
-      !Array.isArray(data.embedding)
-      || data.embedding.length !== this.modelInfo.dimensions
-      || data.embedding.some((value) => typeof value !== "number" || !Number.isFinite(value))
-    ) {
-      throw new Error(
-        `Ollama returned an invalid embedding; expected ${this.modelInfo.dimensions} finite dimensions`,
-      );
-    }
-
-    return {
-      embedding: data.embedding,
-      tokensUsed: this.estimateTokens(text),
-    };
   }
 
   // Embeds many texts in one POST /api/embed request (input: string[]). Ollama
   // encodes each input independently, so the model context length applies per input
   // (the upstream splitter already bounds each input), not over the batch. This
   // amortizes N HTTP round-trips into one.
-  private async embedMany(texts: string[]): Promise<EmbeddingBatchResult> {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
+  private async embedMany(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
+    const requestSignal = createProviderRequestSignal(
+      options?.signal,
       OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS,
     );
-    let response: Response;
+    let responseReceived = false;
     try {
-      response = await fetch(`${this.credentials.baseUrl}/api/embed`, {
+      return await raceWithOperationSignal((async () => {
+        const response = await fetch(`${this.credentials.baseUrl}/api/embed`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -199,58 +256,86 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
           input: texts,
           truncate: false,
         }),
-        signal: controller.signal,
+        signal: requestSignal.signal,
+        });
+        responseReceived = true;
+
+        if (!response.ok) {
+          const body = await response.text();
+          if (response.status === 404) {
+            throw new ProviderRequestError({
+              statusCode: response.status,
+              kind: "endpoint_unavailable",
+              message: "Ollama does not expose the batch embedding endpoint.",
+            });
+          }
+          const contextLength = body.toLowerCase().includes("context length");
+          throw new ProviderRequestError({
+            statusCode: response.status,
+            kind: contextLength ? "context_length" : undefined,
+            message: contextLength
+              ? "Ollama rejected an embedding batch because it exceeded the model context length."
+              : `Ollama embedding provider returned HTTP ${response.status}.`,
+          });
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = await response.json();
+        } catch {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: "Ollama returned a malformed embedding batch.",
+          });
+        }
+        const data = (parsed && typeof parsed === "object" ? parsed : {}) as { embeddings?: unknown };
+        if (
+          !Array.isArray(data.embeddings)
+          || data.embeddings.length !== texts.length
+          || data.embeddings.some(
+            (value) =>
+              !Array.isArray(value)
+              || value.length !== this.modelInfo.dimensions
+              || value.some((v) => typeof v !== "number" || !Number.isFinite(v)),
+          )
+        ) {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: `Ollama returned an invalid embedding batch; expected ${texts.length} vectors of ${this.modelInfo.dimensions} finite dimensions.`,
+          });
+        }
+
+        return {
+          embeddings: data.embeddings,
+          totalTokensUsed: texts.reduce((sum, text) => sum + this.estimateTokens(text), 0),
+        };
+      })(), requestSignal.signal);
+    } catch (error: unknown) {
+      if (requestSignal.signal.aborted) {
+        if (options?.signal?.aborted) throwIfOperationAborted(options.signal);
+        throw new ProviderRequestError({
+          timedOut: true,
+          retryable: true,
+          message: `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
+        });
+      }
+      if (error instanceof ProviderRequestError) throw error;
+      if (responseReceived) {
+        throw new ProviderRequestError({
+          kind: "malformed_response",
+          retryable: true,
+          message: "Ollama embedding provider returned an invalid response.",
+        });
+      }
+      throw new ProviderRequestError({
+        retryable: true,
+        message: "Ollama embedding provider request failed.",
       });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(
-          `Ollama embedding request timed out after ${OllamaEmbeddingProvider.REQUEST_TIMEOUT_MS}ms`,
-        );
-      }
-      throw error;
     } finally {
-      clearTimeout(timeout);
+      requestSignal.dispose();
     }
-
-    if (!response.ok) {
-      const error = (await response.text()).slice(0, 500);
-      if (response.status === 404) {
-        throw new Error(`Ollama /api/embed not available: ${response.status} - ${error}`);
-      }
-      throw new Error(`Ollama embedding API error: ${response.status} - ${error}`);
-    }
-
-    let parsed: unknown;
-    try {
-      parsed = await response.json();
-    } catch {
-      // Invalid JSON (e.g. an empty or truncated 200 body) -> treat as a malformed
-      // batch so embedBatch falls back to the per-text path instead of propagating
-      // a parse error that skips the fallback.
-      throw new Error(
-        `Ollama returned an invalid embedding batch; expected ${texts.length} vectors of ${this.modelInfo.dimensions} finite dimensions`,
-      );
-    }
-    const data = (parsed && typeof parsed === "object" ? parsed : {}) as { embeddings?: unknown };
-    if (
-      !Array.isArray(data.embeddings)
-      || data.embeddings.length !== texts.length
-      || data.embeddings.some(
-        (value) =>
-          !Array.isArray(value)
-          || value.length !== this.modelInfo.dimensions
-          || value.some((v) => typeof v !== "number" || !Number.isFinite(v)),
-      )
-    ) {
-      throw new Error(
-        `Ollama returned an invalid embedding batch; expected ${texts.length} vectors of ${this.modelInfo.dimensions} finite dimensions`,
-      );
-    }
-
-    return {
-      embeddings: data.embeddings,
-      totalTokensUsed: texts.reduce((sum, text) => sum + this.estimateTokens(text), 0),
-    };
   }
 
   // Per-text /api/embeddings path shared by the single-text fast path and the
@@ -258,10 +343,11 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
   // its own truncation safety net and a vector validated on its own. A text that
   // hard-fails per-text throws here and fails the whole request batch; the recovery
   // run re-embeds one text per request to isolate it.
-  private async embedOneByOne(texts: string[]): Promise<EmbeddingBatchResult> {
+  private async embedOneByOne(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
     const results: Array<{ embedding: number[]; tokensUsed: number }> = [];
     for (const text of texts) {
-      results.push(await this.embedSingleWithFallback(text));
+      throwIfOperationAborted(options?.signal);
+      results.push(await this.embedSingleWithFallback(text, options));
     }
 
     return {
@@ -270,7 +356,10 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     };
   }
 
-  public async embedBatch(texts: string[]): Promise<EmbeddingBatchResult> {
+  public async embedBatch(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
+    throwIfOperationAborted(options?.signal);
+    await options?.setPhase?.("embedding");
+    throwIfOperationAborted(options?.signal);
     if (texts.length === 0) {
       return { embeddings: [], totalTokensUsed: 0 };
     }
@@ -280,12 +369,14 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
     // /api/embed probe runs. Once /api/embed is known unavailable, multi-text batches
     // also skip the probe (see batchEndpointUnavailable).
     if (texts.length === 1 || this.batchEndpointUnavailable) {
-      return this.embedOneByOne(texts);
+      return this.embedOneByOne(texts, options);
     }
 
     try {
-      return await this.embedMany(texts);
+      return await this.embedMany(texts, options);
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(options?.signal);
       // Fall back to the per-text /api/embeddings path when the batched endpoint is
       // unavailable (old ollama, 404), a single input overflowed the model context
       // length (per-text truncation net), or the batch response was malformed (so a
@@ -296,7 +387,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
       if (this.isBatchEndpointUnavailableError(error)) {
         // Old ollama without /api/embed: cache the result so later batches skip the probe.
         this.batchEndpointUnavailable = true;
-        return this.embedOneByOne(texts);
+        return this.embedOneByOne(texts, options);
       }
 
       if (
@@ -306,7 +397,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         throw error;
       }
 
-      return this.embedOneByOne(texts);
+      return this.embedOneByOne(texts, options);
     }
   }
 }

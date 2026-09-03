@@ -9,6 +9,7 @@ import { readFailedBatchRecords } from "../src/indexer/failed-state-persistence.
 import { Indexer } from "../src/indexer/index.js";
 import { Database, VectorStore, hashContent } from "../src/native/index.js";
 import { formatStatus } from "../src/tools/utils.js";
+import { ProviderRequestError } from "../src/utils/operation-control.js";
 
 function projectIdentityHash(projectRoot: string): string {
   return hashContent(fs.realpathSync.native(projectRoot)).slice(0, 16);
@@ -256,6 +257,23 @@ describe("indexer failed batch recovery", () => {
     expect(recoveredStatus.indexed).toBe(true);
     expect(recoveredStatus.failedBatchesCount).toBe(0);
     expect(recoveredStatus.failedBatchesPath).toBeUndefined();
+  });
+
+  it("forwards provider failures while preparing a missing branch index", async () => {
+    const indexer = createIndexer();
+    const onProviderError = vi.fn();
+    failEmbeddings = true;
+
+    const result = await indexer.indexBranchIfMissing(
+      "default",
+      "a".repeat(40),
+      undefined,
+      { onProviderError },
+    );
+
+    expect(result.prepared).toBe(true);
+    expect(result.stats?.failedChunks).toBeGreaterThan(0);
+    expect(onProviderError).toHaveBeenCalledWith(expect.any(ProviderRequestError));
   });
 
   it("drops excluded files from incremental retries of stale failed batches", async () => {
@@ -996,7 +1014,7 @@ describe("indexer failed batch recovery", () => {
     expect(persistedBatches).toHaveLength(1);
     expect(persistedBatches[0]?.chunks[0]?.id).toBeDefined();
     expect(persistedBatches[0]?.attemptCount).toBeGreaterThan(1);
-    expect(persistedBatches[0]?.error).toContain("persistent split failure");
+    expect(persistedBatches[0]?.error).toBe("Ollama embedding provider returned HTTP 500.");
   });
 
   it("isolates a permanently-failing chunk from healthy chunks on the recovery run (batched ollama)", async () => {
@@ -1148,7 +1166,7 @@ describe("indexer failed batch recovery", () => {
 
       expect(persistedBatches).toHaveLength(1);
       expect(persistedBatches[0]?.attemptCount).toBe(2);
-      expect(persistedBatches[0]?.error).toContain("transient batch failure");
+      expect(persistedBatches[0]?.error).toBe("Custom embedding provider returned HTTP 500.");
     } finally {
       addBatchSpy.mockRestore();
     }
@@ -1278,7 +1296,7 @@ describe("indexer failed batch recovery", () => {
 
     expect(persistedBatches).toHaveLength(1);
     expect(persistedBatches[0]?.chunks).toHaveLength(2);
-    expect(persistedBatches[0]?.error).toContain("shared batch failure");
+    expect(persistedBatches[0]?.error).toBe("Custom embedding provider returned HTTP 500.");
     expect(persistedBatches[0]?.attemptCount).toBe(1);
 
     const status = await indexer.getStatus();
@@ -1370,7 +1388,7 @@ describe("indexer failed batch recovery", () => {
     expect(status.failedBatchesCount).toBe(1);
     expect(persistedBatches).toHaveLength(1);
     expect(persistedBatches[0]?.chunks).toHaveLength(2);
-    expect(persistedBatches[0]?.error).toContain("shared retry failure");
+    expect(persistedBatches[0]?.error).toBe("Custom embedding provider returned HTTP 500.");
   });
 
   it("preserves foreign legacy failed batches without rewriting them during global scoped saves", async () => {
@@ -1613,7 +1631,7 @@ describe("indexer failed batch recovery", () => {
       error: string;
     }>;
     expect(persistedBatches[0]?.attemptCount).toBe(2);
-    expect(persistedBatches[0]?.error).toContain("invalid api key");
+    expect(persistedBatches[0]?.error).toBe("Custom embedding provider returned HTTP 401.");
   });
 
   it("clears pending global force re-embed metadata after retryFailedBatches() recovers all remaining chunks", async () => {

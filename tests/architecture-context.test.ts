@@ -11,9 +11,13 @@ import {
   buildArchitectureContext,
   selectArchitectureFocusedSymbols,
 } from "../src/tools/architecture-context.js";
-import { getRecentGitActivity } from "../src/tools/visualize/activity.js";
+import {
+  getRecentGitActivity,
+  getRecentGitActivityAbortable,
+} from "../src/tools/visualize/activity.js";
 import { transformForVisualization } from "../src/tools/visualize/transform.js";
 import { estimateTokens } from "../src/utils/cost.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 function symbol(id: string, name: string, filePath: string, startLine = 2): SymbolData {
   return {
@@ -268,5 +272,14 @@ describe("architecture_context", () => {
     expect(activity[0]?.source).toMatch(/^commit [0-9a-f]+$/);
     expect(activity[0]?.summary).toContain("Latest: feat: update API validation");
     expect(getRecentGitActivity(data, path.join(tempDir, "missing"))).toEqual([]);
+  });
+
+  it("does not start Git activity collection for a cancelled operation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const data = transformForVisualization([symbols[0]], [], { includeOrphans: true });
+
+    await expect(getRecentGitActivityAbortable(data, tempDir, controller.signal))
+      .rejects.toBeInstanceOf(OperationCancelledError);
   });
 });

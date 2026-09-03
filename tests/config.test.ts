@@ -89,6 +89,18 @@ describe("config schema", () => {
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
       expect(config.search.communityBoost).toBe(0);
+      expect(config.mcp.stallTimeoutMs).toBe(300_000);
+    });
+
+    it("normalizes the MCP stall timeout", () => {
+      expect(parseConfig({ mcp: { stallTimeoutMs: 0 } }).mcp.stallTimeoutMs).toBe(0);
+      expect(parseConfig({ mcp: { stallTimeoutMs: 1 } }).mcp.stallTimeoutMs).toBe(1000);
+      expect(parseConfig({ mcp: { stallTimeoutMs: 1000.9 } }).mcp.stallTimeoutMs).toBe(1000);
+      expect(parseConfig({ mcp: { stallTimeoutMs: 12_345 } }).mcp.stallTimeoutMs).toBe(12_345);
+      expect(parseConfig({ mcp: { stallTimeoutMs: Number.MAX_SAFE_INTEGER } }).mcp.stallTimeoutMs)
+        .toBe(2_147_483_647);
+      expect(parseConfig({ mcp: { stallTimeoutMs: -1 } }).mcp.stallTimeoutMs).toBe(300_000);
+      expect(parseConfig({ mcp: { stallTimeoutMs: Number.NaN } }).mcp.stallTimeoutMs).toBe(300_000);
     });
 
     it("parses and clamps the opt-in community ranking boost", () => {

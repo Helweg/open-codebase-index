@@ -3,8 +3,16 @@ import {
   BaseEmbeddingProvider,
   CustomProviderNonRetryableError,
   type EmbeddingBatchResult,
+  type EmbeddingRequestOptions,
+  validateEmbeddingVectors,
 } from "../provider-types.js";
-import { sanitizeUrlForError, validateExternalUrl } from "../../utils/url-validation.js";
+import { validateExternalUrl } from "../../utils/url-validation.js";
+import {
+  createProviderRequestSignal,
+  ProviderRequestError,
+  raceWithOperationSignal,
+  throwIfOperationAborted,
+} from "../../utils/operation-control.js";
 
 export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelInfo> {
   public constructor(credentials: ProviderCredentials, modelInfo: CustomModelInfo) {
@@ -25,7 +33,7 @@ export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelIn
     return batches;
   }
 
-  private async embedRequest(texts: string[]): Promise<EmbeddingBatchResult> {
+  private async embedRequest(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
     if (texts.length === 0) {
       return {
         embeddings: [],
@@ -46,82 +54,118 @@ export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelIn
     const urlCheck = validateExternalUrl(fullUrl);
     if (!urlCheck.valid) {
       throw new CustomProviderNonRetryableError(
-        `Custom embedding provider URL blocked (SSRF protection): ${urlCheck.reason}`
+        "Custom embedding provider URL was rejected by the outbound request policy."
       );
     }
 
     const timeoutMs = this.modelInfo.timeoutMs;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const requestSignal = createProviderRequestSignal(options?.signal, timeoutMs);
 
-    let response: Response;
+    let responseReceived = false;
     try {
-      response = await fetch(fullUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          model: this.modelInfo.model,
-          input: texts,
-        }),
-        signal: controller.signal,
-      });
-    } catch (error: unknown) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Custom embedding API request timed out after ${timeoutMs}ms for ${sanitizeUrlForError(fullUrl)}`);
-      }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+      return await raceWithOperationSignal((async () => {
+        const response = await fetch(fullUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            model: this.modelInfo.model,
+            input: texts,
+          }),
+          signal: requestSignal.signal,
+        });
+        responseReceived = true;
 
-    if (!response.ok) {
-      const errorText = (await response.text()).slice(0, 500);
-      if (response.status >= 400 && response.status < 500 && response.status !== 429) {
-        throw new CustomProviderNonRetryableError(`Custom embedding API error (non-retryable): ${response.status} - ${errorText}`);
-      }
-      throw new Error(`Custom embedding API error: ${response.status} - ${errorText}`);
-    }
-
-    const data = await response.json() as {
-      data?: Array<{ embedding: number[] }>;
-      usage?: { total_tokens: number };
-    };
-
-    if (data.data && Array.isArray(data.data)) {
-      if (data.data.length > 0) {
-        const actualDims = data.data[0].embedding.length;
-        if (actualDims !== this.modelInfo.dimensions) {
-          throw new Error(
-            `Dimension mismatch: customProvider.dimensions is ${this.modelInfo.dimensions}, ` +
-            `but the API returned vectors with ${actualDims} dimensions. ` +
-            `Update your config to match the model's actual output dimensions.`
-          );
+        if (!response.ok) {
+          await response.text();
+          if (response.status >= 400 && response.status < 500 && response.status !== 429) {
+            throw new CustomProviderNonRetryableError(
+              `Custom embedding provider returned HTTP ${response.status}.`,
+              response.status,
+            );
+          }
+          throw new ProviderRequestError({
+            statusCode: response.status,
+            message: `Custom embedding provider returned HTTP ${response.status}.`,
+          });
         }
-      }
 
-      if (data.data.length !== texts.length) {
-        throw new Error(
-          `Embedding count mismatch: sent ${texts.length} texts but received ${data.data.length} embeddings. ` +
-          `The custom embedding server may not support batch input.`
+        let data: {
+          data?: Array<{ embedding: number[] }>;
+          usage?: { total_tokens: number };
+        };
+        try {
+          data = await response.json() as typeof data;
+        } catch {
+          throw new ProviderRequestError({
+            kind: "malformed_response",
+            retryable: true,
+            message: "Custom embedding provider returned malformed JSON.",
+          });
+        }
+
+        if (data.data && Array.isArray(data.data)) {
+          const embeddings = validateEmbeddingVectors(
+            data.data.map((entry) => entry?.embedding),
+            texts.length,
+            this.modelInfo.dimensions,
+          );
+
+          return {
+            embeddings,
+            totalTokensUsed: data.usage?.total_tokens ?? texts.reduce((sum, t) => sum + Math.ceil(t.length / 4), 0),
+          };
+        }
+
+        throw new CustomProviderNonRetryableError(
+          "Custom embedding API returned unexpected response format. Expected OpenAI-compatible format with data[].embedding.",
         );
+      })(), requestSignal.signal);
+    } catch (error: unknown) {
+      if (requestSignal.signal.aborted) {
+        if (options?.signal?.aborted) throwIfOperationAborted(options.signal);
+        throw new ProviderRequestError({
+          timedOut: true,
+          retryable: true,
+          message: `Custom embedding provider request timed out after ${timeoutMs}ms.`,
+        });
       }
-
-      return {
-        embeddings: data.data.map((d) => d.embedding),
-        totalTokensUsed: data.usage?.total_tokens ?? texts.reduce((sum, t) => sum + Math.ceil(t.length / 4), 0),
-      };
+      if (error instanceof CustomProviderNonRetryableError || error instanceof ProviderRequestError) {
+        throw error;
+      }
+      if (error instanceof Error && error.name === "AbortError") {
+        throw new ProviderRequestError({
+          timedOut: true,
+          retryable: true,
+          message: `Custom embedding provider request timed out after ${timeoutMs}ms.`,
+        });
+      }
+      if (responseReceived) {
+        throw new ProviderRequestError({
+          kind: "malformed_response",
+          retryable: true,
+          message: "Custom embedding provider returned an invalid response.",
+        });
+      }
+      throw new ProviderRequestError({
+        retryable: true,
+        message: "Custom embedding provider request failed.",
+      });
+    } finally {
+      requestSignal.dispose();
     }
-
-    throw new Error("Custom embedding API returned unexpected response format. Expected OpenAI-compatible format with data[].embedding.");
   }
 
-  public async embedBatch(texts: string[]): Promise<EmbeddingBatchResult> {
+  public async embedBatch(texts: string[], options?: EmbeddingRequestOptions): Promise<EmbeddingBatchResult> {
+    throwIfOperationAborted(options?.signal);
+    await options?.setPhase?.("embedding");
+    throwIfOperationAborted(options?.signal);
     const requestBatches = this.splitIntoRequestBatches(texts);
     const embeddings: number[][] = [];
     let totalTokensUsed = 0;
 
     for (const batch of requestBatches) {
-      const result = await this.embedRequest(batch);
+      throwIfOperationAborted(options?.signal);
+      const result = await this.embedRequest(batch, options);
       embeddings.push(...result.embeddings);
       totalTokensUsed += result.totalTokensUsed;
     }

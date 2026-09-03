@@ -97,6 +97,14 @@ describe("worktree fallback (issue #60)", () => {
     expect(() => loadMergedConfig(worktreeDir, "opencode")).toThrow(/field 'knowledgeBases' must be an array of strings/);
   });
 
+  it("rejects a non-object MCP configuration section", () => {
+    const configPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
+    fs.writeFileSync(configPath, JSON.stringify({ mcp: 300_000 }, null, 2), "utf-8");
+
+    expect(() => loadMergedConfig(worktreeDir, "opencode"))
+      .toThrow(/field 'mcp' must be an object/);
+  });
+
   it("throws a file-specific error when the global config is malformed", () => {
     const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "worktree-fallback-home-"));
 

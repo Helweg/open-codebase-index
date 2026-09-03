@@ -3,6 +3,7 @@ import * as os from "os";
 import * as path from "path";
 
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+import { throwIfOperationAborted } from "../utils/operation-control.js";
 
 import type {
   BranchMaterializationInfo,
@@ -190,6 +191,7 @@ export async function withMaterializedBranch<T>(
   request: BranchMaterializationRequest,
   callback: (worktreePath: string, info: BranchMaterializationInfo) => Promise<T>,
 ): Promise<{ value: T; info: BranchMaterializationInfo }> {
+  throwIfOperationAborted(request.signal);
   assertValidGitRefName(request.branch, "Branch name");
   if (request.ref !== undefined) {
     assertValidGitRefName(request.ref, "Git ref");
@@ -202,6 +204,7 @@ export async function withMaterializedBranch<T>(
   }
 
   const resolved = await resolveCommit(request);
+  throwIfOperationAborted(request.signal);
   if (!resolved) {
     throw new Error(
       `Git ref ${JSON.stringify(request.ref ?? request.branch)} is not available locally. `
@@ -212,7 +215,6 @@ export async function withMaterializedBranch<T>(
   const temporaryRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), "codebase-index-branch-"));
   const worktreePath = path.join(temporaryRoot, "worktree");
   const hooksPath = path.join(temporaryRoot, "hooks");
-  await fsPromises.mkdir(hooksPath);
   const info: BranchMaterializationInfo = {
     branch: request.branch,
     commit: resolved.commit,
@@ -223,6 +225,9 @@ export async function withMaterializedBranch<T>(
   let result: { value: T; info: BranchMaterializationInfo } | undefined;
   let operationError: unknown;
   try {
+    throwIfOperationAborted(request.signal);
+    await fsPromises.mkdir(hooksPath);
+    throwIfOperationAborted(request.signal);
     await runGit(request.projectRoot, [
       "-c",
       `core.hooksPath=${hooksPath}`,
@@ -232,16 +237,18 @@ export async function withMaterializedBranch<T>(
       "--",
       worktreePath,
       resolved.commit,
-    ]);
+    ], { signal: request.signal });
 
-    const materializedHead = await tryResolveCommit(worktreePath, "HEAD");
+    const materializedHead = await tryResolveCommit(worktreePath, "HEAD", request.signal);
     if (materializedHead !== resolved.commit) {
       throw new Error(
         `Materialized worktree HEAD ${materializedHead ?? "did not resolve"}; expected ${resolved.commit}.`,
       );
     }
 
+    throwIfOperationAborted(request.signal);
     const value = await callback(worktreePath, info);
+    throwIfOperationAborted(request.signal);
     result = { value, info };
   } catch (error) {
     operationError = error;
@@ -262,5 +269,6 @@ export async function withMaterializedBranch<T>(
   }
   if (operationError !== undefined) throw operationError;
   if (cleanupError !== undefined) throw cleanupError;
+  throwIfOperationAborted(request.signal);
   return result!;
 }

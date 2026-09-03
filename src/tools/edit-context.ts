@@ -1,4 +1,9 @@
 import type { HostMode } from "../config/host.js";
+import type { OperationControl } from "../utils/operation-control.js";
+import {
+  isOperationInterruption,
+  throwIfOperationAborted,
+} from "../utils/operation-control.js";
 import type { SearchResult } from "../indexer/index.js";
 import type { CallEdgeData } from "../native/index.js";
 import {
@@ -35,13 +40,21 @@ export interface CodebaseEditContextResult {
 }
 
 export interface CodebaseEditContextDependencies {
-  searchCodebase: (query: string, options?: { limit?: number }) => Promise<SearchResult[]>;
-  implementationLookup: (query: string, options?: { limit?: number }) => Promise<SearchResult[]>;
+  searchCodebase: (
+    query: string,
+    options?: { limit?: number },
+    control?: OperationControl,
+  ) => Promise<SearchResult[]>;
+  implementationLookup: (
+    query: string,
+    options?: { limit?: number },
+    control?: OperationControl,
+  ) => Promise<SearchResult[]>;
   getCallGraphData: (params: {
     name: string;
     filePath?: string;
     direction: "callers" | "callees";
-  }) => Promise<CallGraphDataResult>;
+  }, control?: OperationControl) => Promise<CallGraphDataResult>;
 }
 
 function edgeLimit(value: number | null | undefined): number {
@@ -69,11 +82,19 @@ function pathsMatch(left: string, right: string): boolean {
 function targetSource(
   results: SearchResult[],
   resolution: Extract<CallGraphSymbolResolution, { status: "resolved" }>,
+  signal?: AbortSignal,
 ): SearchResult | undefined {
-  return results.find((result) => pathsMatch(result.filePath, resolution.filePath)
-    && result.startLine <= resolution.startLine
-    && result.endLine >= resolution.startLine)
-    ?? results.find((result) => pathsMatch(result.filePath, resolution.filePath) && result.name === resolution.name);
+  const containsLine = results.find((result) => {
+    throwIfOperationAborted(signal);
+    return pathsMatch(result.filePath, resolution.filePath)
+      && result.startLine <= resolution.startLine
+      && result.endLine >= resolution.startLine;
+  });
+  if (containsLine) return containsLine;
+  return results.find((result) => {
+    throwIfOperationAborted(signal);
+    return pathsMatch(result.filePath, resolution.filePath) && result.name === resolution.name;
+  });
 }
 
 function formatSource(result: SearchResult): string {
@@ -125,8 +146,11 @@ async function fallbackPack(
   resolution: CodebaseEditContextResult["details"]["resolution"],
   tokenBudget: number | null | undefined,
   candidateSource: SearchResult[] = [],
+  control?: OperationControl,
 ): Promise<CodebaseEditContextResult> {
-  const conceptual = await dependencies.searchCodebase(query, { limit: 5 });
+  throwIfOperationAborted(control?.signal);
+  const conceptual = await dependencies.searchCodebase(query, { limit: 5 }, control);
+  throwIfOperationAborted(control?.signal);
   const pack = buildContextPack([...candidateSource, ...conceptual], {
     tokenBudget: tokenBudget ?? undefined,
     heading: "## Conceptual evidence",
@@ -152,7 +176,9 @@ async function fallbackPack(
 export async function resolveCodebaseEditContextWithDependencies(
   input: SharedCodebaseEditContextArgs,
   dependencies: CodebaseEditContextDependencies,
+  control?: OperationControl,
 ): Promise<CodebaseEditContextResult> {
+  throwIfOperationAborted(control?.signal);
   const symbol = input.symbol?.trim();
   if (!symbol) {
     return fallbackPack(
@@ -161,6 +187,8 @@ export async function resolveCodebaseEditContextWithDependencies(
       "Risk: no authoritative symbol was supplied. Review the conceptual evidence before editing.",
       "not_requested",
       input.tokenBudget,
+      [],
+      control,
     );
   }
 
@@ -170,17 +198,20 @@ export async function resolveCodebaseEditContextWithDependencies(
       name: symbol,
       filePath: input.filePath ?? undefined,
       direction: "callers",
-    });
+    }, control);
   } catch (error) {
-    const candidates = await dependencies.implementationLookup(symbol, { limit: 5 });
-    const message = error instanceof Error ? error.message : String(error);
+    if (isOperationInterruption(error)) throw error;
+    throwIfOperationAborted(control?.signal);
+    const candidates = await dependencies.implementationLookup(symbol, { limit: 5 }, control);
+    throwIfOperationAborted(control?.signal);
     return fallbackPack(
       dependencies,
       input.query,
-      `Risk: graph data is unavailable (${message}). Target and dependencies are not graph-verified.`,
+      "Risk: graph data is unavailable. Target and dependencies are not graph-verified.",
       "graph_unavailable",
       input.tokenBudget,
       candidates,
+      control,
     );
   }
 
@@ -191,32 +222,36 @@ export async function resolveCodebaseEditContextWithDependencies(
       formatResolutionRisk(callersResult.resolution),
       callersResult.resolution.status,
       input.tokenBudget,
+      [],
+      control,
     );
   }
 
   const resolution = callersResult.resolution;
   const [definitionsResult, calleesResult] = await Promise.allSettled([
-    dependencies.implementationLookup(symbol, { limit: 10 }),
+    dependencies.implementationLookup(symbol, { limit: 10 }, control),
     dependencies.getCallGraphData({
       name: symbol,
       filePath: input.filePath ?? resolution.filePath,
       direction: "callees",
-    }),
+    }, control),
   ]);
+  throwIfOperationAborted(control?.signal);
   if (definitionsResult.status === "rejected") throw definitionsResult.reason;
 
   let graphRisk: string | undefined;
   let callees: CallEdgeData[] = [];
   if (calleesResult.status === "rejected") {
-    const message = calleesResult.reason instanceof Error ? calleesResult.reason.message : String(calleesResult.reason);
-    graphRisk = `Risk: callee graph data is unavailable (${message}). Dependency evidence is incomplete.`;
+    if (isOperationInterruption(calleesResult.reason)) throw calleesResult.reason;
+    throwIfOperationAborted(control?.signal);
+    graphRisk = "Risk: callee graph data is unavailable. Dependency evidence is incomplete.";
   } else if (calleesResult.value.resolution.status !== "resolved") {
     graphRisk = "Risk: the target resolved for callers but not callees. Dependency evidence is incomplete.";
   } else {
     callees = calleesResult.value.callees.slice(0, edgeLimit(input.calleeLimit));
   }
 
-  const source = targetSource(definitionsResult.value, resolution);
+  const source = targetSource(definitionsResult.value, resolution, control?.signal);
   const callers = callersResult.callers.slice(0, edgeLimit(input.callerLimit));
   const sourceBudget = Math.max(
     MIN_CONTEXT_PACK_TOKEN_BUDGET,
@@ -251,10 +286,28 @@ export async function resolveCodebaseEditContext(
   projectRoot: string | undefined,
   host: HostMode,
   input: SharedCodebaseEditContextArgs,
+  control?: OperationControl,
 ): Promise<CodebaseEditContextResult> {
   return resolveCodebaseEditContextWithDependencies(input, {
-    searchCodebase: (query, options) => searchCodebase(projectRoot, host, query, options),
-    implementationLookup: (query, options) => implementationLookup(projectRoot, host, query, options),
-    getCallGraphData: (params) => getCallGraphData(projectRoot, host, params),
-  });
+    searchCodebase: (query, options, operationControl) => searchCodebase(
+      projectRoot,
+      host,
+      query,
+      options,
+      operationControl,
+    ),
+    implementationLookup: (query, options, operationControl) => implementationLookup(
+      projectRoot,
+      host,
+      query,
+      options,
+      operationControl,
+    ),
+    getCallGraphData: (params, operationControl) => getCallGraphData(
+      projectRoot,
+      host,
+      params,
+      operationControl,
+    ),
+  }, control);
 }

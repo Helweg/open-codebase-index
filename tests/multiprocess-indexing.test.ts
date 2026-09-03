@@ -306,15 +306,22 @@ describe("multiprocess indexing", () => {
   async function createMcpClient(
     configPath: string,
     host: "claude" | "codex" | "jcode" | "opencode" | "pi" = "opencode",
-    options: { environment?: Record<string, string>; preloads?: string[] } = {},
+    options: {
+      builtCli?: boolean;
+      environment?: Record<string, string>;
+      preloads?: string[];
+    } = {},
   ): Promise<{
     client: Client;
     transport: StdioClientTransport;
     stderr: string[];
   }> {
     const stderr: string[] = [];
-    const cliPath = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
-    const args = ["--import", "tsx"];
+    const cliPath = fileURLToPath(new URL(
+      options.builtCli ? "../dist/cli.js" : "../src/cli.ts",
+      import.meta.url,
+    ));
+    const args = options.builtCli ? [] : ["--import", "tsx"];
     for (const preload of options.preloads ?? []) args.push("--import", preload);
     args.push(cliPath, "--project", projectRoot, "--config", configPath, "--host", host);
     const transport = new StdioClientTransport({
@@ -406,6 +413,34 @@ describe("multiprocess indexing", () => {
     };
     fs.writeFileSync(configPath, JSON.stringify(rawConfig));
     return parseConfig(rawConfig);
+  }
+
+  function writeForegroundMcpConfig(configPath: string): void {
+    fs.writeFileSync(configPath, JSON.stringify({
+      embeddingProvider: "custom",
+      scope: "project",
+      customProvider: {
+        baseUrl: embeddingServer.baseUrl,
+        model: "multiprocess-test",
+        dimensions: 8,
+        timeoutMs: 30_000,
+        maxBatchSize: 64,
+        concurrency: 1,
+        requestIntervalMs: 0,
+      },
+      include: ["**/*.ts"],
+      exclude: ["**/.opencode/**", "**/.git/**", "**/node_modules/**"],
+      indexing: {
+        autoIndex: false,
+        watchFiles: false,
+        autoGc: false,
+        retries: 0,
+        retryDelayMs: 1,
+        gitBlame: { enabled: false },
+      },
+      mcp: { stallTimeoutMs: 1000 },
+      debug: { enabled: false },
+    }));
   }
 
   function createLocalIndexer(
@@ -1187,30 +1222,7 @@ describe("multiprocess indexing", () => {
 
   it("allows only one of two real MCP stdio servers to index", async () => {
     const configPath = path.join(tempDir, "mcp-config.json");
-    fs.writeFileSync(configPath, JSON.stringify({
-      embeddingProvider: "custom",
-      scope: "project",
-      customProvider: {
-        baseUrl: embeddingServer.baseUrl,
-        model: "multiprocess-test",
-        dimensions: 8,
-        timeoutMs: 5000,
-        maxBatchSize: 64,
-        concurrency: 1,
-        requestIntervalMs: 0,
-      },
-      include: ["**/*.ts"],
-      exclude: ["**/.opencode/**", "**/.git/**", "**/node_modules/**"],
-      indexing: {
-        autoIndex: false,
-        watchFiles: false,
-        autoGc: false,
-        retries: 0,
-        retryDelayMs: 1,
-        gitBlame: { enabled: false },
-      },
-      debug: { enabled: false },
-    }));
+    writeForegroundMcpConfig(configPath);
 
     const first = await createMcpClient(configPath);
     const second = await createMcpClient(configPath);
@@ -1239,6 +1251,129 @@ describe("multiprocess indexing", () => {
     await Promise.all([first.client.close(), second.client.close()]);
     mcpClients = [];
     assertIndexIntegrity();
+  });
+
+  it("does not report a clean stdio EOF as an interrupted operation", async () => {
+    const configPath = path.join(tempDir, "mcp-clean-eof.json");
+    writeForegroundMcpConfig(configPath);
+    const first = await createMcpClient(configPath);
+    const firstPid = first.transport.pid;
+    if (firstPid === null) throw new Error("Expected an MCP stdio process");
+
+    await first.client.close();
+    mcpClients = mcpClients.filter((client) => client !== first.client);
+    await waitForProcessExit(firstPid);
+
+    const observer = await createMcpClient(configPath);
+    const status = await observer.client.callTool({ name: "index_status", arguments: {} });
+    const diagnostics = (status.structuredContent as {
+      mcpDiagnostics?: {
+        activeOperations?: unknown[];
+        latestInterruptedOperation?: unknown;
+      };
+    } | undefined)?.mcpDiagnostics;
+    expect(status.isError).not.toBe(true);
+    expect(diagnostics?.activeOperations).toEqual([]);
+    expect(diagnostics?.latestInterruptedOperation).toBeUndefined();
+
+    await observer.client.close();
+    mcpClients = mcpClients.filter((client) => client !== observer.client);
+  });
+
+  it("persists SIGKILL diagnostics and lets the next stdio server recover", async () => {
+    await seedIndex();
+    embeddingServer.reset();
+    fs.writeFileSync(sourcePath, "export function recovered() { return 'after-mcp-crash'; }\n");
+    const configPath = path.join(tempDir, "mcp-sigkill.json");
+    writeForegroundMcpConfig(configPath);
+    const crashed = await createMcpClient(configPath, "opencode", { builtCli: true });
+    const crashedPid = crashed.transport.pid;
+    if (crashedPid === null) throw new Error("Expected an MCP stdio process");
+    const runtimeDirectory = path.join(projectRoot, ".opencode", "index", "mcp-runtime");
+
+    embeddingServer.block();
+    const interruptedCall = crashed.client.callTool({ name: "index_codebase", arguments: {} });
+    let interruptedCallSettled = false;
+    void interruptedCall.finally(() => {
+      interruptedCallSettled = true;
+    }).catch(() => undefined);
+    void interruptedCall.catch(() => undefined);
+    await embeddingServer.waitForRequestCount(1);
+    await waitForCondition(() => {
+      if (!fs.existsSync(runtimeDirectory)) return false;
+      return fs.readdirSync(runtimeDirectory)
+        .filter((name) => name.endsWith(".json"))
+        .some((name) => {
+          try {
+            const state = JSON.parse(fs.readFileSync(path.join(runtimeDirectory, name), "utf8")) as {
+              pid?: number;
+              activeOperations?: Array<{ operation?: string; phase?: string }>;
+            };
+            return state.pid === crashedPid && state.activeOperations?.some(
+              (operation) => operation.operation === "index_codebase" && operation.phase === "embedding",
+            ) === true;
+          } catch {
+            return false;
+          }
+        });
+    }, "persisted MCP embedding phase");
+    expect(interruptedCallSettled).toBe(false);
+
+    process.kill(crashedPid, "SIGKILL");
+    await waitForProcessExit(crashedPid);
+    await interruptedCall.catch(() => undefined);
+    mcpClients = mcpClients.filter((client) => client !== crashed.client);
+    embeddingServer.release();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const recovery = await createMcpClient(configPath, "opencode", { builtCli: true });
+    const status = await recovery.client.callTool({ name: "index_status", arguments: {} });
+    const diagnostics = (status.structuredContent as {
+      mcpDiagnostics?: {
+        activeOperations?: unknown[];
+        latestInterruptedOperation?: {
+          operation?: string;
+          phase?: string;
+          cause?: string;
+        };
+      };
+    } | undefined)?.mcpDiagnostics;
+    expect(status.isError).not.toBe(true);
+    expect(diagnostics?.activeOperations).toEqual([]);
+    expect(diagnostics?.latestInterruptedOperation).toMatchObject({
+      operation: "index_codebase",
+      phase: "embedding",
+      cause: "process_exit",
+    });
+
+    const progress: Array<{ progress: number; total?: number }> = [];
+    const recovered = await recovery.client.callTool(
+      { name: "index_codebase", arguments: {} },
+      undefined,
+      {
+        maxTotalTimeout: 30_000,
+        onprogress: (update) => progress.push(update),
+        resetTimeoutOnProgress: true,
+      },
+    );
+    expect(recovered.isError, JSON.stringify(recovered.content)).not.toBe(true);
+    expect(embeddingServer.inputs.some((input) => input.includes("after-mcp-crash"))).toBe(true);
+    expect(progress[0]).toEqual(expect.objectContaining({ progress: 0, total: 100 }));
+    expect(progress.at(-1)).toEqual(expect.objectContaining({ progress: 100, total: 100 }));
+    expect(progress.every((update, index) => index === 0 || update.progress > progress[index - 1]!.progress)).toBe(true);
+    await embeddingServer.waitForIdle();
+    const context = await recovery.client.callTool({
+      name: "codebase_context",
+      arguments: { query: "recovered function", tokenBudget: 1000 },
+    });
+    expect(context.isError, JSON.stringify(context.content)).not.toBe(true);
+    expect(JSON.stringify(context.content)).toMatch(/after-mcp-crash|recovered/);
+    expect(fs.readdirSync(runtimeDirectory).some((name) => name.endsWith(".tmp"))).toBe(false);
+    assertIndexIntegrity();
+
+    await recovery.client.close();
+    mcpClients = mcpClients.filter((client) => client !== recovery.client);
   });
 
   it("elects one Codex background worker, blocks a stale snapshot, and promotes a follower", async () => {
@@ -1300,7 +1435,14 @@ describe("multiprocess indexing", () => {
     });
     const searchText = (searchResult.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
     expect(searchResult.isError).toBe(true);
-    expect(searchText).toMatch(/Automatic indexing is (?:idle|indexing)/i);
+    expect(searchText).toContain("INDEX_UNAVAILABLE");
+    expect(searchResult.structuredContent).toMatchObject({
+      error: {
+        code: "INDEX_UNAVAILABLE",
+        operation: "codebase_search",
+        retryable: true,
+      },
+    });
     expect(searchText).not.toContain("INDEX_BUSY");
     expect(embeddingServer.inputs.filter((input) => input.includes("stale"))).toHaveLength(1);
 
@@ -1441,7 +1583,7 @@ describe("multiprocess indexing", () => {
     mcpClients = mcpClients.filter((client) => client !== first.client && client !== second.client);
   });
 
-  it("exits a busy Codex leader without releasing its lease before follower recovery", async () => {
+  it("releases a busy Codex leader lease before follower recovery", async () => {
     const configPath = path.join(tempDir, "codex-busy-shutdown.json");
     const parsedConfig = writeBackgroundMcpConfig(configPath);
     const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
@@ -1469,9 +1611,15 @@ describe("multiprocess indexing", () => {
     mcpClients = mcpClients.filter((client) => client !== leader.client);
     await waitForProcessExit(leaderPid);
 
-    expect(fs.existsSync(leasePath)).toBe(true);
-    const retainedOwner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
-    expect(retainedOwner.pid).toBe(leaderPid);
+    await waitForCondition(() => {
+      if (!fs.existsSync(leasePath)) return true;
+      try {
+        const currentOwner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+        return currentOwner.pid !== leaderPid;
+      } catch {
+        return true;
+      }
+    }, "busy leader lease release");
     embeddingServer.release();
     await embeddingServer.waitForIdle();
 
@@ -1585,7 +1733,14 @@ describe("multiprocess indexing", () => {
     });
     const searchText = (search.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
     expect(search.isError).toBe(true);
-    expect(searchText).toMatch(/Automatic indexing is (?:idle|indexing)/i);
+    expect(searchText).toContain("INDEX_UNAVAILABLE");
+    expect(search.structuredContent).toMatchObject({
+      error: {
+        code: "INDEX_UNAVAILABLE",
+        operation: "codebase_search",
+        retryable: true,
+      },
+    });
     expect(searchText).not.toContain("INDEX_BUSY");
     await waitForCondition(
       () => embeddingServer.inputs.some((input) => input.includes("follower-refresh")),

@@ -623,6 +623,35 @@ describe("background worker lease", () => {
     await vi.waitFor(() => expect(existsSync(leasePath)).toBe(false));
   });
 
+  it("waits for an unfinished automatic index and lease release during ordered shutdown", async () => {
+    const autoIndexCompletion = createDeferred();
+    const parsed = config();
+    const stopAutoIndex = vi.fn(async () => ({
+      completed: false as const,
+      completion: autoIndexCompletion.promise,
+    }));
+    configureBackgroundWorker(projectRoot, "codex", parsed, {
+      startAutoIndex: vi.fn(),
+      stopAutoIndex,
+    });
+
+    await vi.waitFor(() => expect(isBackgroundWorkerLeader(projectRoot, "codex")).toBe(true));
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsed, "codex");
+    let shutdownSettled = false;
+    const shutdown = stopBackgroundWorker(projectRoot, "codex", true).then(() => {
+      shutdownSettled = true;
+    });
+
+    await vi.waitFor(() => expect(stopAutoIndex).toHaveBeenCalledOnce());
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(existsSync(leasePath)).toBe(true);
+    expect(shutdownSettled).toBe(false);
+
+    autoIndexCompletion.resolve();
+    await shutdown;
+    expect(existsSync(leasePath)).toBe(false);
+  });
+
   it("retains a watcher-only lease until watcher-triggered indexing has drained", async () => {
     const autoIndexCompletion = createDeferred();
     const parsed = config({ autoIndex: false, watchFiles: true });

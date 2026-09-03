@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database } from "../src/native/index.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 describe("indexing database transaction", () => {
   let projectDir: string;
@@ -155,6 +156,77 @@ describe("indexing database transaction", () => {
       expect(fs.readdirSync(indexDir).some((entry) => (
         entry.startsWith(".failed-batches.json.") && entry.endsWith(".tmp")
       ))).toBe(false);
+    } finally {
+      after.close();
+    }
+  });
+
+  it("rolls back and releases the lease when indexing is cancelled during embedding", async () => {
+    fs.writeFileSync(
+      path.join(projectDir, "src", "stable.ts"),
+      "export function stable() { return 'stable'; }\n",
+      "utf8",
+    );
+    await indexer.index();
+
+    const databasePath = path.join(indexDir, "codebase.db");
+    const fileHashesPath = path.join(indexDir, "file-hashes.json");
+    const before = Database.openReadOnly(databasePath);
+    const beforeStats = before.getStats();
+    const beforeBranches = before.getAllBranches().map((branch) => ({
+      branch,
+      chunks: before.getBranchChunkIds(branch),
+      symbols: before.getBranchSymbolIds(branch),
+    }));
+    before.close();
+    const previousFileHashes = fs.readFileSync(fileHashesPath, "utf8");
+
+    fs.writeFileSync(
+      path.join(projectDir, "src", "cancelled.ts"),
+      "export function cancelled() { return 'cancelled'; }\n",
+      "utf8",
+    );
+    let providerSignal: AbortSignal | undefined;
+    let markEmbeddingStarted: (() => void) | undefined;
+    const embeddingStarted = new Promise<void>((resolve) => {
+      markEmbeddingStarted = resolve;
+    });
+    fetchSpy.mockImplementationOnce(async (_url, init) => {
+      providerSignal = init?.signal ?? undefined;
+      markEmbeddingStarted?.();
+      return new Promise<Response>((_resolve, reject) => {
+        if (!providerSignal) {
+          reject(new Error("Expected an embedding request signal."));
+          return;
+        }
+        const rejectCancellation = (): void => reject(providerSignal?.reason ?? new Error("cancelled"));
+        if (providerSignal.aborted) rejectCancellation();
+        else providerSignal.addEventListener("abort", rejectCancellation, { once: true });
+      });
+    });
+
+    const controller = new AbortController();
+    const operation = indexer.index(undefined, { signal: controller.signal });
+    await embeddingStarted;
+    controller.abort();
+
+    await expect(operation).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(providerSignal?.aborted).toBe(true);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+    const after = Database.openReadOnly(databasePath);
+    try {
+      expect(after.getStats()).toEqual(beforeStats);
+      expect(after.getChunksByFile(path.join(projectDir, "src", "cancelled.ts"))).toEqual([]);
+      expect(after.getSymbolsByFile(path.join(projectDir, "src", "cancelled.ts"))).toEqual([]);
+      expect(after.getAllBranches().map((branch) => ({
+        branch,
+        chunks: after.getBranchChunkIds(branch),
+        symbols: after.getBranchSymbolIds(branch),
+      }))).toEqual(beforeBranches);
+      expect(fs.readFileSync(fileHashesPath, "utf8")).toBe(previousFileHashes);
+      expect(fs.existsSync(path.join(indexDir, "indexing.lock"))).toBe(false);
+      expect(fs.readdirSync(indexDir).filter((entry) => entry.includes(".tmp."))).toEqual([]);
     } finally {
       after.close();
     }

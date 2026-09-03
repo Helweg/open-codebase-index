@@ -1,3 +1,6 @@
+import * as os from "node:os";
+import * as path from "node:path";
+
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -14,6 +17,7 @@ vi.mock("../src/tools/execute-common.js", async (importOriginal) => ({
 
 import codebaseIndexPiExtension from "../src/pi-extension.js";
 import { registerMcpTools } from "../src/adapters/mcp/register-tools.js";
+import { McpRuntimeDiagnostics } from "../src/adapters/mcp/runtime-diagnostics.js";
 import { architecture_context } from "../src/adapters/opencode/tools.js";
 import { TOOL_NAME } from "../src/tools/tool-names.js";
 
@@ -84,7 +88,11 @@ describe("architecture_context host execution contracts", () => {
     expect(executeArchitectureContext).toHaveBeenNthCalledWith(1, "/repo/opencode", "opencode", args);
 
     const mcpServer = new McpServer({ name: "architecture-contract", version: "1.0.0" });
-    registerMcpTools(mcpServer, { projectRoot: "/repo/mcp", host: "codex" });
+    registerMcpTools(mcpServer, {
+      projectRoot: "/repo/mcp",
+      host: "codex",
+      diagnostics: new McpRuntimeDiagnostics(path.join(os.tmpdir(), "architecture-context-adapters-index")),
+    });
     const client = new Client({ name: "architecture-contract-client", version: "1.0.0" });
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
     await mcpServer.connect(serverTransport);
@@ -96,7 +104,13 @@ describe("architecture_context host execution contracts", () => {
       await client.close();
       await mcpServer.close();
     }
-    expect(executeArchitectureContext).toHaveBeenNthCalledWith(2, "/repo/mcp", "codex", args);
+    expect(executeArchitectureContext).toHaveBeenNthCalledWith(
+      2,
+      "/repo/mcp",
+      "codex",
+      args,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
 
     const piTools = new Map<string, RegisteredPiTool>();
     codebaseIndexPiExtension({

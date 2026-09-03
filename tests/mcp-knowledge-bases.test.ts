@@ -184,7 +184,7 @@ describe("MCP knowledge-base tools", () => {
     }
   });
 
-  it("surfaces a missing path as isError with no config write and no indexer refresh", async () => {
+  it("returns a redacted structured error for a missing path without writing config or refreshing", async () => {
     const { client, configPath, close } = await bootstrap("claude");
     try {
       const baselineInstances = indexerInstances.length;
@@ -195,9 +195,17 @@ describe("MCP knowledge-base tools", () => {
         arguments: { path: missingPath },
       });
 
-      const content = result.content as Array<{ type: string; text?: string }>;
       expect(result.isError).toBe(true);
-      expect(content[0].text).toContain("Error: Directory does not exist");
+      expect(result.structuredContent).toMatchObject({
+        error: {
+          schemaVersion: 1,
+          code: "INTERNAL_ERROR",
+          operation: "add_knowledge_base",
+          retryable: false,
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain(missingPath);
+      expect(JSON.stringify(result)).not.toContain("Directory does not exist");
       expect(fs.existsSync(configPath)).toBe(false);
       expect(indexerInstances.length).toBe(baselineInstances);
     } finally {

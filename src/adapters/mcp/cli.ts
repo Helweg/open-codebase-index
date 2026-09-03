@@ -10,7 +10,11 @@ import { parseConfig } from "../../config/schema.js";
 import { parseHostMode, HOST_MODES, type HostMode } from "../../config/host.js";
 import { handleEvalCommand } from "../../eval/cli.js";
 import { Indexer } from "../../indexer/index.js";
-import { attachMcpBackgroundWatcher, createMcpServer } from "../../mcp-server.js";
+import {
+  attachMcpBackgroundWatcher,
+  createMcpServer,
+  markMcpServerOrderedShutdown,
+} from "../../mcp-server.js";
 import { loadConfigFile, loadMergedConfig } from "../../config/merger.js";
 import { getIndexerForProject } from "../../tools/operations.js";
 import { initializeTools } from "../../tools/operation-runtime.js";
@@ -256,10 +260,10 @@ export async function runMcpCli(argv: string[]): Promise<void> {
 
   const server = createMcpServer(args.project, config, args.host);
   const transport = new StdioServerTransport();
-  let shutdownPromise: Promise<void> | undefined;
+  let shutdownPromise: Promise<number> | undefined;
   const onServerClose = server.server.onclose;
 
-  const shutdown = (): Promise<void> => {
+  const shutdown = (): Promise<number> => {
     if (shutdownPromise) return shutdownPromise;
     process.stdin.removeListener("end", requestShutdown);
     process.stdin.removeListener("close", requestShutdown);
@@ -267,10 +271,16 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     process.removeListener("SIGINT", requestShutdown);
     process.removeListener("SIGTERM", requestShutdown);
     server.server.onclose = onServerClose;
-    shutdownPromise = (async (): Promise<void> => {
+    const inFlightShutdown = (async (): Promise<number> => {
       let exitCode = 0;
       try {
-        await stopBackgroundWorker(args.project, args.host);
+        await markMcpServerOrderedShutdown(server);
+      } catch (error: unknown) {
+        exitCode = 1;
+        console.error("Failed to persist MCP shutdown diagnostics:", error);
+      }
+      try {
+        await stopBackgroundWorker(args.project, args.host, true);
       } catch (error) {
         exitCode = 1;
         if (error instanceof BackgroundWorkerStopError) {
@@ -290,13 +300,14 @@ export async function runMcpCli(argv: string[]): Promise<void> {
         exitCode = 1;
         console.error("Failed to close MCP server cleanly:", error);
       }
-      process.exit(exitCode);
+      return exitCode;
     })();
-    return shutdownPromise;
+    shutdownPromise = inFlightShutdown;
+    return inFlightShutdown;
   };
 
   const requestShutdown = (): void => {
-    void shutdown();
+    void shutdown().then((exitCode) => process.exit(exitCode));
   };
 
   server.server.onclose = () => {
@@ -331,17 +342,22 @@ export async function runMcpCli(argv: string[]): Promise<void> {
       )
       : null
   );
-  await server.connect(transport);
-  if (shutdownPromise) return;
+  try {
+    await server.connect(transport);
+    if (shutdownPromise) return;
 
-  await attachMcpBackgroundWatcher(
-    args.project,
-    config,
-    args.host,
-    config.indexing.watchFiles && isValidProject ? watcherFactoryForConfig(config) : null,
-    watcherFactoryForConfig,
-  );
-  if (shutdownPromise) return;
+    await attachMcpBackgroundWatcher(
+      args.project,
+      config,
+      args.host,
+      config.indexing.watchFiles && isValidProject ? watcherFactoryForConfig(config) : null,
+      watcherFactoryForConfig,
+    );
+    if (shutdownPromise) return;
+  } catch (error: unknown) {
+    await shutdown();
+    throw error;
+  }
 }
 
 interface CliIndexCommandDeps {

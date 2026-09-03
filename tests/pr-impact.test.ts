@@ -7,6 +7,7 @@ import { Indexer } from "../src/indexer/index.js";
 import { pr_impact, call_graph, initializeTools } from "../src/tools/index.js";
 import { getChangedFiles } from "../src/tools/changed-files.js";
 import { hashContent, type Database } from "../src/native/index.js";
+import { OperationCancelledError } from "../src/utils/operation-control.js";
 vi.mock("child_process", () => ({
   execFile: vi.fn(),
 }));
@@ -579,6 +580,69 @@ describe("pr_impact tool", () => {
       expect.arrayContaining([expect.stringContaining("b.ts")]),
       "other-branch",
     );
+  });
+
+  it("propagates cancellation while scanning conflicting PRs", async () => {
+    const controller = new AbortController();
+    (getChangedFiles as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (args: { pr?: number; signal?: AbortSignal }) => {
+        if (args.pr === 1) {
+          return {
+            files: ["src/a.ts"],
+            baseBranch: "main",
+            source: "git",
+            catalogIdentity: "feature-branch",
+            headRefName: "feature-branch",
+            headRef: "1111111111111111111111111111111111111111",
+          };
+        }
+        controller.abort();
+        expect(args.signal).toBe(controller.signal);
+        throw new OperationCancelledError();
+      },
+    );
+    (execFile as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      (
+        cmd: string,
+        args: string[],
+        options: { signal?: AbortSignal },
+        callback: (error: Error | null, result?: { stdout: string }) => void,
+      ) => {
+        expect(options.signal).toBe(controller.signal);
+        if (cmd === "gh" && args[0] === "pr" && args[1] === "list") {
+          callback(null, { stdout: '[{"number":2,"headRefName":"other-branch"}]\n' });
+          return;
+        }
+        callback(new Error(`Unexpected command: ${cmd} ${args.join(" ")}`));
+      },
+    );
+
+    const indexer = await createIndexer();
+    const db = await getDatabase(indexer);
+    setBranchMigrationMetadataCurrent(db, "feature-branch");
+    db.setMetadata(
+      branchCommitMetadataKey("feature-branch"),
+      "1111111111111111111111111111111111111111",
+    );
+    db.upsertSymbol({
+      id: "sym_a",
+      filePath: "src/a.ts",
+      name: "funcA",
+      kind: "function",
+      startLine: 1,
+      startCol: 0,
+      endLine: 10,
+      endCol: 0,
+      language: "typescript",
+    });
+    db.addSymbolsToBranch("feature-branch", ["sym_a"]);
+
+    await expect(indexer.getPrImpact(
+      { pr: 1, checkConflicts: true },
+      undefined,
+      { signal: controller.signal },
+    )).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(getChangedFiles).toHaveBeenCalledTimes(2);
   });
 
   it("regression: checkConflicts detects overlapping PRs despite cross-branch line drift", async () => {

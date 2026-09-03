@@ -1,5 +1,6 @@
 import type { HostMode } from "../config/host.js";
 import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
+import type { OperationControl } from "../utils/operation-control.js";
 import { parseConfig } from "../config/schema.js";
 import { configureAutoIndex, waitForAutoIndexForRetrieval } from "../utils/auto-index.js";
 import { isBackgroundWorkerManaged } from "../utils/background-worker.js";
@@ -11,6 +12,7 @@ import {
 } from "../utils/effectiveness-metrics.js";
 import { countContextTokens } from "./utils.js";
 import { loadRuntimeConfig } from "./config-state.js";
+import { raceWithOperationSignal, throwIfOperationAborted } from "../utils/operation-control.js";
 
 export type IndexerCacheKey = `${HostMode}::${string}`;
 
@@ -121,6 +123,16 @@ export function getOrCreateIndexer(projectRoot: string, host: HostMode): Indexer
   return indexer;
 }
 
+export function getRuntimeConfigForProject(projectRoot: string, host: HostMode): ParsedCodebaseIndexConfig {
+  const key = getIndexerCacheKey(projectRoot, host);
+  let config = configCache.get(key);
+  if (!config) {
+    config = parseConfig(loadRuntimeConfig(projectRoot, host));
+    configCache.set(key, config);
+  }
+  return config;
+}
+
 export function initializeTools(
   projectRoot: string,
   config: ParsedCodebaseIndexConfig,
@@ -183,10 +195,15 @@ export class AutoIndexRetrievalUnavailableError extends Error {
 export async function ensureAutoIndexReadyForRetrieval(
   projectRoot: string | undefined,
   host: HostMode,
+  control?: OperationControl,
 ): Promise<void> {
+  throwIfOperationAborted(control?.signal);
   const root = getProjectRoot(projectRoot, host);
   getIndexerForProject(root, host);
-  const result = await waitForAutoIndexForRetrieval(root, host);
+  const result = await raceWithOperationSignal(
+    waitForAutoIndexForRetrieval(root, host, control),
+    control?.signal,
+  );
   if (!result.ready) {
     throw new AutoIndexRetrievalUnavailableError(
       result.text ?? "Automatic indexing has not produced a readable index yet. Call index_status and retry.",

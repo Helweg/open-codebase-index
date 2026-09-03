@@ -23,6 +23,31 @@ Then jump to the relevant section below for provider, build, performance, or bra
 - [Slow Indexing Performance](#slow-indexing-performance)
 - [Search Returns No Results](#search-returns-no-results)
 - [Branch-Related Issues](#branch-related-issues)
+- [MCP Operations Stall or Report Transport Errors](#mcp-operations-stall-or-report-transport-errors)
+
+---
+
+## MCP Operations Stall or Report Transport Errors
+
+Start a fresh MCP client session and call `index_status`. Its MCP structured content includes `mcpDiagnostics`:
+
+- `active` means the owning process is still present and the operation is reporting activity within the configured window.
+- `suspected_stall` means no phase or heartbeat has been observed within `mcp.stallTimeoutMs`. It does not prove that the process exited.
+- `latestInterruptedOperation` appears only after ordered shutdown or after a later local process confirms that the recorded PID is absent.
+
+The default inactivity window is five minutes. For diagnosis, lower it no further than `1000` milliseconds:
+
+```json
+{
+  "mcp": {
+    "stallTimeoutMs": 1000
+  }
+}
+```
+
+MCP errors include a stable code, phase, duration, retryability flag, and next action. Use `INDEX_BUSY` and `INDEX_UNAVAILABLE` guidance before rebuilding. For `PROVIDER_ERROR`, retry only when the response marks it retryable. `INTERNAL_ERROR` requires server log inspection.
+
+This server can cancel exclusively owned cooperative work, release its index lease, roll back an active SQLite transaction, and preserve a process diagnostic after a forced exit. When indexing is shared, cancelling one caller detaches only that caller while the remaining consumers keep the underlying work alive. The server cannot reconnect a client that continues using a closed transport or replay the lost request. Codex may therefore require a new session even after the server is healthy. General client reconnection remains outside this repository and is tracked in [openai/codex#35486](https://github.com/openai/codex/issues/35486) and [openai/codex#16899](https://github.com/openai/codex/issues/16899). [openai/codex#34957](https://github.com/openai/codex/pull/34957) is a partial client-side fix, not general transport reconnection.
 
 ---
 
@@ -466,3 +491,4 @@ If none of these solutions work:
 | Slow indexing | Use Ollama locally |
 | No results | Run `/index` first, use descriptive queries |
 | Native module error | Rebuild with Rust toolchain |
+| MCP transport closed | Start a new client session, then inspect `index_status` diagnostics |

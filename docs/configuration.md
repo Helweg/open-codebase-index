@@ -262,6 +262,20 @@ Example:
 
 `communityBoost` is experimental and disabled by default. It activates only when the query contains one unambiguous exact symbol already present in the active branch catalog. Existing branch, directory, file-type, chunk-type, blame, and score filters run first, so community context can reorder only candidates that already passed normal search scope. Missing or ambiguous symbols and unavailable graph data fall back to the existing ranking.
 
+## MCP operation runtime
+
+```json
+{
+  "mcp": {
+    "stallTimeoutMs": 300000
+  }
+}
+```
+
+`mcp.stallTimeoutMs` limits inactivity, not total operation duration. Every phase change, heartbeat, and raw indexing progress event rearms the timer. The default is `300000` milliseconds. Set it to `0` to disable stall detection. Positive values are normalized to the safe timer range from `1000` through `2147483647` milliseconds.
+
+The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-runtime/`. These records contain operation names, phases, timestamps, process identity, and ordered-shutdown state only. They never contain tool arguments, queries, paths, provider URLs, response bodies, raw exception causes, or secrets. Active records are updated atomically, phase changes are persisted immediately, disk heartbeats are limited to one every five seconds, and records older than seven days are removed during status inspection. Cross-process status checks allow one disk-heartbeat interval before reporting a suspected stall so the persistence throttle does not create a false warning.
+
 ## Include and exclude patterns
 
 ```json
@@ -330,6 +344,9 @@ When reranking is enabled, `topN` defaults to `15` and `timeoutMs` defaults to `
   },
   "effectivenessMetrics": {
     "enabled": false
+  },
+  "mcp": {
+    "stallTimeoutMs": 300000
   }
 }
 ```

@@ -4,6 +4,7 @@ import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, EMBEDDING
 import {
   getDefaultDebugConfig,
   getDefaultIndexingConfig,
+  getDefaultMcpConfig,
   getDefaultRerankerBaseUrl,
   getDefaultSearchConfig,
 } from "./defaults.js";
@@ -135,6 +136,16 @@ export interface EffectivenessMetricsConfig {
   enabled: boolean;
 }
 
+export interface McpConfig {
+  /**
+   * Maximum inactivity period for an MCP operation. A value of 0 disables
+   * stall detection. Positive values are normalized to at least 1000 ms.
+   */
+  stallTimeoutMs: number;
+}
+
+export const MAX_MCP_STALL_TIMEOUT_MS = 2_147_483_647;
+
 export interface CustomProviderConfig {
   /** Base URL of the OpenAI-compatible embeddings API. The path /embeddings is appended automatically (e.g. "http://localhost:11434/v1", "https://api.example.com/v1") */
   baseUrl: string;
@@ -187,6 +198,8 @@ export interface CodebaseIndexConfig {
   effectivenessMetrics?: Partial<EffectivenessMetricsConfig>;
   /** Reranking configuration for improving search result quality */
   reranker?: Partial<RerankerConfig>;
+  /** MCP transport and long-running operation behavior. */
+  mcp?: Partial<McpConfig>;
   /** External directories to index as knowledge bases (absolute or relative paths) */
   knowledgeBases?: string[];
   /** Override the default include patterns (replaces defaults) */
@@ -202,6 +215,7 @@ export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
   search: SearchConfig;
   debug: DebugConfig;
   effectivenessMetrics: EffectivenessMetricsConfig;
+  mcp: McpConfig;
   reranker?: RerankerConfig;
   knowledgeBases: string[];
   additionalInclude: string[];
@@ -218,6 +232,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const defaultIndexing = getDefaultIndexingConfig();
   const defaultSearch = getDefaultSearchConfig();
   const defaultDebug = getDefaultDebugConfig();
+  const defaultMcp = getDefaultMcpConfig();
 
   const rawIndexing = (input.indexing && typeof input.indexing === "object" ? input.indexing : {}) as Record<string, unknown>;
   const indexing: IndexingConfig = {
@@ -294,6 +309,21 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   ) as Record<string, unknown>;
   const effectivenessMetrics: EffectivenessMetricsConfig = {
     enabled: rawEffectivenessMetrics.enabled === true,
+  };
+
+  const rawMcp = (input.mcp && typeof input.mcp === "object" ? input.mcp : {}) as Record<string, unknown>;
+  const configuredStallTimeout = rawMcp.stallTimeoutMs;
+  const mcp: McpConfig = {
+    stallTimeoutMs: typeof configuredStallTimeout === "number"
+      && Number.isFinite(configuredStallTimeout)
+      && configuredStallTimeout >= 0
+      ? configuredStallTimeout === 0
+        ? 0
+        : Math.min(
+          MAX_MCP_STALL_TIMEOUT_MS,
+          Math.max(1000, Math.floor(configuredStallTimeout)),
+        )
+      : defaultMcp.stallTimeoutMs,
   };
 
   const rawKnowledgeBases = input.knowledgeBases;
@@ -438,6 +468,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     search,
     debug,
     effectivenessMetrics,
+    mcp,
     reranker,
     knowledgeBases,
   };

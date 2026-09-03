@@ -2,6 +2,11 @@ import { execFile } from "child_process";
 import { randomBytes } from "crypto";
 import { promisify } from "util";
 
+import {
+  isOperationInterruption,
+  throwIfOperationAborted,
+} from "../utils/operation-control.js";
+
 const execFileAsync = promisify(execFile);
 const FULL_COMMIT_RE = /^[0-9a-f]{40}$/i;
 const SAFE_REMOTE_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/;
@@ -20,6 +25,7 @@ export interface BranchMaterializationRequest {
   expectedCommit?: string;
   pr?: number;
   repository?: string;
+  signal?: AbortSignal;
 }
 
 export interface BranchMaterializationInfo {
@@ -107,31 +113,44 @@ function assertValidGitRemoteName(value: string): void {
 export async function runGitRaw(
   projectRoot: string,
   args: string[],
-  options: { timeout?: number } = {},
+  options: { timeout?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
-  const { stdout } = await execFileAsync("git", args, {
-    cwd: projectRoot,
-    timeout: options.timeout ?? 30000,
-    encoding: "utf8",
-    maxBuffer: 10 * 1024 * 1024,
-    env: {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: "0",
-      LC_ALL: "C",
-    },
-  });
-  return stdout;
+  throwIfOperationAborted(options.signal);
+  try {
+    const { stdout } = await execFileAsync("git", args, {
+      cwd: projectRoot,
+      timeout: options.timeout ?? 30000,
+      encoding: "utf8",
+      maxBuffer: 10 * 1024 * 1024,
+      signal: options.signal,
+      env: {
+        ...process.env,
+        GIT_TERMINAL_PROMPT: "0",
+        LC_ALL: "C",
+      },
+    });
+    throwIfOperationAborted(options.signal);
+    return stdout;
+  } catch (error) {
+    throwIfOperationAborted(options.signal);
+    throw error;
+  }
 }
 
 export async function runGit(
   projectRoot: string,
   args: string[],
-  options: { timeout?: number } = {},
+  options: { timeout?: number; signal?: AbortSignal } = {},
 ): Promise<string> {
   return (await runGitRaw(projectRoot, args, options)).trim();
 }
 
-export async function tryResolveCommit(projectRoot: string, ref: string): Promise<string | null> {
+export async function tryResolveCommit(
+  projectRoot: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  throwIfOperationAborted(signal);
   try {
     const commit = await runGit(projectRoot, [
       "rev-parse",
@@ -139,35 +158,42 @@ export async function tryResolveCommit(projectRoot: string, ref: string): Promis
       "--quiet",
       "--end-of-options",
       `${ref}^{commit}`,
-    ]);
+    ], { signal });
     return isFullGitCommit(commit) ? commit.toLowerCase() : null;
   } catch {
+    throwIfOperationAborted(signal);
     return null;
   }
 }
 
-export async function resolveLocalGitCommit(projectRoot: string, ref: string): Promise<string | null> {
+export async function resolveLocalGitCommit(
+  projectRoot: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   assertValidGitRefName(ref);
-  return tryResolveCommit(projectRoot, ref);
+  return tryResolveCommit(projectRoot, ref, signal);
 }
 
 export async function resolveLocalPullRequestRefs(
   projectRoot: string,
   pr: number,
+  signal?: AbortSignal,
 ): Promise<LocalPullRequestRefs | null> {
+  throwIfOperationAborted(signal);
   if (!Number.isInteger(pr) || pr <= 0) {
     throw new Error(`Pull request number must be a positive integer: ${pr}`);
   }
 
   const headRef = `refs/pull/${pr}/head`;
   const mergeRef = `refs/pull/${pr}/merge`;
-  const headCommit = await tryResolveCommit(projectRoot, headRef);
-  const mergeHeadCommit = await tryResolveCommit(projectRoot, `${mergeRef}^2`);
+  const headCommit = await tryResolveCommit(projectRoot, headRef, signal);
+  const mergeHeadCommit = await tryResolveCommit(projectRoot, `${mergeRef}^2`, signal);
   const resolvedHeadCommit = headCommit ?? mergeHeadCommit;
   if (!resolvedHeadCommit) return null;
 
   const baseCommit = mergeHeadCommit === resolvedHeadCommit
-    ? await tryResolveCommit(projectRoot, `${mergeRef}^1`)
+    ? await tryResolveCommit(projectRoot, `${mergeRef}^1`, signal)
     : null;
   return {
     headCommit: resolvedHeadCommit,
@@ -182,9 +208,14 @@ function localCandidates(ref: string): string[] {
   return [`refs/heads/${ref}`];
 }
 
-async function resolveFirstLocalCommit(projectRoot: string, refs: string[]): Promise<string | null> {
+async function resolveFirstLocalCommit(
+  projectRoot: string,
+  refs: string[],
+  signal?: AbortSignal,
+): Promise<string | null> {
   for (const ref of refs) {
-    const commit = await tryResolveCommit(projectRoot, ref);
+    throwIfOperationAborted(signal);
+    const commit = await tryResolveCommit(projectRoot, ref, signal);
     if (commit) return commit;
   }
   return null;
@@ -205,14 +236,18 @@ function parseRemoteBranch(ref: string): { remote: string; branch: string; expli
   return { remote: ref.slice(0, slash), branch: ref.slice(slash + 1), explicit: false };
 }
 
-async function getRemoteNames(projectRoot: string): Promise<string[]> {
-  const output = await runGitRaw(projectRoot, ["remote"]);
+async function getRemoteNames(projectRoot: string, signal?: AbortSignal): Promise<string[]> {
+  const output = await runGitRaw(projectRoot, ["remote"], { signal });
   return output.split("\n").filter(Boolean);
 }
 
-async function getConfiguredRemote(projectRoot: string, remote: string): Promise<string | null> {
+async function getConfiguredRemote(
+  projectRoot: string,
+  remote: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   assertValidGitRemoteName(remote);
-  const remotes = await getRemoteNames(projectRoot);
+  const remotes = await getRemoteNames(projectRoot, signal);
   return remotes.includes(remote) ? remote : null;
 }
 
@@ -234,8 +269,10 @@ function normalizeRepository(value: string): string | null {
 async function resolvePullRequestRepository(
   projectRoot: string,
   repository?: string,
+  signal?: AbortSignal,
 ): Promise<string> {
-  const remotes = (await getRemoteNames(projectRoot)).filter(isValidGitRemoteName);
+  throwIfOperationAborted(signal);
+  const remotes = (await getRemoteNames(projectRoot, signal)).filter(isValidGitRemoteName);
   if (repository) {
     const expectedRepository = normalizeRepository(repository);
     if (!expectedRepository) {
@@ -243,7 +280,7 @@ async function resolvePullRequestRepository(
     }
 
     for (const remote of remotes) {
-      const remoteUrl = await runGit(projectRoot, ["remote", "get-url", "--", remote]);
+      const remoteUrl = await runGit(projectRoot, ["remote", "get-url", "--", remote], { signal });
       if (normalizeRepository(remoteUrl) === expectedRepository) {
         return remote;
       }
@@ -277,10 +314,12 @@ async function fetchCommitThroughTemporaryRef(
   repository: string,
   sourceRef: string,
   expectedCommit?: string,
+  signal?: AbortSignal,
 ): Promise<string> {
+  throwIfOperationAborted(signal);
   assertValidGitRefName(sourceRef, "Fetch source ref");
   if (isValidGitRemoteName(repository)) {
-    const configuredRemote = await getConfiguredRemote(projectRoot, repository);
+    const configuredRemote = await getConfiguredRemote(projectRoot, repository, signal);
     if (!configuredRemote) {
       throw new Error(`Git remote is not configured: ${JSON.stringify(repository)}`);
     }
@@ -301,8 +340,8 @@ async function fetchCommitThroughTemporaryRef(
       "--",
       repository,
       `+${sourceRef}:${temporaryRef}`,
-    ]);
-    commit = await tryResolveCommit(projectRoot, temporaryRef);
+    ], { signal });
+    commit = await tryResolveCommit(projectRoot, temporaryRef, signal);
     if (!commit) {
       throw new Error(`Fetched ref ${JSON.stringify(sourceRef)} did not resolve to a commit.`);
     }
@@ -333,37 +372,50 @@ async function fetchCommitThroughTemporaryRef(
   }
   if (fetchError !== undefined) throw fetchError;
   if (cleanupError !== undefined) throw cleanupError;
+  throwIfOperationAborted(signal);
   return commit!;
 }
 
 export async function resolveCommit(
   request: BranchMaterializationRequest,
 ): Promise<ResolvedCommit | null> {
+  throwIfOperationAborted(request.signal);
   const requestedRef = request.ref ?? request.branch;
   const authoritativeCommit = request.expectedCommit?.toLowerCase();
 
   if (request.pr !== undefined) {
     const expectedCommit = authoritativeCommit
       ?? (isFullGitCommit(requestedRef) ? requestedRef.toLowerCase() : undefined);
-    const localPullCommit = await tryResolveCommit(request.projectRoot, `refs/pull/${request.pr}/head`);
+    const localPullCommit = await tryResolveCommit(
+      request.projectRoot,
+      `refs/pull/${request.pr}/head`,
+      request.signal,
+    );
     if (localPullCommit && (!expectedCommit || localPullCommit === expectedCommit)) {
       return { commit: localPullCommit, source: "pull-ref", fetched: false };
     }
 
-    if (expectedCommit && await tryResolveCommit(request.projectRoot, expectedCommit)) {
+    if (expectedCommit && await tryResolveCommit(request.projectRoot, expectedCommit, request.signal)) {
       return { commit: expectedCommit, source: "local", fetched: false };
     }
 
-    const repository = await resolvePullRequestRepository(request.projectRoot, request.repository);
+    const repository = await resolvePullRequestRepository(
+      request.projectRoot,
+      request.repository,
+      request.signal,
+    );
     try {
       const commit = await fetchCommitThroughTemporaryRef(
         request.projectRoot,
         repository,
         `refs/pull/${request.pr}/head`,
         expectedCommit,
+        request.signal,
       );
       return { commit, source: "pull-ref", fetched: true };
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(request.signal);
       throw contextualizeError(
         `Could not fetch PR #${request.pr} from ${JSON.stringify(repository)}`,
         error,
@@ -376,7 +428,7 @@ export async function resolveCommit(
     if (!isValidGitRemoteName(remoteBranch.remote)) {
       throw new Error(`Git remote name is unsafe: ${JSON.stringify(remoteBranch.remote)}`);
     }
-    const remote = await getConfiguredRemote(request.projectRoot, remoteBranch.remote);
+    const remote = await getConfiguredRemote(request.projectRoot, remoteBranch.remote, request.signal);
     if (remote) {
       try {
         const commit = await fetchCommitThroughTemporaryRef(
@@ -384,9 +436,12 @@ export async function resolveCommit(
           remote,
           `refs/heads/${remoteBranch.branch}`,
           authoritativeCommit,
+          request.signal,
         );
         return { commit, source: "remote-fetch", fetched: true };
       } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        throwIfOperationAborted(request.signal);
         throw contextualizeError(
           `Could not fetch branch ${JSON.stringify(requestedRef)} from remote ${JSON.stringify(remote)}`,
           error,
@@ -398,7 +453,11 @@ export async function resolveCommit(
     }
   }
 
-  const localCommit = await resolveFirstLocalCommit(request.projectRoot, localCandidates(requestedRef));
+  const localCommit = await resolveFirstLocalCommit(
+    request.projectRoot,
+    localCandidates(requestedRef),
+    request.signal,
+  );
   if (!localCommit) return null;
   if (authoritativeCommit && localCommit !== authoritativeCommit) {
     throw new Error(
@@ -408,8 +467,12 @@ export async function resolveCommit(
   return { commit: localCommit, source: "local", fetched: false };
 }
 
-export async function resolveGitCommit(projectRoot: string, ref: string): Promise<string | null> {
+export async function resolveGitCommit(
+  projectRoot: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<string | null> {
   assertValidGitRefName(ref);
-  const resolved = await resolveCommit({ projectRoot, branch: ref, ref });
+  const resolved = await resolveCommit({ projectRoot, branch: ref, ref, signal });
   return resolved?.commit ?? null;
 }

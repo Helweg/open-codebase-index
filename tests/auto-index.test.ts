@@ -5,8 +5,15 @@ import * as path from "path";
 
 import { parseConfig } from "../src/config/schema.js";
 import { IndexLockContentionError } from "../src/indexer/index-lock.js";
-import type { IndexFreshnessResult, IndexProgress, IndexStats, StatusResult } from "../src/indexer/index.js";
+import type {
+  Indexer,
+  IndexFreshnessResult,
+  IndexProgress,
+  IndexStats,
+  StatusResult,
+} from "../src/indexer/index.js";
 import type { BackgroundIndexingPolicy } from "../src/utils/power-source.js";
+import { OperationCancelledError, ProviderRequestError } from "../src/utils/operation-control.js";
 import {
   configureBackgroundWorker,
   isBackgroundWorkerLeader,
@@ -106,8 +113,13 @@ class MockIndexer {
   readable = false;
   freshness: IndexFreshnessResult = { readable: false, current: false, reason: "missing" };
   getStatus = vi.fn(async () => status(this.readable));
-  getIndexFreshness = vi.fn(async () => this.freshness);
-  index = vi.fn(async (onProgress?: (progress: IndexProgress) => void) => {
+  getIndexFreshness = vi.fn(async (
+    _options?: Parameters<Indexer["getIndexFreshness"]>[0],
+  ) => this.freshness);
+  index = vi.fn(async (
+    onProgress?: (progress: IndexProgress) => void,
+    _options?: Parameters<Indexer["index"]>[1],
+  ) => {
     onProgress?.({
       phase: "complete",
       filesProcessed: 1,
@@ -119,7 +131,10 @@ class MockIndexer {
     this.freshness = { readable: true, current: true, reason: "current" };
     return stats();
   });
-  forceIndex = vi.fn(async (onProgress?: (progress: IndexProgress) => void) => this.index(onProgress));
+  forceIndex = vi.fn(async (
+    onProgress?: (progress: IndexProgress) => void,
+    options?: Parameters<Indexer["index"]>[1],
+  ) => this.index(onProgress, options));
 }
 
 describe("auto-index coordinator", () => {
@@ -189,6 +204,48 @@ describe("auto-index coordinator", () => {
 
     await expect(waitForAutoIndexForRetrieval(projectRoot, "pi")).resolves.toEqual({ ready: true });
     await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+  });
+
+  it("cancels a retrieval freshness check through the caller control", async () => {
+    const indexer = new MockIndexer();
+    let preflightSignal: AbortSignal | undefined;
+    let markPreflightStarted: (() => void) | undefined;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    indexer.getIndexFreshness.mockImplementation(async (options) => {
+      preflightSignal = options?.signal;
+      await options?.setPhase?.("scanning");
+      await options?.heartbeat?.();
+      markPreflightStarted?.();
+      return new Promise<IndexFreshnessResult>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new OperationCancelledError()),
+          { once: true },
+        );
+      });
+    });
+    configureAutoIndex(projectRoot, "pi", config(), () => indexer);
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => undefined);
+    const setPhase = vi.fn(async () => undefined);
+
+    const result = waitForAutoIndexForRetrieval(projectRoot, "pi", {
+      signal: controller.signal,
+      heartbeat,
+      setPhase,
+    });
+    await preflightStarted;
+
+    expect(preflightSignal).toBe(controller.signal);
+    expect(setPhase).toHaveBeenCalledWith("scanning");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    controller.abort();
+
+    await expect(result).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(preflightSignal?.aborted).toBe(true);
+    expect(indexer.index).not.toHaveBeenCalled();
   });
 
   it("does not serve a stale snapshot while its refresh is in flight", async () => {
@@ -264,6 +321,331 @@ describe("auto-index coordinator", () => {
     expect(indexer.index).toHaveBeenCalledOnce();
   });
 
+  it("detaches a cancelled manual caller without stopping shared indexing", async () => {
+    const indexer = new MockIndexer();
+    const indexing = deferred<IndexStats>();
+    let emitProgress: ((progress: IndexProgress) => void) | undefined;
+    let underlyingSignal: AbortSignal | undefined;
+    indexer.index.mockImplementation(async (onProgress, options) => {
+      emitProgress = onProgress;
+      underlyingSignal = options?.signal;
+      return indexing.promise;
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const firstProgress = vi.fn();
+    const secondProgress = vi.fn();
+    const first = runCoordinatedIndex(projectRoot, "jcode", false, firstProgress, firstController.signal);
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const second = runCoordinatedIndex(projectRoot, "jcode", false, secondProgress, secondController.signal);
+
+    emitProgress?.({
+      phase: "embedding",
+      filesProcessed: 1,
+      totalFiles: 1,
+      chunksProcessed: 0,
+      totalChunks: 2,
+    });
+    expect(firstProgress).toHaveBeenCalledOnce();
+    expect(secondProgress).toHaveBeenCalledOnce();
+
+    firstController.abort();
+    await expect(first).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(underlyingSignal?.aborted).toBe(false);
+
+    emitProgress?.({
+      phase: "embedding",
+      filesProcessed: 1,
+      totalFiles: 1,
+      chunksProcessed: 1,
+      totalChunks: 2,
+    });
+    expect(firstProgress).toHaveBeenCalledOnce();
+    expect(secondProgress).toHaveBeenCalledTimes(2);
+
+    indexer.readable = true;
+    indexing.resolve(stats());
+    await expect(second).resolves.toMatchObject({ outcome: "ready" });
+    expect(indexer.index).toHaveBeenCalledOnce();
+  });
+
+  it("forwards phase updates to an attached coordinated caller", async () => {
+    const indexer = new MockIndexer();
+    indexer.index.mockImplementation(async (_onProgress, options) => {
+      await options?.setPhase?.("embedding");
+      indexer.readable = true;
+      indexer.freshness = { readable: true, current: true, reason: "current" };
+      return stats();
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+    const setPhase = vi.fn(async () => undefined);
+
+    await expect(runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      setPhase,
+    )).resolves.toMatchObject({ outcome: "ready" });
+
+    expect(setPhase).toHaveBeenCalledWith("embedding");
+  });
+
+  it("propagates cancellation and activity through the coordinated freshness preflight", async () => {
+    const indexer = new MockIndexer();
+    let preflightSignal: AbortSignal | undefined;
+    let markPreflightStarted: (() => void) | undefined;
+    const preflightStarted = new Promise<void>((resolve) => {
+      markPreflightStarted = resolve;
+    });
+    indexer.getIndexFreshness.mockImplementation(async (options) => {
+      preflightSignal = options?.signal;
+      await options?.setPhase?.("scanning");
+      await options?.heartbeat?.();
+      markPreflightStarted?.();
+      return new Promise<IndexFreshnessResult>((_resolve, reject) => {
+        options?.signal?.addEventListener(
+          "abort",
+          () => reject(new OperationCancelledError()),
+          { once: true },
+        );
+      });
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+    const controller = new AbortController();
+    const heartbeat = vi.fn(async () => undefined);
+    const setPhase = vi.fn(async () => undefined);
+
+    const result = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      controller.signal,
+      heartbeat,
+      undefined,
+      setPhase,
+    );
+    await preflightStarted;
+
+    expect(preflightSignal).toBeDefined();
+    expect(preflightSignal).not.toBe(controller.signal);
+    expect(setPhase).toHaveBeenCalledWith("scanning");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    controller.abort();
+
+    await expect(result).rejects.toBeInstanceOf(OperationCancelledError);
+    await vi.waitFor(() => expect(preflightSignal?.aborted).toBe(true));
+    expect(indexer.index).not.toHaveBeenCalled();
+  });
+
+  it("delivers provider failures only to consumers still attached to shared indexing", async () => {
+    const indexer = new MockIndexer();
+    const indexing = deferred<IndexStats>();
+    let reportProviderError: ((error: ProviderRequestError) => void) | undefined;
+    indexer.index.mockImplementation(async (_onProgress, options) => {
+      reportProviderError = options?.onProviderError;
+      return indexing.promise;
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const firstError = vi.fn();
+    const secondError = vi.fn();
+    const first = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      firstController.signal,
+      undefined,
+      firstError,
+    );
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const second = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      secondController.signal,
+      undefined,
+      secondError,
+    );
+
+    firstController.abort();
+    await expect(first).rejects.toBeInstanceOf(OperationCancelledError);
+    reportProviderError?.(new ProviderRequestError({ statusCode: 500 }));
+    expect(firstError).not.toHaveBeenCalled();
+    expect(secondError).toHaveBeenCalledOnce();
+
+    indexer.readable = true;
+    indexing.resolve(stats());
+    await expect(second).resolves.toMatchObject({ outcome: "ready" });
+  });
+
+  it("replays a provider failure to late consumers without leaking it into the next job", async () => {
+    const indexer = new MockIndexer();
+    const firstIndexing = deferred<IndexStats>();
+    const secondIndexing = deferred<IndexStats>();
+    let reportProviderError: ((error: ProviderRequestError) => void) | undefined;
+    indexer.index
+      .mockImplementationOnce(async (_onProgress, options) => {
+        reportProviderError = options?.onProviderError;
+        return firstIndexing.promise;
+      })
+      .mockImplementationOnce(async () => secondIndexing.promise);
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const firstError = vi.fn();
+    const first = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      undefined,
+      undefined,
+      firstError,
+    );
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const providerError = new ProviderRequestError({ statusCode: 500 });
+    reportProviderError?.(providerError);
+
+    const lateError = vi.fn();
+    const late = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      false,
+      undefined,
+      undefined,
+      undefined,
+      lateError,
+    );
+
+    expect(firstError).toHaveBeenCalledWith(providerError);
+    expect(lateError).toHaveBeenCalledWith(providerError);
+    firstIndexing.resolve(stats());
+    const [firstResult, lateResult] = await Promise.all([first, late]);
+    expect(firstResult.providerError).toBe(providerError);
+    expect(lateResult.providerError).toBe(providerError);
+
+    const nextError = vi.fn();
+    const next = runCoordinatedIndex(
+      projectRoot,
+      "jcode",
+      true,
+      undefined,
+      undefined,
+      undefined,
+      nextError,
+    );
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledTimes(2));
+    secondIndexing.resolve(stats());
+
+    await expect(next).resolves.not.toHaveProperty("providerError");
+    expect(nextError).not.toHaveBeenCalled();
+  });
+
+  it("cancels an exclusively owned manual index after its caller detaches", async () => {
+    const indexer = new MockIndexer();
+    let underlyingSignal: AbortSignal | undefined;
+    indexer.index.mockImplementation(async (_onProgress, options) => {
+      underlyingSignal = options?.signal;
+      return new Promise<IndexStats>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => reject(new OperationCancelledError()), { once: true });
+      });
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const controller = new AbortController();
+    const operation = runCoordinatedIndex(projectRoot, "jcode", false, undefined, controller.signal);
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    controller.abort();
+
+    await expect(operation).rejects.toBeInstanceOf(OperationCancelledError);
+    await vi.waitFor(() => expect(underlyingSignal?.aborted).toBe(true));
+    await vi.waitFor(() => expect(getAutoIndexStatus(projectRoot, "jcode").state).toBe("stopped"));
+  });
+
+  it("keeps manual indexing alive after an independent retrieval joins", async () => {
+    const indexer = new MockIndexer();
+    const indexing = deferred<IndexStats>();
+    let underlyingSignal: AbortSignal | undefined;
+    indexer.index.mockImplementation(async (_onProgress, options) => {
+      underlyingSignal = options?.signal;
+      return indexing.promise;
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const controller = new AbortController();
+    const manual = runCoordinatedIndex(projectRoot, "jcode", false, undefined, controller.signal);
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const retrieval = startAutoIndex(projectRoot, "jcode", "retrieval");
+    expect(retrieval).not.toBeNull();
+
+    controller.abort();
+    await expect(manual).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(underlyingSignal?.aborted).toBe(false);
+
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: true, reason: "current" };
+    indexing.resolve(stats());
+    await expect(retrieval).resolves.toMatchObject({ outcome: "ready" });
+  });
+
+  it("removes a queued force index when its only caller cancels", async () => {
+    const indexer = new MockIndexer();
+    const background = deferred<IndexStats>();
+    let underlyingSignal: AbortSignal | undefined;
+    indexer.index.mockImplementation((_onProgress, options) => {
+      underlyingSignal = options?.signal;
+      return background.promise;
+    });
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const backgroundJob = requestBackgroundIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const controller = new AbortController();
+    const force = runCoordinatedIndex(projectRoot, "jcode", true, undefined, controller.signal);
+    controller.abort();
+
+    await expect(force).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(underlyingSignal?.aborted).toBe(false);
+    background.resolve(stats());
+    await expect(backgroundJob).resolves.toMatchObject({ outcome: "ready" });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(indexer.forceIndex).not.toHaveBeenCalled();
+  });
+
+  it("preserves a pending watcher when a merged force caller cancels", async () => {
+    const indexer = new MockIndexer();
+    const active = deferred<IndexStats>();
+    indexer.index
+      .mockImplementationOnce(() => active.promise)
+      .mockResolvedValueOnce(stats());
+    configureAutoIndex(projectRoot, "jcode", config(), () => indexer);
+
+    const activeJob = startAutoIndex(projectRoot, "jcode");
+    await vi.waitFor(() => expect(indexer.index).toHaveBeenCalledOnce());
+    const watcher = requestBackgroundIndex(projectRoot, "jcode");
+    const controller = new AbortController();
+    const force = runCoordinatedIndex(projectRoot, "jcode", true, undefined, controller.signal);
+    controller.abort();
+
+    await expect(force).rejects.toBeInstanceOf(OperationCancelledError);
+    indexer.readable = true;
+    active.resolve(stats());
+    await expect(activeJob).resolves.toMatchObject({ outcome: "ready" });
+    await expect(watcher).resolves.toMatchObject({ outcome: "ready" });
+    expect(indexer.index).toHaveBeenCalledTimes(2);
+    expect(indexer.forceIndex).not.toHaveBeenCalled();
+  });
+
   it("returns an actionable in-progress response after the configured wait", async () => {
     const indexer = new MockIndexer();
     const indexing = deferred<IndexStats>();
@@ -276,6 +658,67 @@ describe("auto-index coordinator", () => {
     expect(result.text).toContain("Automatic indexing is indexing");
     expect(result.text).toContain("index_status");
     indexing.resolve(stats());
+  });
+
+  it("forwards only real shared-index activity while a retrieval waits without taking ownership", async () => {
+    vi.useFakeTimers();
+    const indexer = new MockIndexer();
+    const indexing = deferred<IndexStats>();
+    let emitProgress: ((progress: IndexProgress) => void) | undefined;
+    let emitPhase: ((phase: string) => void | Promise<void>) | undefined;
+    let underlyingSignal: AbortSignal | undefined;
+    indexer.index.mockImplementation((onProgress, options) => {
+      emitProgress = onProgress;
+      emitPhase = options?.setPhase;
+      underlyingSignal = options?.signal;
+      return indexing.promise;
+    });
+    configureAutoIndex(projectRoot, "jcode", config({ autoIndexWaitMs: 1200 }), () => indexer);
+    const heartbeat = vi.fn(async () => undefined);
+    const setPhase = vi.fn(async () => undefined);
+    const controller = new AbortController();
+
+    const waiting = waitForAutoIndexForRetrieval(projectRoot, "jcode", {
+      heartbeat,
+      setPhase,
+      signal: controller.signal,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(indexer.index).toHaveBeenCalledOnce();
+
+    await emitPhase?.("embedding");
+    emitProgress?.({
+      phase: "embedding",
+      filesProcessed: 1,
+      totalFiles: 1,
+      chunksProcessed: 1,
+      totalChunks: 2,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(setPhase).toHaveBeenCalledWith("embedding");
+    expect(heartbeat).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(heartbeat).toHaveBeenCalledOnce();
+
+    controller.abort();
+
+    await expect(waiting).rejects.toBeInstanceOf(OperationCancelledError);
+    expect(underlyingSignal?.aborted).toBe(false);
+    emitProgress?.({
+      phase: "embedding",
+      filesProcessed: 1,
+      totalFiles: 1,
+      chunksProcessed: 2,
+      totalChunks: 2,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(heartbeat).toHaveBeenCalledOnce();
+    indexer.readable = true;
+    indexer.freshness = { readable: true, current: true, reason: "current" };
+    indexing.resolve(stats());
+    await vi.runAllTimersAsync();
+    expect(getAutoIndexStatus(projectRoot, "jcode")).toMatchObject({ state: "ready" });
   });
 
   it("retries transient locks with bounded exponential backoff", async () => {

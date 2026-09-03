@@ -1,4 +1,5 @@
 import type { HostMode } from "../config/host.js";
+import type { OperationControl } from "../utils/operation-control.js";
 import {
   getCallGraphData,
   getCallGraphPath,
@@ -45,6 +46,7 @@ async function resolveCodebaseContextUnmeasured(
   projectRoot: string | undefined,
   host: HostMode,
   input: CodebaseContextInput,
+  control?: OperationControl,
 ): Promise<CodebaseContextResult> {
   const from = trimOrUndefined(input.from);
   const to = trimOrUndefined(input.to);
@@ -57,7 +59,7 @@ async function resolveCodebaseContextUnmeasured(
   const directory = input.directory ?? undefined;
   const tokenBudget = input.tokenBudget ?? undefined;
   if (from && to) {
-    const path = await getCallGraphPath(
+    const pathArgs = [
       projectRoot,
       host,
       from,
@@ -65,7 +67,10 @@ async function resolveCodebaseContextUnmeasured(
       maxDepth,
       fromFilePath,
       toFilePath,
-    );
+    ] as const;
+    const path = control
+      ? await getCallGraphPath(...pathArgs, control)
+      : await getCallGraphPath(...pathArgs);
     const pathText = formatCallGraphPathResult(path);
     if (path.path.length > 0) {
       const fitted = fitTextToContextBudget(
@@ -87,11 +92,14 @@ async function resolveCodebaseContextUnmeasured(
     }
     const resolvedFrom = path.from;
 
-    const { callers } = await getCallGraphData(projectRoot, host, {
+    const graphParams = {
       name: to,
       direction: "callers",
       filePath: toFilePath,
-    });
+    } as const;
+    const { callers } = control
+      ? await getCallGraphData(projectRoot, host, graphParams, control)
+      : await getCallGraphData(projectRoot, host, graphParams);
     const directEdge = callers.find((edge) => edge.fromSymbolId === resolvedFrom.symbolId);
     if (directEdge) {
       const location = directEdge.fromSymbolFilePath
@@ -127,21 +135,31 @@ async function resolveCodebaseContextUnmeasured(
     directory,
     diagnostic: input.diagnostic,
   }, {
-    lookup: (lookupSymbol, retrievalLimit, scope, exactSymbol, trace) => implementationLookup(projectRoot, host, lookupSymbol, {
-      limit: retrievalLimit,
-      fileType: scope.fileType,
-      directory: scope.directory,
-      exactSymbol,
-      trace,
-    }),
-    search: (queryText, retrievalLimit, scope, trace, searchOptions) => searchCodebase(projectRoot, host, queryText, {
-      limit: retrievalLimit,
-      fileType: scope.fileType,
-      directory: scope.directory,
-      metadataOnly: true,
-      trace,
-      prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
-    }),
+    lookup: (lookupSymbol, retrievalLimit, scope, exactSymbol, trace) => {
+      const options = {
+        limit: retrievalLimit,
+        fileType: scope.fileType,
+        directory: scope.directory,
+        exactSymbol,
+        trace,
+      };
+      return control
+        ? implementationLookup(projectRoot, host, lookupSymbol, options, control)
+        : implementationLookup(projectRoot, host, lookupSymbol, options);
+    },
+    search: (queryText, retrievalLimit, scope, trace, searchOptions) => {
+      const options = {
+        limit: retrievalLimit,
+        fileType: scope.fileType,
+        directory: scope.directory,
+        metadataOnly: true,
+        trace,
+        prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
+      };
+      return control
+        ? searchCodebase(projectRoot, host, queryText, options, control)
+        : searchCodebase(projectRoot, host, queryText, options);
+    },
   });
 }
 
@@ -180,11 +198,12 @@ export async function resolveCodebaseContext(
   projectRoot: string | undefined,
   host: HostMode,
   input: CodebaseContextInput,
+  control?: OperationControl,
 ): Promise<CodebaseContextResult> {
   const metricsEnabled = isToolEffectivenessEnabled(projectRoot, host);
   const startedAt = metricsEnabled ? performance.now() : 0;
   try {
-    const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input);
+    const result = await resolveCodebaseContextUnmeasured(projectRoot, host, input, control);
     if (trimOrUndefined(input.symbol) && result.details) {
       const candidateCount = result.details.candidateCount ?? result.details.resultCount ?? result.details.selectedCount ?? 0;
       result.details.resolution = candidateCount === 0

@@ -189,7 +189,9 @@ describe("OllamaEmbeddingProvider.embedBatch", () => {
       throw new Error(`Unexpected request: ${url}`);
     });
 
-    await expect(makeProvider().embedBatch(["aaa", "bbb"])).rejects.toThrow("Ollama embedding API error: 500");
+    await expect(makeProvider().embedBatch(["aaa", "bbb"])).rejects.toThrow(
+      "Ollama embedding provider returned HTTP 500.",
+    );
   });
 
   it("falls back to per-text /api/embeddings when /api/embed returns a non-JSON 200 body", async () => {
