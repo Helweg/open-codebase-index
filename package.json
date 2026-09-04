@@ -34,7 +34,7 @@
     "pi"
   ],
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "build": "npm run build:ts && npm run build:native",
@@ -111,7 +111,7 @@
     "@earendil-works/pi-coding-agent": "^0.84.0",
     "@eslint/js": "^9.39.4",
     "@napi-rs/cli": "^3.6.0",
-    "@types/node": "^25.5.2",
+    "@types/node": "^24.13.3",
     "@vitest/coverage-v8": "^4.1.2",
     "eslint": "^9.39.4",
     "tsup": "^8.1.0",

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Node.js runtime requirement**: Raised the minimum supported Node.js version from 20 to the Node.js 24 LTS line, aligned CI and release packaging on Node.js 24, and matched development types to the Node.js 24 API surface.
+
 ### Added
 
 - **Cancellable and diagnosable MCP operations**: Added inactivity-based cancellation, exact-token monotone progress, redacted structured handler errors, and durable per-process phase diagnostics exposed by `index_status`. Shared indexing detaches cancelled callers without stopping work still awaited by another consumer, while exclusively owned cancelled work rolls back and releases its index lease. MCP SDK `1.29.0`, public tool names, package identities, and index formats remain unchanged.

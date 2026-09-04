@@ -137,7 +137,7 @@ async function waitForChange(
 }
 
 async function run(options: BenchmarkOptions): Promise<WatcherBenchmarkResult> {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "watcher-benchmark-"));
+  const root = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "watcher-benchmark-"));
   const changes: FileChange[] = [];
   let watcher: FileWatcher | undefined;
 

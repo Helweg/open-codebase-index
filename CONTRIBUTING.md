@@ -42,7 +42,7 @@ Use this when you just want the shortest path to a good PR:
 
 ### Prerequisites
 
-- Node.js >= 20
+- Node.js >= 24
 - Rust toolchain (for native module)
 - npm
 
