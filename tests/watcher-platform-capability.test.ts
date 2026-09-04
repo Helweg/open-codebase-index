@@ -32,7 +32,7 @@ describe("recursive native watcher capability", () => {
   });
 
   it("records whether the current Node runtime supports recursive fs.watch", async () => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), "recursive-watch-capability-"));
+    projectRoot = fs.mkdtempSync(path.join(fs.realpathSync.native(os.tmpdir()), "recursive-watch-capability-"));
     const events: Array<{ eventType: WatchEventType; filename: string | null }> = [];
 
     try {
