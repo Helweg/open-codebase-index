@@ -1,6 +1,6 @@
 # Installation and host setup
 
-`open-codebase-index` requires Node.js 20 or newer and is the preferred package identity. `opencode-codebase-index` remains a supported legacy package alias, and `open-codebase-index-mcp` is the preferred binary alias.
+`open-codebase-index` requires Node.js 24 or newer and is the preferred package identity. `opencode-codebase-index` remains a supported legacy package alias, and `open-codebase-index-mcp` is the preferred binary alias.
 
 The published package includes the MCP server dependencies and native binaries for supported platforms.
 

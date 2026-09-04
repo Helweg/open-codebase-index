@@ -22,7 +22,7 @@ What actually happened.
 
 ## Environment
 - OS: [e.g., macOS 14, Ubuntu 22.04]
-- Node.js version: [e.g., 22.0.0]
+- Node.js version: [e.g., 24.20.0]
 - Plugin version: [e.g., 0.5.2]
 - Embedding provider: [e.g., github-copilot, openai]
 
