@@ -182,6 +182,22 @@ impl VectorStoreInner {
             return Ok(());
         }
 
+        let mut duplicate_keys = HashSet::new();
+        let mut unique_keys = HashSet::with_capacity(batch_size);
+        for key in keys {
+            if !unique_keys.insert(key.as_str()) {
+                duplicate_keys.insert(key.as_str());
+            }
+        }
+        if !duplicate_keys.is_empty() {
+            let mut duplicate_keys = duplicate_keys.into_iter().collect::<Vec<_>>();
+            duplicate_keys.sort_unstable();
+            return Err(anyhow!(
+                "Duplicate vector store keys in batch: {}",
+                duplicate_keys.join(", ")
+            ));
+        }
+
         for (i, vector) in vectors.iter().enumerate() {
             if vector.len() != self.dimensions {
                 return Err(anyhow!(
