@@ -53,21 +53,27 @@ describe("recursive native watcher capability", () => {
       return;
     }
 
+    let watchError: unknown;
+    watcher.on("error", (error) => {
+      watchError = error;
+    });
+
     fs.writeFileSync(path.join(projectRoot, "observed.ts"), "export const value = 1;\n");
-    let deliversEvents = true;
+    let observationTimedOut = false;
     try {
       await vi.waitFor(() => {
-        expect(events).not.toHaveLength(0);
+        expect(events.length > 0 || watchError !== undefined).toBe(true);
       }, { timeout: 2_000, interval: 25 });
     } catch {
-      deliversEvents = false;
+      observationTimedOut = true;
     }
 
     const capability: RecursiveWatchCapability = {
-      deliversEvents,
+      code: getErrorCode(watchError),
+      deliversEvents: !observationTimedOut && events.length > 0,
       events,
       platform: process.platform,
-      supported: true,
+      supported: watchError === undefined,
     };
     console.log(`[watcher-capability] ${JSON.stringify(capability)}`);
   });
