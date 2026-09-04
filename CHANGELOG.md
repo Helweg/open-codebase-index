@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Swift indexing stability**: Deduplicated identical Swift chunk windows before embedding, rejected duplicate native vector-store batch keys atomically, and bumped the Swift parser cache version so existing indexes are reparsed.
+- **Transitive dependency security**: Pinned `fast-uri` to 3.1.6 and `qs` to 6.16.0 through npm overrides, resolving the current URI parsing and query-string parsing Dependabot advisories in the MCP runtime dependency tree.
 
 ## [0.26.0] - 2026-08-29
 
