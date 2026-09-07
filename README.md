@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/npm/dm/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/open-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/open-codebase-index/actions)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D24-brightgreen.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)](https://nodejs.org/)
 
 > Search a codebase by meaning, then follow the result into definitions, callers, and dependency paths.
 
@@ -34,7 +34,7 @@ cbi search "retry recovery" --project /path/to/repo
 
 ## Quick start with OpenCode
 
-Requires Node.js 24 or newer.
+Requires Node.js 22.13 or newer. Node.js 24 LTS is recommended.
 
 1. Install the package:
 

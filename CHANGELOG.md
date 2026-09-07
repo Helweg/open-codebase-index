@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Node.js runtime requirement**: Raised the minimum supported Node.js version from 20 to the Node.js 24 LTS line, aligned CI and release packaging on Node.js 24, and matched development types to the Node.js 24 API surface.
+- **Node.js runtime requirement**: Raised the minimum supported Node.js version from 20 to 22.13 in preparation for planned PDF text indexing. CI tests Node.js 22 and 24, with packed-package smoke checks on 22.13. Node.js 24 LTS remains recommended and is used for release packaging. PDF indexing is not included in this release.
 
 ### Added
 
