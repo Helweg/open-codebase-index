@@ -674,6 +674,52 @@ describe("native OpenCode codebase_context", () => {
     expect(result.details?.recovery?.successfulAttemptIndex).toBeUndefined();
   });
 
+  it("relaxes invalid scope filters for explicit-symbol definition lookup", async () => {
+    const lookup = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{
+        filePath: "src/indexer/index.ts",
+        startLine: 100,
+        endLine: 110,
+        name: "getStatus",
+        chunkType: "method",
+        content: "source",
+        score: 0.99,
+      }]);
+
+    const result = await resolveSearchContext({
+      query: "find the getStatus method definition",
+      symbol: "getStatus",
+      limit: 10,
+      tokenBudget: 128,
+      fileType: undefined,
+      directory: "does/not/exist",
+      diagnostic: true,
+    }, {
+      lookup,
+      search: vi.fn(),
+    });
+
+    expect(lookup).toHaveBeenNthCalledWith(1, "getStatus", 100, {
+      fileType: undefined,
+      directory: "does/not/exist",
+    }, true, expect.any(Function));
+    expect(lookup).toHaveBeenNthCalledWith(2, "getStatus", 100, {}, true, expect.any(Function));
+    expect(result.text).toContain("src/indexer/index.ts:100-110");
+    expect(result.text).toContain("Recovery: directory filter removed.");
+    expect(result.details?.recovery?.successfulAttemptIndex).toBe(1);
+    expect(result.details?.diagnostic?.contextPackTrace).toMatchObject({
+      selectedCandidates: [{
+        filePath: "src/indexer/index.ts",
+        startLine: 100,
+        endLine: 110,
+        score: 0.99,
+        chunkType: "method",
+        name: "getStatus",
+      }],
+    });
+  });
+
   it("does not duplicate identical conceptual attempts", async () => {
     const search = vi.fn()
       .mockResolvedValueOnce([])
@@ -703,6 +749,10 @@ describe("native OpenCode codebase_context", () => {
   });
 
   it("fits all-failure output to the provided token budget", async () => {
+    const search = vi.fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([]);
+
     const result = await resolveSearchContext(
       {
         query: "where is neverFound defined",
@@ -714,19 +764,33 @@ describe("native OpenCode codebase_context", () => {
       },
       {
         lookup: vi.fn().mockResolvedValue([]),
-        search: vi.fn()
-          .mockResolvedValueOnce([])
-          .mockResolvedValueOnce([]),
+        search,
       },
     );
 
     expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
     expect(result.details?.route).toBe("definition");
-    expect(result.details?.recovery?.attempts).toHaveLength(1);
+    expect(result.details?.recovery?.attempts).toEqual([
+      {
+        kind: "definition",
+        scope: "scoped",
+        resultCount: 0,
+        relaxedFields: [],
+      },
+      {
+        kind: "definition",
+        scope: "unscoped",
+        resultCount: 0,
+        relaxedFields: ["directory", "fileType"],
+      },
+    ]);
+    expect(result.text).toContain("No definition found.");
+    expect(result.text).toContain("Recovery: directory filter removed; file-type filter removed.");
+    expect(search).not.toHaveBeenCalled();
   });
 
-  it("keeps explicit symbols definition-only within their normalized scope", async () => {
+  it("keeps explicit symbols definition-only while relaxing their normalized scope", async () => {
     const lookup = vi.fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce([{
@@ -749,10 +813,14 @@ describe("native OpenCode codebase_context", () => {
       directory: " ./src\\tools/ ",
     }, { lookup, search });
 
-    expect(lookup).toHaveBeenCalledOnce();
+    expect(lookup).toHaveBeenCalledTimes(2);
     expect(lookup).toHaveBeenNthCalledWith(1, "resolveSearchContext", 100, {
       fileType: "ts",
       directory: "src/tools",
+    }, true, undefined);
+    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {
+      fileType: undefined,
+      directory: undefined,
     }, true, undefined);
     expect(search).not.toHaveBeenCalled();
     expect(result.details).toMatchObject({
@@ -760,7 +828,8 @@ describe("native OpenCode codebase_context", () => {
       routedQuery: "resolveSearchContext",
       truncated: expect.any(Boolean),
     });
-    expect(result.text).toContain("No definition found.");
+    expect(result.text).toContain("src/tools/context.ts:1-4");
+    expect(result.text).not.toContain("No definition found.");
     expect(result.text).not.toContain("resolveSearchContext  ");
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
   });
