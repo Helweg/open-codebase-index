@@ -42,7 +42,7 @@ Use this when you just want the shortest path to a good PR:
 
 ### Prerequisites
 
-- Node.js >= 20
+- Node.js 22.19 or newer for development (required by the Pi development dependencies). Node.js 24 LTS is recommended. The published package supports Node.js 22.13 or newer.
 - Rust toolchain (for native module)
 - npm
 

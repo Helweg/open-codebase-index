@@ -7,7 +7,7 @@ import { STABLE_NATIVE_BINARY_NAME } from "../identity-catalog.js";
 
 export function getNativeBindingFilename(
   platform: NodeJS.Platform = os.platform(),
-  arch: NodeJS.Architecture = os.arch(),
+  arch: NodeJS.Architecture = process.arch,
 ): string {
   if (platform === "darwin" && arch === "arm64") {
     return `${STABLE_NATIVE_BINARY_NAME}.darwin-arm64.node`;
@@ -31,7 +31,7 @@ export function getNativeBindingFilename(
 export function resolveNativeBindingPath(
   packageRoot: string,
   platform: NodeJS.Platform = os.platform(),
-  arch: NodeJS.Architecture = os.arch(),
+  arch: NodeJS.Architecture = process.arch,
 ): string {
   return path.join(packageRoot, "native", getNativeBindingFilename(platform, arch));
 }
