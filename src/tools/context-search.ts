@@ -494,6 +494,37 @@ export async function resolveSearchContext(
       );
     }
 
+    if (explicitSymbol && hasFilters) {
+      const relaxedDefinitionResults = await tryDefinitionLookup(
+        definitionSymbol,
+        Boolean(explicitSymbol),
+        unscopedScope,
+        relaxedFields,
+      );
+      if (relaxedDefinitionResults.length > 0) {
+        const heading = buildPackHeading("definition", decisions);
+        return toResult(
+          "definition",
+          definitionSymbol,
+          buildContextPack(relaxedDefinitionResults, {
+            tokenBudget,
+            maxResults: limit,
+            heading,
+            preserveInputOrder: true,
+            ...(input.diagnostic ? {
+              trace: (trace) => {
+                const attemptState = findSuccessfulAttemptState("definition");
+                if (attemptState) {
+                  attemptState.contextPackTrace = trace;
+                }
+              },
+            } : undefined),
+          }),
+          findSuccessfulAttemptState("definition"),
+        );
+      }
+    }
+
     if (explicitSymbol) {
       const heading = buildRecoveryFallbackText(
         attempts,
