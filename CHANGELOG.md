@@ -7,18 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- **Node.js runtime requirement**: Raised the minimum supported Node.js version from 20 to 22.13 in preparation for planned PDF text indexing. CI tests Node.js 22 and 24, with packed-package smoke checks on 22.13. Node.js 24 LTS remains recommended and is used for release packaging. PDF indexing is not included in this release.
+## [0.27.0] - 2026-09-08
 
 ### Added
 
-- **Cancellable and diagnosable MCP operations**: Added inactivity-based cancellation, exact-token monotone progress, redacted structured handler errors, and durable per-process phase diagnostics exposed by `index_status`. Shared indexing detaches cancelled callers without stopping work still awaited by another consumer, while exclusively owned cancelled work rolls back and releases its index lease. MCP SDK `1.29.0`, public tool names, package identities, and index formats remain unchanged.
+- **Cancellable and diagnosable MCP operations**: All MCP tools now support cooperative cancellation, exact-token monotone progress, and inactivity detection through `mcp.stallTimeoutMs`, which defaults to five minutes and can be disabled with `0`. Failures consistently return `isError: true` with a redacted `structuredContent.error`, while seven-day runtime records under `<indexRoot>/mcp-runtime/` are summarized by `index_status.mcpDiagnostics`. Shared indexing detaches cancelled callers without stopping work still awaited by another consumer, while exclusively owned cancelled work rolls back and releases its index lease. MCP SDK `1.29.0`, public tool names, request schemas, package identities, and index formats remain unchanged.
+
+### Changed
+
+- **Breaking Node.js runtime requirement**: Raised the minimum supported Node.js version from 20 to 22.13 in preparation for planned PDF text indexing. CI tests Node.js 22 and 24, with packed-package smoke checks on 22.13. Node.js 24 LTS remains recommended and is used for release packaging. The bundled `@opencode-ai/plugin` dependency is pinned to `1.3.13` to preserve the Node.js 22.13 runtime floor, while its peer compatibility range remains `^1.0.0`. PDF indexing is not included in this release.
 
 ### Fixed
 
 - **Context retrieval quality**: Code-focused `codebase_context` searches now honor source-path prioritization, and explicit definition lookups retry without invalid directory or file-type hints before reporting a miss while remaining definition-only.
-- **Swift indexing stability**: Deduplicated identical Swift chunk windows before embedding, rejected duplicate native vector-store batch keys atomically, and bumped the Swift parser cache version so existing indexes are reparsed.
+- **Swift indexing stability**: Deduplicated identical Swift chunk windows, applied deterministic last-wins chunk-ID deduplication before embedding and publication, rejected duplicate native vector-store batch keys atomically, and bumped the Swift parser cache version so existing indexes receive a one-time reparse.
 - **Transitive dependency security**: Pinned `fast-uri` to 3.1.6 and `qs` to 6.16.0 through npm overrides, resolving the current URI parsing and query-string parsing Dependabot advisories in the MCP runtime dependency tree.
 
 ## [0.26.0] - 2026-08-29
