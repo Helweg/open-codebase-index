@@ -5688,7 +5688,10 @@ export class Indexer {
     const rrfK = this.config.search.rrfK;
     const rerankTopN = this.config.search.rerankTopN;
     const filterByBranch = options?.filterByBranch ?? true;
-    const sourceIntent = options?.definitionIntent === true || classifyQueryIntentRaw(query) === "source";
+    const sourceIntent =
+      options?.definitionIntent === true ||
+      options?.prioritizeSourcePaths === true ||
+      classifyQueryIntentRaw(query) === "source";
     const prioritizeSourcePaths = sourceIntent || options?.prioritizeSourcePaths === true;
     const identifierHints = extractIdentifierHints(query);
     const candidateLimit = maxResults * (prioritizeSourcePaths ? 12 : 4);
