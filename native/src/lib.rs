@@ -7,6 +7,7 @@ mod community;
 mod db;
 mod hasher;
 mod inverted_index;
+mod markup;
 mod parser;
 mod store;
 mod types;
@@ -58,10 +59,15 @@ pub fn parse_file_as_text(
 }
 
 #[napi]
-pub fn parse_files(files: Vec<FileInput>, lines_per_chunk: Option<u32>) -> Result<Vec<ParsedFile>> {
+pub fn parse_files(
+    files: Vec<FileInput>,
+    lines_per_chunk: Option<u32>,
+    max_markup_chunks: Option<u32>,
+) -> Result<Vec<ParsedFile>> {
     parser::parse_files_parallel(
         files,
         lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
+        max_markup_chunks.map(|value| value as usize),
     )
     .map_err(|e| Error::from_reason(e.to_string()))
 }
@@ -239,6 +245,7 @@ pub struct ParsedFile {
     pub chunks: Vec<CodeChunk>,
     pub symbols: Vec<ParsedSymbol>,
     pub hash: String,
+    pub parse_failed: bool,
 }
 
 #[napi(object)]

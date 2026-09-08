@@ -11,13 +11,18 @@ export function parseFileAsText(filePath: string, content: string, linesPerChunk
   return result.map(mapChunk);
 }
 
-export function parseFiles(files: FileInput[], linesPerChunk?: number): ParsedFile[] {
-  const result = native.parseFiles(files, linesPerChunk);
+export function parseFiles(
+  files: FileInput[],
+  linesPerChunk?: number,
+  maxMarkupChunks?: number,
+): ParsedFile[] {
+  const result = native.parseFiles(files, linesPerChunk, maxMarkupChunks);
   return result.map((f: any) => ({
     path: f.path,
     chunks: f.chunks.map(mapChunk),
     symbols: (f.symbols ?? []).map(mapParsedSymbol),
     hash: f.hash,
+    parseFailed: f.parseFailed ?? f.parse_failed ?? false,
   }));
 }
 
@@ -59,7 +64,12 @@ export function extractCalls(content: string, language: string): CallSiteData[] 
 }
 
 export function generateChunkId(filePath: string, chunk: CodeChunk): string {
-  const hash = hashContent(`${filePath}:${chunk.startLine}:${chunk.endLine}:${chunk.content}`);
+  const sourceColumns = chunk.language === "xml" || chunk.language === "svg"
+    ? `:${chunk.startCol ?? 0}:${chunk.endCol ?? 0}`
+    : "";
+  const hash = hashContent(
+    `${filePath}:${chunk.startLine}:${chunk.endLine}${sourceColumns}:${chunk.content}`,
+  );
   return `chunk_${hash.slice(0, 16)}`;
 }
 

@@ -63,7 +63,8 @@ export interface IndexingConfig {
   maxFilesPerDirectory: number;
   /**
    * When a file hits maxChunksPerFile, fallback to text-based (chunk_by_lines) parsing
-   * instead of skipping the rest of the file. Default: true
+   * instead of skipping the rest of the file. XML and SVG retain their sanitized
+   * semantic chunks so rendering markup is never reintroduced. Default: true
    */
   fallbackToTextOnMaxChunks: boolean;
   /**
@@ -235,6 +236,10 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const defaultMcp = getDefaultMcpConfig();
 
   const rawIndexing = (input.indexing && typeof input.indexing === "object" ? input.indexing : {}) as Record<string, unknown>;
+  const maxChunksPerFile = typeof rawIndexing.maxChunksPerFile === "number"
+    && Number.isFinite(rawIndexing.maxChunksPerFile)
+    ? Math.min(0xffff_ffff, Math.max(1, Math.floor(rawIndexing.maxChunksPerFile)))
+    : defaultIndexing.maxChunksPerFile;
   const indexing: IndexingConfig = {
     autoIndex: typeof rawIndexing.autoIndex === "boolean" ? rawIndexing.autoIndex : defaultIndexing.autoIndex,
     autoIndexWaitMs: typeof rawIndexing.autoIndexWaitMs === "number"
@@ -251,7 +256,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
       ? rawIndexing.pauseBackgroundIndexingOnBattery
       : defaultIndexing.pauseBackgroundIndexingOnBattery,
     maxFileSize: typeof rawIndexing.maxFileSize === "number" ? rawIndexing.maxFileSize : defaultIndexing.maxFileSize,
-    maxChunksPerFile: typeof rawIndexing.maxChunksPerFile === "number" ? Math.max(1, rawIndexing.maxChunksPerFile) : defaultIndexing.maxChunksPerFile,
+    maxChunksPerFile,
     semanticOnly: typeof rawIndexing.semanticOnly === "boolean" ? rawIndexing.semanticOnly : defaultIndexing.semanticOnly,
     retries: typeof rawIndexing.retries === "number" ? rawIndexing.retries : defaultIndexing.retries,
     retryDelayMs: typeof rawIndexing.retryDelayMs === "number" ? rawIndexing.retryDelayMs : defaultIndexing.retryDelayMs,

@@ -699,12 +699,18 @@ const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
+const MARKUP_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "1";
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
   const normalizedFilePath = path.resolve(filePath);
   const normalizedRoot = path.resolve(rootPath);
   return normalizedFilePath === normalizedRoot || normalizedFilePath.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+function isMarkupFilePath(filePath: string): boolean {
+  const extension = path.extname(filePath).toLowerCase();
+  return extension === ".xml" || extension === ".svg";
 }
 
 function promoteIdentifierMatches(
@@ -1757,6 +1763,12 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.parser.metalVersion", catalogIdentity);
   }
 
+  private getMarkupParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.markupVersion", catalogIdentity);
+  }
+
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -1773,6 +1785,8 @@ export class Indexer {
       === SWIFT_PARSER_VERSION
       && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
       === METAL_PARSER_VERSION
+      && database.getMetadata(this.getMarkupParserVersionMetadataKey(catalogIdentity))
+      === MARKUP_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
       === SYMBOL_EXTRACTOR_VERSION;
   }
@@ -4245,11 +4259,16 @@ export class Indexer {
       );
       filesCount += readable.length;
       const contentByPath = new Map(readable.map((f) => [f.path, f.content]));
-      const parsedFiles = parseFiles(readable, this.config.indexing.linesPerChunk);
+      const parsedFiles = parseFiles(
+        readable,
+        this.config.indexing.linesPerChunk,
+        this.config.indexing.maxChunksPerFile,
+      );
       for (const parsed of parsedFiles) {
         let chunksToProcess = parsed.chunks;
         if (
           this.config.indexing.fallbackToTextOnMaxChunks &&
+          !isMarkupFilePath(parsed.path) &&
           chunksToProcess.length > this.config.indexing.maxChunksPerFile
         ) {
           const content = contentByPath.get(parsed.path);
@@ -4445,6 +4464,8 @@ export class Indexer {
     const reparseCachedSwiftFiles = database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
     const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
     const reparseCachedMetalFiles = database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
+    const markupParserMetadataKey = this.getMarkupParserVersionMetadataKey();
+    const reparseCachedMarkupFiles = database.getMetadata(markupParserMetadataKey) !== MARKUP_PARSER_VERSION;
     const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
     const refreshCachedSymbols = database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
     if (
@@ -4458,6 +4479,12 @@ export class Indexer {
       Array.from(this.fileHashCache.keys()).some((filePath) => path.extname(filePath).toLowerCase() === ".metal")
     ) {
       this.logger.info("Reindexing cached Metal files for parser support");
+    }
+    if (
+      reparseCachedMarkupFiles &&
+      Array.from(this.fileHashCache.keys()).some(isMarkupFilePath)
+    ) {
+      this.logger.info("Reindexing cached XML and SVG files for semantic markup support");
     }
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
@@ -4574,6 +4601,8 @@ export class Indexer {
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles && path.extname(storedPath).toLowerCase() === ".metal";
+      const requiresMarkupParserUpgrade =
+        reparseCachedMarkupFiles && isMarkupFilePath(storedPath);
       const inMigrationScope =
         forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
@@ -4583,6 +4612,7 @@ export class Indexer {
         && !needsCallGraphRefresh
         && !requiresSwiftParserUpgrade
         && !requiresMetalParserUpgrade
+        && !requiresMarkupParserUpgrade
         && !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(storedPath);
@@ -4740,6 +4770,7 @@ export class Indexer {
         const parsed = parseFiles(
           [{ path: descriptor.storedPath, content }],
           this.config.indexing.linesPerChunk,
+          this.config.indexing.maxChunksPerFile,
         )[0];
         return {
           content,
@@ -4844,7 +4875,11 @@ export class Indexer {
         const loadedByPath = new Map(loadedFiles.map((file) => [file.path, file]));
         const descriptorByPath = new Map(descriptorBatch.map((descriptor) => [descriptor.storedPath, descriptor]));
         const parseStartTime = performance.now();
-        const parsedFiles = parseFiles(loadedFiles, this.config.indexing.linesPerChunk);
+        const parsedFiles = parseFiles(
+          loadedFiles,
+          this.config.indexing.linesPerChunk,
+          this.config.indexing.maxChunksPerFile,
+        );
         const parseMs = performance.now() - parseStartTime;
         this.logger.recordFilesParsed(parsedFiles.length);
         this.logger.recordParseDuration(parseMs);
@@ -4866,7 +4901,10 @@ export class Indexer {
             throw new Error(`Parsed file was not present in its source batch: ${parsed.path}`);
           }
 
-          if (parsed.chunks.length === 0) {
+          if (
+            parsed.parseFailed === true
+            || (parsed.chunks.length === 0 && !isMarkupFilePath(parsed.path))
+          ) {
             stats.parseFailures.push(path.isAbsolute(parsed.path)
               ? path.relative(this.projectRoot, parsed.path)
               : parsed.path);
@@ -4875,6 +4913,7 @@ export class Indexer {
           let chunksToProcess = parsed.chunks;
           if (
             this.config.indexing.fallbackToTextOnMaxChunks &&
+            !isMarkupFilePath(parsed.path) &&
             chunksToProcess.length > this.config.indexing.maxChunksPerFile
           ) {
             chunksToProcess = parseFileAsText(parsed.path, loadedFile.content, this.config.indexing.linesPerChunk);
@@ -5275,6 +5314,7 @@ export class Indexer {
         }
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
@@ -5315,6 +5355,7 @@ export class Indexer {
         this.saveInvertedIndex(invertedIndex);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
@@ -5406,6 +5447,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
       database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);

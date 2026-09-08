@@ -9,6 +9,7 @@ export const CHUNK_TYPES = [
   "impl",
   "trait",
   "module",
+  "element",
   "other",
 ] as const;
 export type ChunkType = (typeof CHUNK_TYPES)[number];

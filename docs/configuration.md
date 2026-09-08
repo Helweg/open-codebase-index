@@ -222,9 +222,11 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 | `requireProjectMarker` | `true` | Require `.git`, `package.json`, or another project marker before watching |
 | `maxDepth` | `5` | Directory traversal depth; `-1` is unlimited |
 | `maxFilesPerDirectory` | `100` | Per-directory file cap |
-| `fallbackToTextOnMaxChunks` | `true` | Fall back to line chunks when the semantic cap is reached |
+| `fallbackToTextOnMaxChunks` | `true` | Fall back to line chunks when the semantic cap is reached, except for sanitized XML and SVG chunks |
 | `linesPerChunk` | `30` | Max lines per chunk for line-based parsing (`.jsonl`, `.txt`, unknown extensions, and the AST fallback). Lower it for finer-grained retrieval on line-delimited files. Only the line-based path is affected; AST-parsed languages are unchanged |
 | `gitBlame.enabled` | `false` | Store git blame metadata for filtering |
+
+XML and SVG are opt-in formats. Add `**/*.xml` or `**/*.svg` to `additionalInclude` when they are useful to the project. XML chunks preserve element paths, text, and bounded attributes. SVG chunks preserve `text`, `title`, `desc`, and accessibility attributes while excluding geometry, styles, classes, and layer metadata.
 
 Example:
 

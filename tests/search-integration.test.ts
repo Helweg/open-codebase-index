@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../src/config/schema.js";
 import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
-import { Database, hashContent } from "../src/native/index.js";
+import { Database, hashContent, InvertedIndex, VectorStore } from "../src/native/index.js";
 
 describe("search integration", () => {
   let tempDir: string;
@@ -374,6 +374,199 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       restoredDb.close();
     }
 
+    expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
+  });
+
+  it("indexes sanitized SVG chunks and reparses unchanged markup after a parser upgrade", async () => {
+    const svgFile = path.join(tempDir, "diagram.svg");
+    const geometryOnlySvgFile = path.join(tempDir, "geometry-only.svg");
+    const xmlFile = path.join(tempDir, "service.xml");
+    fs.writeFileSync(
+      svgFile,
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" aria-label="Accessible diagram" viewBox="VIEWBOX_NOISE" data-layer="LAYER_NOISE">
+  <title>Diagram title</title>
+  <desc>Diagram description</desc>
+  <defs><title>DEFS_TEXT_NOISE</title></defs>
+  <g aria-hidden="true"><text>ARIA_HIDDEN_TEXT_NOISE</text></g>
+  <text style="display:none">DISPLAY_NONE_TEXT_NOISE</text>
+  <style>.STYLE_NOISE { fill: red; }</style>
+  <g id="LAYER_NOISE" fill="FILL_NOISE" stroke="STROKE_NOISE" inkscape:groupmode="layer" inkscape:label="INKSCAPE_LAYER_NOISE">
+    <path d="PATH_NOISE" />
+    <text x="COORD_NOISE">Visible sales <tspan>2026</tspan></text>
+    <circle aria-description="Current marker" cx="COORD_NOISE" />
+  </g>
+</svg>`,
+      "utf-8",
+    );
+    fs.writeFileSync(
+      geometryOnlySvgFile,
+      '<svg xmlns="http://www.w3.org/2000/svg"><path d="GEOMETRY_ONLY_NOISE" fill="red"/></svg>',
+      "utf-8",
+    );
+    fs.writeFileSync(
+      xmlFile,
+      `<service environment="production">
+  <display-name>Billing API</display-name>
+  <endpoint method="POST">/payments</endpoint>
+</service>`,
+      "utf-8",
+    );
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      include: [],
+      additionalInclude: ["**/*.svg", "**/*.xml"],
+      indexing: {
+        watchFiles: false,
+        maxChunksPerFile: 1,
+        fallbackToTextOnMaxChunks: true,
+      },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const markupVersionKey = `index.parser.markupVersion.${hashContent("default").slice(0, 24)}`;
+    const firstIndexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
+    const firstStats = await firstIndexer.index();
+
+    expect(firstStats.indexedChunks).toBe(2);
+    expect(firstStats.parseFailures).toEqual([]);
+    const embeddedText = fetchSpy.mock.calls.flatMap(([, init]) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[] };
+      return body.input ?? [];
+    }).join("\n");
+    expect(embeddedText).toContain("Visible sales 2026");
+    expect(embeddedText).toContain('service/endpoint [method="POST"]: /payments');
+    expect(embeddedText).not.toContain("PATH_NOISE");
+    expect(embeddedText).not.toContain("COORD_NOISE");
+    expect(embeddedText).not.toContain("STYLE_NOISE");
+    expect(embeddedText).not.toContain("LAYER_NOISE");
+    expect(embeddedText).not.toContain("VIEWBOX_NOISE");
+    expect(embeddedText).not.toContain("FILL_NOISE");
+    expect(embeddedText).not.toContain("STROKE_NOISE");
+    expect(embeddedText).not.toContain("INKSCAPE_LAYER_NOISE");
+    expect(embeddedText).not.toContain("GEOMETRY_ONLY_NOISE");
+    expect(embeddedText).not.toContain("DEFS_TEXT_NOISE");
+    expect(embeddedText).not.toContain("ARIA_HIDDEN_TEXT_NOISE");
+    expect(embeddedText).not.toContain("DISPLAY_NONE_TEXT_NOISE");
+
+    const svgResults = await firstIndexer.search("Visible sales 2026", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+      fileType: "svg",
+    });
+    expect(svgResults[0]?.filePath).toContain("diagram.svg");
+    const xmlResults = await firstIndexer.search("POST payments", 5, {
+      metadataOnly: true,
+      filterByBranch: false,
+      fileType: "xml",
+    });
+    expect(xmlResults[0]?.filePath).toContain("service.xml");
+
+    const firstStatus = await firstIndexer.getStatus();
+    await firstIndexer.close();
+    const legacyChunks = [
+      {
+        chunkId: "legacy_svg_line_chunk",
+        contentHash: hashContent(fs.readFileSync(svgFile, "utf-8")),
+        filePath: "diagram.svg",
+        startLine: 1,
+        endLine: 11,
+        nodeType: "block",
+        language: "text",
+        content: fs.readFileSync(svgFile, "utf-8"),
+      },
+      {
+        chunkId: "legacy_xml_line_chunk",
+        contentHash: hashContent(fs.readFileSync(xmlFile, "utf-8")),
+        filePath: "service.xml",
+        startLine: 1,
+        endLine: 4,
+        nodeType: "block",
+        language: "text",
+        content: fs.readFileSync(xmlFile, "utf-8"),
+      },
+    ];
+    const staleDatabase = new Database(path.join(firstStatus.indexPath, "codebase.db"));
+    try {
+      const originalChunkIds = [
+        ...staleDatabase.getChunksByFile("diagram.svg"),
+        ...staleDatabase.getChunksByFile("service.xml"),
+      ].map((chunk) => chunk.chunkId);
+      const branchKey = staleDatabase.getAllBranches()[0];
+      expect(branchKey).toBeDefined();
+
+      staleDatabase.deleteChunksByFile("diagram.svg");
+      staleDatabase.deleteChunksByFile("service.xml");
+      staleDatabase.upsertChunksBatch(legacyChunks.map(({ content: _content, ...chunk }) => chunk));
+      staleDatabase.addChunksToBranchBatch(
+        branchKey!,
+        legacyChunks.map((chunk) => chunk.chunkId),
+      );
+      staleDatabase.deleteMetadata(markupVersionKey);
+
+      const vectorStore = new VectorStore(path.join(firstStatus.indexPath, "vectors"), 8);
+      vectorStore.loadStrict();
+      for (const chunkId of originalChunkIds) {
+        vectorStore.remove(chunkId);
+      }
+      for (const [index, chunk] of legacyChunks.entries()) {
+        vectorStore.add(chunk.chunkId, Array(8).fill((index + 1) / 10), {
+          filePath: chunk.filePath,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          chunkType: "other",
+          language: chunk.language,
+          hash: chunk.contentHash,
+        });
+      }
+      vectorStore.save();
+
+      const invertedIndex = new InvertedIndex(
+        path.join(firstStatus.indexPath, "inverted-index.json"),
+      );
+      invertedIndex.load();
+      for (const chunkId of originalChunkIds) {
+        invertedIndex.removeChunk(chunkId);
+      }
+      for (const chunk of legacyChunks) {
+        invertedIndex.addChunk(chunk.chunkId, chunk.content);
+      }
+      invertedIndex.save();
+    } finally {
+      staleDatabase.close();
+    }
+
+    const embeddingCallsBeforeReindex = fetchSpy.mock.calls.length;
+    const secondIndexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
+    await secondIndexer.index();
+    const restoredDatabase = new Database(path.join(firstStatus.indexPath, "codebase.db"));
+    try {
+      expect(restoredDatabase.getChunksByFile("diagram.svg")).toEqual([
+        expect.objectContaining({ language: "svg", nodeType: "element" }),
+      ]);
+      expect(restoredDatabase.getChunksByFile("service.xml")).toEqual([
+        expect.objectContaining({ language: "xml", nodeType: "element" }),
+      ]);
+      expect(restoredDatabase.getChunk("legacy_svg_line_chunk")).toBeNull();
+      expect(restoredDatabase.getChunk("legacy_xml_line_chunk")).toBeNull();
+      expect(restoredDatabase.getMetadata(markupVersionKey)).toBe("1");
+    } finally {
+      restoredDatabase.close();
+    }
+    const migratedVectorStore = new VectorStore(path.join(firstStatus.indexPath, "vectors"), 8);
+    migratedVectorStore.loadStrict();
+    expect(migratedVectorStore.getAllKeys()).not.toContain("legacy_svg_line_chunk");
+    expect(migratedVectorStore.getAllKeys()).not.toContain("legacy_xml_line_chunk");
+    const migratedInvertedIndex = new InvertedIndex(
+      path.join(firstStatus.indexPath, "inverted-index.json"),
+    );
+    migratedInvertedIndex.load();
+    expect(migratedInvertedIndex.hasChunk("legacy_svg_line_chunk")).toBe(false);
+    expect(migratedInvertedIndex.hasChunk("legacy_xml_line_chunk")).toBe(false);
     expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
   });
 

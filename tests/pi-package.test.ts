@@ -69,5 +69,8 @@ describe("Pi package integration", () => {
     }
     expect(similarParams).toContain("blameSince");
     expect(similarParams).toContain("blameUntil");
+    for (const params of [searchParams, peekParams, similarParams]) {
+      expect(params).toContain("element");
+    }
   });
 });

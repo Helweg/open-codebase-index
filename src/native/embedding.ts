@@ -23,6 +23,8 @@ function getEmbeddingHeaderParts(chunk: CodeChunk, filePath: string): string[] {
     swift: "Swift",
     go: "Go",
     java: "Java",
+    xml: "XML",
+    svg: "SVG",
   };
 
   const typeDescriptors: Record<string, string> = {
@@ -52,6 +54,7 @@ function getEmbeddingHeaderParts(chunk: CodeChunk, filePath: string): string[] {
     struct_item: "struct",
     enum_item: "enum",
     trait_item: "trait",
+    element: "element",
   };
 
   const lang = langDescriptors[chunk.language] || chunk.language;
@@ -69,7 +72,9 @@ function getEmbeddingHeaderParts(chunk: CodeChunk, filePath: string): string[] {
     parts.push(`in ${fileName}`);
   }
 
-  const semanticHints = extractSemanticHints(chunk.name || "", chunk.content);
+  const semanticHints = chunk.chunkType === "element"
+    ? []
+    : extractSemanticHints(chunk.name || "", chunk.content);
   if (semanticHints.length > 0) {
     parts.push(`Purpose: ${semanticHints.join(", ")}`);
   }
