@@ -149,3 +149,10 @@ Acceptance checks:
 
 Milestone 1 is a tested implementation start, not user-facing PDF support. Do not
 advertise PDF indexing or add default PDF globs until milestones 2–4 have passed.
+
+## Validation evidence
+
+See [the requirement-by-requirement validation report](pdf-indexing-validation.md).
+The real public CLI check confirms that explicitly including PDFs still follows
+the old raw-text path. Do not enable PDF globs until the shared ingestion milestone
+is complete. The extractor is implemented, but full PDF indexing remains pending.
