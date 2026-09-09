@@ -5831,12 +5831,11 @@ export class Indexer {
     );
     const keywordMs = performance.now() - keywordStartTime;
 
-    const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
+    const isAllowedCandidate = (candidate: RankedCandidate): boolean =>
       matchesHardSearchFilters(candidate, options, this.projectRoot)
-    );
-    const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
-      matchesHardSearchFilters(candidate, options, this.projectRoot)
-    );
+      && (options?.definitionIntent !== true || candidate.metadata.documentLocation?.kind !== "pdf");
+    const scopedSemanticCandidates = semanticCandidates.filter(isAllowedCandidate);
+    const scopedKeywordCandidates = keywordCandidates.filter(isAllowedCandidate);
 
     if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
