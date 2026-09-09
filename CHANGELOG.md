@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Transitive dependency security**: Updated dependency overrides for `hono` to `4.13.5` and `js-yaml` to `4.3.2`, with a lockfile-only bump of `nanoid` to `3.3.18`, addressing the current security advisories in these packages.
 - **PDF definition exclusion**: Definition-oriented retrieval now excludes PDF passages before ranking and external reranking, while ordinary document search retains page-aware results.
 
 ## [0.27.0] - 2026-09-08
