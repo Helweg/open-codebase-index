@@ -77,7 +77,7 @@ Observed:
 
 | Requirement or changed output | Check | Observed result |
 |---|---|---|
-| Plan and implement opt-in PDF indexing | `docs/pdf-indexing-plan.md`, extractor and shared ingestion implementation | Four milestones documented and integrated |
+| Plan and implement opt-in PDF indexing | `docs/pdf-indexing-plan.md`, extractor and shared ingestion implementation | Milestones 1–3 and the opt-in integration portion of milestone 4 delivered; deferred release gates remain explicit |
 | Local text extraction and page numbering | Published W3C document plus real-parser multi-page test | Correct W3C text on page 1; multi-page test returns pages 1/2/3 with blank page 2 preserved |
 | Preserve line breaks and repeated page text | `extracts text from multiple pages and keeps empty pages`; `preserves a nonzero-offset byte view and repeated page text` | Expected newline and distinct page numbers asserted and passed |
 | Byte/page/aggregate text limits | Limit tests and `accepts exact byte, page and aggregate character limits` | Exact boundaries accepted, over-limit inputs return the matching typed code |
