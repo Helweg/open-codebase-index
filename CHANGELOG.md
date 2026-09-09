@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **PDF extraction foundation (internal)**: Added a local, page-aware PDF text extractor with input/output limits and cooperative cancellation, plus a phased [PDF indexing plan](docs/pdf-indexing-plan.md). PDF discovery, indexing, and search citations are not enabled yet. OCR and password-protected documents are not supported.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added
