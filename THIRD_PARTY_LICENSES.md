@@ -32,6 +32,17 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+## pdfjs-dist 6.3.289 (PDF.js)
+
+- Project: [mozilla/pdf.js](https://github.com/mozilla/pdf.js)
+- Distribution: [pdfjs-dist 6.3.289](https://www.npmjs.com/package/pdfjs-dist/v/6.3.289)
+- License: Apache-2.0
+- Copyright: Mozilla Foundation and PDF.js contributors.
+
+PDF.js is an external runtime dependency for local PDF text extraction. Its
+distribution retains its own `LICENSE` and bundled third-party notices. This
+project does not modify or vendor the PDF.js distribution.
+
 ## tree-sitter-php 0.24.2
 
 - Project: [tree-sitter/tree-sitter-php](https://github.com/tree-sitter/tree-sitter-php)

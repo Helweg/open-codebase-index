@@ -66,6 +66,12 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
     lines.push(`Tokens: ${stats.tokensUsed.toLocaleString()}, Duration: ${(stats.durationMs / 1000).toFixed(1)}s`);
   }
 
+  if (stats.parseFailures.length > 0) {
+    lines.push("");
+    const label = verbose ? "Files with no extractable chunks" : "Files not indexed";
+    lines.push(`${label} (${stats.parseFailures.length}): ${stats.parseFailures.slice(0, 10).join(", ")}${stats.parseFailures.length > 10 ? "..." : ""}`);
+  }
+
   if (verbose) {
     if (stats.skippedFiles.length > 0) {
       const tooLarge = stats.skippedFiles.filter(f => f.reason === "too_large");
@@ -85,10 +91,6 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
       }
     }
 
-    if (stats.parseFailures.length > 0) {
-      lines.push("");
-      lines.push(`Files with no extractable chunks (${stats.parseFailures.length}): ${stats.parseFailures.slice(0, 10).join(", ")}${stats.parseFailures.length > 10 ? "..." : ""}`);
-    }
   }
 
   return lines.join("\n");
@@ -232,7 +234,9 @@ export function formatCodebasePeek(results: SearchResult[]): string {
   }
 
   const formatted = results.map((r, idx) => {
-    const location = `${r.filePath}:${r.startLine}-${r.endLine}`;
+    const location = r.documentLocation?.kind === "pdf"
+      ? `${r.filePath}, ${r.documentLocation.pageStart === r.documentLocation.pageEnd ? `p. ${r.documentLocation.pageStart}` : `pp. ${r.documentLocation.pageStart}-${r.documentLocation.pageEnd}`}`
+      : `${r.filePath}:${r.startLine}-${r.endLine}`;
     const name = r.name ? `"${r.name}"` : "(anonymous)";
     return `[${idx + 1}] ${r.chunkType} ${name} at ${location} (score: ${r.score.toFixed(2)})${formatBlame(r)}`;
   });
@@ -370,6 +374,11 @@ export function formatCallGraphPathResult(result: CallGraphPathResult): string {
 }
 
 function formatResultHeader(result: SearchResult, index: number): string {
+  if (result.documentLocation?.kind === "pdf") {
+    const { pageStart, pageEnd } = result.documentLocation;
+    const pages = pageStart === pageEnd ? `p. ${pageStart}` : `pp. ${pageStart}-${pageEnd}`;
+    return `[${index + 1}] ${result.chunkType} in ${result.filePath}, ${pages}`;
+  }
   return result.name
     ? `[${index + 1}] ${result.chunkType} "${result.name}" in ${result.filePath}:${result.startLine}-${result.endLine}`
     : `[${index + 1}] ${result.chunkType} in ${result.filePath}:${result.startLine}-${result.endLine}`;

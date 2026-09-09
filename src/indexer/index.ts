@@ -126,6 +126,8 @@ import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
 } from "./local-module-resolution.js";
+import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
+import { PdfExtractionError } from "../documents/pdf.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 
@@ -411,6 +413,7 @@ export interface SearchResult {
   chunkType: string;
   name?: string;
   blame?: GitBlameMetadata;
+  documentLocation?: ChunkMetadata["documentLocation"];
 }
 
 interface CandidateSnapshot {
@@ -1131,13 +1134,13 @@ export function selectChunksWithFileCoverage<T>(chunks: T[], limit: number): T[]
   return selected;
 }
 
-export function selectIndexableChunks<T extends { chunkType: string }>(
+export function selectIndexableChunks<T extends { chunkType: string; documentLocation?: { kind: string } }>(
   chunks: T[],
   limit: number,
   semanticOnly: boolean,
 ): T[] {
   const indexableChunks = semanticOnly
-    ? chunks.filter((chunk) => chunk.chunkType !== "other")
+    ? chunks.filter((chunk) => chunk.chunkType !== "other" || chunk.documentLocation?.kind === "pdf")
     : chunks;
   return selectChunksWithFileCoverage(indexableChunks, limit);
 }
@@ -2595,6 +2598,10 @@ export class Indexer {
         nodeType: chunk.metadata.chunkType,
         name: chunk.metadata.name,
         language: chunk.metadata.language,
+        documentKind: chunk.metadata.documentLocation?.kind,
+        pageStart: chunk.metadata.documentLocation?.pageStart,
+        pageEnd: chunk.metadata.documentLocation?.pageEnd,
+        sourceText: chunk.metadata.sourceText,
         blameSha: chunk.metadata.blameSha,
         blameAuthor: chunk.metadata.blameAuthor,
         blameAuthorEmail: chunk.metadata.blameAuthorEmail,
@@ -3124,7 +3131,8 @@ export class Indexer {
         let body: { results?: Array<{ index?: number; relevance_score?: number }> };
         try {
           body = await response.json() as typeof body;
-        } catch {
+        } catch (error) {
+          if (isOperationInterruption(error)) throw error;
           throw new ProviderRequestError({
             kind: "malformed_response",
             retryable: true,
@@ -3204,7 +3212,9 @@ export class Indexer {
       `path: ${candidate.metadata.filePath}`,
       `chunk_type: ${candidate.metadata.chunkType}`,
       `language: ${candidate.metadata.language}`,
-      `lines: ${candidate.metadata.startLine}-${candidate.metadata.endLine}`,
+      candidate.metadata.documentLocation
+        ? `pages: ${candidate.metadata.documentLocation.pageStart}-${candidate.metadata.documentLocation.pageEnd}`
+        : `lines: ${candidate.metadata.startLine}-${candidate.metadata.endLine}`,
     ];
 
     if (candidate.metadata.name) {
@@ -3214,19 +3224,25 @@ export class Indexer {
     const intent = isLikelyImplementationPath(candidate.metadata.filePath) ? "implementation" : "doc_or_test";
     parts.push(`intent_hint: ${intent}`);
 
-    try {
-      const { content } = await this.readChunkContent(
-        candidate.metadata,
-        this.toMaterializedFilePath(candidate.metadata.filePath),
-        0,
-        markupContentCache,
-      );
-      const snippet = content.trim();
+    if (candidate.metadata.documentLocation) {
+      const snippet = candidate.metadata.sourceText?.trim() ?? "";
       parts.push("snippet:");
       parts.push(snippet.length > 0 ? snippet : "[empty]");
-    } catch {
-      parts.push("snippet:");
-      parts.push("[unavailable]");
+    } else {
+      try {
+        const { content } = await this.readChunkContent(
+          candidate.metadata,
+          this.toMaterializedFilePath(candidate.metadata.filePath),
+          0,
+          markupContentCache,
+        );
+        const snippet = content.trim();
+        parts.push("snippet:");
+        parts.push(snippet.length > 0 ? snippet : "[empty]");
+      } catch {
+        parts.push("snippet:");
+        parts.push("[unavailable]");
+      }
     }
 
     return parts.join("\n");
@@ -3337,7 +3353,7 @@ export class Indexer {
     if (!this.isProjectOwnedIndexPath()) {
       return "Index database could not be read from an inherited project index. Restore or repair it from the checkout that owns the index; do not migrate or rebuild it from this worktree.";
     }
-    return "Index database could not be read. Run index_codebase with force=true to rebuild a legacy absolute-path schema, or repair the database after the active writer finishes.";
+    return "Index database could not be read. Run index_codebase normally to apply a compatible schema upgrade after the active writer finishes. If status reports a legacy absolute-path storage mismatch, use force=true for that separate rebuild; otherwise repair the database if migration fails.";
   }
 
   private getReaderFileFingerprint(filePath: string, identityOnly = false): string {
@@ -3973,6 +3989,10 @@ export class Indexer {
         nodeType: metadata.chunkType,
         name: metadata.name,
         language: metadata.language,
+        documentKind: metadata.documentLocation?.kind,
+        pageStart: metadata.documentLocation?.pageStart,
+        pageEnd: metadata.documentLocation?.pageEnd,
+        sourceText: metadata.sourceText,
       };
       chunkDataBatch.push(chunkData);
       chunkIds.push(key);
@@ -4289,38 +4309,57 @@ export class Indexer {
     // — the identical basis the provider reports as "Tokens used".
     for (const batch of iterateOrderedFileBatches(files, (f) => f.size, this.fileBatchLimits)) {
       throwIfOperationAborted(options.signal);
-      const loadedFiles = await Promise.all(batch.map(async (f) => {
+      const loadedEntries = await Promise.all(batch.map(async (f) => {
         try {
-          return {
-            path: this.toStoredFilePath(f.path),
-            content: await fsPromises.readFile(f.path, "utf-8"),
-          };
-        } catch {
+          const storedPath = this.toStoredFilePath(f.path);
+          const bytes = await fsPromises.readFile(f.path);
+          return { path: storedPath, bytes };
+        } catch (error) {
+          if (isOperationInterruption(error)) throw error;
           // Unreadable file: index() records a parse failure and skips it.
           return null;
         }
       }));
-      const readable = loadedFiles.filter(
-        (f): f is { path: string; content: string } => f !== null,
-      );
-      filesCount += readable.length;
-      const contentByPath = new Map(readable.map((f) => [f.path, f.content]));
-      const parsedFiles = parseFiles(
-        readable,
+      const readable = loadedEntries.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+      const sourceEntries = readable.filter((entry) => path.extname(entry.path).toLowerCase() !== ".pdf");
+      const preparedSources = await prepareDocuments(
+        sourceEntries,
         this.config.indexing.linesPerChunk,
+        options.signal,
         this.config.indexing.maxChunksPerFile,
       );
-      for (const parsed of parsedFiles) {
+      const sourceContentByPath = new Map(sourceEntries.map((entry) => [entry.path, Buffer.from(entry.bytes).toString("utf-8")]));
+      const preparedPdfs = (await Promise.all(readable
+        .filter((entry) => path.extname(entry.path).toLowerCase() === ".pdf")
+        .map(async (entry) => {
+          try {
+            return await prepareDocument(
+              entry.path,
+              entry.bytes,
+              this.config.indexing.linesPerChunk,
+              options.signal,
+              this.config.indexing.maxChunksPerFile,
+            );
+          } catch (error) {
+            if (isOperationInterruption(error)) throw error;
+            return null;
+          }
+        }))).filter((document): document is NonNullable<typeof document> => document !== null);
+      const preparedFiles = [...preparedSources, ...preparedPdfs];
+      filesCount += preparedFiles.length;
+      for (const parsed of preparedFiles) {
         let chunksToProcess = parsed.chunks;
         if (
+          parsed.kind === "source" &&
           this.config.indexing.fallbackToTextOnMaxChunks &&
           !isMarkupFilePath(parsed.path) &&
           chunksToProcess.length > this.config.indexing.maxChunksPerFile
         ) {
-          const content = contentByPath.get(parsed.path);
-          if (content !== undefined) {
-            chunksToProcess = parseFileAsText(parsed.path, content, this.config.indexing.linesPerChunk);
-          }
+          chunksToProcess = parseFileAsText(
+            parsed.path,
+            sourceContentByPath.get(parsed.path) ?? "",
+            this.config.indexing.linesPerChunk,
+          );
         }
         chunksToProcess = selectIndexableChunks(
           chunksToProcess,
@@ -4599,7 +4638,10 @@ export class Indexer {
       const storedPath = this.toStoredFilePath(file.path);
       let currentHash: string;
       try {
-        currentHash = hashFile(file.path);
+        const sourceHash = hashFile(file.path);
+        currentHash = path.extname(storedPath).toLowerCase() === ".pdf"
+          ? hashContent(`${sourceHash}:${PDF_EXTRACTION_VERSION}`)
+          : sourceHash;
       } catch (error) {
         throwIfOperationAborted(signal);
         // A file that is unreadable at the OS level (e.g., an LSM denial that
@@ -4845,7 +4887,7 @@ export class Indexer {
         const backfillItems: Array<{ id: string; vector: number[]; metadata: ChunkMetadata }> = [];
         for (const chunkId of currentChunkIds) {
           const metadata = existingMetadataById.get(chunkId);
-          if (!metadata || hasBlameMetadata(metadata)) {
+          if (!metadata || metadata.documentLocation || hasBlameMetadata(metadata)) {
             continue;
           }
           const chunk = database.getChunk(chunkId);
@@ -4912,20 +4954,50 @@ export class Indexer {
         this.fileBatchLimits,
       )) {
         throwIfOperationAborted(signal);
-        const loadedFiles = await Promise.all(descriptorBatch.map(async (descriptor) => ({
-          path: descriptor.storedPath,
-          content: await fsPromises.readFile(descriptor.materializedPath, "utf-8"),
-          hash: descriptor.hash,
-        })));
-        throwIfOperationAborted(signal);
-        const loadedByPath = new Map(loadedFiles.map((file) => [file.path, file]));
-        const descriptorByPath = new Map(descriptorBatch.map((descriptor) => [descriptor.storedPath, descriptor]));
         const parseStartTime = performance.now();
-        const parsedFiles = parseFiles(
-          loadedFiles,
+        const loadedEntries = await Promise.all(descriptorBatch.map(async (descriptor) => {
+          try {
+            const bytes = await fsPromises.readFile(descriptor.materializedPath);
+            return { descriptor, bytes };
+          } catch (error) {
+            if (isOperationInterruption(error)) throw error;
+            stats.parseFailures.push(`${descriptor.storedPath}: ${getErrorMessage(error)}`);
+            return null;
+          }
+        }));
+        const readableEntries = loadedEntries.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+        const sourceEntries = readableEntries.filter(({ descriptor }) => path.extname(descriptor.storedPath).toLowerCase() !== ".pdf");
+        const preparedSources = await prepareDocuments(
+          sourceEntries.map(({ descriptor, bytes }) => ({ path: descriptor.storedPath, bytes })),
           this.config.indexing.linesPerChunk,
+          signal,
           this.config.indexing.maxChunksPerFile,
         );
+        const preparedByPath = new Map(preparedSources.map((prepared) => [prepared.path, prepared]));
+        const preparedEntries = (await Promise.all(readableEntries.map(async ({ descriptor, bytes }) => {
+          try {
+            const prepared = path.extname(descriptor.storedPath).toLowerCase() === ".pdf"
+              ? await prepareDocument(
+                descriptor.storedPath,
+                bytes,
+                this.config.indexing.linesPerChunk,
+                signal,
+                this.config.indexing.maxChunksPerFile,
+              )
+              : preparedByPath.get(descriptor.storedPath);
+            if (!prepared) return null;
+            return { prepared, descriptor, sourceContent: prepared.kind === "source" ? Buffer.from(bytes).toString("utf-8") : "" };
+          } catch (error) {
+            if (isOperationInterruption(error)) throw error;
+            const diagnostic = error instanceof PdfExtractionError
+              ? `[${error.details.code}] ${error.message}`
+              : getErrorMessage(error);
+            stats.parseFailures.push(`${descriptor.storedPath}: ${diagnostic}`);
+            return null;
+          }
+        }))).filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+        throwIfOperationAborted(signal);
+        const parsedFiles = preparedEntries;
         const parseMs = performance.now() - parseStartTime;
         this.logger.recordFilesParsed(parsedFiles.length);
         this.logger.recordParseDuration(parseMs);
@@ -4940,12 +5012,10 @@ export class Indexer {
         const symbolBatchIds = new Set<string>();
         const edgeBatch: CallEdgeData[] = [];
 
-        for (const parsed of parsedFiles) {
-          const loadedFile = loadedByPath.get(parsed.path);
-          const descriptor = descriptorByPath.get(parsed.path);
-          if (!loadedFile || !descriptor) {
-            throw new Error(`Parsed file was not present in its source batch: ${parsed.path}`);
-          }
+        for (const entry of parsedFiles) {
+          const parsed = entry.prepared;
+          const descriptor = entry.descriptor;
+          const sourceContent = entry.sourceContent;
 
           if (
             parsed.parseFailed === true
@@ -4958,11 +5028,12 @@ export class Indexer {
 
           let chunksToProcess = parsed.chunks;
           if (
+            parsed.kind === "source" &&
             this.config.indexing.fallbackToTextOnMaxChunks &&
             !isMarkupFilePath(parsed.path) &&
             chunksToProcess.length > this.config.indexing.maxChunksPerFile
           ) {
-            chunksToProcess = parseFileAsText(parsed.path, loadedFile.content, this.config.indexing.linesPerChunk);
+            chunksToProcess = parseFileAsText(parsed.path, sourceContent, this.config.indexing.linesPerChunk);
           }
           chunksToProcess = selectIndexableChunks(
             chunksToProcess,
@@ -4971,7 +5042,9 @@ export class Indexer {
           );
 
           const chunksWithIds = deduplicateLastById(chunksToProcess.map((chunk) => ({
-            id: this.getPreparedChunkId(generateChunkId(parsed.path, chunk)),
+            id: this.getPreparedChunkId(chunk.documentLocation
+              ? generatePreparedChunkId(parsed.path, chunk, hashContent)
+              : generateChunkId(parsed.path, chunk)),
             chunk,
           })));
 
@@ -4979,7 +5052,7 @@ export class Indexer {
             const contentHash = generateChunkHash(chunk);
             const existingContentHash = existingChunks.get(id);
             const existingChunk = gitBlameEnabled ? database.getChunk(id) : null;
-            const blame = gitBlameEnabled && existingContentHash !== contentHash
+            const blame = gitBlameEnabled && !chunk.documentLocation && existingContentHash !== contentHash
               ? await getChunkGitBlame(
                   this.materializedProjectRoot,
                   descriptor.materializedPath,
@@ -4988,7 +5061,7 @@ export class Indexer {
                   signal,
                 )
               : blameFromChunkData(existingChunk);
-            if (gitBlameEnabled && existingContentHash !== contentHash) {
+            if (gitBlameEnabled && !chunk.documentLocation && existingContentHash !== contentHash) {
               await heartbeat?.();
               throwIfOperationAborted(signal);
             }
@@ -5004,6 +5077,10 @@ export class Indexer {
               nodeType: chunk.chunkType,
               name: chunk.name,
               language: chunk.language,
+              documentKind: chunk.documentLocation?.kind,
+              pageStart: chunk.documentLocation?.pageStart,
+              pageEnd: chunk.documentLocation?.pageEnd,
+              sourceText: chunk.documentLocation ? chunk.content : undefined,
               blameSha: blameMetadata.blameSha,
               blameAuthor: blameMetadata.blameAuthor,
               blameAuthorEmail: blameMetadata.blameAuthorEmail,
@@ -5033,6 +5110,8 @@ export class Indexer {
                 name: chunk.name,
                 language: chunk.language,
                 hash: contentHash,
+                documentLocation: chunk.documentLocation,
+                sourceText: chunk.documentLocation ? chunk.content : undefined,
                 ...blameMetadata,
               },
             });
@@ -5046,10 +5125,9 @@ export class Indexer {
             }
             allSymbolIds.add(symbol.id);
           }
-          localModuleResolver.seedModule(parsed.path, {
-            content: loadedFile.content,
-            symbols: fileSymbols,
-          });
+          if (parsed.kind === "source") {
+            localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols });
+          }
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
           if (!fileLanguage || !CALL_GRAPH_LANGUAGES.has(fileLanguage)) {
@@ -5066,9 +5144,9 @@ export class Indexer {
             symbolsByName.set(key, symbols);
           }
 
-          const callSites = extractCalls(loadedFile.content, fileLanguage);
+          const callSites = extractCalls(sourceContent, fileLanguage);
           const classifyGoCall = fileLanguage === "go"
-            ? createGoDirectCallClassifier(loadedFile.content, fileSymbols)
+            ? createGoDirectCallClassifier(sourceContent, fileSymbols)
             : undefined;
           for (const site of callSites) {
             const enclosingSymbol = findEnclosingSymbol(fileSymbols, site.line, site.column);
@@ -5100,7 +5178,7 @@ export class Indexer {
             ) {
               resolvedTarget = await localModuleResolver.resolveCallTarget(
                 parsed.path,
-                loadedFile.content,
+                sourceContent,
                 site,
               );
               if (resolvedTarget && !symbolBatchIds.has(resolvedTarget.id)) {
@@ -5854,12 +5932,11 @@ export class Indexer {
     );
     const keywordMs = performance.now() - keywordStartTime;
 
-    const scopedSemanticCandidates = semanticCandidates.filter((candidate) =>
+    const isAllowedCandidate = (candidate: RankedCandidate): boolean =>
       matchesHardSearchFilters(candidate, options, this.projectRoot)
-    );
-    const scopedKeywordCandidates = keywordCandidates.filter((candidate) =>
-      matchesHardSearchFilters(candidate, options, this.projectRoot)
-    );
+      && (options?.definitionIntent !== true || candidate.metadata.documentLocation?.kind !== "pdf");
+    const scopedSemanticCandidates = semanticCandidates.filter(isAllowedCandidate);
+    const scopedKeywordCandidates = keywordCandidates.filter(isAllowedCandidate);
 
     if (this.config.scope !== "global" && branchChunkIds && !hasInitializedBranchCatalog) {
       this.logger.search("warn", "Branch prefilter skipped because branch catalog is empty", {
@@ -6022,7 +6099,9 @@ export class Indexer {
         let contextEndLine = r.metadata.endLine;
         const resolvedFilePath = this.resolveStoredFilePath(r.metadata.filePath);
 
-        if (!metadataOnly && this.config.search.includeContext) {
+        if (!metadataOnly && this.config.search.includeContext && r.metadata.documentLocation) {
+          content = r.metadata.sourceText ?? "[Extracted PDF text unavailable]";
+        } else if (!metadataOnly && this.config.search.includeContext) {
           try {
             const snippet = await this.readChunkContent(
               r.metadata,
@@ -6049,6 +6128,7 @@ export class Indexer {
           chunkType: r.metadata.chunkType,
           name: r.metadata.name,
           blame: blameFromMetadata(r.metadata),
+          documentLocation: r.metadata.documentLocation,
         };
       })
     );
@@ -6847,7 +6927,9 @@ export class Indexer {
         let content = "";
         const resolvedFilePath = this.resolveStoredFilePath(r.metadata.filePath);
 
-        if (this.config.search.includeContext) {
+        if (this.config.search.includeContext && r.metadata.documentLocation) {
+          content = r.metadata.sourceText ?? "[Extracted PDF text unavailable]";
+        } else if (this.config.search.includeContext) {
           try {
             const snippet = await this.readChunkContent(
               r.metadata,
@@ -6872,6 +6954,7 @@ export class Indexer {
           chunkType: r.metadata.chunkType,
           name: r.metadata.name,
           blame: blameFromMetadata(r.metadata),
+          documentLocation: r.metadata.documentLocation,
         };
       })
     );

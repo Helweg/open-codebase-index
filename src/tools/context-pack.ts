@@ -164,12 +164,15 @@ function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchR
 
   for (const { result } of candidates) {
     const range = normalizedLineRange(result);
-    const accepted = acceptedByFile.get(result.filePath) ?? [];
+    const locationKey = result.documentLocation?.kind === "pdf"
+      ? `${result.filePath}#pdf-page-${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`
+      : result.filePath;
+    const accepted = acceptedByFile.get(locationKey) ?? [];
     if (accepted.some((item) => item.start <= range.end && range.start <= item.end)) {
       continue;
     }
     accepted.push(range);
-    acceptedByFile.set(result.filePath, accepted);
+    acceptedByFile.set(locationKey, accepted);
     deduplicated.push(result);
   }
 
@@ -252,7 +255,10 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
 function formatContextEvidence(result: SearchResult, index: number): string {
   const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
   const path = compactEvidenceValue(result.filePath, 120);
-  return `[${index}] ${result.chunkType}${symbol} in ${path}:${result.startLine}-${result.endLine} (score ${result.score.toFixed(2)})`;
+  const location = result.documentLocation?.kind === "pdf"
+    ? `${path}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
+    : `${path}:${result.startLine}-${result.endLine}`;
+  return `[${index}] ${result.chunkType}${symbol} in ${location} (score ${result.score.toFixed(2)})`;
 }
 
 function formatContextPack(

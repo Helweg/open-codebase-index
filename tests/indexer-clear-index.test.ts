@@ -329,7 +329,7 @@ describe("indexer clearIndex force rebuild", () => {
 
     await restartedIndexer.forceIndex();
 
-    expect(db.getMetadata("schema_version")).toBe("7");
+    expect(db.getMetadata("schema_version")).toBe("8");
     expect(db.getMetadata("index.pathStorageVersion")).toBe("2");
     expect(db.getChunksByFile("src/index.ts").length).toBeGreaterThan(0);
     expect(db.getChunksByFile(sourceFile)).toHaveLength(0);

@@ -1,4 +1,5 @@
-use rusqlite::{params, Connection, OpenFlags, OptionalExtension};
+use rusqlite::{params, Connection, OpenFlags, OptionalExtension, Statement};
+use std::collections::HashSet;
 use std::path::Path;
 use thiserror::Error;
 
@@ -20,7 +21,7 @@ pub enum DbError {
 pub type DbResult<T> = Result<T, DbError>;
 
 /// Schema version for migrations
-const SCHEMA_VERSION: i32 = 7;
+const SCHEMA_VERSION: i32 = 8;
 
 /// Maximum number of SQL bind parameters per query.
 /// SQLite defaults to 999 (SQLITE_MAX_VARIABLE_NUMBER). We use 900 to stay safely under.
@@ -134,10 +135,7 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
         ))
     })?;
 
-    // v7 changes path-storage semantics without changing the SQLite layout.
-    // The TypeScript layer knows the index scope and decides whether v6 paths
-    // require a project rebuild or remain valid for a global index.
-    if current_version != 6 && current_version != SCHEMA_VERSION {
+    if current_version != 6 && current_version != 7 && current_version != SCHEMA_VERSION {
         return Err(DbError::ReadOnlySchema(format!(
             "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
         )));
@@ -189,7 +187,11 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
                 blame_author TEXT,
                 blame_author_email TEXT,
                 blame_committed_at INTEGER,
-                blame_summary TEXT
+                blame_summary TEXT,
+                document_kind TEXT,
+                page_start INTEGER,
+                page_end INTEGER,
+                source_text TEXT
             );
 
             -- Branch catalog: which chunks exist on which branch
@@ -212,7 +214,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
         // Set schema version
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["1"],
         )?;
     }
 
@@ -268,7 +270,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
         // Update schema version
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["2"],
         )?;
     }
     if from_version < 3 {
@@ -310,7 +312,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["3"],
         )?;
     }
 
@@ -324,7 +326,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["4"],
         )?;
     }
 
@@ -341,7 +343,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["5"],
         )?;
     }
 
@@ -358,13 +360,50 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["6"],
         )?;
     }
 
     if from_version == 6 {
         // v7 is the schema gate for project-relative catalog paths. The writer
         // owns the cross-artifact rebuild, so this step only advances the marker.
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', '7')",
+            [],
+        )?;
+    }
+
+    if (1..8).contains(&from_version) {
+        // v8: Persist document metadata and extracted source text. Existing code
+        // chunks remain NULL in all four columns. Keep the DDL and version marker
+        // atomic so an interrupted or failed upgrade can be retried safely.
+        let migration = conn.unchecked_transaction()?;
+        let existing_columns: HashSet<String> = {
+            let mut stmt = migration.prepare("PRAGMA table_info(chunks)")?;
+            let rows = stmt.query_map([], |row| row.get(1))?;
+            rows.collect::<Result<_, _>>()?
+        };
+        for (column, data_type) in [
+            ("document_kind", "TEXT"),
+            ("page_start", "INTEGER"),
+            ("page_end", "INTEGER"),
+            ("source_text", "TEXT"),
+        ] {
+            if !existing_columns.contains(column) {
+                migration.execute_batch(&format!(
+                    "ALTER TABLE chunks ADD COLUMN {column} {data_type};"
+                ))?;
+            }
+        }
+
+        migration.execute(
+            "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
+            params![SCHEMA_VERSION.to_string()],
+        )?;
+        migration.commit()?;
+    }
+
+    if from_version == 0 {
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
             params![SCHEMA_VERSION.to_string()],
@@ -519,6 +558,29 @@ pub fn get_missing_embeddings(
 // Chunk Operations
 // ============================================================================
 
+const CHUNK_SELECT_COLUMNS: &str = "chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary, document_kind, page_start, page_end, source_text";
+const LEGACY_CHUNK_SELECT_COLUMNS: &str = "chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary, NULL AS document_kind, NULL AS page_start, NULL AS page_end, NULL AS source_text";
+
+fn prepare_chunk_query<'conn>(conn: &'conn Connection, tail: &str) -> DbResult<Statement<'conn>> {
+    let query = format!("SELECT {CHUNK_SELECT_COLUMNS} {tail}");
+    match conn.prepare(&query) {
+        Ok(statement) => Ok(statement),
+        Err(error) => {
+            if !error.to_string().contains("no such column: document_kind") {
+                return Err(error.into());
+            }
+
+            let version = get_metadata(conn, "schema_version")?;
+            if !matches!(version.as_deref(), Some("6" | "7")) {
+                return Err(error.into());
+            }
+
+            let legacy_query = format!("SELECT {LEGACY_CHUNK_SELECT_COLUMNS} {tail}");
+            Ok(conn.prepare(&legacy_query)?)
+        }
+    }
+}
+
 /// Insert or update a chunk
 #[allow(clippy::too_many_arguments)]
 pub fn upsert_chunk_with_blame(
@@ -536,11 +598,15 @@ pub fn upsert_chunk_with_blame(
     blame_author_email: Option<&str>,
     blame_committed_at: Option<i64>,
     blame_summary: Option<&str>,
+    document_kind: Option<&str>,
+    page_start: Option<u32>,
+    page_end: Option<u32>,
+    source_text: Option<&str>,
 ) -> DbResult<()> {
     conn.execute(
         r#"
-        INSERT INTO chunks (chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO chunks (chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary, document_kind, page_start, page_end, source_text)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(chunk_id) DO UPDATE SET
             content_hash = excluded.content_hash,
             file_path = excluded.file_path,
@@ -553,7 +619,11 @@ pub fn upsert_chunk_with_blame(
             blame_author = excluded.blame_author,
             blame_author_email = excluded.blame_author_email,
             blame_committed_at = excluded.blame_committed_at,
-            blame_summary = excluded.blame_summary
+            blame_summary = excluded.blame_summary,
+            document_kind = excluded.document_kind,
+            page_start = excluded.page_start,
+            page_end = excluded.page_end,
+            source_text = excluded.source_text
         "#,
         params![
             chunk_id,
@@ -568,7 +638,11 @@ pub fn upsert_chunk_with_blame(
             blame_author,
             blame_author_email,
             blame_committed_at,
-            blame_summary
+            blame_summary,
+            document_kind,
+            page_start,
+            page_end,
+            source_text
         ],
     )?;
     Ok(())
@@ -583,8 +657,8 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
     run_batch_with_write_transaction(conn, |conn| {
         let mut stmt = conn.prepare(
             r#"
-            INSERT INTO chunks (chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chunks (chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary, document_kind, page_start, page_end, source_text)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(chunk_id) DO UPDATE SET
                 content_hash = excluded.content_hash,
                 file_path = excluded.file_path,
@@ -597,7 +671,11 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
                 blame_author = excluded.blame_author,
                 blame_author_email = excluded.blame_author_email,
                 blame_committed_at = excluded.blame_committed_at,
-                blame_summary = excluded.blame_summary
+                blame_summary = excluded.blame_summary,
+                document_kind = excluded.document_kind,
+                page_start = excluded.page_start,
+                page_end = excluded.page_end,
+                source_text = excluded.source_text
             "#,
         )?;
 
@@ -615,7 +693,11 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
                 chunk.blame_author,
                 chunk.blame_author_email,
                 chunk.blame_committed_at,
-                chunk.blame_summary
+                chunk.blame_summary,
+                chunk.document_kind,
+                chunk.page_start,
+                chunk.page_end,
+                chunk.source_text
             ])?;
         }
 
@@ -625,43 +707,38 @@ pub fn upsert_chunks_batch(conn: &mut Connection, chunks: &[ChunkRow]) -> DbResu
 
 /// Get chunk by ID
 pub fn get_chunk(conn: &Connection, chunk_id: &str) -> DbResult<Option<ChunkRow>> {
-    let result = conn
-        .query_row(
-            r#"
-            SELECT chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary
-            FROM chunks WHERE chunk_id = ?
-            "#,
-            params![chunk_id],
-            |row| {
-                Ok(ChunkRow {
-                    chunk_id: row.get(0)?,
-                    content_hash: row.get(1)?,
-                    file_path: row.get(2)?,
-                    start_line: row.get(3)?,
-                    end_line: row.get(4)?,
-                    node_type: row.get(5)?,
-                    name: row.get(6)?,
-                    language: row.get(7)?,
-                    blame_sha: row.get(8)?,
-                    blame_author: row.get(9)?,
-                    blame_author_email: row.get(10)?,
-                    blame_committed_at: row.get(11)?,
-                    blame_summary: row.get(12)?,
-                })
-            },
-        )
+    let mut stmt = prepare_chunk_query(conn, "FROM chunks WHERE chunk_id = ?")?;
+    let result = stmt
+        .query_row(params![chunk_id], |row| {
+            Ok(ChunkRow {
+                chunk_id: row.get(0)?,
+                content_hash: row.get(1)?,
+                file_path: row.get(2)?,
+                start_line: row.get(3)?,
+                end_line: row.get(4)?,
+                node_type: row.get(5)?,
+                name: row.get(6)?,
+                language: row.get(7)?,
+                blame_sha: row.get(8)?,
+                blame_author: row.get(9)?,
+                blame_author_email: row.get(10)?,
+                blame_committed_at: row.get(11)?,
+                blame_summary: row.get(12)?,
+                document_kind: row.get(13)?,
+                page_start: row.get(14)?,
+                page_end: row.get(15)?,
+                source_text: row.get(16)?,
+            })
+        })
         .optional()?;
     Ok(result)
 }
 
 /// Get all chunks for a file
 pub fn get_chunks_by_file(conn: &Connection, file_path: &str) -> DbResult<Vec<ChunkRow>> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary
-        FROM chunks WHERE file_path = ?
-        ORDER BY start_line
-        "#,
+    let mut stmt = prepare_chunk_query(
+        conn,
+        "FROM chunks WHERE file_path = ? ORDER BY page_start IS NULL, page_start, start_line, chunk_id",
     )?;
 
     let rows = stmt.query_map(params![file_path], |row| {
@@ -679,6 +756,10 @@ pub fn get_chunks_by_file(conn: &Connection, file_path: &str) -> DbResult<Vec<Ch
             blame_author_email: row.get(10)?,
             blame_committed_at: row.get(11)?,
             blame_summary: row.get(12)?,
+            document_kind: row.get(13)?,
+            page_start: row.get(14)?,
+            page_end: row.get(15)?,
+            source_text: row.get(16)?,
         })
     })?;
 
@@ -690,12 +771,7 @@ pub fn get_chunks_by_file(conn: &Connection, file_path: &str) -> DbResult<Vec<Ch
 }
 
 pub fn get_chunks_by_name(conn: &Connection, name: &str) -> DbResult<Vec<ChunkRow>> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary
-        FROM chunks WHERE name = ?
-        "#,
-    )?;
+    let mut stmt = prepare_chunk_query(conn, "FROM chunks WHERE name = ?")?;
 
     let rows = stmt.query_map(params![name], |row| {
         Ok(ChunkRow {
@@ -712,6 +788,10 @@ pub fn get_chunks_by_name(conn: &Connection, name: &str) -> DbResult<Vec<ChunkRo
             blame_author_email: row.get(10)?,
             blame_committed_at: row.get(11)?,
             blame_summary: row.get(12)?,
+            document_kind: row.get(13)?,
+            page_start: row.get(14)?,
+            page_end: row.get(15)?,
+            source_text: row.get(16)?,
         })
     })?;
 
@@ -723,12 +803,7 @@ pub fn get_chunks_by_name(conn: &Connection, name: &str) -> DbResult<Vec<ChunkRo
 }
 
 pub fn get_chunks_by_name_ci(conn: &Connection, name: &str) -> DbResult<Vec<ChunkRow>> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language, blame_sha, blame_author, blame_author_email, blame_committed_at, blame_summary
-        FROM chunks WHERE lower(name) = lower(?)
-        "#,
-    )?;
+    let mut stmt = prepare_chunk_query(conn, "FROM chunks WHERE lower(name) = lower(?)")?;
 
     let rows = stmt.query_map(params![name], |row| {
         Ok(ChunkRow {
@@ -745,6 +820,10 @@ pub fn get_chunks_by_name_ci(conn: &Connection, name: &str) -> DbResult<Vec<Chun
             blame_author_email: row.get(10)?,
             blame_committed_at: row.get(11)?,
             blame_summary: row.get(12)?,
+            document_kind: row.get(13)?,
+            page_start: row.get(14)?,
+            page_end: row.get(15)?,
+            source_text: row.get(16)?,
         })
     })?;
 
@@ -794,6 +873,10 @@ pub struct ChunkRow {
     pub blame_author_email: Option<String>,
     pub blame_committed_at: Option<i64>,
     pub blame_summary: Option<String>,
+    pub document_kind: Option<String>,
+    pub page_start: Option<u32>,
+    pub page_end: Option<u32>,
+    pub source_text: Option<String>,
 }
 
 // ============================================================================
@@ -1260,11 +1343,15 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
+            None,
         )
     }
 
     #[test]
-    fn test_schema_v7_fresh_database() {
+    fn test_schema_v8_fresh_database() {
         let (_temp_dir, conn) = setup_test_db();
         let version: String = conn
             .query_row(
@@ -1273,37 +1360,40 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "7");
+        assert_eq!(version, "8");
     }
 
     #[test]
-    fn test_schema_v7_read_only_accepts_structurally_compatible_v6() {
+    fn test_schema_v8_read_only_accepts_compatible_v6_and_v7() {
         let (temp_dir, conn) = setup_test_db();
         let db_path = temp_dir.path().join("test.db");
+        set_metadata(&conn, "schema_version", "7").unwrap();
+        drop(conn);
+
+        let read_only = open_db_read_only(&db_path).unwrap();
+        drop(read_only);
+
+        let conn = Connection::open(&db_path).unwrap();
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "7");
         set_metadata(&conn, "schema_version", "6").unwrap();
         drop(conn);
 
         let read_only = open_db_read_only(&db_path).unwrap();
-        assert_eq!(
-            get_metadata(&read_only, "schema_version").unwrap().unwrap(),
-            "6"
-        );
         drop(read_only);
 
         let conn = Connection::open(&db_path).unwrap();
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "6");
         set_metadata(&conn, "schema_version", "5").unwrap();
         drop(conn);
 
         let error = open_db_read_only(&db_path).err().unwrap();
         assert_eq!(
             error.to_string(),
-            "Read-only database schema error: found version 5, expected 7; a writer must migrate the index"
+            "Read-only database schema error: found version 5, expected 8; a writer must migrate the index"
         );
     }
 
     #[test]
-    fn test_schema_v7_migration_preserves_catalog_and_metadata() {
+    fn test_schema_v8_migration_preserves_catalog_and_metadata() {
         let temp_dir = TempDir::new().unwrap();
         let db_path = temp_dir.path().join("migration-v6.db");
         let legacy_path = "/legacy/worktree-link/../checkout/src/main.ts";
@@ -1364,12 +1454,21 @@ mod tests {
             )
             .unwrap();
             set_metadata(&conn, "index.embeddingModel", "legacy-model").unwrap();
-            set_metadata(&conn, "schema_version", "6").unwrap();
+            conn.execute_batch(
+                r#"
+                ALTER TABLE chunks DROP COLUMN document_kind;
+                ALTER TABLE chunks DROP COLUMN page_start;
+                ALTER TABLE chunks DROP COLUMN page_end;
+                ALTER TABLE chunks DROP COLUMN source_text;
+                "#,
+            )
+            .unwrap();
+            set_metadata(&conn, "schema_version", "7").unwrap();
         }
 
         let conn = init_db(&db_path).unwrap();
 
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "7");
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
         assert_eq!(
             get_metadata(&conn, "index.embeddingModel")
                 .unwrap()
@@ -1380,10 +1479,12 @@ mod tests {
             get_metadata(&conn, "index.pathStorageVersion").unwrap(),
             None
         );
-        assert_eq!(
-            get_chunk(&conn, "legacy-chunk").unwrap().unwrap().file_path,
-            legacy_path
-        );
+        let legacy_chunk = get_chunk(&conn, "legacy-chunk").unwrap().unwrap();
+        assert_eq!(legacy_chunk.file_path, legacy_path);
+        assert_eq!(legacy_chunk.document_kind, None);
+        assert_eq!(legacy_chunk.page_start, None);
+        assert_eq!(legacy_chunk.page_end, None);
+        assert_eq!(legacy_chunk.source_text, None);
         assert_eq!(
             get_symbols_for_branch(&conn, "main").unwrap()[0].file_path,
             legacy_path
@@ -1396,6 +1497,82 @@ mod tests {
         assert_eq!(stats.branch_count, 1);
         assert_eq!(stats.symbol_count, 1);
         assert_eq!(stats.call_edge_count, 1);
+    }
+
+    #[test]
+    fn test_schema_v8_migration_rolls_back_failed_column_additions() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("migration-v7-failure.db");
+
+        {
+            let conn = init_db(&db_path).unwrap();
+            conn.execute_batch(
+                r#"
+                ALTER TABLE chunks DROP COLUMN document_kind;
+                ALTER TABLE chunks DROP COLUMN page_start;
+                ALTER TABLE chunks DROP COLUMN page_end;
+                ALTER TABLE chunks DROP COLUMN source_text;
+                CREATE TRIGGER reject_schema_v8
+                BEFORE INSERT ON metadata
+                WHEN NEW.key = 'schema_version' AND NEW.value = '8'
+                BEGIN
+                    SELECT RAISE(ABORT, 'injected schema marker failure');
+                END;
+                "#,
+            )
+            .unwrap();
+            set_metadata(&conn, "schema_version", "7").unwrap();
+        }
+
+        assert!(init_db(&db_path).is_err());
+
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "7");
+            let document_kind_columns: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name = 'document_kind'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(document_kind_columns, 0);
+            conn.execute_batch("DROP TRIGGER reject_schema_v8;")
+                .unwrap();
+        }
+
+        let conn = init_db(&db_path).unwrap();
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        let added_columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(added_columns, 4);
+    }
+
+    #[test]
+    fn test_schema_v8_migration_is_idempotent_when_columns_already_exist() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join("migration-v7-existing-columns.db");
+
+        {
+            let conn = init_db(&db_path).unwrap();
+            set_metadata(&conn, "schema_version", "7").unwrap();
+        }
+
+        let conn = init_db(&db_path).unwrap();
+        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        let columns: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 4);
     }
 
     #[test]
@@ -2122,7 +2299,7 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(schema_version, "7");
+        assert_eq!(schema_version, "8");
 
         let on_delete: String = conn
             .query_row("PRAGMA foreign_key_list(call_edges)", [], |row| row.get(6))
