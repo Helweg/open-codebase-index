@@ -12,6 +12,13 @@ export interface CodeChunk {
   chunkType: ChunkType;
   name?: string;
   language: string;
+  documentLocation?: DocumentLocation;
+}
+
+export interface DocumentLocation {
+  kind: "pdf";
+  pageStart: number;
+  pageEnd: number;
 }
 
 export type ChunkType =
@@ -149,6 +156,8 @@ export interface ChunkMetadata {
   name?: string;
   language: string;
   hash: string;
+  documentLocation?: DocumentLocation;
+  sourceText?: string;
   blameSha?: string;
   blameAuthor?: string;
   blameAuthorEmail?: string;
@@ -175,6 +184,10 @@ export interface ChunkData {
   nodeType?: string;
   name?: string;
   language: string;
+  documentKind?: string;
+  pageStart?: number;
+  pageEnd?: number;
+  sourceText?: string;
   blameSha?: string;
   blameAuthor?: string;
   blameAuthorEmail?: string;

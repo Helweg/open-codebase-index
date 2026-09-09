@@ -308,6 +308,33 @@ Index additional directories alongside the project:
 
 Paths can be absolute or relative to the project root. OpenCode and Pi also expose host-native tools for adding, listing, and removing knowledge bases.
 
+### Opt-in PDF text indexing
+
+PDF discovery is disabled by default. To index text-based PDFs in the project or
+configured knowledge bases, add an explicit include pattern:
+
+```json
+{
+  "additionalInclude": ["**/*.pdf"],
+  "knowledgeBases": ["../shared-docs"]
+}
+```
+
+The normal `indexing.maxFileSize` discovery limit still applies first and defaults
+to 1 MiB. Increase it explicitly if intended PDFs are larger. After admission, the
+PDF extractor also enforces internal defaults of 20 MiB input, 500 physical pages,
+and 2,000,000 extracted characters. OCR, password entry, remote downloads, and
+image-only PDFs are not supported. Invalid, protected, scanned, blank, or over-limit
+documents are reported per file without preventing other files from indexing.
+
+Search and context results cite physical, 1-based positions such as `manual.pdf,
+p. 3` or `manual.pdf, pp. 3-4`; source line fields remain reserved for source files.
+Extracted text and page metadata are stored inside the index so search, retries, and
+reranking do not reread PDF bytes as UTF-8. Treat the index as sensitive plaintext
+data and protect it like the source documents. Extraction itself is local, but the
+extracted text is sent to the configured embedding provider and, when enabled, the
+configured reranker under the same privacy rules as source code.
+
 ## External reranking
 
 Reranking is disabled unless configured.

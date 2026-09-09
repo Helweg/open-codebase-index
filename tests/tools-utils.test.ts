@@ -463,6 +463,32 @@ describe("tools utils", () => {
       expect(result).toContain("function");
     });
 
+    it("uses physical PDF pages while preserving code line citations", () => {
+      const result = formatCodebasePeek([
+        {
+          filePath: "knowledge/guide.pdf",
+          startLine: 1,
+          endLine: 4,
+          content: "",
+          score: 0.9,
+          chunkType: "other",
+          documentLocation: { kind: "pdf", pageStart: 3, pageEnd: 5 },
+        },
+        {
+          filePath: "src/index.ts",
+          startLine: 10,
+          endLine: 20,
+          content: "",
+          score: 0.8,
+          chunkType: "function",
+        },
+      ]);
+
+      expect(result).toContain("knowledge/guide.pdf, pp. 3-5");
+      expect(result).not.toContain("knowledge/guide.pdf:1-4");
+      expect(result).toContain("src/index.ts:10-20");
+    });
+
     it("should format results without names as anonymous", () => {
       const results: SearchResult[] = [{
         filePath: "src/utils.ts",
@@ -729,6 +755,25 @@ describe("tools utils", () => {
       const names = packed.results.map((r) => r.name);
       expect(names).toEqual(["inner", "later"]);
       expect(names).not.toContain("overlap");
+    });
+
+    it("keeps identical local ranges on different PDF pages", () => {
+      const results: SearchResult[] = [1, 2].map((page) => ({
+        filePath: "knowledge/repeated.pdf",
+        startLine: 1,
+        endLine: 3,
+        content: `page ${page}`,
+        score: 1 - page / 10,
+        chunkType: "other",
+        documentLocation: { kind: "pdf", pageStart: page, pageEnd: page },
+      }));
+
+      const packed = buildContextPack(results, { tokenBudget: 2048 });
+
+      expect(packed.results).toHaveLength(2);
+      expect(packed.duplicateCount).toBe(0);
+      expect(packed.text).toContain("knowledge/repeated.pdf, p. 1");
+      expect(packed.text).toContain("knowledge/repeated.pdf, p. 2");
     });
 
     it("diversifies selection across files before taking additional same-file matches", () => {
@@ -1171,6 +1216,42 @@ describe("tools utils", () => {
       expect(result).toContain("92.0%");
       expect(result).toContain("```");
       expect(result).toContain("function validateToken()");
+    });
+
+    it("uses singular and ranged PDF page citations without changing code lines", () => {
+      const result = formatSearchResults([
+        {
+          filePath: "knowledge/one.pdf",
+          startLine: 1,
+          endLine: 2,
+          content: "one page",
+          score: 0.9,
+          chunkType: "other",
+          documentLocation: { kind: "pdf", pageStart: 4, pageEnd: 4 },
+        },
+        {
+          filePath: "knowledge/many.pdf",
+          startLine: 1,
+          endLine: 2,
+          content: "many pages",
+          score: 0.8,
+          chunkType: "other",
+          documentLocation: { kind: "pdf", pageStart: 7, pageEnd: 9 },
+        },
+        {
+          filePath: "src/code.ts",
+          startLine: 12,
+          endLine: 18,
+          content: "code",
+          score: 0.7,
+          chunkType: "function",
+        },
+      ]);
+
+      expect(result).toContain("knowledge/one.pdf, p. 4");
+      expect(result).toContain("knowledge/many.pdf, pp. 7-9");
+      expect(result).toContain("src/code.ts:12-18");
+      expect(result).not.toContain("knowledge/one.pdf:1-2");
     });
 
     it("should format results without names", () => {

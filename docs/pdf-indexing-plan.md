@@ -1,6 +1,8 @@
 # PDF text indexing implementation plan
 
-Status: extraction foundation implemented, indexing integration pending, 2026-09-09.
+Status: opt-in shared indexing integration implemented and accepted on the tested
+macOS public runtimes, 2026-09-09. Cross-platform release-matrix and advanced-corpus
+acceptance remain deferred.
 Target: a future 0.x release after 0.27.0.
 
 ## Outcome and scope
@@ -51,8 +53,8 @@ loading/page-extraction cancellation and cleanup failure precedence. Text extrac
 has been verified on Node 22.13 and Node 24 on macOS ARM64. This does not substitute
 for the later cross-platform packaged indexing acceptance gate.
 
-This foundation alone does **not** enable PDF indexing. It is intentionally not
-wired into discovery until the remaining compatibility paths are implemented.
+Historical milestone boundary: this foundation alone did **not** enable PDF
+indexing. The subsequent milestones now wire it into explicit-include discovery.
 Limits bound admitted input and retained text, not all parser CPU/memory usage.
 Cooperative cancellation is not a hard execution deadline. If hostile-document
 workloads require hard limits, use worker/process isolation in a later design.
@@ -147,12 +149,15 @@ Acceptance checks:
 
 ## Completion rule
 
-Milestone 1 is a tested implementation start, not user-facing PDF support. Do not
-advertise PDF indexing or add default PDF globs until milestones 2–4 have passed.
+Milestone 1 by itself was not user-facing PDF support. Milestones 2 and 3 and the
+opt-in portion of milestone 4 are now delivered and publicly validated. Default PDF
+globs remain disabled. Five-target native release packaging, broader Unicode/CMap
+corpora, live failed-provider retry, and remote reranker acceptance remain deferred
+release-quality gates and must not be inferred from the completed local acceptance.
 
 ## Validation evidence
 
 See [the requirement-by-requirement validation report](pdf-indexing-validation.md).
-The real public CLI check confirms that explicitly including PDFs still follows
-the old raw-text path. Do not enable PDF globs until the shared ingestion milestone
-is complete. The extractor is implemented, but full PDF indexing remains pending.
+The shared ingestion path now extracts explicitly included PDFs from bytes, preserves
+page-aware chunk metadata and exact extracted snippets, and keeps default discovery
+unchanged. PDF globs remain opt-in through existing include configuration.
