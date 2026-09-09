@@ -1,80 +1,35 @@
-# Reliable Change Context Plan
+# Reliable code-change context
 
-## Purpose
-Provide an authorized implementation roadmap for the requested reliability work while keeping this effort **measurement-first**.
+Status: implementation in progress. Baseline: `e8e947f8359ee92b2fa2cea9d85efe00cd878f30`.
 
-- Scope: benchmark planning + implementation policy design only.
-- Source of truth for baseline claims: `/Users/kenneth/.jcode/scratch/ocbi-competitive-implementation-20260909/results/baseline-representative/2026-09-09T18-48-55-366Z/`.
-- Baseline repo revision: `e8e947f8359ee92b2fa2cea9d85efe00cd878f30`.
-- Baseline run command (from snapshot):
-  ```bash
-  public node dist/cli.js eval run --project SNAPSHOT --config SNAPSHOT/.github/eval-ollama-full-config.json --dataset SNAPSHOT/benchmarks/golden/representative.json --output RESULTS --reindex
-  ```
-  where `SNAPSHOT=/Users/kenneth/.jcode/scratch/ocbi-competitive-implementation-20260909/baseline-project`.
+## Goal
 
-## Baseline artifacts (authoritative)
-- [Summary JSON](/Users/kenneth/.jcode/scratch/ocbi-competitive-implementation-20260909/results/baseline-representative/2026-09-09T18-48-55-366Z/summary.json)
-- [Per-query JSON](/Users/kenneth/.jcode/scratch/ocbi-competitive-implementation-20260909/results/baseline-representative/2026-09-09T18-48-55-366Z/per-query.json)
-- [Eval config](/Users/kenneth/.jcode/scratch/ocbi-competitive-implementation-20260909/baseline-project/.github/eval-ollama-full-config.json)
+Improve OCBI's usefulness for code changes while preserving local operation, branch isolation, existing host contracts and user indexes. The user authorized implementation, not only planning. Features remain pending until their public acceptance checks pass. No release, publication or merge is part of this authorization.
 
-> Note: all link targets are absolute paths on the local host and exist at write time.
+## Stages and acceptance
 
-## Authorized roadmap
-1. **Readiness diagnostics preserving strict branch isolation**
-   - Add explicit checks that enforce branch-scoped readiness before any mutable operation.
-   - Validate index freshness, branch ownership, and lock state before claiming readiness.
-   - Emit machine-readable diagnostics including reasons and recovery hints.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-2. **Optional SCIP with real compiler artifact checks, monotonic/stale fallback gates**
-   - Add optional SCIP ingestion path that is strictly opt-in and feature-gated.
-   - Require compiler artifacts for enabled repos; if missing or stale, gracefully fallback to existing graph/symbol path.
-   - Gate transitions by monotonic freshness to avoid regression from older artifacts.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-3. **One API handler-consumer-test workflow**
-   - Define one end-to-end API handler + consumer contract test per release-relevant behavior.
-   - Cover both success and failure/recovery signaling on the same handler boundary.
-   - Keep test scope narrow and deterministic to avoid false confidence.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-4. **Opt-in provider-free structural indexing**
-   - Add a path to index structure-only metadata without requiring embedding provider calls.
-   - Keep existing embedding mode default unchanged.
-   - Ensure callers can opt-in per configuration/command.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-5. **Explicit workspace readiness contract**
-   - Add explicit readiness model consumed by route/operation execution.
-   - Define and expose readiness state enum (`ready`, `degraded`, `requiresIndex`, `branchMismatch`, `staleArtifacts`, etc.).
-   - Require explicit state transitions instead of implicit assumptions.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-6. **Full regression and public acceptance gates**
-   - Add acceptance criteria tied to retrieval and safety regressions.
-   - Require regression checks before any roadmap milestone can be considered complete.
-   - Publish public-facing baseline and follow-up acceptance matrix for changes.
-   - **Status:** _pending (not implemented in this snapshot)_
-
-## Acceptance matrix (authoritative, planned)
-
-| Work item | Acceptance criteria | Evidence required | Current status |
+| Stage | Intended behavior | Required observations | Status |
 |---|---|---|---|
-| Readiness diagnostics with branch isolation | Mutating operations refuse when branch or lock scope is mismatched; diagnostic includes branch, lock owner, and stale index status | Integration test + diagnostic snapshots | Pending |
-| Optional SCIP path with compiler-artifact gates | Optional mode only; rejected when artifacts missing/stale; fallback behavior deterministic and logged | Feature-flag tests + integration test with stale artifact fixture | Pending |
-| API handler-consumer workflow | One workflow validates both handler contract and consumer interpretation, including recovery path | End-to-end test + fixture payload assertions | Pending |
-| Provider-free structural indexing | Structural-only mode runs without embedding provider configuration and returns non-embedding-derived evidence metadata | CLI + API contract test + benchmark smoke run | Pending |
-| Workspace readiness contract | Tool routing/operations block when readiness is not stable; explicit state transitions visible to observability | Unit + integration tests with readiness transitions | Pending |
-| Full regression/public acceptance | Baseline and post-change benchmarks stay non-regressive on declared KPIs and failure buckets | Baseline + follow-up `eval` runs, diff report, and release note-ready summary | Pending |
+| Current baseline | Record existing retrieval and pre-edit quality before changes | Public eval CLI on an isolated exact source snapshot; query-level outcomes and repeat run | Measured, see [baseline report](benchmarks/2026-09-09-reliable-change-context-baseline.md) |
+| Readiness | Distinguish global stored chunks from active-branch readiness; provide actionable recovery | Missing, empty, populated and legacy catalogs; no cross-branch leakage; normal indexing restores readiness; host output contracts | Pending |
+| Optional SCIP enrichment | Resolve only existing unresolved JS/TS call edges to unique existing local symbols | Real generated compiler index improves known unresolved targets; no invented reference-as-call edges; Unicode, path, cancellation, timeout, stale/disabled/restart cases preserve correctness | Pending |
+| API change impact | One supported ecosystem exposes handler, matching consumers and relevant test evidence through existing change-context tools | Each relationship has source citations and an evidence class; ambiguous/dynamic cases explicitly remain uncertain; public tool response respects budget and existing behavior | Pending |
+| Provider-free indexing | Opt-in structural and keyword retrieval without an embedding provider; semantic default unchanged | Clean indexing, restart, definitions, callers, keyword search, updates/deletes and mode transitions; zero embedding requests in provider-free mode | Pending |
+| Workspace readiness | Make repository/branch identity and readiness explicit beyond existing knowledge-base directory support | Independent repository identity and revision reporting; no fabricated cross-repository graph links; scope/path boundaries retained | Pending |
+| Final validation | Demonstrate outcomes and preserve compatibility | Actual diff review, build/typecheck/lint/tests, applicable native rebuild/tests, clean-package public acceptance, baseline comparison with per-query deltas | Pending |
 
-## Baseline outcome framing for next plan execution
-- Baseline results are **measured only** in this document. All implementation work is marked pending.
-- Baseline metrics indicate `Hit@5` at 75% with `queryCount=17`, `datasetVersion=2.2.0`, and negative-control exclusion was applied for denominators.
-- Failure buckets currently include: `wrong-file` (3), `wrong-symbol` (3), `no-relevant-hit-top-k` (1).
-- The baseline run includes 17 queries and one run explicitly marked as **not superior** by source run context.
-- This plan does **not** claim completion of these roadmap items.
+## Design boundaries
 
-## Reproducibility caveats
-- Provider and env are part of baseline constraints (`ollama`, `nomic-embed-text`, debug metrics enabled).
-- Branch and dataset are fixed to the scratch snapshot above.
-- No additional implementation or code-logic edits are included in this deliverable.
+- Missing branch membership must not silently fall back to another branch's source evidence. A compatible embedding model does not establish branch coverage or freshness.
+- Existing indexes are preserved. Baseline and destructive/failure-path checks use isolated task directories.
+- SCIP is import-only, disabled by default. No automatic generator, package installation, remote service, or shell invocation in production. The first pilot may change an unresolved edge to a resolved edge, never overwrite an already resolved target.
+- Compiler artifact freshness and provenance need explicit validation. Modification-time checks alone are not cryptographic proof that an artifact matches a source tree.
+- API evidence is change-impact retrieval, not a new application API or a generic contract-test framework. Test files linked by route/source evidence are not claimed to prove runtime coverage.
+- Prefer extending existing shared operations rather than multiplying host-specific tools. A named workspace does not by itself establish cross-service dependencies.
+- Recommendations are hypotheses. Retain optional enrichment only if measured benefit and correctness justify it. Do not alter evaluation expectations merely to pass a gate.
+
+## Baseline and comparison scope
+
+See the [baseline report](benchmarks/2026-09-09-reliable-change-context-baseline.md). The representative dataset measures retrieval behavior. The pre-edit dataset measures evidence selection and graph neighbors. Neither measures completed coding tasks or current competitor superiority.
+
+Before final acceptance, rerun identical datasets/configuration over the fixed source corpus using the changed implementation and inspect each delta. New capabilities require their own real public-interface checks as well as regression tests. Agent task-success and broader competitive evaluations must be labeled separately from retrieval scores.
