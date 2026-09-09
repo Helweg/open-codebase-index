@@ -228,6 +228,8 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 
 XML and SVG are opt-in formats. Add `**/*.xml` or `**/*.svg` to `additionalInclude` when they are useful to the project. XML chunks preserve element paths, text, and bounded attributes. SVG chunks preserve `text`, `title`, `desc`, and accessibility attributes while excluding geometry, styles, classes, and layer metadata.
 
+Search and similarity results, as well as external reranker documents, use the reconstructed semantic XML/SVG chunk rather than raw source lines. `contextLines` does not expand markup snippets, and reported line numbers remain the original chunk's source coordinates. If the current source or parser settings no longer reproduce the indexed chunk, its content is reported as unavailable until the file is reindexed.
+
 Example:
 
 ```json

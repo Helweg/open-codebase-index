@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseConfig } from "../src/config/schema.js";
 import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
-import { Database, hashContent, InvertedIndex, VectorStore } from "../src/native/index.js";
+import { Database, hashContent, InvertedIndex, parseFiles, VectorStore } from "../src/native/index.js";
 
 describe("search integration", () => {
   let tempDir: string;
@@ -377,6 +377,94 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
   });
 
+  describe.each(["search", "reranker", "similar"] as const)("sanitized SVG retrieval through %s", (surface) => {
+    it.each([
+      { separator: "", maxChunksPerFile: 100, contextLines: 0 },
+      { separator: "\n", maxChunksPerFile: 1, contextLines: 3 },
+    ])("preserves semantic content after reopening ($maxChunksPerFile chunks, $contextLines context lines)", async ({ separator, maxChunksPerFile, contextLines }) => {
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+        include: [],
+        additionalInclude: ["**/*.svg", "**/*.SVG"],
+        indexing: { watchFiles: false, maxChunksPerFile, fallbackToTextOnMaxChunks: true },
+        search: { maxResults: 20, minScore: 0, includeContext: true, contextLines },
+        reranker: { enabled: surface === "reranker", provider: "custom", model: "mock-reranker", baseUrl: "https://rerank.example/v1", topN: 20 },
+      });
+      const files = ["first.svg", "second.SVG"].map((filePath, index) => ({
+        path: filePath,
+        content: [
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="VIEWBOX_NOISE">',
+          `<title>Quarterly revenue title ${index}</title>`,
+          '<g aria-hidden="true"><text>HIDDEN_NOISE</text></g>',
+          '<text style="display:none">DISPLAY_NOISE</text>',
+          '<path d="GEOMETRY_NOISE" />',
+          `<text x="COORD_NOISE">Quarterly revenue visible ${index}</text>`,
+          '</svg>',
+        ].join(separator),
+      }));
+      for (const file of files) fs.writeFileSync(path.join(tempDir, file.path), file.content);
+      const expectedChunks = parseFiles(files, config.indexing.linesPerChunk, maxChunksPerFile)
+        .flatMap((file) => file.chunks);
+      expect(expectedChunks.length).toBeGreaterThanOrEqual(2);
+      const writer = new Indexer(tempDir, config, "opencode");
+      _indexers.push(writer);
+      await writer.index();
+      await writer.close();
+      const reader = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reader);
+
+      const embeddingFetch = fetchSpy.getMockImplementation()!;
+      const outgoingDocuments: string[] = [];
+      fetchSpy.mockImplementation(async (url, init) => {
+        if (String(url).endsWith("/rerank")) {
+          const body = JSON.parse(String(init?.body)) as { documents: string[] };
+          outgoingDocuments.push(...body.documents);
+          return new Response(JSON.stringify({ results: body.documents.map((_, index) => ({ index, relevance_score: 1 - index * 0.01 })) }));
+        }
+        return embeddingFetch(url, init);
+      });
+
+      const results = surface === "similar"
+        ? await reader.findSimilar("Quarterly revenue", 20, { filterByBranch: false })
+        : await reader.search("quarterly revenue", 20, { filterByBranch: false, contextLines });
+      expect(results.length).toBeGreaterThanOrEqual(2);
+      const contents = surface === "reranker"
+        ? outgoingDocuments.map((document) => document.split("snippet:\n")[1])
+        : results.map((result) => result.content);
+      expect(contents.length).toBeGreaterThanOrEqual(2);
+      for (const content of contents) {
+        expect(content).toContain("Quarterly revenue");
+        expect(content).not.toContain("NOISE");
+        expect(expectedChunks.map((chunk) => chunk.content)).toContain(content);
+      }
+      if (surface !== "reranker") {
+        for (const result of results) {
+          expect(expectedChunks).toContainEqual(expect.objectContaining({
+            content: result.content, startLine: result.startLine, endLine: result.endLine,
+          }));
+        }
+      }
+
+      // A later request must neither reuse stale semantic text nor fall back to
+      // raw source when an indexed chunk changes or the document becomes invalid.
+      fs.writeFileSync(path.join(tempDir, files[0].path), '<svg><text>CHANGED_NOISE</text></svg>');
+      fs.writeFileSync(path.join(tempDir, files[1].path), '<svg><text>MALFORMED_NOISE');
+      outgoingDocuments.length = 0;
+      const staleResults = surface === "similar"
+        ? await reader.findSimilar("Quarterly revenue", 20, { filterByBranch: false })
+        : await reader.search("quarterly revenue", 20, { filterByBranch: false, contextLines });
+      expect(staleResults.length).toBeGreaterThanOrEqual(2);
+      const staleContents = surface === "reranker"
+        ? outgoingDocuments.map((document) => document.split("snippet:\n")[1])
+        : staleResults.map((result) => result.content);
+      expect(staleContents.length).toBeGreaterThanOrEqual(2);
+      for (const content of staleContents) {
+        expect(content).toBe(surface === "reranker" ? "[unavailable]" : "[Markup content unavailable; reindex the file]");
+      }
+    });
+  });
+
   it("indexes sanitized SVG chunks and reparses unchanged markup after a parser upgrade", async () => {
     const svgFile = path.join(tempDir, "diagram.svg");
     const geometryOnlySvgFile = path.join(tempDir, "geometry-only.svg");
@@ -465,6 +553,14 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       fileType: "xml",
     });
     expect(xmlResults[0]?.filePath).toContain("service.xml");
+    const xmlContentResults = await firstIndexer.search("POST payments", 5, {
+      filterByBranch: false,
+      fileType: "xml",
+      contextLines: 3,
+    });
+    expect(xmlContentResults[0]?.content).toBe(
+      parseFiles([{ path: "service.xml", content: fs.readFileSync(xmlFile, "utf-8") }], config.indexing.linesPerChunk, 1)[0].chunks[0].content,
+    );
 
     const firstStatus = await firstIndexer.getStatus();
     await firstIndexer.close();
@@ -539,6 +635,17 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     } finally {
       staleDatabase.close();
     }
+
+    const legacyReader = new Indexer(tempDir, config, "opencode");
+    _indexers.push(legacyReader);
+    const legacyResults = await legacyReader.search("Visible sales 2026", 5, {
+      filterByBranch: false,
+      fileType: "svg",
+      contextLines: 0,
+    });
+    expect(legacyResults.length).toBeGreaterThan(0);
+    expect(legacyResults.every((result) => result.content === "[Markup content unavailable; reindex the file]")).toBe(true);
+    await legacyReader.close();
 
     const embeddingCallsBeforeReindex = fetchSpy.mock.calls.length;
     const secondIndexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];

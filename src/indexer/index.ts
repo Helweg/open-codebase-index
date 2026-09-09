@@ -129,6 +129,8 @@ import {
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 
+type MarkupChunkContentCache = Map<string, Promise<Map<string, string>>>;
+
 export function shouldRetryEmbeddingRequest(error: unknown): boolean {
   return !isOperationInterruption(error)
     && !(error instanceof CustomProviderNonRetryableError)
@@ -2989,6 +2991,7 @@ export class Indexer {
     }
 
     const topN = Math.min(reranker.topN, candidates.length);
+    const markupContentCache: MarkupChunkContentCache = new Map();
     const head = candidates.slice(0, topN);
     const tail = candidates.slice(topN);
     const grouped = new Map<ExternalRerankBand, RankedCandidate[]>([
@@ -3027,7 +3030,7 @@ export class Indexer {
         const documents = await Promise.all(
           bandCandidates.map(async (candidate) => ({
             id: candidate.id,
-            text: await this.createRerankerDocumentText(candidate),
+            text: await this.createRerankerDocumentText(candidate, markupContentCache),
           }))
         );
         const rankedIds = await this.callExternalReranker(
@@ -3152,7 +3155,51 @@ export class Indexer {
     }
   }
 
-  private async createRerankerDocumentText(candidate: RankedCandidate): Promise<string> {
+  private async readChunkContent(
+    metadata: ChunkMetadata,
+    filePath: string,
+    contextLines: number,
+    markupContentCache: MarkupChunkContentCache,
+  ): Promise<{ content: string; startLine: number; endLine: number }> {
+    if (isMarkupFilePath(filePath)) {
+      let pending = markupContentCache.get(filePath);
+      if (!pending) {
+        pending = fsPromises.readFile(filePath, "utf-8").then((content) => {
+          const [parsed] = parseFiles(
+            [{ path: filePath, content }],
+            this.config.indexing.linesPerChunk,
+            this.config.indexing.maxChunksPerFile,
+          );
+          if (!parsed || parsed.parseFailed) {
+            throw new Error("Markup could not be parsed for retrieval");
+          }
+          return new Map(parsed.chunks.map((chunk) => [
+            `${chunk.startLine}:${chunk.endLine}:${generateChunkHash(chunk)}`,
+            chunk.content,
+          ]));
+        });
+        markupContentCache.set(filePath, pending);
+      }
+      const chunks = await pending;
+      const content = chunks.get(`${metadata.startLine}:${metadata.endLine}:${metadata.hash}`);
+      if (content === undefined) {
+        throw new Error("Indexed markup chunk no longer matches the source; reindex the file");
+      }
+      // Source coordinates identify the chunk, but raw context lines can contain
+      // hidden text or geometry. Only the parser's semantic content is exposed.
+      return { content, startLine: metadata.startLine, endLine: metadata.endLine };
+    }
+
+    const lines = (await fsPromises.readFile(filePath, "utf-8")).split("\n");
+    const startLine = Math.max(1, metadata.startLine - contextLines);
+    const endLine = Math.min(lines.length, metadata.endLine + contextLines);
+    return { content: lines.slice(startLine - 1, endLine).join("\n"), startLine, endLine };
+  }
+
+  private async createRerankerDocumentText(
+    candidate: RankedCandidate,
+    markupContentCache: MarkupChunkContentCache,
+  ): Promise<string> {
     const parts = [
       `path: ${candidate.metadata.filePath}`,
       `chunk_type: ${candidate.metadata.chunkType}`,
@@ -3168,14 +3215,13 @@ export class Indexer {
     parts.push(`intent_hint: ${intent}`);
 
     try {
-      const fileContent = await fsPromises.readFile(
+      const { content } = await this.readChunkContent(
+        candidate.metadata,
         this.toMaterializedFilePath(candidate.metadata.filePath),
-        "utf-8",
+        0,
+        markupContentCache,
       );
-      const lines = fileContent.split("\n");
-      const snippetStartLine = Math.max(1, candidate.metadata.startLine);
-      const snippetEndLine = Math.min(lines.length, candidate.metadata.endLine);
-      const snippet = lines.slice(snippetStartLine - 1, snippetEndLine).join("\n").trim();
+      const snippet = content.trim();
       parts.push("snippet:");
       parts.push(snippet.length > 0 ? snippet : "[empty]");
     } catch {
@@ -5967,6 +6013,7 @@ export class Indexer {
     }
 
     const metadataOnly = options?.metadataOnly ?? false;
+    const markupContentCache: MarkupChunkContentCache = new Map();
 
     return Promise.all(
       finalResults.map(async (r) => {
@@ -5977,21 +6024,19 @@ export class Indexer {
 
         if (!metadataOnly && this.config.search.includeContext) {
           try {
-            const fileContent = await fsPromises.readFile(
+            const snippet = await this.readChunkContent(
+              r.metadata,
               resolvedFilePath,
-              "utf-8"
+              options?.contextLines ?? this.config.search.contextLines,
+              markupContentCache,
             );
-            const lines = fileContent.split("\n");
-            const contextLines = options?.contextLines ?? this.config.search.contextLines;
-
-            contextStartLine = Math.max(1, r.metadata.startLine - contextLines);
-            contextEndLine = Math.min(lines.length, r.metadata.endLine + contextLines);
-
-            content = lines
-              .slice(contextStartLine - 1, contextEndLine)
-              .join("\n");
+            content = snippet.content;
+            contextStartLine = snippet.startLine;
+            contextEndLine = snippet.endLine;
           } catch {
-            content = "[File not accessible]";
+            content = isMarkupFilePath(resolvedFilePath)
+              ? "[Markup content unavailable; reindex the file]"
+              : "[File not accessible]";
           }
         }
 
@@ -6796,6 +6841,7 @@ export class Indexer {
       prefilterMs: Math.round(prefilterMs * 100) / 100,
     });
 
+    const markupContentCache: MarkupChunkContentCache = new Map();
     return Promise.all(
       filtered.map(async (r) => {
         let content = "";
@@ -6803,16 +6849,17 @@ export class Indexer {
 
         if (this.config.search.includeContext) {
           try {
-            const fileContent = await fsPromises.readFile(
+            const snippet = await this.readChunkContent(
+              r.metadata,
               resolvedFilePath,
-              "utf-8"
+              0,
+              markupContentCache,
             );
-            const lines = fileContent.split("\n");
-            content = lines
-              .slice(r.metadata.startLine - 1, r.metadata.endLine)
-              .join("\n");
+            content = snippet.content;
           } catch {
-            content = "[File not accessible]";
+            content = isMarkupFilePath(resolvedFilePath)
+              ? "[Markup content unavailable; reindex the file]"
+              : "[File not accessible]";
           }
         }
 

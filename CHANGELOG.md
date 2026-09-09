@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Semantic XML and SVG indexing**: Added native, opt-in XML element extraction and accessible SVG text extraction. SVG geometry, style, class, and layer metadata are excluded from embeddings, including when a file exceeds the semantic chunk cap.
+- **Semantic XML and SVG indexing**: Added native, opt-in XML element extraction and accessible SVG text extraction. SVG geometry, style, class, and layer metadata are excluded from embeddings, search and similarity results, and external reranker documents, including when a file exceeds the semantic chunk cap. Markup retrieval reconstructs the indexed semantic chunk without raw context lines and reports unavailable content when the source no longer matches.
 
 ## [0.27.0] - 2026-09-08
 
