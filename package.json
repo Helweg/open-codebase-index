@@ -113,7 +113,7 @@
     "@eslint/js": "^9.39.4",
     "@napi-rs/cli": "^3.6.0",
     "@types/node": "^22.19.19",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^9.39.4",
     "tsup": "^8.1.0",
     "tsx": "^4.23.1",
