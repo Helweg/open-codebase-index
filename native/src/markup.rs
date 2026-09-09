@@ -1259,12 +1259,29 @@ fn parse_svg_display(value: &str) -> Option<bool> {
     let value = trim_xml_whitespace(value).to_ascii_lowercase();
     match value.as_str() {
         "none" => return Some(true),
-        "contents" | "inherit" | "initial" | "unset" | "revert" | "revert-layer"
-        | "inline-block" | "inline-table" | "inline-flex" | "inline-grid"
-        | "grid-lanes" | "inline-grid-lanes"
-        | "table-row-group" | "table-header-group" | "table-footer-group"
-        | "table-row" | "table-cell" | "table-column-group" | "table-column"
-        | "table-caption" | "ruby-base" | "ruby-text" | "ruby-base-container"
+        "contents"
+        | "inherit"
+        | "initial"
+        | "unset"
+        | "revert"
+        | "revert-layer"
+        | "inline-block"
+        | "inline-table"
+        | "inline-flex"
+        | "inline-grid"
+        | "grid-lanes"
+        | "inline-grid-lanes"
+        | "table-row-group"
+        | "table-header-group"
+        | "table-footer-group"
+        | "table-row"
+        | "table-cell"
+        | "table-column-group"
+        | "table-column"
+        | "table-caption"
+        | "ruby-base"
+        | "ruby-text"
+        | "ruby-base-container"
         | "ruby-text-container" => return Some(false),
         _ => {}
     }
@@ -1275,7 +1292,10 @@ fn parse_svg_display(value: &str) -> Option<bool> {
         match keyword {
             "block" | "inline" | "run-in" if outside.is_none() => outside = Some(keyword),
             "flow" | "flow-root" | "table" | "flex" | "grid" | "ruby" | "math"
-                if inside.is_none() => inside = Some(keyword),
+                if inside.is_none() =>
+            {
+                inside = Some(keyword)
+            }
             "list-item" if !list_item => list_item = true,
             _ => return None,
         }
