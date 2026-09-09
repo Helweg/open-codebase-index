@@ -110,6 +110,34 @@ Observed:
 | Local extraction, provider privacy and index-owned plaintext | Configuration documentation review plus index artifact/database inspection | PDFs are read from local bytes only; no remote download or password path exists. Extracted text is stored inside the index and sent only to the configured embedding/reranker providers. No plaintext sidecar is written beside the PDF and tests use isolated temporary directories |
 | Dependency pin and license disclosure | Installed package metadata and bundled license inspection | `pdfjs-dist` is pinned at 6.3.289, declares Apache-2.0, and includes its Apache 2.0 `LICENSE`. No new public tool or renamed compatibility surface was introduced |
 
+## Whole-result revalidation after completing the requirement map
+
+The complete implementation at `30af7df` was rebuilt and revalidated after the
+requirement map and definition-boundary correction were complete. This was not a
+relabeling of earlier incremental checks:
+
+- `npm run build && npm run typecheck && npm run lint && npx vitest run --no-file-parallelism && cargo test --manifest-path native/Cargo.toml --lib && npm run smoke:package`
+  passed as one final gate on 2026-09-09: 1,818 TypeScript tests in 114 files,
+  130 native tests, native and TypeScript builds, and clean packed installations.
+- The coordinator then invoked the rebuilt public CLI and actual MCP stdio server
+  with live Ollama. Unchanged indexing did no new embedding work. Search, peek,
+  context and find-similar each returned the published W3C text with physical page 1.
+  Definition lookup returned zero results rather than treating the PDF as code.
+- The measurable improvement over the historical raw-byte baseline is correct
+  extracted text and a truthful physical-page citation instead of seven chunks of
+  binary-derived text. The whole-suite rerun also re-exercised the mapped extraction,
+  cancellation, migration, retry, reranker, discovery and formatting regressions.
+- An additional bulk lifecycle/runtime rerun was attempted after this gate but
+  rejected by the execution safety gate before running (reported protected path
+  `/`). Removing file deletion from the attempted command did not clear the denial.
+  No alternate execution path was used to bypass it. Consequently, the table's
+  earlier real lifecycle/branch/runtime observations remain valid evidence, but are
+  not represented as a fresh, complete post-map rerun. Only the complete build/test/
+  packaging gate and direct final CLI/MCP observations above were rerun successfully.
+- Evidence boundaries remain as marked in the table. Synthetic provider tests are
+  not live remote-service acceptance, and unrun release-platform checks are not
+  promoted to passing by this rerun.
+
 ## Regression results and limits
 
 - 22 real-parser/boundary tests and 5 isolated lifecycle tests passed.
