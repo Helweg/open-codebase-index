@@ -25,6 +25,10 @@ pub struct ChunkData {
     pub blame_author_email: Option<String>,
     pub blame_committed_at: Option<i64>,
     pub blame_summary: Option<String>,
+    pub document_kind: Option<String>,
+    pub page_start: Option<u32>,
+    pub page_end: Option<u32>,
+    pub source_text: Option<String>,
 }
 
 #[napi(object)]
@@ -196,6 +200,10 @@ impl Database {
                 chunk.blame_author_email.as_deref(),
                 chunk.blame_committed_at,
                 chunk.blame_summary.as_deref(),
+                chunk.document_kind.as_deref(),
+                chunk.page_start,
+                chunk.page_end,
+                chunk.source_text.as_deref(),
             )
             .map_err(|e| Error::from_reason(e.to_string()))
         })
@@ -220,6 +228,10 @@ impl Database {
                 blame_author_email: row.blame_author_email,
                 blame_committed_at: row.blame_committed_at,
                 blame_summary: row.blame_summary,
+                document_kind: row.document_kind,
+                page_start: row.page_start,
+                page_end: row.page_end,
+                source_text: row.source_text,
             }))
         })
     }
@@ -245,6 +257,10 @@ impl Database {
                     blame_author_email: row.blame_author_email,
                     blame_committed_at: row.blame_committed_at,
                     blame_summary: row.blame_summary,
+                    document_kind: row.document_kind,
+                    page_start: row.page_start,
+                    page_end: row.page_end,
+                    source_text: row.source_text,
                 })
                 .collect())
         })
@@ -271,6 +287,10 @@ impl Database {
                     blame_author_email: row.blame_author_email,
                     blame_committed_at: row.blame_committed_at,
                     blame_summary: row.blame_summary,
+                    document_kind: row.document_kind,
+                    page_start: row.page_start,
+                    page_end: row.page_end,
+                    source_text: row.source_text,
                 })
                 .collect())
         })
@@ -297,6 +317,10 @@ impl Database {
                     blame_author_email: row.blame_author_email,
                     blame_committed_at: row.blame_committed_at,
                     blame_summary: row.blame_summary,
+                    document_kind: row.document_kind,
+                    page_start: row.page_start,
+                    page_end: row.page_end,
+                    source_text: row.source_text,
                 })
                 .collect())
         })
@@ -364,6 +388,10 @@ impl Database {
                 blame_author_email: c.blame_author_email,
                 blame_committed_at: c.blame_committed_at,
                 blame_summary: c.blame_summary,
+                document_kind: c.document_kind,
+                page_start: c.page_start,
+                page_end: c.page_end,
+                source_text: c.source_text,
             })
             .collect();
         self.with_conn_mut(|conn| {

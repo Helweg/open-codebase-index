@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Opt-in PDF text indexing**: Explicit PDF include patterns now use a shared binary-aware ingestion path across CLI, MCP, OpenCode, and Pi. Text is extracted locally into deterministic page-aware chunks, persisted for vector and keyword retrieval, retries, branch indexes, snippets, and reranking, and returned with truthful physical-page citations. Incremental updates, invalid replacements, renames, and deletions remove stale passages without blocking valid files. PDF discovery remains disabled by default; OCR and password entry are not supported.
+
+### Fixed
+
+- **PDF definition exclusion**: Definition-oriented retrieval now excludes PDF passages before ranking and external reranking, while ordinary document search retains page-aware results.
+
 ## [0.27.0] - 2026-09-08
 
 ### Added
