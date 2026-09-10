@@ -220,11 +220,13 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 | `gcIntervalDays` | `7` | Cleanup interval |
 | `gcOrphanThreshold` | `100` | Orphan threshold for cleanup |
 | `requireProjectMarker` | `true` | Require `.git`, `package.json`, or another project marker before watching |
-| `maxDepth` | `5` | Directory traversal depth; `-1` is unlimited |
+| `maxDepth` | `-1` | Directory traversal depth; unlimited by default so nested source packages are included. Set a nonnegative limit explicitly for a bounded scan. |
 | `maxFilesPerDirectory` | `100` | Per-directory file cap |
 | `fallbackToTextOnMaxChunks` | `true` | Fall back to line chunks when the semantic cap is reached |
 | `linesPerChunk` | `30` | Max lines per chunk for line-based parsing (`.jsonl`, `.txt`, unknown extensions, and the AST fallback). Lower it for finer-grained retrieval on line-delimited files. Only the line-based path is affected; AST-parsed languages are unchanged |
 | `gitBlame.enabled` | `false` | Store git blame metadata for filtering |
+
+Unlimited depth retains hidden/build/ignored-path exclusions, does not follow symlinks, and keeps file-size and per-directory caps. Compared with older defaults, normal indexing can discover more source files and therefore take more time or use more embedding tokens in hybrid mode. Existing explicit `maxDepth` settings are preserved; set `5` to retain the former depth bound.
 
 For the disabled-by-default compiler-index pilot, see [Optional SCIP TypeScript enrichment](scip-typescript.md).
 
@@ -405,7 +407,7 @@ Debug defaults:
     "maxChunksPerFile": 100,
     "semanticOnly": false,
     "requireProjectMarker": true,
-    "maxDepth": 5,
+    "maxDepth": -1,
     "maxFilesPerDirectory": 100,
     "fallbackToTextOnMaxChunks": true,
     "gitBlame": {

@@ -272,7 +272,7 @@ export async function collectFiles(
   additionalRoots?: string[],
   walkOptions?: WalkOptions
 ): Promise<CollectFilesResult> {
-  const opts: WalkOptions = walkOptions ?? { maxDepth: 5, maxFilesPerDirectory: 100 };
+  const opts: WalkOptions = walkOptions ?? { maxDepth: -1, maxFilesPerDirectory: 100 };
   const ignoreFilter = createIgnoreFilter(projectRoot);
   const files: Array<{ path: string; size: number }> = [];
   const skipped: SkippedFile[] = [];

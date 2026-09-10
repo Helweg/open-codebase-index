@@ -88,8 +88,13 @@ describe("config schema", () => {
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
+      expect(config.indexing.maxDepth).toBe(-1);
       expect(config.search.communityBoost).toBe(0);
       expect(config.mcp.stallTimeoutMs).toBe(300_000);
+    });
+
+    it.each([-1, 0, 5, 9])("preserves explicitly configured discovery depth %s", (maxDepth) => {
+      expect(parseConfig({ indexing: { maxDepth } }).indexing.maxDepth).toBe(maxDepth);
     });
 
     it("normalizes the MCP stall timeout", () => {

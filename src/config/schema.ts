@@ -68,7 +68,7 @@ export interface IndexingConfig {
   requireProjectMarker: boolean;
   /**
    * Max directory traversal depth. -1 = unlimited, 0 = only files in the root dir,
-   * 1 = one level of subdirectories, etc. Default: 5
+   * 1 = one level of subdirectories, etc. Default: -1 (unlimited)
    */
   maxDepth: number;
   /**
