@@ -259,9 +259,17 @@ function mcpJson(raw: unknown): Json {
 class UnresolvedEndpointError extends Error {}
 function relativeFile(value: unknown, sourceRoot: string): string {
   if (typeof value !== "string" || !value || value.startsWith("<")) throw new UnresolvedEndpointError("Missing canonical source path");
-  const file = canonicalPath(path.isAbsolute(value) ? path.relative(sourceRoot, value) : value);
-  if (file === ".." || file.startsWith("../") || path.isAbsolute(file)) throw new Error(`Out-of-scope source path: ${value}`);
+  // Lexical identity only: deleted/stale files must remain reportable. Never read source
+  // or rewrite raw response/content strings to discover or manufacture an endpoint.
+  const portable = value.replaceAll("\\", "/");
+  if (!path.isAbsolute(sourceRoot) || portable.includes("\0") || /^[a-z][a-z\d+.-]*:/iu.test(portable) || portable.startsWith("//")) throw new Error(`Out-of-scope source path: ${value}`);
+  const root = path.resolve(sourceRoot), absolute = path.resolve(root, portable);
+  if (absolute === root || !inside(root, absolute)) throw new Error(`Out-of-scope source path: ${value}`);
+  const file = canonicalPath(path.relative(root, absolute));
   return file;
+}
+function relativeSymbol(value: SymbolInput, sourceRoot: string): SymbolInput {
+  return { ...value, ...(value.path !== undefined ? { path: relativeFile(value.path, sourceRoot) } : {}) };
 }
 function symbolNode(value: unknown, sourceRoot: string): SymbolInput {
   const item = object(value, "symbol node");
@@ -273,25 +281,27 @@ function manual(reason: string, raw: unknown, normalized: ParticipantResult["nor
 function success(raw: unknown, normalized: ParticipantResult["normalized"], provenance: Json[] = []): ParticipantResult { return { status: "success", raw, normalized, provenance }; }
 function matches(candidate: SymbolInput, subject: SymbolInput): boolean { return candidate.symbol === subject.symbol && (!subject.path || canonicalPath(candidate.path) === canonicalPath(subject.path)); }
 
-export function normalizeMcp(raw: unknown, input: ParticipantRequest): ParticipantResult["normalized"] {
+export function normalizeMcp(raw: unknown, input: ParticipantRequest, sourceRoot: string): ParticipantResult["normalized"] {
   if (object(raw, "MCP response").isError === true) throw new Error(`Public MCP tool error: ${mcpText(raw)}`);
+  input = { ...input, ...(input.subject ? { subject: relativeSymbol(input.subject, sourceRoot) } : {}), ...(input.from ? { from: relativeSymbol(input.from, sourceRoot) } : {}), ...(input.to ? { to: relativeSymbol(input.to, sourceRoot) } : {}) };
   const text = mcpText(raw);
   if (input.operation === "shortest-path") {
     const hops = [...text.matchAll(/(?:\[start\]|--[^\n]+-->)\s+([^\s(]+)(?:\s+\(([^:()]+):\d+\))?/g)]
-      .map(match => ({ ...(match[2] ? { path: match[2] } : {}), symbol: match[1] }));
+      .map(match => ({ ...(match[2] ? { path: relativeFile(match[2], sourceRoot) } : {}), symbol: match[1] }));
     if (!hops.length && !text.startsWith("No path found between")) throw new Error("Unrecognized or unresolved OCBI path response");
     if (hops.some(hop => !hop.path)) throw new UnresolvedEndpointError("OCBI path lacks canonical endpoint path");
     return { paths: hops.length ? [hops] : [], content: text };
   }
   const header = /"([^"]+)" at (.+?):\d+ (?:is called by|calls) (\d+) function\(s\):/.exec(text);
   const emptyHeader = /^No (?:callers|callees) found for "([^"]+)" at (.+?):\d+/.exec(text);
-  const resolvedSubject = header ? { path: header[2], symbol: header[1] } : input.subject;
+  const resolvedSubject = header ? { path: relativeFile(header[2], sourceRoot), symbol: header[1] } : input.subject;
   if (header && input.subject && !matches(resolvedSubject!, input.subject)) throw new Error("OCBI graph resolved a different subject");
-  if (emptyHeader && input.subject && !matches({ path: emptyHeader[2], symbol: emptyHeader[1] }, input.subject)) throw new Error("OCBI empty graph resolved a different subject");
+  const emptySubject = emptyHeader ? { path: relativeFile(emptyHeader[2], sourceRoot), symbol: emptyHeader[1] } : undefined;
+  if (emptySubject && input.subject && !matches(emptySubject, input.subject)) throw new Error("OCBI empty graph resolved a different subject");
   if ((input.operation === "direct-callers" || input.operation === "direct-callees") && !header && !emptyHeader) throw new Error("Unrecognized or unresolved OCBI graph completeness header");
   if (input.operation === "direct-callers") {
     const edges = [...text.matchAll(/^\[\d+\]\s+← from\s+(\S+)\s+in\s+(.+?)\s+\((Call|MethodCall|Constructor)\)/gm)].map(match => ({
-      fromPath: match[2], fromSymbol: match[1], toPath: resolvedSubject?.path, toSymbol: resolvedSubject?.symbol, relationship: "call",
+      fromPath: relativeFile(match[2], sourceRoot), fromSymbol: match[1], toPath: resolvedSubject?.path, toSymbol: resolvedSubject?.symbol, relationship: "call",
     }));
     if (!edges.length && !text.startsWith("No callers found for")) throw new Error("Unrecognized or unresolved OCBI callers response");
     if (header && Number(header[3]) !== edges.length) throw new Error("OCBI caller rows incomplete or contain non-call relationships");
@@ -310,19 +320,21 @@ export function normalizeMcp(raw: unknown, input: ParticipantRequest): Participa
   const blocks = text.split(/(?=^\[\d+\])/m);
   const definitions = blocks.flatMap(block => {
     const match = /^\[\d+\]\s+\S+\s+"([^"]+)"\s+in\s+(.+?):\d+(?:-\d+)?/m.exec(block);
-    return match && match[1] === symbol && (!input.subject?.path || canonicalPath(match[2]) === canonicalPath(input.subject.path)) ? [{ path: match[2], symbol: match[1], content: block }] : [];
+    if (!match) return [];
+    const candidate = { path: relativeFile(match[2], sourceRoot), symbol: match[1], content: block };
+    return candidate.symbol === symbol && (!input.subject || matches(candidate, input.subject)) ? [candidate] : [];
   });
   if (!/^\[\d+\]/m.test(text) && !/No (?:matching code|definition|results|implementations) found/i.test(text)) throw new Error("Unrecognized OCBI definition response");
   return { definitions, content: text };
 }
 
-export async function resolveOcbiCallees(raw: unknown, input: ParticipantRequest, lookup: (symbol: string) => Promise<unknown>): Promise<ParticipantResult> {
-  const normalized = normalizeMcp(raw, input), provenance: Json[] = [];
+export async function resolveOcbiCallees(raw: unknown, input: ParticipantRequest, lookup: (symbol: string) => Promise<unknown>, sourceRoot: string): Promise<ParticipantResult> {
+  const normalized = normalizeMcp(raw, input, sourceRoot), provenance: Json[] = [];
   for (const target of normalized.edges ?? []) {
     if (target.explicitlyResolved !== true) return manual("Public OCBI edge is unresolved; no target-path inference permitted", { primary: raw, provenance }, normalized);
     const request: ParticipantRequest = { operation: "definitions", subject: { symbol: String(target.toSymbol) }, limit: 50 };
     const followup = await lookup(request.subject!.symbol);
-    const definitions = normalizeMcp(followup, request).definitions ?? [];
+    const definitions = normalizeMcp(followup, request, sourceRoot).definitions ?? [];
     provenance.push({ reason: "Exact definition lookup for explicitly resolved graph target only", request, raw: followup });
     if (definitions.length !== 1 || [...mcpText(followup).matchAll(/^\[\d+\]/gm)].length >= 50) return manual("Resolved target does not have exactly one exact definition candidate within an untruncated response", { primary: raw, provenance }, normalized);
     target.toPath = definitions[0].path;
@@ -363,7 +375,7 @@ class PublicMcp {
 
 class OcbiDriver implements ConformanceDriver {
   supportsPersistentReader = true; private readonly mcp: PublicMcp;
-  constructor(context: DriverContext) {
+  constructor(private readonly context: DriverContext) {
     this.mcp = new PublicMcp(context, process.execPath, [path.join(context.projectRoot, "dist/cli.js"), "--project", context.sourceRoot, "--host", "opencode", "--config", context.configPath]);
   }
   async index(): Promise<unknown> { return this.mcp.call("index_codebase", { force: true }); }
@@ -374,8 +386,8 @@ class OcbiDriver implements ConformanceDriver {
     else if (input.operation === "direct-callers" || input.operation === "direct-callees") { name = "call_graph"; args = { name: input.subject?.symbol, filePath: input.subject?.path, direction: input.operation === "direct-callers" ? "callers" : "callees" }; }
     else { name = "implementation_lookup"; args = { query: input.subject?.symbol, limit: input.limit }; }
     const raw = await this.mcp.call(name, args);
-    if (input.operation === "direct-callees") return resolveOcbiCallees(raw, input, symbol => this.mcp.call("implementation_lookup", { query: symbol, limit: 50 }));
-    const normalized = normalizeMcp(raw, input);
+    if (input.operation === "direct-callees") return resolveOcbiCallees(raw, input, symbol => this.mcp.call("implementation_lookup", { query: symbol, limit: 50 }), this.context.sourceRoot);
+    const normalized = normalizeMcp(raw, input, this.context.sourceRoot);
     if (input.operation === "definitions" && [...mcpText(raw).matchAll(/^\[\d+\]/gm)].length >= input.limit) return manual("OCBI lookup reached fixed cap", raw, normalized);
     return success(raw, normalized);
   }
@@ -384,10 +396,12 @@ class OcbiDriver implements ConformanceDriver {
 
 /** Exact named-node projection only. Mentioning a symbol in a body is not a definition. */
 export function normalizeCodeGraphDefinitions(raw: unknown, subject: SymbolInput, sourceRoot: string): SymbolInput[] {
+  subject = relativeSymbol(subject, sourceRoot);
   if (!Array.isArray(raw)) throw new Error("CodeGraph query must return an array");
   return raw.map(row => symbolNode(object(row, "query hit").node, sourceRoot)).filter(candidate => matches(candidate, subject));
 }
 export function normalizeCodeGraphEdges(raw: unknown, input: ParticipantRequest, resolvedSubject: SymbolInput, sourceRoot: string): Json[] {
+  resolvedSubject = relativeSymbol(resolvedSubject, sourceRoot);
   const result = object(raw, "CodeGraph graph"); const field = input.operation === "direct-callers" ? "callers" : "callees";
   if (result.symbol !== resolvedSubject.symbol || !Array.isArray(result[field])) throw new Error("Malformed CodeGraph graph response");
   return (result[field] as unknown[]).map(row => { const other = symbolNode(row, sourceRoot); return field === "callers" ? edge(other, resolvedSubject) : edge(resolvedSubject, other); });
@@ -395,6 +409,7 @@ export function normalizeCodeGraphEdges(raw: unknown, input: ParticipantRequest,
 
 interface CbmNode extends SymbolInput { qualifiedName: string }
 export function normalizeCbmDefinitions(raw: unknown, subject: SymbolInput, sourceRoot: string): CbmNode[] {
+  subject = relativeSymbol(subject, sourceRoot);
   const result = mcpJson(raw);
   if (!Array.isArray(result.groups) || !Array.isArray(result.cols)) throw new Error("Malformed CBM grouped definition response");
   const nameIndex = result.cols.indexOf("name"), labelIndex = result.cols.indexOf("label");
@@ -556,6 +571,7 @@ class CbmDriver implements ConformanceDriver {
 }
 
 export function normalizeGrepai(raw: unknown, input: ParticipantRequest, sourceRoot: string): ParticipantResult {
+  input = { ...input, ...(input.subject ? { subject: relativeSymbol(input.subject, sourceRoot) } : {}), ...(input.from ? { from: relativeSymbol(input.from, sourceRoot) } : {}), ...(input.to ? { to: relativeSymbol(input.to, sourceRoot) } : {}) };
   const result = object(raw, "grepai trace");
   const subject = input.subject ?? input.from!;
   if (result.query !== subject.symbol || result.mode !== "fast") throw new Error("Unrecognized grepai trace envelope");

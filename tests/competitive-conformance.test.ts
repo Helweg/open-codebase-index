@@ -117,21 +117,21 @@ describe("calibrated public graph normalization", () => {
     const raw = textMcp('"middle" at alpha.py:4 calls 1 function(s):\n\n[1] → leaf (Call) at line 5 [resolved]');
     const definition = textMcp('[1] function "leaf" in alpha.py:1-2 (score: 1.00)\n```\ndef leaf(value):\n    return value + 1\n```');
     const symbols: string[] = [];
-    const result = await resolveOcbiCallees(raw, { ...direct, subject: { symbol: "middle" } }, async symbol => { symbols.push(symbol); return definition; });
+    const result = await resolveOcbiCallees(raw, { ...direct, subject: { symbol: "middle" } }, async symbol => { symbols.push(symbol); return definition; }, "/fixture");
     expect(symbols).toEqual(["leaf"]);
     expect(result.normalized.edges?.[0]).toMatchObject({ fromPath: "alpha.py", toPath: "alpha.py", toSymbol: "leaf" });
     expect(result.provenance?.[0]).toMatchObject({ raw: definition, request: { subject: { symbol: "leaf" } } });
     const ambiguous = textMcp('[1] function "leaf" in alpha.py:1-2\n[2] function "leaf" in beta.py:1-2');
-    expect((await resolveOcbiCallees(raw, direct, async () => ambiguous)).status).toBe("manual-adjudication-required");
+    expect((await resolveOcbiCallees(raw, direct, async () => ambiguous, "/fixture")).status).toBe("manual-adjudication-required");
     const unresolved = textMcp('"middle" at alpha.py:4 calls 1 function(s):\n\n[1] → leaf (Call) at line 5 [unresolved]');
-    expect((await resolveOcbiCallees(unresolved, direct, async () => { throw new Error("must not lookup unresolved edge"); })).status).toBe("manual-adjudication-required");
+    expect((await resolveOcbiCallees(unresolved, direct, async () => { throw new Error("must not lookup unresolved edge"); }, "/fixture")).status).toBe("manual-adjudication-required");
   });
 
   it("never interprets malformed or error MCP output as a negative graph answer", () => {
-    expect(() => normalizeMcp(textMcp("Ambiguous symbol"), { ...direct, operation: "direct-callers" })).toThrow();
-    expect(() => normalizeMcp({ ...textMcp("No callers found"), isError: true }, direct)).toThrow(/MCP tool error/);
-    expect(() => normalizeMcp(textMcp('"middle" at alpha.py:4 calls 2 function(s):\n[1] → leaf (Call) at line 5 [resolved]'), direct)).toThrow(/incomplete/);
-    expect(normalizeMcp(textMcp('[1] function "other" in alpha.py:1-2\n```\nmiddle()\n```'), { ...direct, operation: "definitions" }).definitions).toEqual([]);
+    expect(() => normalizeMcp(textMcp("Ambiguous symbol"), { ...direct, operation: "direct-callers" }, "/fixture")).toThrow();
+    expect(() => normalizeMcp({ ...textMcp("No callers found"), isError: true }, direct, "/fixture")).toThrow(/MCP tool error/);
+    expect(() => normalizeMcp(textMcp('"middle" at alpha.py:4 calls 2 function(s):\n[1] → leaf (Call) at line 5 [resolved]'), direct, "/fixture")).toThrow(/incomplete/);
+    expect(normalizeMcp(textMcp('[1] function "other" in alpha.py:1-2\n```\nmiddle()\n```'), { ...direct, operation: "definitions" }, "/fixture").definitions).toEqual([]);
   });
 });
 
@@ -381,5 +381,106 @@ describe("competitive conformance runner", () => {
     expect(await finding("graph/g5-js-duplicate-ambiguous")).toMatchObject({ status: "manual-adjudication-required", conforms: null });
     expect(await finding("freshness/f3-js-delete")).toMatchObject({ status: "error", conforms: false, error: "query failed" });
     expect(await finding("freshness/f4-py-rename")).toMatchObject({ status: "error", conforms: false, error: "refresh failed" });
+  });
+});
+
+describe("confined schema-path normalization", () => {
+  const root = "/fixture";
+  const definitionsRequest: ParticipantRequest = { ...direct, operation: "definitions" };
+  // Explicit adapter fields only. No fixture answers, source reads, or raw-text rewriting.
+  const projections: Array<{ name: string; project: (file: string, subject?: { path?: string; symbol: string }) => unknown }> = [
+    { name: "OCBI", project: (file, subject = direct.subject!) => normalizeMcp(textMcp(`[1] function_definition "middle" in ${file}:4-5`), { ...definitionsRequest, subject }, root).definitions },
+    { name: "CodeGraph", project: (file, subject = direct.subject!) => normalizeCodeGraphDefinitions([{ node: { name: "middle", filePath: file } }], subject, root) },
+    { name: "CBM", project: (file, subject = direct.subject!) => normalizeCbmDefinitions(mcp({ cols: ["name", "label"], groups: [{ file, qn_prefix: "project.alpha", rows: [["middle", "Function"]] }] }), subject, root) },
+    { name: "grepai", project: (file, subject = direct.subject!) => normalizeGrepai({ query: "middle", mode: "fast", symbol: node("middle", file) }, { ...definitionsRequest, subject }, root).normalized.definitions },
+  ];
+  for (const adapter of projections) {
+    describe(adapter.name, () => {
+      it.each(["alpha.py", "./alpha.py", "././alpha.py", "nested/../alpha.py", "/fixture/alpha.py", "/fixture/nested/../alpha.py", ".\\alpha.py", "\\fixture\\alpha.py"])("normalizes confined identity %s before matching", file => {
+        expect(adapter.project(file)).toMatchObject([{ path: "alpha.py", symbol: "middle" }]);
+        expect(adapter.project(file, { path: "/fixture/alpha.py", symbol: "middle" })).toMatchObject([{ path: "alpha.py", symbol: "middle" }]);
+      });
+      it.each(["../alpha.py", "nested/../../alpha.py", "nested\\..\\..\\alpha.py", "/fixture-other/alpha.py", "/outside/alpha.py", "/fixture/../outside/alpha.py", "/fixture", ".", "nested/..", "C:/fixture/alpha.py", "C:alpha.py", "\\\\server\\share\\alpha.py", "//server/share/alpha.py", "file:///fixture/alpha.py", "alpha\0.py"])("rejects out-of-scope or invalid identity %s", file => {
+        expect(() => adapter.project(file)).toThrow(/Out-of-scope/);
+      });
+      it("rejects missing and placeholder paths rather than treating them as empty results", () => {
+        expect(() => adapter.project("<unknown>")).toThrow(/source path/);
+        expect(() => adapter.project("alpha.py", { path: "", symbol: "middle" })).toThrow(/source path/);
+        expect(() => adapter.project("alpha.py", { path: "../alpha.py", symbol: "middle" })).toThrow(/Out-of-scope/);
+      });
+      it("keeps nonexistent stale identities and distinguishes same-name files", () => {
+        expect(adapter.project("/fixture/deleted.py", { symbol: "middle" })).toMatchObject([{ path: "deleted.py", symbol: "middle" }]);
+        const result = adapter.project("/fixture/other.py");
+        // grepai's existing different-root policy is manual, not an invented empty answer.
+        expect(result).toEqual(adapter.name === "grepai" ? undefined : []);
+      });
+    });
+  }
+
+  it("g1 schema: preserves four observed calls and exact raw lookup provenance", async () => {
+    const symbols = ["saveOrder", "recordAudit", "formatOrder", "notifyCustomer"];
+    const raw = textMcp(`"processOrder" at src/orders.js:9 calls 4 function(s):\n\n${symbols.map((name, i) => `[${i + 1}] → ${name} (Call) at line ${i + 10} [resolved]`).join("\n")}`);
+    const followups = new Map(symbols.map(name => [name, textMcp(`[1] function_declaration "${name}" in /fixture/src/${name}.js:1-3\n\`\`\`\n// /fixture/content/must-not-change\n\`\`\``)]));
+    const before = JSON.stringify({ raw, followups: [...followups] });
+    const requested: string[] = [];
+    const result = await resolveOcbiCallees(raw, { ...direct, subject: { path: "src/orders.js", symbol: "processOrder" } }, async symbol => {
+      requested.push(symbol);
+      return followups.get(symbol);
+    }, root);
+    expect(requested).toEqual(symbols);
+    expect(result.status).toBe("success");
+    expect(result.normalized.edges).toEqual(symbols.map(name => ({ fromPath: "src/orders.js", fromSymbol: "processOrder", toPath: `src/${name}.js`, toSymbol: name, relationship: "call", explicitlyResolved: true })));
+    expect(result.raw).toBe(raw);
+    expect(result.provenance?.map(item => item.raw)).toEqual([...followups.values()]);
+    expect(JSON.stringify({ raw, followups: [...followups] })).toBe(before);
+  });
+
+  it("g5 schema: normalizes duplicate definitions and empty headers before identity checks", () => {
+    const raw = textMcp('[1] function_declaration "normalize" in /fixture/src/duplicate-a.js:1-3\n[2] function_declaration "normalize" in /fixture/src/duplicate-b.js:1-3');
+    const definitions = normalizeMcp(raw, { ...definitionsRequest, subject: { symbol: "normalize" } }, root).definitions!;
+    expect(definitions.map(item => item.path)).toEqual(["src/duplicate-a.js", "src/duplicate-b.js"]);
+    for (const candidate of definitions) {
+      const empty = textMcp(`No callers found for "normalize" at ${candidate.path}:1. It may not be called.`);
+      expect(normalizeMcp(empty, { ...direct, operation: "direct-callers", subject: { ...candidate, path: `/fixture/${candidate.path}` } }, root).edges).toEqual([]);
+    }
+    const empty = textMcp('No callers found for "normalize" at /fixture/src/duplicate-b.js:1.');
+    expect(() => normalizeMcp(empty, { ...direct, operation: "direct-callers", subject: definitions[0] }, root)).toThrow(/different subject/);
+    expect(normalizeMcp(raw, { ...definitionsRequest, subject: definitions[1] }, root).definitions).toEqual([definitions[1]]);
+  });
+
+  it("normalizes caller and path-hop fields without rewriting content or accepting external endpoints", () => {
+    const request: ParticipantRequest = { ...direct, operation: "direct-callers" };
+    const text = '"middle" at /fixture/alpha.py:4 is called by 1 function(s):\n[1] ← from entry in /fixture/caller.py (Call) at line 8 [unresolved]';
+    expect(normalizeMcp(textMcp(text), request, root)).toMatchObject({ edges: [{ fromPath: "caller.py", fromSymbol: "entry", toPath: "alpha.py", toSymbol: "middle" }], content: text });
+    expect(() => normalizeMcp(textMcp(text.replace("/fixture/caller.py", "/fixture-other/caller.py")), request, root)).toThrow(/Out-of-scope/);
+    const pathRequest: ParticipantRequest = { operation: "shortest-path", from: { path: "alpha.py", symbol: "middle" }, to: { path: "leaf.py", symbol: "leaf" }, limit: 50 };
+    const pathText = 'Path (2 hops):\n[start] middle (/fixture/alpha.py:4)\n--Call--> leaf (/fixture/leaf.py:1)';
+    expect(normalizeMcp(textMcp(pathText), pathRequest, root)).toEqual({ paths: [[pathRequest.from, pathRequest.to]], content: pathText });
+    expect(() => normalizeMcp(textMcp(pathText.replace("/fixture/leaf.py", "/outside/leaf.py")), pathRequest, root)).toThrow(/Out-of-scope/);
+    expect(normalizeMcp(textMcp("No path found between middle and leaf"), pathRequest, root).paths).toEqual([]);
+  });
+
+  it("keeps CodeGraph file-kind neighbors and grepai self-calls under unchanged edge policy", () => {
+    const raw = { symbol: "middle", callers: [{ name: "alpha.py", kind: "file", filePath: "/fixture/alpha.py" }] };
+    expect(normalizeCodeGraphEdges(raw, { ...direct, operation: "direct-callers" }, { path: "/fixture/alpha.py", symbol: "middle" }, root)).toEqual([{ fromPath: "alpha.py", fromSymbol: "alpha.py", toPath: "alpha.py", toSymbol: "middle", relationship: "call" }]);
+    expect(normalizeGrepai({ query: "middle", mode: "fast", symbol: node("middle", "/fixture/alpha.py"), callees: [{ symbol: node("middle", "/fixture/alpha.py") }] }, direct, root).normalized.edges).toHaveLength(1);
+  });
+
+  it("fails closed on external lookup targets and retains absolute duplicate ambiguity", async () => {
+    const raw = textMcp('"middle" at /fixture/alpha.py:4 calls 1 function(s):\n[1] → leaf (Call) at line 5 [resolved]');
+    await expect(resolveOcbiCallees(raw, direct, async () => textMcp('[1] function "leaf" in /fixture-other/leaf.py:1-2'), root)).rejects.toThrow(/Out-of-scope/);
+    const duplicate = textMcp('[1] function "leaf" in /fixture/one.py:1-2\n[2] function "leaf" in /fixture/two.py:1-2');
+    const result = await resolveOcbiCallees(raw, direct, async () => duplicate, root);
+    expect(result.status).toBe("manual-adjudication-required");
+    expect(result.normalized.edges?.[0]).not.toHaveProperty("toPath");
+  });
+
+  it("leaves definition content and input identities byte-for-byte unchanged", () => {
+    const text = '[1] function "middle" in /fixture/alpha.py:4-5\n```\n// /fixture/alpha.py ../outside.py\n```';
+    const raw = textMcp(text);
+    const request: ParticipantRequest = { ...definitionsRequest, subject: { path: "/fixture/alpha.py", symbol: "middle" } };
+    const before = JSON.stringify({ raw, request });
+    expect(normalizeMcp(raw, request, root)).toEqual({ definitions: [{ path: "alpha.py", symbol: "middle", content: text }], content: text });
+    expect(JSON.stringify({ raw, request })).toBe(before);
   });
 });
