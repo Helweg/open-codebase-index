@@ -88,6 +88,79 @@ describe("competitive adapter output parsing", () => {
     expect(parseCodebaseMemoryPaths(raw, source, 50)).toEqual(["src/target.ts"]);
   });
 
+  it("omits explicitly typed Folder and Channel groups before validating file candidates", () => {
+    const { source } = fixture();
+    const raw = {
+      structuredContent: {
+        total: 3,
+        count: 3,
+        cols: ["name", "label", "lines", "in", "out"],
+        groups: [
+          { file: "src/target.ts", rows: [["target", "Function", "1-1", 0, 0]] },
+          { file: "examples/error", rows: [["examples/error", "Folder", "", 0, 0]] },
+          { file: "", rows: [["errors", "Channel", "", 0, 0]] },
+        ],
+      },
+      isError: false,
+    };
+
+    expect(parseCodebaseMemoryPaths(raw, source, 50)).toEqual(["src/target.ts"]);
+  });
+
+  it("validates every non-container CBM candidate as a regular file without guessing labels", () => {
+    const { source } = fixture();
+    const response = (groups: unknown[]) => ({
+      structuredContent: { total: groups.length, count: groups.length, cols: ["name", "label", "lines", "in", "out"], groups },
+      isError: false,
+    });
+
+    expect(() => parseCodebaseMemoryPaths(response([
+      { file: "src/target.ts", rows: [["target", "Function", "1-1", 0, 0]] },
+      { file: "../outside.ts", rows: [["outside", "Function", "1-1", 0, 0]] },
+    ]), source, 50)).toThrow(/outside project root/);
+    expect(parseCodebaseMemoryPaths(response([
+      { file: "src/target.ts", rows: [["target", "MysteryNode", "1-1", 0, 0]] },
+    ]), source, 50)).toEqual(["src/target.ts"]);
+    expect(parseCodebaseMemoryPaths(response([
+      { file: "src/target.ts", rows: [["target", "Function", "1-1", 0, 0], ["src", "Folder", "", 0, 0]] },
+    ]), source, 50)).toEqual(["src/target.ts"]);
+    expect(() => parseCodebaseMemoryPaths(response([
+      { file: "src", rows: [["src", "MysteryNode", "", 0, 0]] },
+    ]), source, 50)).toThrow(/not a regular file/);
+  });
+
+  it("derives the CBM label position from cols and rejects malformed column contracts", () => {
+    const { source } = fixture();
+    const raw = (cols: string[], rows: unknown[][]) => ({
+      structuredContent: { total: 1, count: 1, cols, groups: [{ file: "src/target.ts", rows }] },
+      isError: false,
+    });
+    expect(parseCodebaseMemoryPaths(raw(["label", "name"], [["Function", "target"]]), source, 50))
+      .toEqual(["src/target.ts"]);
+    expect(() => parseCodebaseMemoryPaths(raw(["name"], [["target"]]), source, 50)).toThrow(/exactly one label/);
+    expect(() => parseCodebaseMemoryPaths(raw(["label", "label"], [["Function", "Function"]]), source, 50)).toThrow(/exactly one label/);
+    expect(() => parseCodebaseMemoryPaths(raw(["name", "label"], [["target"]]), source, 50)).toThrow(/must match cols/);
+    expect(() => parseCodebaseMemoryPaths(raw(["name", "label"], [["target", ""]]), source, 50)).toThrow(/string label/);
+  });
+
+  it("validates invalid CBM files even after ten preceding candidates", () => {
+    const { source } = fixture();
+    const groups = Array.from({ length: 10 }, () => ({
+      file: "src/target.ts",
+      rows: [["target", "Function", "1-1", 0, 0]],
+    }));
+    groups.push({ file: "../outside.ts", rows: [["outside", "Function", "1-1", 0, 0]] });
+    expect(() => parseCodebaseMemoryPaths({
+      structuredContent: {
+        total: groups.length,
+        count: groups.length,
+        cols: ["name", "label", "lines", "in", "out"],
+        groups,
+      },
+      isError: false,
+    }, source, 50)).toThrow(/outside project root/);
+  });
+
   it("parses grepai JSON arrays and deduplicates to file-level top ten", () => {
     const { source } = fixture();
     expect(parseGrepaiPaths([

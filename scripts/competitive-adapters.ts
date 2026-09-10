@@ -1,5 +1,5 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
@@ -238,7 +238,28 @@ export function parseCodebaseMemoryPaths(raw: unknown, projectRoot: string, limi
   if (typeof output.total !== "number" || !Number.isInteger(output.total) || output.total < 0) throw new Error("codebase-memory total must be a non-negative integer");
   if (typeof output.count !== "number" || !Number.isInteger(output.count) || output.count < 0) throw new Error("codebase-memory count must be a non-negative integer");
   if (!Array.isArray(output.groups)) throw new Error("codebase-memory groups must be an array");
-  return uniquePaths(projectRoot, output.groups.map((group) => record(group, "codebase-memory group").file), limit);
+  if (!Array.isArray(output.cols) || output.cols.some((column) => typeof column !== "string")) throw new Error("codebase-memory cols must be a string array");
+  const cols = output.cols as string[];
+  const labelIndexes = cols.flatMap((column, index) => column === "label" ? [index] : []);
+  if (labelIndexes.length !== 1) throw new Error("codebase-memory cols must contain exactly one label column");
+  const labelIndex = labelIndexes[0];
+  const containerLabels = new Set(["Folder", "Channel"]);
+  const candidates: string[] = [];
+  for (const value of output.groups) {
+    const group = record(value, "codebase-memory group");
+    if (!Array.isArray(group.rows) || group.rows.length === 0) throw new Error("codebase-memory group.rows must be a non-empty array");
+    const labels = new Set(group.rows.map((value) => {
+      if (!Array.isArray(value) || value.length !== cols.length || typeof value[labelIndex] !== "string" || value[labelIndex].trim() === "") {
+        throw new Error("codebase-memory group row must match cols and contain a string label");
+      }
+      return value[labelIndex];
+    }));
+    if ([...labels].every((label) => containerLabels.has(label))) continue;
+    const filePath = validatePath(projectRoot, group.file);
+    if (!statSync(path.join(projectRoot, filePath)).isFile()) throw new Error(`codebase-memory result path is not a regular file: ${String(group.file)}`);
+    candidates.push(filePath);
+  }
+  return [...new Set(candidates)].slice(0, Math.min(limit, 10));
 }
 
 export function parseGrepaiPaths(raw: unknown, projectRoot: string, limit: number): string[] {

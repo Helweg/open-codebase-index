@@ -1,6 +1,6 @@
 # Competitive benchmark preregistration (2026-09-10)
 
-Status: protocol preparation, before new scored comparisons. OCBI implementation under test: `ebd0702` on macOS ARM64 / Node 26.6.0. No superiority result is assumed.
+Status: measurements in progress. The original protocol and interface lock preceded scored runs. The dated amendment below records a subsequently discovered adapter defect. OCBI implementation under test: `ebd0702` on macOS ARM64 / Node 26.6.0. No superiority result is assumed.
 
 ## Questions and claims
 
@@ -51,3 +51,13 @@ No scored comparisons or coding-model calls preceded these clarifications.
 - `conformance.json` freezes the twelve synthetic scenarios. Graph and freshness requests use identical explicit `subject`, `from`, `to`, or `queryInputs` fields for all participants. Natural-language descriptions are for readers, not an evaluated routing step. Expected edges and output paths remain evaluator-only. The Python reachability scenario has a genuine two-hop call path.
 - Before the larger coding pilot, run a safety and feasibility gate with two seeded regressions in the pinned Axios revision, three conditions (no index, OCBI hybrid, CodeGraph), and one run per task/condition. This is six descriptive runs in one repository, not the planned larger multi-repository comparison. All use the already-installed local Ollama Gemma model and the same fixed budgets. Expand only after confinement and hidden-evaluator checks pass. Seeded regressions are not historical issue-resolution evidence.
 - Freeze the coding task manifest and model parameters before inference. Validate that the starting mutation fails and the reference restoration passes. A successful sandbox probe is a prerequisite, not a substitute for post-run hidden tests. If the safety gate fails, report the blocker and do not execute model-produced code.
+
+## Amendment A1: typed graph-node file projection, 2026-09-10 09:03 UTC
+
+This amendment follows completed Axios, Express and Click runs, before the remaining six repositories and before aggregate accuracy inspection. Status inspection found three repeated adapter errors for the Express `error` symbol. The preserved public codebase-memory response contains valid `Function` file results alongside a `Folder` and a `Channel` without a source-file path. Our parser incorrectly treated every graph group as a file candidate. This is a harness defect, not evidence that codebase-memory failed to find the function.
+
+- Correct only the schema-driven projection of graph nodes to file candidates. Derive the label position from `cols`; omit a group only when every row is explicitly typed `Folder` or `Channel`. Every other group's path must resolve to an existing regular file confined to the source root, including candidates beyond the scoring cutoff. Do not guess an exhaustive language-specific label whitelist: an unfamiliar label with a valid source file remains a candidate, while malformed labels, missing paths, directories and escapes fail validation.
+- Do not change queries, expected answers, tool commands, ranking, limits, source revisions, embedding settings, or the scorer. Freeze the corrected parser and updated interface-lock hash before resuming measurements.
+- Preserve every original run and raw response unchanged. Apply the same corrected parser to **all** codebase-memory responses, not merely the failed query, in a separately identified derived series. Record source-artifact hashes, correction version, and original/corrected status. Genuine setup, transport and timeout failures remain failures.
+- Primary development reporting uses one consistently corrected codebase-memory series across all nine repositories. Publish the as-collected operational artifacts alongside it for audit, not as a uniform series across mixed parser versions, and identify this post-preregistration normalization correction. Invalidate affected original rows for product-comparison claims rather than attributing our parsing error to the product.
+- Replayed normalization does not constitute a new runtime measurement. Retained timings remain descriptive measurements of the original public interface. Neither this amendment nor a corrected result makes the development cohort confirmatory.

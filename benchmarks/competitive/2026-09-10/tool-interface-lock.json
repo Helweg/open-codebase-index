@@ -1547,7 +1547,7 @@
     {
       "root": "project",
       "path": "scripts/competitive-adapters.ts",
-      "sha256": "a84e10a3f413a626d67ee8f90e08d5c7332f31950f0be361a829b9d17751cb7a"
+      "sha256": "d2555f5b639c4ba1c72f758ecb254933a47651575b6f3fa1df1dcec2a5697a47"
     },
     {
       "root": "project",
@@ -1728,5 +1728,20 @@
       }
     ]
   },
-  "frozenAt": "2026-09-10T08:37:20Z"
+  "frozenAt": "2026-09-10T08:37:20Z",
+  "amendments": [
+    {
+      "id": "A1",
+      "recordedAt": "2026-09-10T09:21:00Z",
+      "reason": "Project file projection must omit explicitly typed Folder/Channel-only CBM groups and validate every remaining physical file. No tool invocation, ranking or scorer change. Apply uniformly to all CBM raw responses in derived corrected artifacts.",
+      "previousAdapterSha256": "a84e10a3f413a626d67ee8f90e08d5c7332f31950f0be361a829b9d17751cb7a",
+      "correctedAdapterSha256": "d2555f5b639c4ba1c72f758ecb254933a47651575b6f3fa1df1dcec2a5697a47",
+      "completedOriginalRepositories": [
+        "axios",
+        "express",
+        "click"
+      ],
+      "protocol": "docs/benchmarks/2026-09-10-competitive-preregistration.md#amendment-a1-typed-graph-node-file-projection-2026-09-10-0903-utc"
+    }
+  ]
 }
