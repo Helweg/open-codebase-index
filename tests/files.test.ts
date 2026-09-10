@@ -142,6 +142,36 @@ describe("files utilities", () => {
       ).toBe(false);
     });
 
+    it("should keep XML and SVG opt-in through additionalInclude", () => {
+      const filter = createIgnoreFilter(tempDir);
+      const xmlFile = path.join(tempDir, "config", "service.xml");
+      const svgFile = path.join(tempDir, "assets", "diagram.svg");
+
+      for (const filePath of [xmlFile, svgFile]) {
+        expect(
+          shouldIncludeFile(filePath, tempDir, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, filter),
+        ).toBe(false);
+      }
+      expect(
+        shouldIncludeFile(
+          xmlFile,
+          tempDir,
+          [...DEFAULT_INCLUDE, "**/*.xml", "**/*.svg"],
+          DEFAULT_EXCLUDE,
+          filter,
+        ),
+      ).toBe(true);
+      expect(
+        shouldIncludeFile(
+          svgFile,
+          tempDir,
+          [...DEFAULT_INCLUDE, "**/*.xml", "**/*.svg"],
+          DEFAULT_EXCLUDE,
+          filter,
+        ),
+      ).toBe(true);
+    });
+
     it("should include MATLAB .m files when opted in via additionalInclude", () => {
       const filter = createIgnoreFilter(tempDir);
 

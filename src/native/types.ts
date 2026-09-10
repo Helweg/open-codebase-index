@@ -35,6 +35,7 @@ export type ChunkType =
   | "import"
   | "export"
   | "comment"
+  | "element"
   | "other";
 
 export interface ParsedFile {
@@ -42,6 +43,7 @@ export interface ParsedFile {
   chunks: CodeChunk[];
   symbols: ParsedSymbol[];
   hash: string;
+  parseFailed?: boolean;
 }
 
 export interface ParsedSymbol {

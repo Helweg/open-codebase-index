@@ -321,6 +321,7 @@ function changed(): number {
       ["index.callGraphResolutionVersion", "9"],
       [swiftPrefix, "2"],
       ["index.parser.metalVersion", "1"],
+      ["index.parser.markupVersion", "1"],
     ] as const) {
       expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "main"))).toBe(version);
       expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "feature"))).toBe(version);

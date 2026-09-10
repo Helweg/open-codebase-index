@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Semantic XML and SVG indexing**: Added native, opt-in XML element extraction and accessible SVG text extraction. SVG geometry, style, class, and layer metadata are excluded from embeddings, search and similarity results, and external reranker documents, including when a file exceeds the semantic chunk cap. Markup retrieval reconstructs the indexed semantic chunk without raw context lines and reports unavailable content when the source no longer matches.
 - **Opt-in PDF text indexing**: Explicit PDF include patterns now use a shared binary-aware ingestion path across CLI, MCP, OpenCode, and Pi. Text is extracted locally into deterministic page-aware chunks, persisted for vector and keyword retrieval, retries, branch indexes, snippets, and reranking, and returned with truthful physical-page citations. Incremental updates, invalid replacements, renames, and deletions remove stale passages without blocking valid files. PDF discovery remains disabled by default; OCR and password entry are not supported.
 
 ### Fixed

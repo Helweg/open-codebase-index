@@ -131,6 +131,8 @@ import { PdfExtractionError } from "../documents/pdf.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 
+type MarkupChunkContentCache = Map<string, Promise<Map<string, string>>>;
+
 export function shouldRetryEmbeddingRequest(error: unknown): boolean {
   return !isOperationInterruption(error)
     && !(error instanceof CustomProviderNonRetryableError)
@@ -702,12 +704,18 @@ const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
+const MARKUP_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "1";
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
   const normalizedFilePath = path.resolve(filePath);
   const normalizedRoot = path.resolve(rootPath);
   return normalizedFilePath === normalizedRoot || normalizedFilePath.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
+function isMarkupFilePath(filePath: string): boolean {
+  const extension = path.extname(filePath).toLowerCase();
+  return extension === ".xml" || extension === ".svg";
 }
 
 function promoteIdentifierMatches(
@@ -1760,6 +1768,12 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.parser.metalVersion", catalogIdentity);
   }
 
+  private getMarkupParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.markupVersion", catalogIdentity);
+  }
+
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -1776,6 +1790,8 @@ export class Indexer {
       === SWIFT_PARSER_VERSION
       && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
       === METAL_PARSER_VERSION
+      && database.getMetadata(this.getMarkupParserVersionMetadataKey(catalogIdentity))
+      === MARKUP_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
       === SYMBOL_EXTRACTOR_VERSION;
   }
@@ -2982,6 +2998,7 @@ export class Indexer {
     }
 
     const topN = Math.min(reranker.topN, candidates.length);
+    const markupContentCache: MarkupChunkContentCache = new Map();
     const head = candidates.slice(0, topN);
     const tail = candidates.slice(topN);
     const grouped = new Map<ExternalRerankBand, RankedCandidate[]>([
@@ -3020,7 +3037,7 @@ export class Indexer {
         const documents = await Promise.all(
           bandCandidates.map(async (candidate) => ({
             id: candidate.id,
-            text: await this.createRerankerDocumentText(candidate),
+            text: await this.createRerankerDocumentText(candidate, markupContentCache),
           }))
         );
         const rankedIds = await this.callExternalReranker(
@@ -3146,7 +3163,51 @@ export class Indexer {
     }
   }
 
-  private async createRerankerDocumentText(candidate: RankedCandidate): Promise<string> {
+  private async readChunkContent(
+    metadata: ChunkMetadata,
+    filePath: string,
+    contextLines: number,
+    markupContentCache: MarkupChunkContentCache,
+  ): Promise<{ content: string; startLine: number; endLine: number }> {
+    if (isMarkupFilePath(filePath)) {
+      let pending = markupContentCache.get(filePath);
+      if (!pending) {
+        pending = fsPromises.readFile(filePath, "utf-8").then((content) => {
+          const [parsed] = parseFiles(
+            [{ path: filePath, content }],
+            this.config.indexing.linesPerChunk,
+            this.config.indexing.maxChunksPerFile,
+          );
+          if (!parsed || parsed.parseFailed) {
+            throw new Error("Markup could not be parsed for retrieval");
+          }
+          return new Map(parsed.chunks.map((chunk) => [
+            `${chunk.startLine}:${chunk.endLine}:${generateChunkHash(chunk)}`,
+            chunk.content,
+          ]));
+        });
+        markupContentCache.set(filePath, pending);
+      }
+      const chunks = await pending;
+      const content = chunks.get(`${metadata.startLine}:${metadata.endLine}:${metadata.hash}`);
+      if (content === undefined) {
+        throw new Error("Indexed markup chunk no longer matches the source; reindex the file");
+      }
+      // Source coordinates identify the chunk, but raw context lines can contain
+      // hidden text or geometry. Only the parser's semantic content is exposed.
+      return { content, startLine: metadata.startLine, endLine: metadata.endLine };
+    }
+
+    const lines = (await fsPromises.readFile(filePath, "utf-8")).split("\n");
+    const startLine = Math.max(1, metadata.startLine - contextLines);
+    const endLine = Math.min(lines.length, metadata.endLine + contextLines);
+    return { content: lines.slice(startLine - 1, endLine).join("\n"), startLine, endLine };
+  }
+
+  private async createRerankerDocumentText(
+    candidate: RankedCandidate,
+    markupContentCache: MarkupChunkContentCache,
+  ): Promise<string> {
     const parts = [
       `path: ${candidate.metadata.filePath}`,
       `chunk_type: ${candidate.metadata.chunkType}`,
@@ -3164,22 +3225,24 @@ export class Indexer {
     parts.push(`intent_hint: ${intent}`);
 
     if (candidate.metadata.documentLocation) {
-      parts.push("snippet:");
-      parts.push(candidate.metadata.sourceText?.trim() || "[empty]");
-    } else try {
-      const fileContent = await fsPromises.readFile(
-        this.toMaterializedFilePath(candidate.metadata.filePath),
-        "utf-8",
-      );
-      const lines = fileContent.split("\n");
-      const snippetStartLine = Math.max(1, candidate.metadata.startLine);
-      const snippetEndLine = Math.min(lines.length, candidate.metadata.endLine);
-      const snippet = lines.slice(snippetStartLine - 1, snippetEndLine).join("\n").trim();
+      const snippet = candidate.metadata.sourceText?.trim() ?? "";
       parts.push("snippet:");
       parts.push(snippet.length > 0 ? snippet : "[empty]");
-    } catch {
-      parts.push("snippet:");
-      parts.push("[unavailable]");
+    } else {
+      try {
+        const { content } = await this.readChunkContent(
+          candidate.metadata,
+          this.toMaterializedFilePath(candidate.metadata.filePath),
+          0,
+          markupContentCache,
+        );
+        const snippet = content.trim();
+        parts.push("snippet:");
+        parts.push(snippet.length > 0 ? snippet : "[empty]");
+      } catch {
+        parts.push("snippet:");
+        parts.push("[unavailable]");
+      }
     }
 
     return parts.join("\n");
@@ -4259,13 +4322,24 @@ export class Indexer {
       }));
       const readable = loadedEntries.filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const sourceEntries = readable.filter((entry) => path.extname(entry.path).toLowerCase() !== ".pdf");
-      const preparedSources = await prepareDocuments(sourceEntries, this.config.indexing.linesPerChunk, options.signal);
+      const preparedSources = await prepareDocuments(
+        sourceEntries,
+        this.config.indexing.linesPerChunk,
+        options.signal,
+        this.config.indexing.maxChunksPerFile,
+      );
       const sourceContentByPath = new Map(sourceEntries.map((entry) => [entry.path, Buffer.from(entry.bytes).toString("utf-8")]));
       const preparedPdfs = (await Promise.all(readable
         .filter((entry) => path.extname(entry.path).toLowerCase() === ".pdf")
         .map(async (entry) => {
           try {
-            return await prepareDocument(entry.path, entry.bytes, this.config.indexing.linesPerChunk, options.signal);
+            return await prepareDocument(
+              entry.path,
+              entry.bytes,
+              this.config.indexing.linesPerChunk,
+              options.signal,
+              this.config.indexing.maxChunksPerFile,
+            );
           } catch (error) {
             if (isOperationInterruption(error)) throw error;
             return null;
@@ -4278,6 +4352,7 @@ export class Indexer {
         if (
           parsed.kind === "source" &&
           this.config.indexing.fallbackToTextOnMaxChunks &&
+          !isMarkupFilePath(parsed.path) &&
           chunksToProcess.length > this.config.indexing.maxChunksPerFile
         ) {
           chunksToProcess = parseFileAsText(
@@ -4474,6 +4549,8 @@ export class Indexer {
     const reparseCachedSwiftFiles = database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
     const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
     const reparseCachedMetalFiles = database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
+    const markupParserMetadataKey = this.getMarkupParserVersionMetadataKey();
+    const reparseCachedMarkupFiles = database.getMetadata(markupParserMetadataKey) !== MARKUP_PARSER_VERSION;
     const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
     const refreshCachedSymbols = database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
     if (
@@ -4487,6 +4564,12 @@ export class Indexer {
       Array.from(this.fileHashCache.keys()).some((filePath) => path.extname(filePath).toLowerCase() === ".metal")
     ) {
       this.logger.info("Reindexing cached Metal files for parser support");
+    }
+    if (
+      reparseCachedMarkupFiles &&
+      Array.from(this.fileHashCache.keys()).some(isMarkupFilePath)
+    ) {
+      this.logger.info("Reindexing cached XML and SVG files for semantic markup support");
     }
 
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
@@ -4606,6 +4689,8 @@ export class Indexer {
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
         reparseCachedMetalFiles && path.extname(storedPath).toLowerCase() === ".metal";
+      const requiresMarkupParserUpgrade =
+        reparseCachedMarkupFiles && isMarkupFilePath(storedPath);
       const inMigrationScope =
         forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
@@ -4615,6 +4700,7 @@ export class Indexer {
         && !needsCallGraphRefresh
         && !requiresSwiftParserUpgrade
         && !requiresMetalParserUpgrade
+        && !requiresMarkupParserUpgrade
         && !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(storedPath);
@@ -4772,6 +4858,7 @@ export class Indexer {
         const parsed = parseFiles(
           [{ path: descriptor.storedPath, content }],
           this.config.indexing.linesPerChunk,
+          this.config.indexing.maxChunksPerFile,
         )[0];
         return {
           content,
@@ -4884,12 +4971,19 @@ export class Indexer {
           sourceEntries.map(({ descriptor, bytes }) => ({ path: descriptor.storedPath, bytes })),
           this.config.indexing.linesPerChunk,
           signal,
+          this.config.indexing.maxChunksPerFile,
         );
         const preparedByPath = new Map(preparedSources.map((prepared) => [prepared.path, prepared]));
         const preparedEntries = (await Promise.all(readableEntries.map(async ({ descriptor, bytes }) => {
           try {
             const prepared = path.extname(descriptor.storedPath).toLowerCase() === ".pdf"
-              ? await prepareDocument(descriptor.storedPath, bytes, this.config.indexing.linesPerChunk, signal)
+              ? await prepareDocument(
+                descriptor.storedPath,
+                bytes,
+                this.config.indexing.linesPerChunk,
+                signal,
+                this.config.indexing.maxChunksPerFile,
+              )
               : preparedByPath.get(descriptor.storedPath);
             if (!prepared) return null;
             return { prepared, descriptor, sourceContent: prepared.kind === "source" ? Buffer.from(bytes).toString("utf-8") : "" };
@@ -4923,7 +5017,10 @@ export class Indexer {
           const descriptor = entry.descriptor;
           const sourceContent = entry.sourceContent;
 
-          if (parsed.chunks.length === 0) {
+          if (
+            parsed.parseFailed === true
+            || (parsed.chunks.length === 0 && !isMarkupFilePath(parsed.path))
+          ) {
             stats.parseFailures.push(path.isAbsolute(parsed.path)
               ? path.relative(this.projectRoot, parsed.path)
               : parsed.path);
@@ -4933,6 +5030,7 @@ export class Indexer {
           if (
             parsed.kind === "source" &&
             this.config.indexing.fallbackToTextOnMaxChunks &&
+            !isMarkupFilePath(parsed.path) &&
             chunksToProcess.length > this.config.indexing.maxChunksPerFile
           ) {
             chunksToProcess = parseFileAsText(parsed.path, sourceContent, this.config.indexing.linesPerChunk);
@@ -5340,6 +5438,7 @@ export class Indexer {
         }
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
@@ -5380,6 +5479,7 @@ export class Indexer {
         this.saveInvertedIndex(invertedIndex);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         this.saveIndexMetadata(configuredProviderInfo);
@@ -5471,6 +5571,7 @@ export class Indexer {
       }
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
+      database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
       database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       this.saveIndexMetadata(configuredProviderInfo);
@@ -5989,6 +6090,7 @@ export class Indexer {
     }
 
     const metadataOnly = options?.metadataOnly ?? false;
+    const markupContentCache: MarkupChunkContentCache = new Map();
 
     return Promise.all(
       finalResults.map(async (r) => {
@@ -6001,21 +6103,19 @@ export class Indexer {
           content = r.metadata.sourceText ?? "[Extracted PDF text unavailable]";
         } else if (!metadataOnly && this.config.search.includeContext) {
           try {
-            const fileContent = await fsPromises.readFile(
+            const snippet = await this.readChunkContent(
+              r.metadata,
               resolvedFilePath,
-              "utf-8"
+              options?.contextLines ?? this.config.search.contextLines,
+              markupContentCache,
             );
-            const lines = fileContent.split("\n");
-            const contextLines = options?.contextLines ?? this.config.search.contextLines;
-
-            contextStartLine = Math.max(1, r.metadata.startLine - contextLines);
-            contextEndLine = Math.min(lines.length, r.metadata.endLine + contextLines);
-
-            content = lines
-              .slice(contextStartLine - 1, contextEndLine)
-              .join("\n");
+            content = snippet.content;
+            contextStartLine = snippet.startLine;
+            contextEndLine = snippet.endLine;
           } catch {
-            content = "[File not accessible]";
+            content = isMarkupFilePath(resolvedFilePath)
+              ? "[Markup content unavailable; reindex the file]"
+              : "[File not accessible]";
           }
         }
 
@@ -6821,6 +6921,7 @@ export class Indexer {
       prefilterMs: Math.round(prefilterMs * 100) / 100,
     });
 
+    const markupContentCache: MarkupChunkContentCache = new Map();
     return Promise.all(
       filtered.map(async (r) => {
         let content = "";
@@ -6830,16 +6931,17 @@ export class Indexer {
           content = r.metadata.sourceText ?? "[Extracted PDF text unavailable]";
         } else if (this.config.search.includeContext) {
           try {
-            const fileContent = await fsPromises.readFile(
+            const snippet = await this.readChunkContent(
+              r.metadata,
               resolvedFilePath,
-              "utf-8"
+              0,
+              markupContentCache,
             );
-            const lines = fileContent.split("\n");
-            content = lines
-              .slice(r.metadata.startLine - 1, r.metadata.endLine)
-              .join("\n");
+            content = snippet.content;
           } catch {
-            content = "[File not accessible]";
+            content = isMarkupFilePath(resolvedFilePath)
+              ? "[Markup content unavailable; reindex the file]"
+              : "[File not accessible]";
           }
         }
 

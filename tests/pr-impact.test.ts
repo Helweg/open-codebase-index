@@ -32,6 +32,7 @@ function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: 
   database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "9");
   database.setMetadata(`index.parser.swiftVersion.${suffix}`, "2");
   database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
+  database.setMetadata(`index.parser.markupVersion.${suffix}`, "1");
   database.setMetadata(symbolExtractorMetadataKey(catalogIdentity), "1");
 }
 
