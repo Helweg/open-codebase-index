@@ -28,11 +28,11 @@ function query(id: string, symbol?: string): GoldenQuery {
   };
 }
 
-function rawCommand(symbol: string, raw?: unknown) {
+function rawCommand(symbol: string, raw?: unknown, pattern = `^${symbol}$`) {
   return {
     command: ["cbm", "cli", "--json", "search_graph", JSON.stringify({
       project: "project-1",
-      name_pattern: `^${symbol}$`,
+      name_pattern: pattern,
       limit: 50,
       format: "json",
     })],
@@ -42,7 +42,7 @@ function rawCommand(symbol: string, raw?: unknown) {
   };
 }
 
-async function fixture(): Promise<{ source: string; corrected: string; originalExplicit: Buffer; marker: Buffer }> {
+async function fixture(symbol = "target", pattern = `^${symbol}$`): Promise<{ source: string; corrected: string; originalExplicit: Buffer; marker: Buffer }> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "competitive-cbm-replay-"));
   tempDirs.push(root);
   const source = path.join(root, "source-run");
@@ -55,7 +55,7 @@ async function fixture(): Promise<{ source: string; corrected: string; originalE
   await fs.mkdir(path.join(source, "repo", "grepai"), { recursive: true });
   await fs.writeFile(path.join(sourceTree, "target.ts"), "export function target() {}\n");
 
-  const queries = [query("explicit", "target"), query("natural")];
+  const queries = [query("explicit", symbol), query("natural")];
   await fs.writeFile(path.join(source, "run.json"), JSON.stringify({
     options: { repeats: 1, repositories: ["repo"] },
     sourceLock: { repositories: [{ name: "repo" }] },
@@ -68,7 +68,7 @@ async function fixture(): Promise<{ source: string; corrected: string; originalE
 
   const originalExplicit = Buffer.from(JSON.stringify({
     queryId: "explicit",
-    input: { query: "find explicit", symbol: "target", limit: 50 },
+    input: { query: "find explicit", symbol, limit: 50 },
     repeat: 1,
     condition: "codebase-memory",
     durationMs: 4,
@@ -99,8 +99,8 @@ async function fixture(): Promise<{ source: string; corrected: string; originalE
     },
     isError: false,
   };
-  await fs.writeFile(path.join(condition, "codebase-memory-query-000001.json"), JSON.stringify(rawCommand("target", response)));
-  await fs.writeFile(path.join(condition, "codebase-memory-query-000002.json"), JSON.stringify(rawCommand("target", response)));
+  await fs.writeFile(path.join(condition, "codebase-memory-query-000001.json"), JSON.stringify(rawCommand(symbol, response, pattern)));
+  await fs.writeFile(path.join(condition, "codebase-memory-query-000002.json"), JSON.stringify(rawCommand(symbol, response, pattern)));
 
   const marker = Buffer.from([0, 1, 2, 3, 255]);
   await fs.writeFile(path.join(source, "repo", "grepai", "marker.bin"), marker);
@@ -108,6 +108,45 @@ async function fixture(): Promise<{ source: string; corrected: string; originalE
 }
 
 describe("competitive CBM replay", () => {
+  it.each([
+    ["escaped regexp specials", String.raw`\.\*\+\?\^\$\{\}\(\)\|\[\]\\`, ".*+?^${}()|[]\\"],
+    ["unknown escapes", String.raw`a\#\q`, String.raw`a\#\q`],
+    ["Unicode and escaped astral characters", "雪\\😀é", "雪\\😀é"],
+    ["line terminators", "a\n\r\u2028\u2029\\\nb", "a\n\r\u2028\u2029\\\nb"],
+    ["trailing backslash", "target\\", "target\\"],
+    ["even slash run before interior dollar", String.raw`a\\$b`, String.raw`a\$b`],
+    ["odd slash run before interior dollar", String.raw`a\\\$b`, String.raw`a\$b`],
+    ["escaped final literal dollar", String.raw`target\$`, "target$"],
+    ["unescaped non-dollar specials", "a.*+?^{}()|[]", "a.*+?^{}()|[]"],
+  ])("preserves %s through replay", async (_name, body, symbol) => {
+    const { source, corrected } = await fixture(symbol, `^${body}$`);
+    await expect(replayCodebaseMemoryRun(source, corrected)).resolves.toBeUndefined();
+    const derived = JSON.parse(await fs.readFile(path.join(corrected, "repo", "codebase-memory", "repeat-1", "explicit.json"), "utf8")) as {
+      score: { status: string };
+    };
+    expect(derived.score.status).toBe("success");
+  });
+
+  it.each([
+    ["missing start anchor", "target$"],
+    ["missing end anchor", "^target"],
+    ["unescaped interior dollar", "^tar$get$"],
+    ["adjacent interior dollars", String.raw`^a\$$b$`],
+    ["trailing newline", "^target$\n"],
+    ["single anchor", "^"],
+    ["empty pattern", ""],
+    ["long malformed suffix", `^${String.raw`\#`.repeat(100_000)}$invalid`],
+    ["long malformed interior with final anchor", `^${String.raw`\#`.repeat(100_000)}$invalid$`],
+  ])("rejects %s through replay", async (_name, pattern) => {
+    const { source, corrected } = await fixture("target", pattern);
+    await expect(replayCodebaseMemoryRun(source, corrected)).rejects.toThrow(/name_pattern is not anchored/);
+  }, 5_000);
+
+  it("accepts an empty anchored literal before checking the frozen symbol", async () => {
+    const { source, corrected } = await fixture("target", "^$");
+    await expect(replayCodebaseMemoryRun(source, corrected)).rejects.toThrow(/First CBM raw command does not match/);
+  });
+
   it("replays every repeat from monotonic anchored raw artifacts into a separate corrected tree", async () => {
     const { source, corrected, originalExplicit, marker } = await fixture();
     const originalHash = hash(await fs.readFile(path.join(source, "repo", "codebase-memory", "repeat-1", "explicit.json")));

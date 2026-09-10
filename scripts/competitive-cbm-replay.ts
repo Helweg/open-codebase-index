@@ -62,9 +62,19 @@ function anchoredSymbol(artifact: RawCommandArtifact): string {
   if (typeof encoded !== "string") throw new Error(`CBM raw artifact omitted JSON arguments: ${artifact.file}`);
   const args = JSON.parse(encoded) as { name_pattern?: unknown };
   if (typeof args.name_pattern !== "string") throw new Error(`CBM raw artifact omitted name_pattern: ${artifact.file}`);
-  const match = /^\^((?:\\.|[^$])*)\$$/u.exec(args.name_pattern);
-  if (!match) throw new Error(`CBM raw artifact name_pattern is not anchored: ${artifact.file}`);
-  return match[1].replace(/\\([.*+?^${}()|[\]\\])/gu, "$1");
+  const pattern = args.name_pattern;
+  if (pattern.length < 2 || pattern[0] !== "^" || pattern.at(-1) !== "$") {
+    throw new Error(`CBM raw artifact name_pattern is not anchored: ${artifact.file}`);
+  }
+  // The legacy grammar allowed every non-$ character independently, including
+  // backslashes. Thus an interior $ only needs an immediately preceding slash,
+  // regardless of slash-run parity. Scan once instead of backtracking over runs.
+  for (let index = 1; index < pattern.length - 1; index += 1) {
+    if (pattern[index] === "$" && pattern[index - 1] !== "\\") {
+      throw new Error(`CBM raw artifact name_pattern is not anchored: ${artifact.file}`);
+    }
+  }
+  return pattern.slice(1, -1).replace(/\\([.*+?^${}()|[\]\\])/gu, "$1");
 }
 
 async function rawArtifacts(conditionDirectory: string): Promise<RawCommandArtifact[]> {
