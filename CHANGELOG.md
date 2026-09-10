@@ -13,13 +13,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Optional TypeScript compiler evidence**: Disabled-by-default SCIP import enriches eligible unresolved local JS/TS call edges using an explicitly generated compiler artifact, with bounded decoding, local-source validation and branch-isolated enrichment state.
 - **Bounded API change evidence**: `codebase_edit_context` accepts `includeApiImpact` across MCP, OpenCode and Pi, associating supported local Express registrations with literal relative `fetch` consumers and candidate test files. Evidence is labeled syntactic and does not claim resolved call edges or runtime test coverage.
 - **Read-only workspace readiness**: `cbi workspace status --repo NAME=PATH` reports independent checkout identity and index coverage for up to 20 repositories. SQLite snapshots preserve live-WAL visibility without creating sidecars in the source repository; source freshness is explicitly not checked.
-- **Opt-in PDF text indexing**: Explicit PDF include patterns now use a shared binary-aware ingestion path across CLI, MCP, OpenCode, and Pi. Text is extracted locally into deterministic page-aware chunks, persisted for vector and keyword retrieval, retries, branch indexes, snippets, and reranking, and returned with truthful physical-page citations. Incremental updates, invalid replacements, renames, and deletions remove stale passages without blocking valid files. PDF discovery remains disabled by default; OCR and password entry are not supported.
 
 ### Fixed
 
 - **Python relative-import graph resolution**: Direct calls through unambiguous, single-line relative `from` imports can resolve to indexed top-level functions, including aliases and explicit package paths. Shadowed, detected dynamically rebound, ambiguous and unsupported bindings remain unresolved. Normal indexing migrates prior graph resolution and refreshes Python callers after source additions, edits or deletions without requiring a forced rebuild.
 - **Deep source discovery**: Default scans no longer stop at five directory levels, allowing deeply nested source packages such as Maven Java layouts to be indexed. Explicit `indexing.maxDepth` limits, ignored/hidden/build paths, symlink handling and per-directory file limits remain unchanged. Existing indexes can discover the additional sources through normal indexing.
 - **Active-branch readiness**: Status distinguishes globally stored chunks from the active branch's catalog and provides normal-index recovery guidance. Known-empty completed catalogs no longer fall back to stale unscoped evidence; genuinely legacy catalogs retain compatibility handling.
+
+## [0.28.0] - 2026-09-10
+
+### Added
+
+- **Semantic XML and SVG indexing**: Added native, opt-in XML element extraction and accessible SVG text extraction. SVG geometry, style, class, and layer metadata are excluded from embeddings, search and similarity results, and external reranker documents, including when a file exceeds the semantic chunk cap. Markup retrieval reconstructs the indexed semantic chunk without raw context lines and reports unavailable content when the source no longer matches.
+- **Opt-in PDF text indexing**: Explicit PDF include patterns now use a shared binary-aware ingestion path across CLI, MCP, OpenCode, and Pi. Text is extracted locally into deterministic page-aware chunks, persisted for vector and keyword retrieval, retries, branch indexes, snippets, and reranking, and returned with truthful physical-page citations. Incremental updates, invalid replacements, renames, and deletions remove stale passages without blocking valid files. PDF discovery remains disabled by default; OCR and password entry are not supported.
+
+### Changed
+
+- **Test tooling**: Upgraded Vitest and its V8 coverage provider together to 5.0.0, keeping test and coverage tooling aligned.
+
+### Fixed
+
+- **PDF page preservation in search**: Evidence deduplication now distinguishes physical PDF page ranges, so passages on different pages are not collapsed merely because they share page-local line numbers or identical text. Same-page and ordinary code deduplication remain unchanged.
 - **Transitive dependency security**: Updated dependency overrides for `hono` to `4.13.5` and `js-yaml` to `4.3.2`, with a lockfile-only bump of `nanoid` to `3.3.18`, addressing the current security advisories in these packages.
 - **PDF definition exclusion**: Definition-oriented retrieval now excludes PDF passages before ranking and external reranking, while ordinary document search retains page-aware results.
 
@@ -760,7 +774,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.22.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/Helweg/open-codebase-index/compare/v0.27.0...v0.28.0
 [0.22.2]: https://github.com/Helweg/open-codebase-index/compare/v0.22.1...v0.22.2
 [0.22.1]: https://github.com/Helweg/open-codebase-index/compare/v0.22.0...v0.22.1
 [0.22.0]: https://github.com/Helweg/open-codebase-index/compare/v0.21.0...v0.22.0

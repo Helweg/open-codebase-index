@@ -71,6 +71,7 @@ const ChunkType = Type.Union([
   Type.Literal("interface"),
   Type.Literal("type"),
   Type.Literal("module"),
+  Type.Literal("element"),
   Type.Literal("block"),
 ]);
 

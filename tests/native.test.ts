@@ -152,6 +152,362 @@ const add = (a, b) => a + b;
       expect(smallChunks[1].startLine - smallChunks[0].startLine).toBe(4);
     });
 
+    it("extracts generic XML structure, text, and bounded attributes", () => {
+      const content = `<?xml version="1.0"?>
+<catalog xmlns="urn:catalog" source="internal">
+  <book id="bk-1" available="true">
+    <title>XML &amp; SVG</title>
+    <summary>Useful <![CDATA[structured text]]>.</summary>
+    <empty-marker enabled="yes" />
+  </book>
+</catalog>`;
+
+      const chunks = parseFile("catalog.xml", content);
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(chunks.every((chunk) => chunk.language === "xml")).toBe(true);
+      expect(chunks.every((chunk) => chunk.chunkType === "element")).toBe(true);
+      expect(combined).toContain('catalog [source="internal"]');
+      expect(combined).toContain('catalog/book [id="bk-1" available="true"]');
+      expect(combined).toContain("catalog/book/title: XML & SVG");
+      expect(combined).toContain("catalog/book/summary: Useful structured text.");
+      expect(combined).toContain('catalog/book/empty-marker [enabled="yes"]');
+      expect(combined).not.toContain("xmlns");
+    });
+
+    it("keeps accessible SVG text while excluding rendering and layer noise", () => {
+      const content = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" aria-label="Accessible sales chart" role="img" viewBox="VIEWBOX_NOISE" data-layer="LAYER_NOISE">
+  <title>Quarterly sales</title>
+  <desc>Sales increased during 2026.</desc>
+  <defs><title>DEFS_TEXT_NOISE</title></defs>
+  <g aria-hidden="true"><text>ARIA_HIDDEN_TEXT_NOISE</text></g>
+  <text style="display: none">DISPLAY_NONE_TEXT_NOISE</text>
+  <text style="display: /* generated ; */ none !important">COMMENTED_DISPLAY_NONE_TEXT_NOISE</text>
+  <text style='content:"/*";display:none'>STRING_COMMENT_MARKER_HIDDEN_NOISE</text>
+  <text style='content:"display:none"'>Visible CSS string content</text>
+  <text style="display:noneish">Visible invalid display value</text>
+  <text style="display:no/* generated */ne">Visible interrupted display keyword</text>
+  <text style="${"x".repeat(4097)}">OVERSIZED_STYLE_TEXT_NOISE</text>
+  <text visibility="hidden">VISIBILITY_TEXT_NOISE</text>
+  <style>.STYLE_NOISE { fill: red; }</style>
+  <g id="LAYER_NOISE" transform="translate(COORD_NOISE)" fill="FILL_NOISE" stroke="STROKE_NOISE" inkscape:groupmode="layer" inkscape:label="INKSCAPE_LAYER_NOISE">
+    <path d="PATH_NOISE" style="STYLE_NOISE" />
+    <text x="COORD_NOISE" class="STYLE_NOISE">Visible sales <tspan>2026</tspan></text>
+    <circle cx="COORD_NOISE" aria-description="Current quarter marker">ARIA_CHILD_NOISE</circle>
+    <foreign:text xmlns:foreign="urn:not-svg" aria-label="FOREIGN_ARIA_NOISE">FOREIGN_TEXT_NOISE</foreign:text>
+  </g>
+</svg>`;
+
+      const chunks = parseFile("chart.svg", content);
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(chunks.every((chunk) => chunk.language === "svg")).toBe(true);
+      expect(combined).toContain("title: Quarterly sales");
+      expect(combined).toContain("desc: Sales increased during 2026.");
+      expect(combined).toContain("text: Visible sales 2026");
+      expect(combined).toContain("text: Visible CSS string content");
+      expect(combined).toContain("text: Visible invalid display value");
+      expect(combined).toContain("text: Visible interrupted display keyword");
+      expect(combined).toContain('svg [aria-label="Accessible sales chart" role="img"]');
+      expect(combined).toContain('circle [aria-description="Current quarter marker"]');
+      expect(combined).not.toContain("PATH_NOISE");
+      expect(combined).not.toContain("COORD_NOISE");
+      expect(combined).not.toContain("STYLE_NOISE");
+      expect(combined).not.toContain("LAYER_NOISE");
+      expect(combined).not.toContain("VIEWBOX_NOISE");
+      expect(combined).not.toContain("FILL_NOISE");
+      expect(combined).not.toContain("STROKE_NOISE");
+      expect(combined).not.toContain("INKSCAPE_LAYER_NOISE");
+      expect(combined).not.toContain("ARIA_CHILD_NOISE");
+      expect(combined).not.toContain("DEFS_TEXT_NOISE");
+      expect(combined).not.toContain("ARIA_HIDDEN_TEXT_NOISE");
+      expect(combined).not.toContain("DISPLAY_NONE_TEXT_NOISE");
+      expect(combined).not.toContain("COMMENTED_DISPLAY_NONE_TEXT_NOISE");
+      expect(combined).not.toContain("STRING_COMMENT_MARKER_HIDDEN_NOISE");
+      expect(combined).not.toContain("OVERSIZED_STYLE_TEXT_NOISE");
+      expect(combined).not.toContain("VISIBILITY_TEXT_NOISE");
+      expect(combined).not.toContain("FOREIGN_ARIA_NOISE");
+      expect(combined).not.toContain("FOREIGN_TEXT_NOISE");
+    });
+
+    it("keeps SVG descendants that override inherited visibility", () => {
+      const chunks = parseFile(
+        "visibility-overrides.svg",
+        `<svg>
+  <g visibility="hidden"><text visibility="visible">Attribute override</text><text>Inherited hidden</text></g>
+  <g style="visibility:hidden"><text style="visibility:visible">Style override</text><text>Style inherited hidden</text></g>
+  <text visibility="hidden">Hidden direct <tspan visibility="visible">Visible tspan</tspan></text>
+  <g display="none"><text visibility="visible">Display remains hidden</text></g>
+  <g aria-hidden="true"><text visibility="visible">ARIA remains hidden</text></g>
+  <g style="visibility:hidden !important"><text style="visibility:visible">Important parent override</text></g>
+  <g style="visibility:hidden !important; visibility:visible"><text>Important remains hidden</text></g>
+  <g visibility="hidden" style="visibility:visible"><text>Inline style wins</text></g>
+</svg>`,
+      );
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(combined).toContain("text: Attribute override");
+      expect(combined).toContain("text: Style override");
+      expect(combined).toContain("text: Visible tspan");
+      expect(combined).toContain("text: Important parent override");
+      expect(combined).toContain("text: Inline style wins");
+      expect(combined).not.toContain("Inherited hidden");
+      expect(combined).not.toContain("Style inherited hidden");
+      expect(combined).not.toContain("Hidden direct");
+      expect(combined).not.toContain("Display remains hidden");
+      expect(combined).not.toContain("ARIA remains hidden");
+      expect(combined).not.toContain("Important remains hidden");
+    });
+
+    it("ignores invalid SVG visibility declarations without replacing valid suppression", () => {
+      for (const style of [
+        "display:none;display:garbage",
+        "display:none;display:",
+        "display:none;display:garbage !important",
+        "display:none;display:none block",
+        "visibility:hidden;visibility:garbage",
+        "visibility:hidden;visibility:",
+        "visibility:hidden;visibility:garbage !important",
+        "visibility:hidden;visibility:visible hidden",
+      ]) {
+        expect(parseFile("invalid-style.svg", `<svg><text style="${style}">Hidden label</text></svg>`))
+          .toEqual([]);
+      }
+      expect(parseFile(
+        "invalid-inline-style.svg",
+        '<svg><text display="none" style="display:garbage">Hidden display</text><text visibility="hidden" style="visibility:garbage">Hidden visibility</text></svg>',
+      )).toEqual([]);
+    });
+
+    it("preserves valid SVG inline display and visibility overrides", () => {
+      for (const display of ["block", "inline", "inline-block", "flex", "inline flex", "flow-root block", "list-item inline flow", "table-row", "contents"]) {
+        const chunks = parseFile(
+          "valid-style.svg",
+          `<svg><text style="display:none;display:${display}">Visible label</text></svg>`,
+        );
+        expect(chunks.map((chunk) => chunk.content)).toEqual(["text: Visible label"]);
+      }
+      expect(parseFile(
+        "valid-visibility.svg",
+        '<svg><text style="visibility:hidden;visibility:visible !important;visibility:hidden">Visible label</text></svg>',
+      ).map((chunk) => chunk.content)).toEqual(["text: Visible label"]);
+    });
+
+    it("rejects malformed XML instead of indexing raw lines", () => {
+      expect(() => parseFile("broken.xml", "<root><item></root>"))
+        .toThrow(/Failed to parse markup file/);
+      expect(() => parseFile("forbidden-cdata-end.xml", "<root>a]]>b</root>"))
+        .toThrow(/forbidden sequence/);
+      expect(() => parseFile("literal-angle-attribute.xml", '<root value="<"/>'))
+        .toThrow(/literal < character/);
+    });
+
+    it("preserves only source whitespace across references, CDATA, and nested SVG text", () => {
+      const xmlChunks = parseFile(
+        "adjacent.xml",
+        "<root><reference>foo&#66;ar</reference><cdata><![CDATA[foo]]>bar</cdata></root>",
+      );
+      expect(xmlChunks.map((chunk) => chunk.content)).toEqual([
+        "root/reference: fooBar",
+        "root/cdata: foobar",
+      ]);
+      expect(parseFile("space.xml", "<root><child/>&#x20;</root>")
+        .map((chunk) => chunk.content)).toEqual(["root/child"]);
+
+      const svgChunks = parseFile(
+        "adjacent.svg",
+        "<svg><text>A<tspan>B</tspan><title>C</title>D</text><title>Top title</title></svg>",
+      );
+      expect(svgChunks.map((chunk) => chunk.content)).toEqual([
+        "text: ABCD",
+        "title: Top title",
+      ]);
+    });
+
+    it("preserves non-breaking spaces and safely renders attribute values", () => {
+      const chunks = parseFile(
+        "fidelity.xml",
+        '<root label="Say &quot;yes&quot; at C:\\tmp"><value>A\u00a0B</value></root>',
+      );
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(combined).toContain('label="Say \\"yes\\" at C:\\\\tmp"');
+      expect(combined).toContain("root/value: A\u00a0B");
+    });
+
+    it("keeps SVG semantic names and accessibility attributes case-sensitive", () => {
+      const chunks = parseFile(
+        "case-sensitive.svg",
+        '<svg xmlns:foreign="urn:not-svg"><TEXT>UPPER_TEXT_NOISE</TEXT><Title>UPPER_TITLE_NOISE</Title><g ARIA-label="UPPER_ARIA_NOISE" foreign:aria-label="NAMESPACED_ARIA_NOISE"/><text>Visible text</text></svg>',
+      );
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(combined).toContain("text: Visible text");
+      expect(combined).not.toContain("UPPER_TEXT_NOISE");
+      expect(combined).not.toContain("UPPER_TITLE_NOISE");
+      expect(combined).not.toContain("UPPER_ARIA_NOISE");
+      expect(combined).not.toContain("NAMESPACED_ARIA_NOISE");
+    });
+
+    it("streams deeply nested SVG text into one semantic record", () => {
+      const depth = 256;
+      const content = `<svg><text>${"<tspan>".repeat(depth)}Deep label${"</tspan>".repeat(depth)}</text></svg>`;
+
+      expect(parseFile("deep.svg", content).map((chunk) => chunk.content)).toEqual([
+        "text: Deep label",
+      ]);
+    });
+
+    it("requires one document root and an SVG root element", () => {
+      expect(parseFile(
+        "valid-declaration.xml",
+        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><root/>',
+      ).map((chunk) => chunk.content)).toEqual(["root"]);
+      expect(() => parseFile("multiple.xml", "<first/><second/>"))
+        .toThrow(/more than one root element/);
+      expect(() => parseFile("outside.xml", "text<root/>"))
+        .toThrow(/text outside the root element/);
+      expect(() => parseFile("not-svg.svg", "<document><title>Wrong root</title></document>"))
+        .toThrow(/must use <svg> as the root element/);
+      expect(() => parseFile("late-declaration.xml", "<!--comment--><?xml version=\"1.0\"?><root/>"))
+        .toThrow(/declaration must be the first document construct/);
+      expect(() => parseFile("spaced-declaration.xml", " \n<?xml version=\"1.0\"?><root/>"))
+        .toThrow(/declaration must be the first document construct/);
+      expect(() => parseFile("duplicate-declaration.xml", "<?xml version=\"1.0\"?><?xml version=\"1.0\"?><root/>"))
+        .toThrow(/declaration must be the first document construct/);
+      expect(() => parseFile("missing-version.xml", '<?xml encoding="UTF-8"?><root/>'))
+        .toThrow(/must begin with version/);
+      expect(() => parseFile("invalid-standalone.xml", '<?xml version="1.0" standalone="maybe"?><root/>'))
+        .toThrow(/standalone value must be yes or no/);
+      expect(() => parseFile("reserved-pi.xml", '<?XML version="1.0"?><root/>'))
+        .toThrow(/processing instruction target XML is reserved/);
+      expect(() => parseFile("duplicate-doctype.xml", "<!DOCTYPE root><!DOCTYPE root><root/>"))
+        .toThrow(/document type must appear at most once/);
+      expect(() => parseFile("mismatched-doctype.xml", "<!DOCTYPE expected><actual/>"))
+        .toThrow(/document type root does not match/);
+      expect(() => parseFile("invalid-comment.xml", "<root><!-- invalid -- comment --></root>"))
+        .toThrow(/Failed to parse markup file/);
+      expect(() => parseFile("wrong-namespace.svg", '<svg xmlns="urn:not-svg"><text>Wrong namespace</text></svg>'))
+        .toThrow(/SVG root namespace must be/);
+    });
+
+    it("resolves prefixed SVG element namespaces", () => {
+      const chunks = parseFile(
+        "prefixed.svg",
+        '<s:svg xmlns:s="http://www.w3.org/2000/svg"><s:title>Prefixed title</s:title></s:svg>',
+      );
+
+      expect(chunks.map((chunk) => chunk.content)).toEqual(["title: Prefixed title"]);
+    });
+
+    it("resolves character references in SVG namespace URIs", () => {
+      const chunks = parseFile(
+        "encoded-namespace.svg",
+        '<svg xmlns="http://www.w3.org/2000/sv&#x67;"><title>Encoded namespace</title></svg>',
+      );
+
+      expect(chunks.map((chunk) => chunk.content)).toEqual(["title: Encoded namespace"]);
+    });
+
+    it("rejects undeclared namespace prefixes", () => {
+      expect(() => parseFile("undeclared-element.xml", "<root><p:item/></root>"))
+        .toThrow(/element uses an undeclared namespace prefix/);
+      expect(() => parseFile("undeclared-attribute.xml", '<root p:value="x"/>'))
+        .toThrow(/attribute uses an undeclared namespace prefix/);
+      expect(() => parseFile("undeclared-element.svg", "<svg><p:text>Hidden</p:text></svg>"))
+        .toThrow(/element uses an undeclared namespace prefix/);
+    });
+
+    it("honors an explicit default namespace undeclaration in implicit SVG mode", () => {
+      const chunks = parseFile(
+        "namespace-undeclaration.svg",
+        '<svg><g xmlns="http://www.w3.org/2000/svg"><g xmlns=""><text>UNDECLARED_NAMESPACE_NOISE</text></g><text>Visible label</text></g></svg>',
+      );
+      const combined = chunks.map((chunk) => chunk.content).join("\n");
+
+      expect(combined).toContain("text: Visible label");
+      expect(combined).not.toContain("UNDECLARED_NAMESPACE_NOISE");
+    });
+
+    it("accepts a compact internal DOCTYPE subset", () => {
+      expect(parseFile(
+        "internal-subset.xml",
+        "<!DOCTYPE root[<!ELEMENT root EMPTY>]><root/>",
+      ).map((chunk) => chunk.content)).toEqual(["root"]);
+    });
+
+    it("rejects invalid XML character references", () => {
+      expect(() => parseFile("control.xml", "<root>&#x1;</root>"))
+        .toThrow(/invalid in XML 1\.0/);
+      expect(() => parseFile("literal-control.xml", "<root>bad\u0001text</root>"))
+        .toThrow(/literal character U\+0001/);
+      expect(() => parseFile("filtered-attribute.svg", '<svg><path d="M0 &broken"/></svg>'))
+        .toThrow(/unterminated entity reference/);
+      expect(() => parseFile("long-reference.svg", `<svg><path d="&${"x".repeat(300)};"/></svg>`))
+        .toThrow(/entity reference exceeds the supported limit/);
+      expect(() => parseFile("invalid-entity-name.xml", "<root>&!;</root>"))
+        .toThrow(/entity reference name is invalid/);
+      expect(() => parseFile("invalid-attribute-entity.xml", '<root value="&a b;"/>'))
+        .toThrow(/entity reference name is invalid/);
+    });
+
+    it("rejects invalid XML qualified names", () => {
+      expect(() => parseFile("digit-name.xml", "<1root/>"))
+        .toThrow(/not a valid XML qualified name/);
+      expect(() => parseFile("digit-attribute.xml", '<root 1attr="value"/>'))
+        .toThrow(/not a valid XML qualified name/);
+      expect(() => parseFile("multi-prefix.xml", "<one:two:root/>"))
+        .toThrow(/not a valid XML qualified name/);
+    });
+
+    it("keeps unknown attribute entities literal without expanding DTD content", () => {
+      const chunks = parseFile(
+        "entities.xml",
+        '<root kind="A &custom; B" letter="&#x41;">value</root>',
+      );
+
+      expect(chunks[0]?.content).toBe('root [kind="A &custom; B" letter="A"]: value');
+    });
+
+    it("reports line and column spans through a UTF-8 BOM and lone CR line endings", () => {
+      const chunks = parseFile(
+        "positions.xml",
+        "\uFEFF<root>\r<item>value</item>\r</root>",
+      );
+
+      expect(chunks[0]).toMatchObject({
+        content: "root/item: value",
+        startLine: 2,
+        startCol: 0,
+        endLine: 2,
+      });
+    });
+
+    it("bounds markup names before rendering chunks", () => {
+      const name = "a".repeat(3000);
+      expect(() => parseFile("long-name.xml", `<${name}/>`))
+        .toThrow(/name exceeds the supported limit/);
+      expect(() => parseFile(
+        "long-namespace.xml",
+        `<root xmlns="${"a".repeat(4097)}"/>`,
+      )).toThrow(/namespace URI exceeds the supported limit/);
+      expect(() => parseFile(
+        "long-declaration.xml",
+        `<?xml version="1.0" encoding="${"a".repeat(513)}"?><root/>`,
+      )).toThrow(/declaration attribute value exceeds the supported limit/);
+    });
+
+    it("bounds complete markup records and gives split parts unique IDs", () => {
+      const name = "n".repeat(250);
+      const content = `<${name} first="${"a".repeat(500)}" second="${"b".repeat(500)}">${"visible ".repeat(1000)}</${name}>`;
+      const chunks = parseFile("large-record.xml", content);
+      const ids = chunks.map((chunk) => generateChunkId("large-record.xml", chunk));
+
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks.every((chunk) => Buffer.byteLength(chunk.content) <= 2000)).toBe(true);
+      expect(new Set(ids).size).toBe(chunks.length);
+    });
+
     it("should parse PHP files", () => {
       const content = `
 <?php
@@ -723,6 +1079,79 @@ end
   });
 
   describe("parseFiles", () => {
+    it("retains malformed markup as an empty batch result", () => {
+      const results = parseFiles([
+        { path: "broken.xml", content: "<root><item></root>" },
+        { path: "broken.svg", content: "<svg><text>Useful</svg>" },
+        { path: "duplicate-doctype.xml", content: "<!DOCTYPE root><!DOCTYPE root><root/>" },
+        { path: "lexically-invalid.xml", content: "<root>a]]>b</root>" },
+        { path: "invalid-declaration.xml", content: '<?xml standalone="maybe"?><root/>' },
+        { path: "geometry.svg", content: '<svg><path d="M0 0L1 1"/></svg>' },
+        { path: "valid.svg", content: "<svg><title>Useful title</title></svg>" },
+      ]);
+
+      expect(results).toHaveLength(7);
+      expect(results[0]).toMatchObject({
+        path: "broken.xml",
+        chunks: [],
+        symbols: [],
+        parseFailed: true,
+      });
+      expect(results[1]).toMatchObject({
+        path: "broken.svg",
+        chunks: [],
+        symbols: [],
+        parseFailed: true,
+      });
+      expect(results[2]).toMatchObject({
+        path: "duplicate-doctype.xml",
+        chunks: [],
+        symbols: [],
+        parseFailed: true,
+      });
+      expect(results[3]).toMatchObject({
+        path: "lexically-invalid.xml",
+        chunks: [],
+        symbols: [],
+        parseFailed: true,
+      });
+      expect(results[4]).toMatchObject({
+        path: "invalid-declaration.xml",
+        chunks: [],
+        symbols: [],
+        parseFailed: true,
+      });
+      expect(results[5]).toMatchObject({
+        path: "geometry.svg",
+        chunks: [],
+        symbols: [],
+        parseFailed: false,
+      });
+      expect(results[6]?.chunks).toEqual([
+        expect.objectContaining({ content: "title: Useful title", language: "svg" }),
+      ]);
+    });
+
+    it("caps markup extraction with representative file coverage", () => {
+      const items = Array.from(
+        { length: 101 },
+        (_, index) => `<item>value-${index}</item>`,
+      ).join("");
+      const [result] = parseFiles(
+        [{ path: "large.xml", content: `<root>${items}</root>` }],
+        undefined,
+        5,
+      );
+
+      expect(result.chunks.map((chunk) => chunk.content)).toEqual([
+        "root/item: value-0",
+        "root/item: value-25",
+        "root/item: value-50",
+        "root/item: value-75",
+        "root/item: value-100",
+      ]);
+    });
+
     it("should parse multiple files in batch", () => {
       const files = [
         { path: "a.ts", content: "export function foo() {}" },
@@ -1549,6 +1978,20 @@ const values = [1, 2].map(item => item * 2);
   });
 
   describe("createEmbeddingText", () => {
+    it("does not infer code-purpose hints from markup names or accessibility roles", () => {
+      const text = createEmbeddingText({
+        content: 'path [role="img"]: Visible label',
+        startLine: 1,
+        endLine: 1,
+        chunkType: "element",
+        name: "path",
+        language: "svg",
+      }, "/assets/chart.svg");
+
+      expect(text).toContain('SVG element "path"');
+      expect(text).not.toContain("Purpose:");
+    });
+
     it("should respect a lower max token override", () => {
       const chunk: CodeChunk = {
         content: "x".repeat(10000),
@@ -1638,6 +2081,17 @@ const values = [1, 2].map(item => item * 2);
       const id2 = generateChunkId("/path/to/file.ts", chunk2);
 
       expect(id1).not.toBe(id2);
+    });
+
+    it("distinguishes identical markup elements on the same line", () => {
+      const chunks = parseFile(
+        "same-line.svg",
+        "<svg><text>same</text><text>same</text></svg>",
+      );
+      const ids = chunks.map((chunk) => generateChunkId("same-line.svg", chunk));
+
+      expect(chunks).toHaveLength(2);
+      expect(new Set(ids).size).toBe(2);
     });
 
     it("should start with chunk_ prefix", () => {

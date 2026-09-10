@@ -38,6 +38,8 @@ pub enum Language {
     Zig,
     Gdscript,
     Matlab,
+    Xml,
+    Svg,
     Text,
 }
 
@@ -69,6 +71,8 @@ impl Language {
             "zig" => Language::Zig,
             "gd" => Language::Gdscript,
             "m" => Language::Matlab,
+            "xml" => Language::Xml,
+            "svg" => Language::Svg,
             "cls" | "trigger" => Language::Apex,
             _ => Language::Text,
         }
@@ -100,6 +104,8 @@ impl Language {
             Language::Zig => "zig",
             Language::Gdscript => "gdscript",
             Language::Matlab => "matlab",
+            Language::Xml => "xml",
+            Language::Svg => "svg",
             Language::Apex => "apex",
             Language::Text => "text",
         }
@@ -132,6 +138,8 @@ impl Language {
             "zig" => Language::Zig,
             "gdscript" | "gd" => Language::Gdscript,
             "matlab" | "m" => Language::Matlab,
+            "xml" => Language::Xml,
+            "svg" => Language::Svg,
             "apex" => Language::Apex,
             _ => Language::Text,
         }

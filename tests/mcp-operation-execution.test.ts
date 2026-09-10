@@ -68,6 +68,8 @@ describe("MCP operation execution", () => {
 
   afterEach(async () => {
     await resetAutoIndexCoordinatorsForTests();
+    // Failed operations return before diagnostic completion finishes persisting.
+    await runtime.diagnostics.markOrderedShutdown();
     vi.useRealTimers();
     configCache.delete(getIndexerCacheKey(projectRoot, "jcode"));
     fs.rmSync(projectRoot, { recursive: true, force: true });

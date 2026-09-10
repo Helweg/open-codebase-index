@@ -26,11 +26,12 @@ export async function prepareDocument(
   bytes: Uint8Array,
   linesPerChunk: number,
   signal?: AbortSignal,
+  maxMarkupChunks?: number,
 ): Promise<PreparedDocument> {
   throwIfOperationAborted(signal);
   if (!isPdf(filePath)) {
     const content = Buffer.from(bytes).toString("utf-8");
-    const parsed = parseFiles([{ path: filePath, content }], linesPerChunk)[0];
+    const parsed = parseFiles([{ path: filePath, content }], linesPerChunk, maxMarkupChunks)[0];
     return { ...parsed, kind: "source" };
   }
 
@@ -59,17 +60,18 @@ export async function prepareDocuments(
   files: DocumentInput[],
   linesPerChunk: number,
   signal?: AbortSignal,
+  maxMarkupChunks?: number,
 ): Promise<PreparedDocument[]> {
   throwIfOperationAborted(signal);
   const sourceFiles = files.filter((file) => !isPdf(file.path));
   const sourceDocuments = parseFiles(sourceFiles.map((file) => ({
     path: file.path,
     content: Buffer.from(file.bytes).toString("utf-8"),
-  })), linesPerChunk).map((parsed) => ({ ...parsed, kind: "source" as const }));
+  })), linesPerChunk, maxMarkupChunks).map((parsed) => ({ ...parsed, kind: "source" as const }));
   throwIfOperationAborted(signal);
   const pdfDocuments = await Promise.all(
     files.filter((file) => isPdf(file.path)).map((file) =>
-      prepareDocument(file.path, file.bytes, linesPerChunk, signal)),
+      prepareDocument(file.path, file.bytes, linesPerChunk, signal, maxMarkupChunks)),
   );
   const byPath = new Map([...sourceDocuments, ...pdfDocuments].map((document) => [document.path, document]));
   return files.flatMap((file) => {
@@ -82,5 +84,8 @@ export function generatePreparedChunkId(filePath: string, chunk: CodeChunk, hash
   const location = chunk.documentLocation
     ? `:${PDF_EXTRACTION_VERSION}:${chunk.documentLocation.pageStart}:${chunk.documentLocation.pageEnd}`
     : "";
-  return `chunk_${hash(`${filePath}${location}:${chunk.startLine}:${chunk.endLine}:${chunk.content}`).slice(0, 16)}`;
+  const sourceColumns = chunk.language === "xml" || chunk.language === "svg"
+    ? `:${chunk.startCol ?? 0}:${chunk.endCol ?? 0}`
+    : "";
+  return `chunk_${hash(`${filePath}${location}:${chunk.startLine}:${chunk.endLine}${sourceColumns}:${chunk.content}`).slice(0, 16)}`;
 }

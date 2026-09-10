@@ -279,6 +279,8 @@ describe("config schema", () => {
       it("should enforce minimum of 1 for maxChunksPerFile", () => {
         expect(parseConfig({ indexing: { maxChunksPerFile: 0 } }).indexing.maxChunksPerFile).toBe(1);
         expect(parseConfig({ indexing: { maxChunksPerFile: -5 } }).indexing.maxChunksPerFile).toBe(1);
+        expect(parseConfig({ indexing: { maxChunksPerFile: 3.9 } }).indexing.maxChunksPerFile).toBe(3);
+        expect(parseConfig({ indexing: { maxChunksPerFile: Number.POSITIVE_INFINITY } }).indexing.maxChunksPerFile).toBe(100);
       });
 
       it("should default linesPerChunk to 30 and honor explicit overrides", () => {

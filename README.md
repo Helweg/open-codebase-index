@@ -30,7 +30,7 @@ cbi search "retry recovery" --project /path/to/repo
 - **Incremental, branch-aware indexing** with file watching and content-hash reuse.
 - **Local storage** backed by SQLite, usearch vectors, and a BM25 inverted index.
 - **Multiple embedding providers**: Ollama, OpenAI, Google, or a custom OpenAI-compatible endpoint.
-- **Native parsing** for TypeScript/TSX, JavaScript/JSX, Python, Rust, Swift, Go, Java, C#, Ruby, C/C++, Metal, PHP, Apex, Bash, Zig, GDScript, MATLAB, JSON, TOML, YAML, Markdown, and HTML, with text fallback.
+- **Native parsing** for TypeScript/TSX, JavaScript/JSX, Python, Rust, Swift, Go, Java, C#, Ruby, C/C++, Metal, PHP, Apex, Bash, Zig, GDScript, MATLAB, JSON, TOML, YAML, Markdown, HTML, XML, and SVG, plus text fallback for other formats.
 
 ## Quick start with OpenCode
 

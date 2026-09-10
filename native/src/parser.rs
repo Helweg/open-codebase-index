@@ -1,6 +1,7 @@
+use crate::markup::extract_markup_chunks;
 use crate::types::Language;
 use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol};
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
@@ -25,6 +26,11 @@ pub fn parse_file_internal(
         .unwrap_or("");
 
     let language = Language::from_extension(ext);
+
+    if matches!(language, Language::Xml | Language::Svg) {
+        return extract_markup_chunks(content, &language, None)
+            .map_err(|error| anyhow!("Failed to parse markup file: {file_path}: {error:#}"));
+    }
 
     if language == Language::Text {
         return Ok(chunk_by_lines(content, &language, lines_per_chunk));
@@ -85,19 +91,32 @@ pub fn parse_file_as_text_internal(
 pub fn parse_files_parallel(
     files: Vec<FileInput>,
     lines_per_chunk: usize,
+    max_markup_chunks: Option<usize>,
 ) -> Result<Vec<ParsedFile>> {
     let results: Vec<ParsedFile> = files
         .par_iter()
         .filter_map(|file| {
-            let (chunks, symbols) =
-                parse_file_with_symbols_internal(&file.path, &file.content, lines_per_chunk)
-                    .ok()?;
+            let parsed = parse_file_with_symbols_internal(
+                &file.path,
+                &file.content,
+                lines_per_chunk,
+                max_markup_chunks,
+            );
+            let (chunks, symbols, parse_failed) = match parsed {
+                Ok((chunks, symbols)) => (chunks, symbols, false),
+                Err(error) if is_markup_file_path(&file.path) => {
+                    eprintln!("Failed to parse {}: {error:#}", file.path);
+                    (Vec::new(), Vec::new(), true)
+                }
+                Err(_) => return None,
+            };
             let hash = crate::hasher::xxhash_content(&file.content);
             Some(ParsedFile {
                 path: file.path.clone(),
                 chunks,
                 symbols,
                 hash,
+                parse_failed,
             })
         })
         .collect();
@@ -109,12 +128,19 @@ fn parse_file_with_symbols_internal(
     file_path: &str,
     content: &str,
     lines_per_chunk: usize,
+    max_markup_chunks: Option<usize>,
 ) -> Result<(Vec<CodeChunk>, Vec<ParsedSymbol>)> {
     let ext = Path::new(file_path)
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or("");
     let language = Language::from_extension(ext);
+
+    if matches!(language, Language::Xml | Language::Svg) {
+        return extract_markup_chunks(content, &language, max_markup_chunks)
+            .map(|chunks| (chunks, Vec::new()))
+            .with_context(|| format!("Failed to parse markup file: {file_path}"));
+    }
 
     if language == Language::Text {
         return Ok((
@@ -163,6 +189,17 @@ fn parse_file_with_symbols_internal(
     let chunks = extract_chunks(&tree, content, &language, lines_per_chunk)?;
     let symbols = extract_symbols(&tree, content, &language);
     Ok((chunks, symbols))
+}
+
+fn is_markup_file_path(file_path: &str) -> bool {
+    let extension = Path::new(file_path)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or("");
+    matches!(
+        Language::from_extension(extension),
+        Language::Xml | Language::Svg
+    )
 }
 
 fn extract_symbols(tree: &Tree, source: &str, language: &Language) -> Vec<ParsedSymbol> {
@@ -1460,7 +1497,7 @@ class Greeter {
 	const values = [1, 2].map(item => item * 2);
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content, 30)
+        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content, 30, None)
             .expect("should parse TypeScript arrow functions");
 
         let arrow_names: Vec<String> = symbols
@@ -1490,7 +1527,7 @@ class Greeter {
 	}
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content, 30)
+        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content, 30, None)
             .expect("should parse exported abstract class");
 
         assert!(symbols.iter().any(|symbol| {
@@ -1817,8 +1854,9 @@ module Rack
 end
 "#;
 
-        let (_, symbols) = parse_file_with_symbols_internal("rack/protection.rb", content, 30)
-            .expect("should parse nested Ruby modules");
+        let (_, symbols) =
+            parse_file_with_symbols_internal("rack/protection.rb", content, 30, None)
+                .expect("should parse nested Ruby modules");
         assert!(
             symbols
                 .iter()
