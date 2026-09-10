@@ -1,0 +1,599 @@
+{
+  "cohort": "development-only",
+  "exploratory": true,
+  "tracks": {
+    "codebase-memory": {
+      "explicit-symbol": {
+        "rowCount": 54,
+        "repositoryCount": 9,
+        "supportedQueryCount": 54,
+        "metrics": {
+          "totalCount": 54,
+          "supportedCount": 54,
+          "successCount": 54,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.8703703703703703,
+            "hitAt5": 1,
+            "mrrAt10": 0.9296296296296297,
+            "ndcgAt10": 0.9476376171974683
+          },
+          "successOnly": {
+            "hitAt1": 0.8703703703703703,
+            "hitAt5": 1,
+            "mrrAt10": 0.9296296296296297,
+            "ndcgAt10": 0.9476376171974683
+          }
+        },
+        "queryWeightedHitAt5": 1,
+        "equalRepositoryHitAt5": 1
+      },
+      "natural-language": {
+        "rowCount": 46,
+        "repositoryCount": 9,
+        "supportedQueryCount": 0,
+        "metrics": {
+          "totalCount": 46,
+          "supportedCount": 0,
+          "successCount": 0,
+          "errorCount": 0,
+          "unsupportedCount": 46,
+          "supportedTrack": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0
+          },
+          "successOnly": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0
+          }
+        },
+        "queryWeightedHitAt5": null,
+        "equalRepositoryHitAt5": null
+      }
+    },
+    "codegraph": {
+      "explicit-symbol": {
+        "rowCount": 54,
+        "repositoryCount": 9,
+        "supportedQueryCount": 54,
+        "metrics": {
+          "totalCount": 54,
+          "supportedCount": 54,
+          "successCount": 54,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.9629629629629629,
+            "hitAt5": 1,
+            "mrrAt10": 0.9814814814814815,
+            "ndcgAt10": 0.9863307316137577
+          },
+          "successOnly": {
+            "hitAt1": 0.9629629629629629,
+            "hitAt5": 1,
+            "mrrAt10": 0.9814814814814815,
+            "ndcgAt10": 0.9863307316137577
+          }
+        },
+        "queryWeightedHitAt5": 1,
+        "equalRepositoryHitAt5": 1
+      },
+      "natural-language": {
+        "rowCount": 46,
+        "repositoryCount": 9,
+        "supportedQueryCount": 46,
+        "metrics": {
+          "totalCount": 46,
+          "supportedCount": 46,
+          "successCount": 46,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.5652173913043478,
+            "hitAt5": 0.8260869565217391,
+            "mrrAt10": 0.6727053140096617,
+            "ndcgAt10": 0.5839832845593566
+          },
+          "successOnly": {
+            "hitAt1": 0.5652173913043478,
+            "hitAt5": 0.8260869565217391,
+            "mrrAt10": 0.6727053140096617,
+            "ndcgAt10": 0.5839832845593566
+          }
+        },
+        "queryWeightedHitAt5": 0.8260869565217391,
+        "equalRepositoryHitAt5": 0.8703703703703703
+      }
+    },
+    "grepai": {
+      "explicit-symbol": {
+        "rowCount": 54,
+        "repositoryCount": 9,
+        "supportedQueryCount": 54,
+        "metrics": {
+          "totalCount": 54,
+          "supportedCount": 54,
+          "successCount": 45,
+          "errorCount": 9,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.46296296296296297,
+            "hitAt5": 0.7222222222222222,
+            "mrrAt10": 0.5776969429747207,
+            "ndcgAt10": 0.6307010295186148
+          },
+          "successOnly": {
+            "hitAt1": 0.5555555555555556,
+            "hitAt5": 0.8666666666666667,
+            "mrrAt10": 0.6932363315696649,
+            "ndcgAt10": 0.7568412354223378
+          }
+        },
+        "queryWeightedHitAt5": 0.7222222222222222,
+        "equalRepositoryHitAt5": 0.7666666666666667
+      },
+      "natural-language": {
+        "rowCount": 46,
+        "repositoryCount": 9,
+        "supportedQueryCount": 46,
+        "metrics": {
+          "totalCount": 46,
+          "supportedCount": 46,
+          "successCount": 37,
+          "errorCount": 9,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.5217391304347826,
+            "hitAt5": 0.717391304347826,
+            "mrrAt10": 0.6239648033126294,
+            "ndcgAt10": 0.5622954767172833
+          },
+          "successOnly": {
+            "hitAt1": 0.6486486486486487,
+            "hitAt5": 0.8918918918918919,
+            "mrrAt10": 0.7757400257400258,
+            "ndcgAt10": 0.699070052135001
+          }
+        },
+        "queryWeightedHitAt5": 0.717391304347826,
+        "equalRepositoryHitAt5": 0.7777777777777778
+      }
+    },
+    "ocbi-hybrid": {
+      "explicit-symbol": {
+        "rowCount": 54,
+        "repositoryCount": 9,
+        "supportedQueryCount": 54,
+        "metrics": {
+          "totalCount": 54,
+          "supportedCount": 54,
+          "successCount": 54,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.8518518518518519,
+            "hitAt5": 0.9074074074074074,
+            "mrrAt10": 0.8765432098765431,
+            "ndcgAt10": 0.8844788797619059
+          },
+          "successOnly": {
+            "hitAt1": 0.8518518518518519,
+            "hitAt5": 0.9074074074074074,
+            "mrrAt10": 0.8765432098765431,
+            "ndcgAt10": 0.8844788797619059
+          }
+        },
+        "queryWeightedHitAt5": 0.9074074074074074,
+        "equalRepositoryHitAt5": 0.8888888888888888
+      },
+      "natural-language": {
+        "rowCount": 46,
+        "repositoryCount": 9,
+        "supportedQueryCount": 46,
+        "metrics": {
+          "totalCount": 46,
+          "supportedCount": 46,
+          "successCount": 46,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.5434782608695652,
+            "hitAt5": 0.8478260869565217,
+            "mrrAt10": 0.6583333333333332,
+            "ndcgAt10": 0.5753966185419124
+          },
+          "successOnly": {
+            "hitAt1": 0.5434782608695652,
+            "hitAt5": 0.8478260869565217,
+            "mrrAt10": 0.6583333333333332,
+            "ndcgAt10": 0.5753966185419124
+          }
+        },
+        "queryWeightedHitAt5": 0.8478260869565217,
+        "equalRepositoryHitAt5": 0.8518518518518517
+      }
+    },
+    "ocbi-structural": {
+      "explicit-symbol": {
+        "rowCount": 54,
+        "repositoryCount": 9,
+        "supportedQueryCount": 54,
+        "metrics": {
+          "totalCount": 54,
+          "supportedCount": 54,
+          "successCount": 54,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.8518518518518519,
+            "hitAt5": 0.9074074074074074,
+            "mrrAt10": 0.8765432098765431,
+            "ndcgAt10": 0.8844788797619059
+          },
+          "successOnly": {
+            "hitAt1": 0.8518518518518519,
+            "hitAt5": 0.9074074074074074,
+            "mrrAt10": 0.8765432098765431,
+            "ndcgAt10": 0.8844788797619059
+          }
+        },
+        "queryWeightedHitAt5": 0.9074074074074074,
+        "equalRepositoryHitAt5": 0.8888888888888888
+      },
+      "natural-language": {
+        "rowCount": 46,
+        "repositoryCount": 9,
+        "supportedQueryCount": 46,
+        "metrics": {
+          "totalCount": 46,
+          "supportedCount": 46,
+          "successCount": 46,
+          "errorCount": 0,
+          "unsupportedCount": 0,
+          "supportedTrack": {
+            "hitAt1": 0.5434782608695652,
+            "hitAt5": 0.782608695652174,
+            "mrrAt10": 0.636231884057971,
+            "ndcgAt10": 0.5597693532930123
+          },
+          "successOnly": {
+            "hitAt1": 0.5434782608695652,
+            "hitAt5": 0.782608695652174,
+            "mrrAt10": 0.636231884057971,
+            "ndcgAt10": 0.5597693532930123
+          }
+        },
+        "queryWeightedHitAt5": 0.782608695652174,
+        "equalRepositoryHitAt5": 0.7993827160493827
+      }
+    }
+  },
+  "primaryPairs": [
+    {
+      "baseline": "ocbi-hybrid",
+      "rival": "codegraph",
+      "track": "explicit-symbol",
+      "queryCount": 54,
+      "repositoryCount": 9,
+      "queryWeightedHitAt5Delta": -0.09259259259259259,
+      "equalRepositoryHitAt5Delta": -0.1111111111111111,
+      "perRepository": [
+        {
+          "repository": "axios",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "click",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "cobra",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "express",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "gson",
+          "queryCount": 5,
+          "hitAt5Delta": -1
+        },
+        {
+          "repository": "newtonsoft-json",
+          "queryCount": 9,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "ripgrep",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "sinatra",
+          "queryCount": 10,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "symfony-console",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        }
+      ],
+      "leaveOneRepositoryOut": [
+        {
+          "omittedRepository": "axios",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "click",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "cobra",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "express",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "gson",
+          "queryWeightedHitAt5Delta": 0
+        },
+        {
+          "omittedRepository": "newtonsoft-json",
+          "queryWeightedHitAt5Delta": -0.1111111111111111
+        },
+        {
+          "omittedRepository": "ripgrep",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "sinatra",
+          "queryWeightedHitAt5Delta": -0.11363636363636363
+        },
+        {
+          "omittedRepository": "symfony-console",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        }
+      ],
+      "bootstrap": {
+        "samples": 10000,
+        "seed": 20260910,
+        "confidence95": {
+          "lower": -0.3333333333333333,
+          "upper": 0
+        },
+        "confidence98_333": {
+          "lower": -0.4,
+          "upper": 0
+        }
+      },
+      "exploratory": true
+    },
+    {
+      "baseline": "ocbi-hybrid",
+      "rival": "codebase-memory",
+      "track": "explicit-symbol",
+      "queryCount": 54,
+      "repositoryCount": 9,
+      "queryWeightedHitAt5Delta": -0.09259259259259259,
+      "equalRepositoryHitAt5Delta": -0.1111111111111111,
+      "perRepository": [
+        {
+          "repository": "axios",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "click",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "cobra",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "express",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "gson",
+          "queryCount": 5,
+          "hitAt5Delta": -1
+        },
+        {
+          "repository": "newtonsoft-json",
+          "queryCount": 9,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "ripgrep",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "sinatra",
+          "queryCount": 10,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "symfony-console",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        }
+      ],
+      "leaveOneRepositoryOut": [
+        {
+          "omittedRepository": "axios",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "click",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "cobra",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "express",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "gson",
+          "queryWeightedHitAt5Delta": 0
+        },
+        {
+          "omittedRepository": "newtonsoft-json",
+          "queryWeightedHitAt5Delta": -0.1111111111111111
+        },
+        {
+          "omittedRepository": "ripgrep",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        },
+        {
+          "omittedRepository": "sinatra",
+          "queryWeightedHitAt5Delta": -0.11363636363636363
+        },
+        {
+          "omittedRepository": "symfony-console",
+          "queryWeightedHitAt5Delta": -0.10204081632653061
+        }
+      ],
+      "bootstrap": {
+        "samples": 10000,
+        "seed": 20260910,
+        "confidence95": {
+          "lower": -0.3333333333333333,
+          "upper": 0
+        },
+        "confidence98_333": {
+          "lower": -0.4,
+          "upper": 0
+        }
+      },
+      "exploratory": true
+    },
+    {
+      "baseline": "ocbi-hybrid",
+      "rival": "grepai",
+      "track": "explicit-symbol",
+      "queryCount": 54,
+      "repositoryCount": 9,
+      "queryWeightedHitAt5Delta": 0.18518518518518517,
+      "equalRepositoryHitAt5Delta": 0.12222222222222223,
+      "perRepository": [
+        {
+          "repository": "axios",
+          "queryCount": 5,
+          "hitAt5Delta": 0.2
+        },
+        {
+          "repository": "click",
+          "queryCount": 5,
+          "hitAt5Delta": 0.4
+        },
+        {
+          "repository": "cobra",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        },
+        {
+          "repository": "express",
+          "queryCount": 5,
+          "hitAt5Delta": 0.2
+        },
+        {
+          "repository": "gson",
+          "queryCount": 5,
+          "hitAt5Delta": -1
+        },
+        {
+          "repository": "newtonsoft-json",
+          "queryCount": 9,
+          "hitAt5Delta": 1
+        },
+        {
+          "repository": "ripgrep",
+          "queryCount": 5,
+          "hitAt5Delta": 0.2
+        },
+        {
+          "repository": "sinatra",
+          "queryCount": 10,
+          "hitAt5Delta": 0.1
+        },
+        {
+          "repository": "symfony-console",
+          "queryCount": 5,
+          "hitAt5Delta": 0
+        }
+      ],
+      "leaveOneRepositoryOut": [
+        {
+          "omittedRepository": "axios",
+          "queryWeightedHitAt5Delta": 0.1836734693877551
+        },
+        {
+          "omittedRepository": "click",
+          "queryWeightedHitAt5Delta": 0.16326530612244897
+        },
+        {
+          "omittedRepository": "cobra",
+          "queryWeightedHitAt5Delta": 0.20408163265306123
+        },
+        {
+          "omittedRepository": "express",
+          "queryWeightedHitAt5Delta": 0.1836734693877551
+        },
+        {
+          "omittedRepository": "gson",
+          "queryWeightedHitAt5Delta": 0.30612244897959184
+        },
+        {
+          "omittedRepository": "newtonsoft-json",
+          "queryWeightedHitAt5Delta": 0.022222222222222223
+        },
+        {
+          "omittedRepository": "ripgrep",
+          "queryWeightedHitAt5Delta": 0.1836734693877551
+        },
+        {
+          "omittedRepository": "sinatra",
+          "queryWeightedHitAt5Delta": 0.20454545454545456
+        },
+        {
+          "omittedRepository": "symfony-console",
+          "queryWeightedHitAt5Delta": 0.20408163265306123
+        }
+      ],
+      "bootstrap": {
+        "samples": 10000,
+        "seed": 20260910,
+        "confidence95": {
+          "lower": -0.18181818181818182,
+          "upper": 0.5161290322580645
+        },
+        "confidence98_333": {
+          "lower": -0.26666666666666666,
+          "upper": 0.5789473684210527
+        }
+      },
+      "exploratory": true
+    }
+  ]
+}
