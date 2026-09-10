@@ -1,0 +1,411 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen-before-scored-runs",
+  "title": "Synthetic graph and freshness conformance pilot",
+  "purpose": "A bounded adapter and correctness conformance suite. It is not a held-out broad-accuracy benchmark and cannot support general superiority claims.",
+  "createdAt": "2026-09-10T07:56:00Z",
+  "controls": {
+    "scoredToolCallsPerformed": false,
+    "toolResultKnowledgeUsedToAuthorExpectations": false,
+    "fixtureOrigin": "hand-authored source-grounded synthetic repositories",
+    "inputPolicy": "Symmetric explicit-symbol conformance track. Every participant receives the same subject/from/to path and symbol inputs, source state, result cap, timeout and refresh instruction. Questions are human-readable descriptions, not a claim of natural-language routing. Expected edges, result definitions and answers are evaluator-only.",
+    "symbolLeakagePolicy": "Only fields explicitly named subject/from/to/queryInputs are participant inputs. Expected fields never enter tool requests. No natural-language graph-routing score is reported.",
+    "aggregationPolicy": "Report each scenario independently. Do not pool these 12 scenarios with the development-only 100-query cohort or treat them as broad graph precision/recall evidence.",
+    "failurePolicy": "Timeouts, malformed output, stale incorrect output, and empty output are distinct artifact statuses. Operational success uses all 12 scenarios as the denominator. Unsupported scenarios are disclosed and are not silently removed.",
+    "executionPolicy": "Use isolated copies. Run participants serially. Preserve raw requests, raw responses, normalized answers, index/refresh commands, timestamps, and errors. No hosted indexing or repository upload."
+  },
+  "repositories": [
+    {
+      "id": "js-orders",
+      "language": "JavaScript",
+      "runtime": "Node.js 26",
+      "files": {
+        "package.json": "{\n  \"name\": \"synthetic-js-orders\",\n  \"private\": true,\n  \"type\": \"module\"\n}\n",
+        "src/format.js": "export function formatOrder(order) {\n  return `${order.id}:${order.total}`;\n}\n",
+        "src/audit.js": "export function recordAudit(message) {\n  return { message, recorded: true };\n}\n",
+        "src/notify.js": "export function notifyCustomer(order) {\n  return `notified:${order.id}`;\n}\n",
+        "src/orders.js": "import { formatOrder } from './format.js';\nimport { recordAudit } from './audit.js';\nimport { notifyCustomer } from './notify.js';\n\nexport function saveOrder(order) {\n  return { ...order, saved: true };\n}\n\nexport function processOrder(order) {\n  const saved = saveOrder(order);\n  recordAudit(formatOrder(saved));\n  notifyCustomer(saved);\n  return saved;\n}\n",
+        "src/reports.js": "import { formatOrder } from './format.js';\n\nexport function renderReport(order) {\n  return formatOrder(order);\n}\n",
+        "src/duplicate-a.js": "export function normalize(value) {\n  return value.trim().toLowerCase();\n}\n",
+        "src/duplicate-b.js": "export function normalize(value) {\n  return value.trim().toUpperCase();\n}\n",
+        "src/unused.js": "export function archiveOrder(order) {\n  return { ...order, archived: true };\n}\n"
+      }
+    },
+    {
+      "id": "py-payments",
+      "language": "Python",
+      "runtime": "Python 3 standard library only",
+      "files": {
+        "payments/__init__.py": "",
+        "payments/formatting.py": "def format_payment(payment):\n    return f\"{payment['id']}:{payment['amount']}\"\n",
+        "payments/audit.py": "def record_audit(message):\n    return {'message': message, 'recorded': True}\n",
+        "payments/notify.py": "def notify_customer(payment):\n    return f\"notified:{payment['id']}\"\n",
+        "payments/service.py": "from .formatting import format_payment\nfrom .audit import record_audit\nfrom .notify import notify_customer\n\ndef save_payment(payment):\n    return {**payment, 'saved': True}\n\ndef process_payment(payment):\n    saved = save_payment(payment)\n    record_audit(format_payment(saved))\n    notify_customer(saved)\n    return saved\n\ndef checkout_payment(payment):\n    return process_payment(payment)\n",
+        "payments/reports.py": "from .formatting import format_payment\n\ndef render_report(payment):\n    return format_payment(payment)\n",
+        "payments/duplicate_a.py": "def normalize(value):\n    return value.strip().lower()\n",
+        "payments/duplicate_b.py": "def normalize(value):\n    return value.strip().upper()\n",
+        "payments/unused.py": "def archive_payment(payment):\n    return {**payment, 'archived': True}\n"
+      }
+    }
+  ],
+  "graphScenarios": [
+    {
+      "id": "g1-js-direct-callees",
+      "repository": "js-orders",
+      "question": "Which project functions are called directly by the order-processing function? Return repository-relative source paths and function names.",
+      "assertionType": "direct-callees-exact",
+      "subject": {
+        "path": "src/orders.js",
+        "symbol": "processOrder"
+      },
+      "expectedEdges": [
+        {
+          "fromPath": "src/orders.js",
+          "fromSymbol": "processOrder",
+          "toPath": "src/orders.js",
+          "toSymbol": "saveOrder",
+          "relationship": "call"
+        },
+        {
+          "fromPath": "src/orders.js",
+          "fromSymbol": "processOrder",
+          "toPath": "src/audit.js",
+          "toSymbol": "recordAudit",
+          "relationship": "call"
+        },
+        {
+          "fromPath": "src/orders.js",
+          "fromSymbol": "processOrder",
+          "toPath": "src/format.js",
+          "toSymbol": "formatOrder",
+          "relationship": "call"
+        },
+        {
+          "fromPath": "src/orders.js",
+          "fromSymbol": "processOrder",
+          "toPath": "src/notify.js",
+          "toSymbol": "notifyCustomer",
+          "relationship": "call"
+        }
+      ],
+      "notes": "formatOrder is a nested argument call and still a direct callee of processOrder."
+    },
+    {
+      "id": "g2-py-direct-callers",
+      "repository": "py-payments",
+      "question": "Which project functions directly call the payment-formatting function? Return repository-relative source paths and function names.",
+      "assertionType": "direct-callers-exact",
+      "subject": {
+        "path": "payments/formatting.py",
+        "symbol": "format_payment"
+      },
+      "expectedEdges": [
+        {
+          "fromPath": "payments/service.py",
+          "fromSymbol": "process_payment",
+          "toPath": "payments/formatting.py",
+          "toSymbol": "format_payment",
+          "relationship": "call"
+        },
+        {
+          "fromPath": "payments/reports.py",
+          "fromSymbol": "render_report",
+          "toPath": "payments/formatting.py",
+          "toSymbol": "format_payment",
+          "relationship": "call"
+        }
+      ]
+    },
+    {
+      "id": "g3-js-shortest-path",
+      "repository": "js-orders",
+      "question": "Give the shortest project call path from the order-processing function to the formatting function, including repository-relative paths and function names.",
+      "assertionType": "shortest-path-exact",
+      "from": {
+        "path": "src/orders.js",
+        "symbol": "processOrder"
+      },
+      "to": {
+        "path": "src/format.js",
+        "symbol": "formatOrder"
+      },
+      "expectedPaths": [
+        [
+          {
+            "path": "src/orders.js",
+            "symbol": "processOrder"
+          },
+          {
+            "path": "src/format.js",
+            "symbol": "formatOrder"
+          }
+        ]
+      ]
+    },
+    {
+      "id": "g4-py-negative-callers",
+      "repository": "py-payments",
+      "question": "Does any project function call the payment-archiving function? Return direct callers, or state that there are none.",
+      "assertionType": "negative-direct-callers",
+      "subject": {
+        "path": "payments/unused.py",
+        "symbol": "archive_payment"
+      },
+      "expectedEdges": []
+    },
+    {
+      "id": "g5-js-duplicate-ambiguous",
+      "repository": "js-orders",
+      "question": "Find every project definition named normalize and report whether any project function calls each definition. Keep same-named definitions separate by repository-relative path.",
+      "assertionType": "duplicate-definition-disambiguation",
+      "expectedDefinitions": [
+        {
+          "path": "src/duplicate-a.js",
+          "symbol": "normalize",
+          "directCallers": []
+        },
+        {
+          "path": "src/duplicate-b.js",
+          "symbol": "normalize",
+          "directCallers": []
+        }
+      ],
+      "subject": {
+        "symbol": "normalize"
+      }
+    },
+    {
+      "id": "g6-py-transitive-reachability",
+      "repository": "py-payments",
+      "question": "Give the shortest project call path from checkout_payment to record_audit.",
+      "assertionType": "reachability-shortest-path",
+      "from": {
+        "path": "payments/service.py",
+        "symbol": "checkout_payment"
+      },
+      "to": {
+        "path": "payments/audit.py",
+        "symbol": "record_audit"
+      },
+      "expectedReachable": true,
+      "expectedPaths": [
+        [
+          {
+            "path": "payments/service.py",
+            "symbol": "checkout_payment"
+          },
+          {
+            "path": "payments/service.py",
+            "symbol": "process_payment"
+          },
+          {
+            "path": "payments/audit.py",
+            "symbol": "record_audit"
+          }
+        ]
+      ]
+    }
+  ],
+  "freshnessScenarios": [
+    {
+      "id": "f1-js-add",
+      "repository": "js-orders",
+      "transition": "add",
+      "precondition": "Index the initial repository and keep the reader process alive.",
+      "mutation": {
+        "write": {
+          "src/refunds.js": "import { recordAudit } from './audit.js';\n\nexport function refundOrder(order) {\n  recordAudit(`refund:${order.id}`);\n  return { ...order, refunded: true };\n}\n"
+        }
+      },
+      "question": "After normal documented refresh, find the newly added refund behavior and its direct project callees.",
+      "expected": {
+        "definitions": [
+          {
+            "path": "src/refunds.js",
+            "symbol": "refundOrder"
+          }
+        ],
+        "edges": [
+          {
+            "fromPath": "src/refunds.js",
+            "fromSymbol": "refundOrder",
+            "toPath": "src/audit.js",
+            "toSymbol": "recordAudit",
+            "relationship": "call"
+          }
+        ],
+        "mustNotBeStale": true
+      },
+      "queryInputs": {
+        "symbol": "refundOrder"
+      }
+    },
+    {
+      "id": "f2-py-modify",
+      "repository": "py-payments",
+      "transition": "modify",
+      "precondition": "Index the initial repository.",
+      "mutation": {
+        "write": {
+          "payments/reports.py": "from .formatting import format_payment\nfrom .audit import record_audit\n\ndef render_report(payment):\n    rendered = format_payment(payment)\n    record_audit(rendered)\n    return rendered\n"
+        }
+      },
+      "question": "After normal documented refresh, which project functions does the report-rendering function call directly?",
+      "expected": {
+        "edges": [
+          {
+            "fromPath": "payments/reports.py",
+            "fromSymbol": "render_report",
+            "toPath": "payments/formatting.py",
+            "toSymbol": "format_payment",
+            "relationship": "call"
+          },
+          {
+            "fromPath": "payments/reports.py",
+            "fromSymbol": "render_report",
+            "toPath": "payments/audit.py",
+            "toSymbol": "record_audit",
+            "relationship": "call"
+          }
+        ],
+        "mustNotBeStale": true
+      },
+      "queryInputs": {
+        "symbol": "render_report",
+        "path": "payments/reports.py"
+      }
+    },
+    {
+      "id": "f3-js-delete",
+      "repository": "js-orders",
+      "transition": "delete",
+      "precondition": "Index the initial repository.",
+      "mutation": {
+        "delete": [
+          "src/unused.js"
+        ]
+      },
+      "question": "After normal documented refresh, find the order-archiving function if it still exists.",
+      "expected": {
+        "definitions": [],
+        "forbiddenStaleDefinitions": [
+          {
+            "path": "src/unused.js",
+            "symbol": "archiveOrder"
+          }
+        ],
+        "mustNotBeStale": true
+      },
+      "queryInputs": {
+        "symbol": "archiveOrder"
+      }
+    },
+    {
+      "id": "f4-py-rename",
+      "repository": "py-payments",
+      "transition": "rename",
+      "precondition": "Index the initial repository.",
+      "mutation": {
+        "rename": [
+          {
+            "from": "payments/unused.py",
+            "to": "payments/archive.py"
+          }
+        ]
+      },
+      "question": "After normal documented refresh, locate the payment-archiving function.",
+      "expected": {
+        "definitions": [
+          {
+            "path": "payments/archive.py",
+            "symbol": "archive_payment"
+          }
+        ],
+        "forbiddenStaleDefinitions": [
+          {
+            "path": "payments/unused.py",
+            "symbol": "archive_payment"
+          }
+        ],
+        "mustNotBeStale": true
+      },
+      "queryInputs": {
+        "symbol": "archive_payment"
+      }
+    },
+    {
+      "id": "f5-js-real-branch-switch",
+      "repository": "js-orders",
+      "transition": "real-git-branch-switch",
+      "precondition": "Create Git history locally from the exact initial source. Commit it on main. Create branch feature/discount from main and commit the branch-only file below. Return to main, index main, and keep artifacts isolated.",
+      "mutation": {
+        "branch": "feature/discount",
+        "writeAndCommit": {
+          "src/discount.js": "export function applyDiscount(order, percent) {\n  return { ...order, total: order.total * (1 - percent / 100) };\n}\n"
+        },
+        "switchFrom": "main",
+        "switchTo": "feature/discount"
+      },
+      "question": "After switching the actual checkout to the feature branch and performing normal documented refresh, locate the discount behavior. Then switch back to main, refresh, and verify whether that definition remains available in the active-checkout result scope.",
+      "expected": {
+        "onFeature": {
+          "definitions": [
+            {
+              "path": "src/discount.js",
+              "symbol": "applyDiscount"
+            }
+          ]
+        },
+        "onMainAfterReturn": {
+          "definitions": [],
+          "forbiddenStaleDefinitions": [
+            {
+              "path": "src/discount.js",
+              "symbol": "applyDiscount"
+            }
+          ]
+        },
+        "mustNotBeStale": true
+      },
+      "queryInputs": {
+        "symbol": "applyDiscount"
+      }
+    },
+    {
+      "id": "f6-py-long-lived-reader-external-writer",
+      "repository": "py-payments",
+      "transition": "long-lived-reader-external-writer",
+      "precondition": "Index the initial repository. Keep one documented reader/client process alive. Apply the source write from a distinct writer process without restarting the reader.",
+      "mutation": {
+        "externalWriterWrite": {
+          "payments/notify.py": "def notify_customer(payment):\n    return f\"notification-sent:{payment['id']}\"\n\ndef notify_failure(payment):\n    return f\"notification-failed:{payment['id']}\"\n"
+        }
+      },
+      "question": "Using the already-running reader after normal documented refresh, locate the newly added notification-failure behavior. Also verify that the existing notification function reflects the current source text rather than its prior text.",
+      "expected": {
+        "definitions": [
+          {
+            "path": "payments/notify.py",
+            "symbol": "notify_failure"
+          },
+          {
+            "path": "payments/notify.py",
+            "symbol": "notify_customer",
+            "contentIncludes": "notification-sent:"
+          }
+        ],
+        "forbiddenStaleContent": [
+          "return f\"notified:{payment['id']}\""
+        ],
+        "mustNotBeStale": true,
+        "readerRestartAllowed": false
+      },
+      "queryInputs": {
+        "symbols": [
+          "notify_failure",
+          "notify_customer"
+        ]
+      }
+    }
+  ]
+}

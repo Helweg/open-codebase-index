@@ -40,3 +40,14 @@ Create and freeze 12 separate scenarios across two small fixture repositories an
 ## Publication and change control
 
 Commit this protocol and version/interface lock before scored runs. Amendments must precede the affected run, retain their reason and invalidate any results influenced by the change. No tuning of OCBI or alternative configurations after inspecting scored results within the same run. Publish losses, unsupported cells, uncertainty and raw artifact hashes alongside wins. A benchmark artifact may support a narrow statement, never an unqualified claim that OCBI is universally superior.
+
+## Pre-run clarification, 2026-09-10
+
+No scored comparisons or coding-model calls preceded these clarifications.
+
+- The common primary retrieval family is the 54 queries with an explicit `args.symbol`. Every tool receives that same identifier. The other 46 text-only questions form a separate descriptive family. Never compare one tool's 54-query score to another's 100-query score. The three primary pairs are OCBI hybrid against each rival on the common explicit-symbol family. Structural mode is a separately reported secondary condition.
+- Request up to 50 raw hits where the public API supports it, preserve their order, deduplicate by exact repository-relative file path, and score the first ten distinct files. This is file-retrieval evaluation, not symbol-resolution accuracy. Record an API's smaller cap rather than silently expanding it through answer-dependent queries.
+- A repeated-query timing is not necessarily a fully warm embedding-cache timing. Preserve the separate first invocation and label all measured interfaces. No cross-interface speed claim is authorized by this experiment.
+- `conformance.json` freezes the twelve synthetic scenarios. Graph and freshness requests use identical explicit `subject`, `from`, `to`, or `queryInputs` fields for all participants. Natural-language descriptions are for readers, not an evaluated routing step. Expected edges and output paths remain evaluator-only. The Python reachability scenario has a genuine two-hop call path.
+- Before the larger coding pilot, run a safety and feasibility gate with two seeded regressions in the pinned Axios revision, three conditions (no index, OCBI hybrid, CodeGraph), and one run per task/condition. This is six descriptive runs in one repository, not the planned larger multi-repository comparison. All use the already-installed local Ollama Gemma model and the same fixed budgets. Expand only after confinement and hidden-evaluator checks pass. Seeded regressions are not historical issue-resolution evidence.
+- Freeze the coding task manifest and model parameters before inference. Validate that the starting mutation fails and the reference restoration passes. A successful sandbox probe is a prerequisite, not a substitute for post-run hidden tests. If the safety gate fails, report the blocker and do not execute model-produced code.
