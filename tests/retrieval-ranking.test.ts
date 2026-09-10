@@ -56,6 +56,29 @@ describe("retrieval ranking", () => {
     }
   });
 
+  it.each([
+    { label: "different pages with equal lines", aPage: 1, bPage: 3, bEnd: 3, bLine: 1, bHash: "different", count: 2 },
+    { label: "different pages with equal hashes", aPage: 1, bPage: 3, bEnd: 3, bLine: 20, bHash: "hash", count: 2 },
+    { label: "different page ends", aPage: 1, bPage: 1, bEnd: 3, bLine: 1, bHash: "hash", count: 2 },
+    { label: "PDF versus non-PDF", aPage: 1, bPage: undefined, bEnd: undefined, bLine: 1, bHash: "hash", count: 2 },
+    { label: "non-PDF versus PDF", aPage: undefined, bPage: 1, bEnd: 1, bLine: 1, bHash: "hash", count: 2 },
+    { label: "same-page equal lines", aPage: 1, bPage: 1, bEnd: 1, bLine: 1, bHash: "different", count: 1 },
+    { label: "same-page equal hashes", aPage: 1, bPage: 1, bEnd: 1, bLine: 20, bHash: "hash", count: 1 },
+    { label: "code equal lines", aPage: undefined, bPage: undefined, bEnd: undefined, bLine: 1, bHash: "different", count: 1 },
+    { label: "code equal hashes", aPage: undefined, bPage: undefined, bEnd: undefined, bLine: 20, bHash: "hash", count: 1 },
+  ])("preserves deduplication boundaries: $label", ({ aPage, bPage, bEnd, bLine, bHash, count }) => {
+    const candidates: Candidate[] = [
+      { id: "a", score: 0.9, metadata: meta({
+        documentLocation: aPage === undefined ? undefined : { kind: "pdf", pageStart: aPage, pageEnd: aPage },
+      }) },
+      { id: "b", score: 0.8, metadata: meta({
+        startLine: bLine, endLine: bLine + 9, hash: bHash,
+        documentLocation: bPage === undefined ? undefined : { kind: "pdf", pageStart: bPage, pageEnd: bEnd! },
+      }) },
+    ];
+    expect(rankSemanticOnlyResults("page marker", candidates, { rerankTopN: 10, limit: 10 })).toHaveLength(count);
+  });
+
   it("fuses hybrid results using RRF rank ordering", () => {
     const semantic: Candidate[] = [
       { id: "a", score: 0.91, metadata: meta({ filePath: "/repo/src/auth.ts", name: "validateAuth", chunkType: "function" }) },

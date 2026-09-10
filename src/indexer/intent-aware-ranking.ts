@@ -409,6 +409,13 @@ function containsRange(outer: ChunkMetadata, inner: ChunkMetadata): boolean {
 
 function areDuplicateEvidence(a: RankedCandidate, b: RankedCandidate): boolean {
   if (normalizePath(a.metadata.filePath) !== normalizePath(b.metadata.filePath)) return false;
+  const aLocation = a.metadata.documentLocation;
+  const bLocation = b.metadata.documentLocation;
+  if (aLocation?.kind === "pdf" || bLocation?.kind === "pdf") {
+    if (aLocation?.kind !== bLocation?.kind
+      || aLocation?.pageStart !== bLocation?.pageStart
+      || aLocation?.pageEnd !== bLocation?.pageEnd) return false;
+  }
   const aName = normalizeRankingText(a.metadata.name ?? "");
   const bName = normalizeRankingText(b.metadata.name ?? "");
   const sameNamedSymbol = aName.length > 0 && aName === bName;
