@@ -20,6 +20,7 @@ export interface CombinedWatcher {
   fileWatcher: FileWatcher;
   gitWatcher: GitHeadWatcher | null;
   whenReady(): Promise<void>;
+  isBusy(): boolean;
   stop(): Promise<void>;
 }
 
@@ -87,6 +88,9 @@ export function createWatcherWithIndexer(
   return {
     fileWatcher,
     gitWatcher,
+    isBusy() {
+      return fileWatcher.isBusy() || (gitWatcher?.isBusy() ?? false);
+    },
     whenReady() {
       return Promise.all([
         fileWatcher.waitUntilReady(),

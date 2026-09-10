@@ -141,6 +141,27 @@ describe("FileWatcher", () => {
     });
   });
 
+  it("reports pending changes and active callbacks as busy for idle shutdown", async () => {
+    watcher = new FileWatcher(tempDir, createTestConfig(), "opencode");
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    const handler = vi.fn(async () => held);
+    watcher.start(handler);
+    expect(watcher.isBusy()).toBe(true);
+    try {
+      await watcher.waitUntilReady();
+      expect(watcher.isBusy()).toBe(false);
+      fs.writeFileSync(path.join(tempDir, "src", "idle-guard.ts"), "export const value = 1;");
+      await vi.waitFor(() => expect(watcher.isBusy()).toBe(true), { timeout: 5000 });
+      await vi.waitFor(() => expect(handler).toHaveBeenCalled(), { timeout: 5000 });
+      expect(watcher.isBusy()).toBe(true);
+      release();
+      await vi.waitFor(() => expect(watcher.isBusy()).toBe(false));
+    } finally {
+      release();
+    }
+  });
+
   describe("file filtering", () => {
     it("captures only matching include-pattern changes after watcher ready", async () => {
       const changes: FileChange[] = [];

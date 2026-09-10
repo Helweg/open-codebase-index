@@ -36,6 +36,7 @@ interface ConfigPathState {
 
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
+  private activeCallbacks = 0;
   private projectRoot: string;
   private config: CodebaseIndexConfig;
   private configPath: string | undefined;
@@ -348,6 +349,15 @@ export class FileWatcher {
   private scheduleNativeReconciliation(generation: number, filePath: string | null): void {
     if (!this.isCurrentNativeSetup(generation)) return;
 
+    if (filePath !== null && filePath !== path.join(this.projectRoot, ".gitignore")) {
+      const relativePath = path.relative(this.projectRoot, filePath);
+      // Match snapshot filtering before scheduling work: internal lease heartbeats
+      // must not count as watcher activity and keep an idle MCP engine alive.
+      if (hasFilteredPathSegment(relativePath)
+        && !this.isProjectConfigPathOrAncestor(relativePath)
+        && !this.localModuleConfigTracker.has(filePath)) return;
+    }
+
     if (
       filePath === null
       || filePath === path.join(this.projectRoot, ".gitignore")
@@ -385,6 +395,7 @@ export class FileWatcher {
   private async reconcileNativeWatcher(generation: number, invalidatedPaths: readonly SnapshotInvalidation[]): Promise<void> {
     if (!this.isCurrentNativeSetup(generation) || !this.nativeReconciler) return;
 
+    this.activeCallbacks += 1;
     try {
       const reconciler = this.nativeReconciler;
       const changes = await reconciler.reconcile(invalidatedPaths);
@@ -393,6 +404,8 @@ export class FileWatcher {
       this.recordChanges(changes);
     } catch (error) {
       await this.fallbackFromNativeWatcher(generation, error);
+    } finally {
+      this.activeCallbacks -= 1;
     }
   }
 
@@ -580,6 +593,12 @@ export class FileWatcher {
     }, this.debounceMs);
   }
 
+  isBusy(): boolean {
+    return this.activeCallbacks > 0 || this.resolveReady !== null || this.nativeStarting
+      || this.nativeInitializing || this.nativeInvalidatedPaths.size > 0
+      || this.nativeReconcileTimer !== null || this.pendingChanges.size > 0;
+  }
+
   private async flush(): Promise<void> {
     if (this.pendingChanges.size === 0 || !this.onChanges) {
       return;
@@ -592,9 +611,12 @@ export class FileWatcher {
     this.pendingChanges.clear();
 
     try {
+      this.activeCallbacks += 1;
       await this.onChanges(changes);
     } catch (error) {
       console.error("Error handling file changes:", error);
+    } finally {
+      this.activeCallbacks -= 1;
     }
   }
 

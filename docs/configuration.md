@@ -436,3 +436,43 @@ Debug defaults:
 ```
 
 For recovery steps, see [Troubleshooting](../TROUBLESHOOTING.md). For internals, see [Architecture](../ARCHITECTURE.md).
+
+### MCP engine idle timeout
+
+The MCP command keeps a lightweight stdio supervisor connected while its indexing
+engine is idle. For `--host codex`, the engine shuts down after 900 seconds without
+useful work. Other hosts retain their existing direct lifecycle by default.
+
+Use `--mcp-idle-timeout <seconds>` to choose a non-negative integer timeout.
+A positive value enables supervision for any MCP host. `0` disables supervision.
+For example:
+
+```sh
+open-codebase-index-mcp --host codex --project /path/to/project --mcp-idle-timeout 900
+```
+
+Calls, automatic indexing, and pending watcher work prevent idle shutdown. MCP
+pings and background lease renewal do not reset the timeout. Sleeping stops file
+watching and releases the engine's memory and background-worker lease. The next
+useful request starts a new engine, replays the MCP initialization internally,
+and uses the existing incremental freshness checks. Concurrent requests share
+one startup. Changes made while sleeping are picked up on restart.
+
+After an unexpected engine exit, `index_status` may be retried once. Other
+requests already submitted to the engine fail explicitly and are not replayed,
+because their outcome may be uncertain. Startup is bounded to ten seconds.
+Messages are limited to 8 MiB per newline-delimited frame. The supervisor retains
+at most 128 pending messages and 16 MiB of queued/request data. Excess requests
+receive an explicit overload error. Notification overflow or an oversized frame
+closes the connection with a stderr diagnostic. Stream backpressure pauses the
+corresponding reader. Cancellations remove unsent requests even while engine input
+is blocked. At most 128 reverse requests may be outstanding.
+
+Closing the client also closes its engine, with a five-second forced-shutdown
+fallback. Lifecycle diagnostics go to stderr without tool arguments or source
+content.
+
+External process cleaners must preserve the lightweight MCP supervisor while its
+client connection is open. Terminating the supervisor itself still closes stdio
+and requires client-side reconnection. Upgrading the package does not change
+external cleanup scripts or reconnect existing client sessions.

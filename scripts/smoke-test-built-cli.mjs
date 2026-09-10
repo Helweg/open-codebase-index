@@ -75,11 +75,11 @@ function withTimeout(promise, timeoutMs, description) {
   });
 }
 
-async function runMcpHandshake(args) {
+async function runMcpHandshake(args, { commandPath = cliPath, resume = false } = {}) {
   const stderr = [];
   const transport = new StdioClientTransport({
     command: process.execPath,
-    args: [cliPath, ...args],
+    args: [commandPath, ...args, ...(resume ? ["--mcp-idle-timeout", "1"] : [])],
     cwd: process.cwd(),
     stderr: "pipe",
   });
@@ -87,10 +87,25 @@ async function runMcpHandshake(args) {
   const client = new Client({ name: "built-cli-smoke", version: "1.0.0" });
   try {
     await withTimeout(client.connect(transport), 5_000, "MCP initialize");
+    if (resume) {
+      const first = await withTimeout(client.callTool({ name: "index_status", arguments: {} }), 5_000, "MCP status");
+      if (first.isError) throw new Error("MCP status failed before idle shutdown.");
+      await withTimeout((async () => {
+        const deadline = Date.now() + 4500;
+        while (!stderr.join("").includes("MCP engine sleeping")) {
+          if (Date.now() > deadline) throw new Error("MCP engine did not become idle.");
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+      })(), 5_000, "MCP idle shutdown");
+      const next = await withTimeout(client.callTool({ name: "index_status", arguments: {} }), 5_000, "MCP resumed status");
+      if (next.isError || !stderr.join("").includes("MCP engine resuming")) {
+        throw new Error("MCP engine did not resume in the same connection.");
+      }
+    }
     await withTimeout(client.close(), 5_000, "MCP shutdown");
   } catch (error) {
     await client.close().catch(() => undefined);
-    throw new Error(`Built ESM Codex MCP handshake failed:\n${stderr.join("")}`, { cause: error });
+    throw new Error(`Built Codex MCP handshake failed (${commandPath}):\n${stderr.join("")}`, { cause: error });
   }
 }
 
@@ -100,7 +115,11 @@ try {
   const configPath = path.join(tempDir, "config.json");
   writeFileSync(
     configPath,
-    JSON.stringify({ indexing: { autoIndex: false, watchFiles: true, requireProjectMarker: false } }),
+    JSON.stringify({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://127.0.0.1:9/v1", model: "smoke-test", dimensions: 8 },
+      indexing: { autoIndex: false, watchFiles: true, requireProjectMarker: false },
+    }),
   );
   const projectArgs = ["--host", "codex", "--project", tempDir, "--config", configPath];
 
@@ -109,7 +128,11 @@ try {
     throw new Error(`Built CBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
   }
 
-  await Promise.all([runMcpHandshake(projectArgs), runMcpHandshake(projectArgs)]);
+  await Promise.all([
+    runMcpHandshake(projectArgs),
+    runMcpHandshake(projectArgs),
+    runMcpHandshake(projectArgs, { commandPath: path.join(path.dirname(cliPath), "cli.cjs"), resume: true }),
+  ]);
 
   const indexHelp = await runCliCommand(["index", "--help"]);
   if (indexHelp.code !== 0 || !indexHelp.stderr.includes("Usage:")) {

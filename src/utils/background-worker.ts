@@ -29,6 +29,7 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0
 type OwnerLiveness = "alive" | "dead" | "unknown";
 
 export interface BackgroundWorkerWatcher {
+  isBusy?: () => boolean;
   whenReady?: () => Promise<void>;
   stop(): Promise<void>;
 }
@@ -587,6 +588,7 @@ class BackgroundWorkerController {
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private teardownRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private transition: Promise<void> = Promise.resolve();
+  private pendingTransitions = 0;
   private stopPromise: Promise<void> | null = null;
   private stopDrainPromise: Promise<void> | null = null;
   private stopped = false;
@@ -709,6 +711,11 @@ class BackgroundWorkerController {
     return this.lease !== null && !this.stopping && !this.losingLeadership;
   }
 
+  isBusy(): boolean {
+    return this.pendingTransitions > 0 || this.startingLeaderWork || this.stopping || this.losingLeadership
+      || (this.watcher?.isBusy?.() ?? false);
+  }
+
   isStopping(): boolean {
     return this.stopping;
   }
@@ -790,7 +797,10 @@ class BackgroundWorkerController {
   }
 
   private enqueue(operation: () => Promise<void>): Promise<void> {
-    const next = this.transition.catch(() => undefined).then(operation);
+    this.pendingTransitions += 1;
+    const next = this.transition.catch(() => undefined).then(operation).finally(() => {
+      this.pendingTransitions -= 1;
+    });
     this.transition = next;
     return next;
   }
@@ -1175,4 +1185,9 @@ export function tryAcquireBackgroundWorkerLease(
     owner: lease.owner,
     release: () => releaseLease(lease),
   };
+}
+
+export function isBackgroundWorkerBusy(projectRoot: string, host: HostMode): boolean {
+  const key = workerKeysByProject.get(projectLookupKey(projectRoot, host));
+  return workers.get(key ?? "")?.isBusy() ?? false;
 }
