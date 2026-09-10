@@ -1,6 +1,7 @@
 import type { CallSiteData, SymbolData } from "../native/types.js";
 
 import * as path from "node:path";
+import { isPythonFilePath, resolvePythonRelativeCall } from "./python-import-resolution.js";
 
 import {
   createGoDirectCallClassifier,
@@ -1363,6 +1364,7 @@ function namespaceQualifier(content: string, site: CallSiteData): string | undef
 export class LocalModuleCallResolver {
   private readonly modulePaths = new Set<string>();
   private readonly goPackagePaths = new Set<string>();
+  private readonly pythonModulePaths = new Set<string>();
   private readonly loadModule: LocalModuleResolverOptions["loadModule"];
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
@@ -1377,6 +1379,7 @@ export class LocalModuleCallResolver {
       const normalized = normalizeFilePath(filePath);
       if (isJavaScriptFamilyFilePath(normalized)) this.modulePaths.add(normalized);
       if (isGoFilePath(normalized)) this.goPackagePaths.add(normalized);
+      if (isPythonFilePath(normalized)) this.pythonModulePaths.add(normalized);
     }
     this.loadModule = options.loadModule;
     this.tsConfigPathAliases = options.tsConfigPathAliases;
@@ -1389,7 +1392,7 @@ export class LocalModuleCallResolver {
 
   seedModule(filePath: string, data: LocalModuleData): void {
     const normalized = normalizeFilePath(filePath);
-    if (!this.modulePaths.has(normalized) && !this.goPackagePaths.has(normalized)) return;
+    if (!this.modulePaths.has(normalized) && !this.goPackagePaths.has(normalized) && !this.pythonModulePaths.has(normalized)) return;
     this.moduleData.set(normalized, Promise.resolve(data));
     if (this.modulePaths.has(normalized)) {
       this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
@@ -1408,6 +1411,9 @@ export class LocalModuleCallResolver {
     site: CallSiteData,
   ): Promise<SymbolData | undefined> {
     const importer = normalizeFilePath(importerFilePath);
+    if (this.pythonModulePaths.has(importer)) {
+      return resolvePythonRelativeCall(importer, importerContent, site, this.pythonModulePaths, (filePath) => this.getModuleData(filePath));
+    }
     if (this.goPackagePaths.has(importer)) {
       return this.resolveGoPackageCallTarget(importer, importerContent, site);
     }

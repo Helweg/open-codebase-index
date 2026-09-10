@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Python relative-import graph resolution**: Direct calls through unambiguous, single-line relative `from` imports can resolve to indexed top-level functions, including aliases and explicit package paths. Shadowed, detected dynamically rebound, ambiguous and unsupported bindings remain unresolved. Normal indexing migrates prior graph resolution and refreshes Python callers after source additions, edits or deletions without requiring a forced rebuild.
 - **Deep source discovery**: Default scans no longer stop at five directory levels, allowing deeply nested source packages such as Maven Java layouts to be indexed. Explicit `indexing.maxDepth` limits, ignored/hidden/build paths, symlink handling and per-directory file limits remain unchanged. Existing indexes can discover the additional sources through normal indexing.
 - **Active-branch readiness**: Status distinguishes globally stored chunks from the active branch's catalog and provides normal-index recovery guidance. Known-empty completed catalogs no longer fall back to stale unscoped evidence; genuinely legacy catalogs retain compatibility handling.
 - **Transitive dependency security**: Updated dependency overrides for `hono` to `4.13.5` and `js-yaml` to `4.3.2`, with a lockfile-only bump of `nanoid` to `3.3.18`, addressing the current security advisories in these packages.

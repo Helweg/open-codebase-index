@@ -230,6 +230,8 @@ Unlimited depth retains hidden/build/ignored-path exclusions, does not follow sy
 
 For the disabled-by-default compiler-index pilot, see [Optional SCIP TypeScript enrichment](scip-typescript.md).
 
+Python call graphs support conservative local relative imports such as `from .formatting import format_payment` and explicit aliases. The importer and target must be indexed, package paths must have indexed `__init__.py` files, and the target must be a unique top-level function. Absolute/namespace imports, multiline imports, decorated targets, ambiguous modules, shadowing and detected dynamic rebinding are not resolved by this extension. Complex string interpolation also causes conservative abstention. This is static source analysis, not execution of Python's runtime import machinery. Normal indexing updates older graph metadata and refreshes affected Python graph sources in both indexing modes.
+
 `indexing.mode` defaults to `"hybrid"`. Set it to `"structural"` for a separate provider-free keyword and graph index. See [structural indexing](structural-indexing.md) for storage isolation and unsupported semantic operations.
 
 Example:

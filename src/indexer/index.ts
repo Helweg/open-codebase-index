@@ -121,6 +121,7 @@ import {
 } from "../utils/operation-control.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
 import { createGoDirectCallClassifier, isGoFilePath } from "./go-package-resolution.js";
+import { isPythonFilePath } from "./python-import-resolution.js";
 import {
   getLocalWorkspacePackageManifestPaths,
   getLocalWorkspacePackages,
@@ -209,7 +210,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "9";
+const CALL_GRAPH_RESOLUTION_VERSION = "10";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -4909,6 +4910,11 @@ export class Indexer {
       && isJavaScriptFamilyFilePath(filePath)
       && !currentStoredFilePaths.has(filePath)
     );
+    let pythonGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
+      (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
+      && isPythonFilePath(filePath)
+      && !currentStoredFilePaths.has(filePath)
+    );
     const changedGoPackageDirectories = new Set(
       Array.from(this.fileHashCache.keys()).flatMap((filePath) =>
         (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
@@ -4962,6 +4968,9 @@ export class Indexer {
       if (!cachedHashMatches && isGoFilePath(storedPath)) {
         changedGoPackageDirectories.add(path.posix.dirname(storedPath.split(path.sep).join("/")));
       }
+      if (!cachedHashMatches && isPythonFilePath(storedPath)) {
+        pythonGraphSourcesChanged = true;
+      }
       const needsCallGraphRefresh = cachedHashMatches
         && (
           (
@@ -4973,7 +4982,7 @@ export class Indexer {
               )
             )
           )
-          || (needsCallGraphResolutionMigration && isGoFilePath(storedPath))
+          || (needsCallGraphResolutionMigration && (isGoFilePath(storedPath) || isPythonFilePath(storedPath)))
         );
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
@@ -4997,7 +5006,7 @@ export class Indexer {
       }
     }
 
-    if (javaScriptGraphSourcesChanged) {
+    if (javaScriptGraphSourcesChanged || pythonGraphSourcesChanged) {
       let processedDescriptors = 0;
       for (const [storedPath, descriptor] of allFileDescriptors) {
         if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
@@ -5005,7 +5014,11 @@ export class Indexer {
           throwIfOperationAborted(signal);
         }
         processedDescriptors += 1;
-        if (!isJavaScriptFamilyFilePath(storedPath) || changedFilePathSet.has(storedPath)) continue;
+        if (
+          !(javaScriptGraphSourcesChanged && isJavaScriptFamilyFilePath(storedPath))
+          && !(pythonGraphSourcesChanged && isPythonFilePath(storedPath))
+        ) continue;
+        if (changedFilePathSet.has(storedPath)) continue;
         unchangedFilePaths.delete(storedPath);
         changedFileDescriptors.push(descriptor);
         changedFilePathSet.add(storedPath);
@@ -5457,7 +5470,7 @@ export class Indexer {
             if (
               !resolvedTarget
               && (!candidates || candidates.length === 0)
-              && (isJavaScriptFamilyFilePath(parsed.path) || isSupportedGoCall)
+              && (isJavaScriptFamilyFilePath(parsed.path) || isSupportedGoCall || isPythonFilePath(parsed.path))
             ) {
               resolvedTarget = await localModuleResolver.resolveCallTarget(
                 parsed.path,
