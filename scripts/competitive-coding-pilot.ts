@@ -311,7 +311,7 @@ export class PilotBroker {
 
   private list(args: Record<string, unknown>): string[] {
     const requested = args.path === undefined ? null : requireString(args.path, "path", 4096);
-    if (requested === null) return [...this.allowedFiles];
+    if (requested === null || requested === "." || requested === "./") return [...this.allowedFiles];
     const target = existingRealPath(this.root, requested);
     assertNoSymlinkComponents(this.root, target);
     const stat = fs.statSync(target);

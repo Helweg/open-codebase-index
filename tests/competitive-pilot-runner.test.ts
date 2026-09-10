@@ -29,6 +29,7 @@ import {
   PilotModelError,
   EVALUATOR_NODE_SHA256,
   FORBIDDEN_SEGMENTS,
+  MAX_TOOL_CALLS,
 } from "../scripts/competitive-coding-pilot.js";
 
 let tempDir: string;
@@ -221,6 +222,7 @@ describe("competitive pilot runner", () => {
 
     expect(results).toHaveLength(6);
     expect(results.every(result => result.status === "passed")).toBe(true);
+    expect(results.every(result => result.toolCalls === 2)).toBe(true);
     expect(modelVisible).toHaveLength(6);
     expect(modelVisible.every(entry => entry.keys.sort().join(",") === "broker,deadlineMs,maxGeneratedTokens,prompt,requestTimeoutMs")).toBe(true);
     expect(modelVisible.every(entry => Object.keys(entry.search.arguments).sort().join(",") === "limit,query")).toBe(true);
@@ -316,6 +318,7 @@ describe("competitive pilot runner", () => {
 
     expect(results).toHaveLength(6);
     expect(results[0].status).toBe("failed");
+    expect(results.every(result => result.toolCalls === 1)).toBe(true);
     expect(results[0].error).toMatchObject({
       name: "PilotModelError",
       message: "sentinel model failure",
@@ -359,6 +362,37 @@ describe("competitive pilot runner", () => {
       expect(artifact.error).toBeDefined();
     },
   );
+
+  it.each(["generic", "pilot", "limit"])("retains attempted counts when model execution fails with %s error", async kind => {
+    const inputs = createLockedInputs();
+    const outputRoot = path.join(inputs.scratchRoot, `counts-${kind}`);
+    const attempted = kind === "limit" ? MAX_TOOL_CALLS + 1 : 2;
+    const modelDriver: ModelDriver = {
+      async run({ broker }) {
+        const transcript: unknown[] = [];
+        for (let index = 0; index < attempted; index += 1) {
+          const result = await broker.execute(index === 1
+            ? { name: "read", arguments: { path: "tests/hidden.js" } }
+            : { name: "list", arguments: { path: "." } });
+          transcript.push(result);
+          if (index === 1) expect(result.ok).toBe(false);
+          if (kind === "limit" && index === MAX_TOOL_CALLS) expect(result.error).toBe("tool call limit exceeded");
+        }
+        if (kind === "generic") throw new Error("generic failure after tools");
+        throw new PilotModelError(kind === "limit" ? "tool call limit exceeded" : "model failure after tools", transcript, 11, 7);
+      },
+    };
+    const results = await runCompetitivePilot({ ...inputs, outputRoot, modelDriver }, fakeDependencies(inputs.source));
+    for (const result of results) {
+      expect(result.status).toBe("failed");
+      expect(result.toolCalls).toBe(attempted);
+      expect(result.error?.message).toContain(kind === "limit" ? "tool call limit exceeded" : "failure after tools");
+      if (kind !== "generic") {
+        expect(result.error?.transcript).toHaveLength(attempted);
+        expect(result.error).toMatchObject({ promptTokens: 11, generatedTokens: 7 });
+      }
+    }
+  });
 
   it.each(Object.keys(denied) as Array<keyof SandboxProbeResult>)("blocks inference when %s is not proven", async missing => {
     const inputs = createLockedInputs();
@@ -527,6 +561,7 @@ describe("competitive pilot runner", () => {
     for (const result of indexed) {
       expect(result.status).toBe("failed");
       expect(result.model).toMatchObject({ promptTokens: 17, generatedTokens: 4, transcript: [{ preserved: true }] });
+      expect(result.toolCalls).toBe(1);
       expect(result.error?.message).toContain("owned cleanup sentinel");
       expect(result.diff.error?.message).toContain("symlink");
       const runDirectory = fs.readdirSync(path.join(outputRoot, "runs")).find(name => name.startsWith(String(result.orderIndex).padStart(2, "0")))!;

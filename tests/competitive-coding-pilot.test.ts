@@ -115,6 +115,33 @@ describe("frozen pilot manifest", () => {
 });
 
 describe("PilotBroker confinement", () => {
+  it("treats exact dot root-list aliases like omitted path with the same filtered files", async () => {
+    for (const segment of FORBIDDEN_SEGMENTS) write(`${segment}/metadata`, "hidden");
+    const broker = new PilotBroker(tempDir, emptySearch);
+    const omitted = await broker.execute({ name: "list", arguments: {} });
+    const dot = await broker.execute({ name: "list", arguments: { path: "." } });
+    const dotSlash = await broker.execute({ name: "list", arguments: { path: "./" } });
+    expect(omitted.ok).toBe(true);
+    expect(dot).toEqual(omitted);
+    expect(dotSlash).toEqual(omitted);
+    expect(dot.output).toEqual([...broker.allowedFiles]);
+    expect(dot.output).not.toBe(dotSlash.output);
+    expect(JSON.stringify(dot.output)).not.toContain("metadata");
+    expect(broker.callCount).toBe(3);
+  });
+
+  it.each([".", "./"])("does not allow root alias %s for reads, writes, or search results", async alias => {
+    const broker = new PilotBroker(tempDir, async () => [{ filePath: alias, startLine: 1, endLine: 1 }]);
+    expect((await broker.execute({ name: "read", arguments: { path: alias } })).ok).toBe(false);
+    expect((await broker.execute({ name: "replace_unique", arguments: { path: alias, oldText: "old", newText: "new" } })).ok).toBe(false);
+    expect((await broker.execute({ name: "search", arguments: { query: "anything" } })).ok).toBe(false);
+  });
+
+  it.each(["", "/", "..", "../outside", "././", "tests", ".git", ".codegraph"])("still rejects unsafe list path %s", async requested => {
+    const broker = new PilotBroker(tempDir, emptySearch);
+    expect((await broker.execute({ name: "list", arguments: { path: requested } })).ok).toBe(false);
+  });
+
   it("lists only allowed files and never exposes tests or index metadata", async () => {
     for (const segment of FORBIDDEN_SEGMENTS) write(`${segment}/index/secret`, "index\n");
     write("lib/helper.test.js", "test sentinel");
@@ -290,6 +317,7 @@ describe("PilotBroker confinement", () => {
       expect((await broker.execute({ name: "list", arguments: {} })).ok).toBe(true);
     }
     expect(await broker.execute({ name: "list", arguments: {} })).toEqual({ ok: false, error: "tool call limit exceeded" });
+    expect(broker.callCount).toBe(MAX_TOOL_CALLS + 1);
   });
 
   it("provides a bounded literal unindexed search condition", async () => {

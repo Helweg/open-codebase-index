@@ -375,17 +375,16 @@ function assertModelBoundary(input: { prompt: string; searchAdapter: SearchAdapt
 }
 
 async function runModel(options: {
-  workspace: string;
+  broker: PilotBroker;
   prompt: string;
   searchAdapter: SearchAdapter;
   modelDriver: ModelDriver;
-}): Promise<{ model: ModelDriverResult; toolCalls: number }> {
+}): Promise<ModelDriverResult> {
   assertModelBoundary({ prompt: options.prompt, searchAdapter: options.searchAdapter });
-  const broker = new PilotBroker(options.workspace, options.searchAdapter);
   const deadlineMs = Date.now() + MAX_RUN_MS;
   const model = await options.modelDriver.run({
     prompt: options.prompt,
-    broker,
+    broker: options.broker,
     deadlineMs,
     maxGeneratedTokens: MAX_GENERATED_TOKENS,
     requestTimeoutMs: REQUEST_TIMEOUT_MS,
@@ -393,7 +392,7 @@ async function runModel(options: {
   if (Date.now() > deadlineMs || model.generatedTokens > MAX_GENERATED_TOKENS) {
     throw new PilotModelError(Date.now() > deadlineMs ? "pilot deadline exceeded" : "generated token limit exceeded", model.transcript, model.promptTokens, model.generatedTokens);
   }
-  return { model, toolCalls: broker.callCount };
+  return model;
 }
 
 async function materializeRunRoot(options: {
@@ -431,6 +430,7 @@ async function runOne(options: {
   let setupDiff: WorkspaceDiff = { changedFiles: [] };
   let model: ModelDriverResult | undefined;
   let evaluator: EvaluatorResult | undefined;
+  let broker: PilotBroker | undefined;
   let toolCalls = 0;
   let error: SerializedError | undefined;
 
@@ -472,9 +472,8 @@ async function runOne(options: {
 
     const modelBoundary = { prompt: options.spec.task.prompt, searchAdapter };
     assertModelBoundary(modelBoundary);
-    const modelResult = await runModel({ workspace, modelDriver: options.modelDriver, ...modelBoundary });
-    model = modelResult.model;
-    toolCalls = modelResult.toolCalls;
+    broker = new PilotBroker(workspace, searchAdapter);
+    model = await runModel({ broker, modelDriver: options.modelDriver, ...modelBoundary });
     await saveJson(path.join(artifactDir, "model.json"), model);
     evaluator = await options.evaluate(workspace, options.spec.task);
   } catch (caught: unknown) {
@@ -486,6 +485,9 @@ async function runOne(options: {
       error = { ...error, message: `${error.message}; error checkpoint failed: ${related.message}`, related: [related] };
     }
   } finally {
+    // Count every attempted broker call, including validation and limit failures,
+    // even when model execution throws before returning a result.
+    toolCalls = broker?.callCount ?? 0;
     if (adapter) {
       try {
         await adapter.close();
