@@ -115,6 +115,31 @@ describe("PDF Indexer integration", () => {
       .some((item) => item.filePath.endsWith("guide.pdf"))).toBe(false);
   });
 
+  it("returns both physical PDF pages across a blank middle page before and after restart", async () => {
+    fs.writeFileSync(path.join(tempDir, "guide.pdf"), buildPdfFixture([
+      { lines: ["Repeated searchable page marker"] },
+      { empty: true },
+      { lines: ["Repeated searchable page marker"] },
+    ]));
+    const indexer = createIndexer();
+    await indexer.forceIndex();
+    const assertPages = async (active: Indexer): Promise<void> => {
+      const results = (await active.search("Repeated searchable page marker", 10))
+        .filter((result) => result.filePath.endsWith("guide.pdf"));
+      expect(results).toHaveLength(2);
+      expect(results.map((result) => result.documentLocation?.pageStart).sort()).toEqual([1, 3]);
+      for (const result of results) {
+        expect(result.content).toBe("Repeated searchable page marker");
+        expect(result.documentLocation).toEqual({
+          kind: "pdf", pageStart: result.documentLocation?.pageStart, pageEnd: result.documentLocation?.pageStart,
+        });
+      }
+    };
+    await assertPages(indexer);
+    await indexer.close();
+    await assertPages(createIndexer());
+  });
+
   it("excludes PDF passages from definition intent while retaining code definitions", async () => {
     const indexer = createIndexer();
     await indexer.forceIndex();
