@@ -579,11 +579,19 @@ describe("worktree fallback (issue #60)", () => {
       expect(unscopedSearch[0]?.name).toBe(foreignCandidates[0]?.metadata.name);
       expect(unscopedSimilar[0]?.name).toBe(foreignCandidates[0]?.metadata.name);
 
-      for (const branch of runtime.database.getAllBranches()) {
+      const registeredBranches = runtime.database.getAllBranches();
+      for (const branch of registeredBranches) {
         runtime.database.clearBranch(branch);
         runtime.database.clearBranchSymbols(branch);
       }
       expect(runtime.database.getAllBranches()).toEqual([]);
+      // Completed empty catalogs remain scoped even without membership rows.
+      expect(await worktreeIndexer.search("ranked branch retrieval probe", 1, { metadataOnly: true })).toEqual([]);
+      expect(await worktreeIndexer.findSimilar("ranked branch retrieval probe", 1)).toEqual([]);
+      // A genuinely legacy index also lacks branch completion metadata.
+      for (const branch of registeredBranches) {
+        runtime.database.deleteMetadata(`index.callGraphResolutionVersion.${hashContent(branch).slice(0, 24)}`);
+      }
       expect(
         (await worktreeIndexer.search("ranked branch retrieval probe", 1, { metadataOnly: true }))[0]?.name,
       ).toBe(foreignCandidates[0]?.metadata.name);

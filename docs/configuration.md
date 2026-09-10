@@ -226,6 +226,10 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 | `linesPerChunk` | `30` | Max lines per chunk for line-based parsing (`.jsonl`, `.txt`, unknown extensions, and the AST fallback). Lower it for finer-grained retrieval on line-delimited files. Only the line-based path is affected; AST-parsed languages are unchanged |
 | `gitBlame.enabled` | `false` | Store git blame metadata for filtering |
 
+For the disabled-by-default compiler-index pilot, see [Optional SCIP TypeScript enrichment](scip-typescript.md).
+
+`indexing.mode` defaults to `"hybrid"`. Set it to `"structural"` for a separate provider-free keyword and graph index. See [structural indexing](structural-indexing.md) for storage isolation and unsupported semantic operations.
+
 Example:
 
 ```json

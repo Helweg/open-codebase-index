@@ -39,6 +39,8 @@ import type { HostMode } from "../config/host.js";
 import { isProjectIndexPathOwnedByProject, resolveProjectIndexPath } from "../config/paths.js";
 import { getChangedFiles } from "../tools/changed-files.js";
 import type { PrImpactResult } from "./pr-impact-types.js";
+import { UnsupportedIndexOperationError } from "./errors.js";
+export { UnsupportedIndexOperationError } from "./errors.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
 import { analyzeQueryIntent } from "./intent-aware-ranking.js";
 import {
@@ -128,6 +130,10 @@ import {
 } from "./local-module-resolution.js";
 import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
 import { PdfExtractionError } from "../documents/pdf.js";
+import {
+  prepareScipTypeScriptEnrichment,
+  type PreparedScipEnrichment,
+} from "./scip-typescript-enrichment.js";
 
 export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
 
@@ -365,6 +371,7 @@ function isSqliteCorruptionError(error: unknown): boolean {
 }
 
 export interface IndexStats {
+  mode?: "hybrid" | "structural";
   totalFiles: number;
   totalChunks: number;
   indexedChunks: number;
@@ -380,12 +387,37 @@ export interface IndexStats {
   resetCorruptedIndex?: boolean;
 }
 
+type LoadedIndexState = {
+  mode: "hybrid";
+  store: VectorStore;
+  provider: EmbeddingProviderInterface;
+  configuredProviderInfo: ConfiguredProviderInfo;
+  invertedIndex: InvertedIndex;
+  database: Database;
+} | {
+  mode: "structural";
+  store: null;
+  provider: null;
+  configuredProviderInfo: null;
+  invertedIndex: InvertedIndex;
+  database: Database;
+};
+
+function requireLoadedCapability<T>(value: T | null, capability: string): T {
+  if (value === null) {
+    throw new UnsupportedIndexOperationError(`${capability} is unavailable in structural indexing mode.`);
+  }
+  return value;
+}
+
 export interface IndexerRuntimeOptions {
   materializedProjectRoot?: string;
   branchName?: string;
   catalogIdentity?: string;
   expectedCommit?: string;
   indexPath?: string;
+  /** Read-only SQLite source override. Vector and keyword artifacts remain at indexPath. */
+  readOnlyDatabasePath?: string;
   /** Internal test and benchmark override. Production uses the fixed limits. */
   fileBatchLimits?: FileBatchLimits;
   /** Internal test and benchmark override. Production uses a fixed default. */
@@ -474,7 +506,11 @@ export interface HealthCheckResult {
 
 export interface StatusResult {
   indexed: boolean;
+  mode?: "hybrid" | "structural";
   vectorCount: number;
+  indexedChunkCount?: number;
+  branchReadiness?: BranchReadiness;
+  checkoutBranch?: string;
   provider: string;
   model: string;
   indexPath: string;
@@ -483,6 +519,13 @@ export interface StatusResult {
   compatibility: IndexCompatibility | null;
   failedBatchesCount: number;
   failedBatchesPath?: string;
+  warning?: string;
+}
+
+export interface BranchReadiness {
+  state: "ready" | "missing" | "empty" | "legacy";
+  activeCatalogChunkCount: number;
+  registeredCatalog: boolean;
   warning?: string;
 }
 
@@ -520,6 +563,7 @@ interface IndexReadIssue {
 interface ReaderArtifactFingerprint {
   vectors: string;
   keyword: string;
+  structuralGeneration: string;
   database: string;
   databaseIdentity: string;
 }
@@ -1225,6 +1269,7 @@ export class Indexer {
   private readonly catalogIdentityOverride: string | undefined;
   private readonly expectedCommitOverride: string | undefined;
   private readonly indexPathOverride: string | undefined;
+  private readonly readOnlyDatabasePathOverride: string | undefined;
   private readonly projectIdentityHash: string;
   private indexPath: string;
   private store: VectorStore | null = null;
@@ -1254,6 +1299,8 @@ export class Indexer {
   private readonly fileBatchLimits?: FileBatchLimits;
   private readonly checkpointIntervalChunks?: number;
   private localModuleResolutionConfigHash: string | null = null;
+  private scipTypeScriptState: PreparedScipEnrichment | null = null;
+  private structuralKeywordRebuildRequired = false;
 
   constructor(
     projectRoot: string,
@@ -1271,6 +1318,7 @@ export class Indexer {
     }
     this.expectedCommitOverride = runtimeOptions.expectedCommit?.toLowerCase();
     this.indexPathOverride = runtimeOptions.indexPath;
+    this.readOnlyDatabasePathOverride = runtimeOptions.readOnlyDatabasePath;
     this.fileBatchLimits = runtimeOptions.fileBatchLimits;
     this.checkpointIntervalChunks = runtimeOptions.checkpointIntervalChunks;
     this.config = config;
@@ -1288,7 +1336,10 @@ export class Indexer {
   }
 
   private getIndexPath(): string {
-    return this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+    const resolvedPath = this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+    return this.config.indexing.mode === "structural"
+      ? path.join(resolvedPath, "structural")
+      : resolvedPath;
   }
 
   private toCanonicalFilePath(filePath: string): string {
@@ -1397,7 +1448,9 @@ export class Indexer {
   }
 
   private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string): SymbolData[] {
-    const preparedNamespace = this.getPreparedBranchNamespace();
+    const preparedNamespace = this.config.indexing.scipTypeScript.enabled
+      ? hashContent(this.getBranchCatalogKey()).slice(0, 16)
+      : this.getPreparedBranchNamespace();
     return parsed.symbols
       .filter((parsedSymbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind))
       .map((parsedSymbol) => {
@@ -1455,7 +1508,10 @@ export class Indexer {
   }
 
   private isProjectOwnedIndexPath(): boolean {
-    return isProjectIndexPathOwnedByProject(this.projectRoot, this.indexPath, this.host);
+    const ownershipPath = this.config.indexing.mode === "structural"
+      ? path.dirname(this.indexPath)
+      : this.indexPath;
+    return isProjectIndexPathOwnedByProject(this.projectRoot, ownershipPath, this.host);
   }
 
   private resetLoadedIndexState(retireDatabase = false): void {
@@ -1606,6 +1662,46 @@ export class Indexer {
     );
   }
 
+  private getStructuralGenerationPath(): string {
+    return path.join(this.indexPath, "structural-generation");
+  }
+
+  private readStructuralPublishedGeneration(): string | null {
+    try {
+      return readFileSync(this.getStructuralGenerationPath(), "utf-8").trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private publishStructuralKeywordGeneration(invertedIndex: InvertedIndex, generation: string): void {
+    this.saveInvertedIndex(invertedIndex);
+    this.atomicWriteSync(this.getStructuralGenerationPath(), generation);
+  }
+
+  private publishClearedStructuralKeywordCatalog(invertedIndex: InvertedIndex, database: Database): void {
+    const generation = hashContent(`${Date.now()}:${Math.random()}:structural-clear`);
+    database.setMetadata("index.structuralGeneration", generation);
+    this.publishStructuralKeywordGeneration(invertedIndex, generation);
+  }
+
+  private rebuildStructuralKeywordFromCatalog(invertedIndex: InvertedIndex, database: Database): void {
+    const chunkIds = Array.from(new Set(
+      database.getAllBranches().flatMap((branchKey) => database.getBranchChunkIds(branchKey)),
+    ));
+    invertedIndex.clear();
+    for (const chunkId of chunkIds) {
+      const chunk = database.getChunk(chunkId);
+      if (!chunk || chunk.sourceText === undefined) {
+        throw new Error(
+          `Structural keyword recovery cannot restore chunk ${chunkId} because its source text is missing. ` +
+          `Run index_codebase with force=true to rebuild this structural index.`,
+        );
+      }
+      invertedIndex.addChunk(chunkId, chunk.sourceText);
+    }
+  }
+
   private getScopedRoots(projectRoot = this.projectRoot): string[] {
     const roots = new Set<string>([this.getCanonicalPath(projectRoot)]);
 
@@ -1670,7 +1766,7 @@ export class Indexer {
   }
 
   private replaceBranchCatalog(
-    store: VectorStore,
+    store: VectorStore | null,
     invertedIndex: InvertedIndex,
     database: Database,
     branchCatalogKey: string,
@@ -1689,7 +1785,7 @@ export class Indexer {
     const referencedChunkIds = new Set(database.getReferencedChunkIds(removedChunkCandidates));
     const removableChunkIds = removedChunkCandidates.filter((chunkId) => !referencedChunkIds.has(chunkId));
     if (removableChunkIds.length > 0) {
-      this.rebuildVectorStoreExcludingChunkIds(store, database, removableChunkIds);
+      if (store) this.rebuildVectorStoreExcludingChunkIds(store, database, removableChunkIds);
       for (const chunkId of removableChunkIds) {
         invertedIndex.removeChunk(chunkId);
       }
@@ -1706,6 +1802,31 @@ export class Indexer {
     database.gcOrphanEmbeddings();
 
     return removableChunkIds.length > 0;
+  }
+
+  private chunkMetadataFromData(chunk: ChunkData): ChunkMetadata {
+    return {
+      filePath: chunk.filePath,
+      startLine: chunk.startLine,
+      endLine: chunk.endLine,
+      chunkType: (chunk.nodeType ?? "other") as ChunkMetadata["chunkType"],
+      name: chunk.name,
+      language: chunk.language,
+      hash: chunk.contentHash,
+      documentLocation: chunk.documentKind === "pdf"
+        ? {
+            kind: "pdf",
+            pageStart: chunk.pageStart ?? 1,
+            pageEnd: chunk.pageEnd ?? chunk.pageStart ?? 1,
+          }
+        : undefined,
+      sourceText: chunk.sourceText,
+      blameSha: chunk.blameSha,
+      blameAuthor: chunk.blameAuthor,
+      blameAuthorEmail: chunk.blameAuthorEmail,
+      blameCommittedAt: chunk.blameCommittedAt,
+      blameSummary: chunk.blameSummary,
+    };
   }
 
   private getLegacyBranchCatalogKey(): string {
@@ -1746,6 +1867,23 @@ export class Indexer {
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
     return this.getBranchMigrationMetadataKey("index.localModuleResolutionConfigHash", catalogIdentity);
+  }
+
+  private getScipTypeScriptStateMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.scipTypeScriptState", catalogIdentity);
+  }
+
+  private getStoredScipTypeScriptFingerprint(database: Database): string | null {
+    const storedState = database.getMetadata(this.getScipTypeScriptStateMetadataKey());
+    if (!storedState?.startsWith("{")) return storedState;
+    try {
+      const parsedState = JSON.parse(storedState) as { stateFingerprint?: unknown };
+      return typeof parsedState.stateFingerprint === "string" ? parsedState.stateFingerprint : storedState;
+    } catch {
+      return storedState;
+    }
   }
 
   private getSwiftParserVersionMetadataKey(
@@ -3227,13 +3365,11 @@ export class Indexer {
   }
 
   private isInitializedFor(mode: Exclude<InitializationMode, "none">): boolean {
-    const hasState = Boolean(
-      this.store &&
-      this.provider &&
-      this.invertedIndex &&
-      this.configuredProviderInfo &&
-      this.database,
+    const hasStructuralState = Boolean(this.invertedIndex && this.database);
+    const hasHybridState = Boolean(
+      this.store && this.provider && this.invertedIndex && this.configuredProviderInfo && this.database,
     );
+    const hasState = this.config.indexing.mode === "structural" ? hasStructuralState : hasHybridState;
     if (!hasState) {
       return false;
     }
@@ -3259,7 +3395,7 @@ export class Indexer {
     return {
       component,
       message,
-      blocking: component !== "keyword",
+      blocking: component !== "keyword" || this.config.indexing.mode === "structural",
     };
   }
 
@@ -3274,6 +3410,9 @@ export class Indexer {
   }
 
   private getKeywordReadIssueMessage(): string {
+    if (this.config.indexing.mode === "structural") {
+      return "Structural keyword index could not be read. Search is unavailable until index_codebase rebuilds the structural BM25 publication.";
+    }
     if (this.config.scope === "global") {
       return "Shared keyword index could not be read; semantic search remains available. Restore or repair the shared keyword artifact; automatic reset is disabled for global scope.";
     }
@@ -3307,18 +3446,25 @@ export class Indexer {
 
   private captureReaderArtifactFingerprint(): ReaderArtifactFingerprint {
     const storePath = path.join(this.indexPath, "vectors");
+    const databasePath = this.readOnlyDatabasePathOverride ?? path.join(this.indexPath, "codebase.db");
     return {
       vectors: `${this.getReaderFileFingerprint(storePath)}|${this.getReaderFileFingerprint(`${storePath}.meta.json`)}`,
       keyword: this.getReaderFileFingerprint(path.join(this.indexPath, "inverted-index.json")),
-      database: this.getReaderFileFingerprint(path.join(this.indexPath, "codebase.db")),
-      databaseIdentity: this.getReaderFileFingerprint(path.join(this.indexPath, "codebase.db"), true),
+      structuralGeneration: this.getReaderFileFingerprint(this.getStructuralGenerationPath()),
+      database: `${this.getReaderFileFingerprint(databasePath)}|${this.getReaderFileFingerprint(`${databasePath}-wal`)}`,
+      databaseIdentity: this.getReaderFileFingerprint(databasePath, true),
     };
   }
 
   private refreshReaderArtifacts(): void {
-    if (this.initializationMode !== "reader" || !this.configuredProviderInfo) {
+    if (this.initializationMode !== "reader") {
       return;
     }
+    const isStructural = this.config.indexing.mode === "structural";
+    if (!isStructural && !this.configuredProviderInfo) {
+      return;
+    }
+    const configuredProviderInfo = this.configuredProviderInfo;
 
     const previousFingerprint = this.readerArtifactFingerprint;
     const currentFingerprint = this.captureReaderArtifactFingerprint();
@@ -3327,12 +3473,15 @@ export class Indexer {
       issues.has(component) && Date.now() >= (this.readerArtifactRetryAfter.get(component) ?? 0);
     const vectorsChanged = !previousFingerprint || currentFingerprint.vectors !== previousFingerprint.vectors;
     const keywordChanged = !previousFingerprint || currentFingerprint.keyword !== previousFingerprint.keyword;
+    const structuralGenerationChanged = !previousFingerprint ||
+      currentFingerprint.structuralGeneration !== previousFingerprint.structuralGeneration;
     const databaseChanged = !previousFingerprint || currentFingerprint.database !== previousFingerprint.database;
     const databaseReplaced = !previousFingerprint || currentFingerprint.databaseIdentity !== previousFingerprint.databaseIdentity;
     if (
       previousFingerprint &&
       !vectorsChanged &&
       !keywordChanged &&
+      !structuralGenerationChanged &&
       !databaseChanged &&
       !Array.from(issues.keys()).some(retryDue)
     ) {
@@ -3354,17 +3503,19 @@ export class Indexer {
     const storePath = path.join(this.indexPath, "vectors");
     const vectorMetadataPath = `${storePath}.meta.json`;
     const invertedIndexPath = path.join(this.indexPath, "inverted-index.json");
-    const dbPath = path.join(this.indexPath, "codebase.db");
+    const dbPath = this.readOnlyDatabasePathOverride ?? path.join(this.indexPath, "codebase.db");
 
     if (
+      !isStructural && (
       vectorsChanged ||
       retryDue("vectors")
+      )
     ) {
       const vectorStoreExists = existsSync(storePath);
       const vectorMetadataExists = existsSync(vectorMetadataPath);
       if (vectorStoreExists && vectorMetadataExists) {
         try {
-          const store = new VectorStore(storePath, this.configuredProviderInfo.modelInfo.dimensions);
+          const store = new VectorStore(storePath, configuredProviderInfo!.modelInfo.dimensions);
           store.loadStrict();
           this.store = store;
           issues.delete("vectors");
@@ -3377,30 +3528,67 @@ export class Indexer {
       }
     }
 
+    const shouldRefreshStructuralDatabase = isStructural && (
+      databaseReplaced || databaseChanged || structuralGenerationChanged || retryDue("database") || retryDue("keyword")
+    );
+    if (shouldRefreshStructuralDatabase) {
+      if (existsSync(dbPath)) {
+        try {
+          const database = Database.openReadOnly(dbPath);
+          if (this.database) this.retiredDatabases.push(this.database);
+          this.database = database;
+          issues.delete("database");
+          this.readerArtifactRetryAfter.delete("database");
+        } catch (error) {
+          setIssue("database", this.getDatabaseReadIssueMessage(), error);
+        }
+      } else {
+        setIssue("database", this.getDatabaseReadIssueMessage());
+      }
+    }
+
     if (
-      keywordChanged ||
-      retryDue("keyword") ||
-      (!existsSync(invertedIndexPath) && (this.store?.count() ?? 0) > 0)
+      keywordChanged || structuralGenerationChanged || (isStructural && databaseChanged) || retryDue("keyword") ||
+      (!existsSync(invertedIndexPath) && (isStructural
+        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        : (this.store?.count() ?? 0) > 0))
     ) {
       if (existsSync(invertedIndexPath)) {
         try {
           const invertedIndex = new InvertedIndex(invertedIndexPath);
           invertedIndex.load();
+          if (isStructural) {
+            const chunkCount = this.database?.getStats()?.chunkCount ?? 0;
+            const storedGeneration = this.database?.getMetadata("index.structuralGeneration") ?? null;
+            const publishedGeneration = this.readStructuralPublishedGeneration();
+            if (chunkCount > 0 && invertedIndex.getDocumentCount() === 0) {
+              throw new Error("Structural keyword index is empty for the committed chunk catalog.");
+            }
+            if (chunkCount > 0 && storedGeneration !== publishedGeneration) {
+              throw new Error("Structural keyword publication generation does not match SQLite.");
+            }
+          }
           this.invertedIndex = invertedIndex;
           issues.delete("keyword");
           this.readerArtifactRetryAfter.delete("keyword");
         } catch (error) {
+          if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
           setIssue("keyword", this.getKeywordReadIssueMessage(), error);
         }
-      } else if ((this.store?.count() ?? 0) > 0 || issues.has("keyword")) {
+      } else if ((isStructural
+        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        : (this.store?.count() ?? 0) > 0) || issues.has("keyword")) {
+        if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
         setIssue("keyword", this.getKeywordReadIssueMessage());
       }
     }
 
     if (
+      !isStructural && (
       databaseReplaced ||
       (databaseChanged && issues.has("database")) ||
       retryDue("database")
+      )
     ) {
       if (existsSync(dbPath)) {
         try {
@@ -3421,7 +3609,9 @@ export class Indexer {
 
     if (!issues.has("database")) {
       try {
-        this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo);
+        this.indexCompatibility = isStructural
+          ? { compatible: true }
+          : this.validateIndexCompatibility(this.configuredProviderInfo!);
       } catch (error) {
         setIssue("database", this.getDatabaseReadIssueMessage(), error);
       }
@@ -3444,6 +3634,7 @@ export class Indexer {
     const artifactsChanged = !previousFingerprint ||
       currentFingerprint.vectors !== previousFingerprint.vectors ||
       currentFingerprint.keyword !== previousFingerprint.keyword ||
+      currentFingerprint.structuralGeneration !== previousFingerprint.structuralGeneration ||
       currentFingerprint.database !== previousFingerprint.database ||
       currentFingerprint.databaseIdentity !== previousFingerprint.databaseIdentity;
     if (!artifactsChanged && !retryDue) {
@@ -3479,6 +3670,11 @@ export class Indexer {
     this.readIssues = [];
     this.readerArtifactRetryAfter.clear();
 
+    if (this.config.indexing.mode === "structural") {
+      await this.initializeStructuralUnlocked(mode, recoveredOwners, options);
+      return;
+    }
+
     if (this.config.embeddingProvider === 'custom') {
       if (!this.config.customProvider) {
         throw new Error("embeddingProvider is 'custom' but customProvider config is missing.");
@@ -3510,6 +3706,7 @@ export class Indexer {
     const vectorMetadataPath = `${storePath}.meta.json`;
     const invertedIndexPath = path.join(this.indexPath, "inverted-index.json");
     const dbPath = path.join(this.indexPath, "codebase.db");
+    const readerDbPath = this.readOnlyDatabasePathOverride ?? dbPath;
     let dbIsNew = !existsSync(dbPath);
     const readerArtifactFingerprint = mode === "reader"
       ? this.captureReaderArtifactFingerprint()
@@ -3609,9 +3806,9 @@ export class Indexer {
         this.recordReadIssue("keyword", this.getKeywordReadIssueMessage());
       }
 
-      if (existsSync(dbPath)) {
+      if (existsSync(readerDbPath)) {
         try {
-          this.database = Database.openReadOnly(dbPath);
+          this.database = Database.openReadOnly(readerDbPath);
         } catch (error) {
           this.recordReadIssue(
             "database",
@@ -3670,6 +3867,116 @@ export class Indexer {
 
     this.initializationMode = mode;
     this.readerArtifactFingerprint = readerArtifactFingerprint;
+  }
+
+  private async initializeStructuralUnlocked(
+    mode: Exclude<InitializationMode, "none">,
+    recoveredOwners: readonly IndexLockOwner[],
+    options: { skipAutoGc?: boolean },
+  ): Promise<void> {
+    const invertedIndexPath = path.join(this.indexPath, "inverted-index.json");
+    const dbPath = path.join(this.indexPath, "codebase.db");
+    const readerDbPath = this.readOnlyDatabasePathOverride ?? dbPath;
+
+    this.store = null;
+    this.provider = null;
+    this.configuredProviderInfo = null;
+    this.logger.info("Initializing structural indexer", {
+      mode: "structural",
+      scope: this.config.scope,
+      rerankerEnabled: this.config.reranker?.enabled ?? false,
+    });
+
+    if (mode === "writer") {
+      await fsPromises.mkdir(this.indexPath, { recursive: true });
+      for (const recoveredOwner of recoveredOwners) {
+        recoverLeaseArtifacts(this.indexPath, recoveredOwner, []);
+      }
+      this.invertedIndex = new InvertedIndex(invertedIndexPath);
+      try {
+        if (existsSync(invertedIndexPath)) {
+          JSON.parse(readFileSync(invertedIndexPath, "utf-8"));
+        }
+        this.invertedIndex.load();
+      } catch (error) {
+        this.structuralKeywordRebuildRequired = existsSync(invertedIndexPath);
+        this.logger.warn("Structural keyword index is unreadable; rebuilding it from source files", {
+          error: getErrorMessage(error),
+        });
+        if (existsSync(invertedIndexPath)) await fsPromises.unlink(invertedIndexPath);
+        this.invertedIndex = new InvertedIndex(invertedIndexPath);
+      }
+      this.database = new Database(dbPath);
+      const storedGeneration = this.database.getMetadata("index.structuralGeneration");
+      const publishedGeneration = this.readStructuralPublishedGeneration();
+      if (
+        (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)
+        && (this.database.getStats()?.chunkCount ?? 0) > 0
+      ) {
+        this.structuralKeywordRebuildRequired = true;
+      }
+      if (storedGeneration !== publishedGeneration && (this.database.getStats()?.chunkCount ?? 0) > 0) {
+        this.structuralKeywordRebuildRequired = true;
+      }
+      if (this.structuralKeywordRebuildRequired) {
+        this.logger.info("Rebuilding structural keyword index from the persisted chunk catalog", {
+          chunks: this.database.getStats()?.chunkCount ?? 0,
+        });
+        this.rebuildStructuralKeywordFromCatalog(this.invertedIndex, this.database);
+        this.structuralKeywordRebuildRequired = false;
+      }
+    } else {
+      this.invertedIndex = new InvertedIndex(invertedIndexPath);
+      if (existsSync(invertedIndexPath)) {
+        try {
+          JSON.parse(readFileSync(invertedIndexPath, "utf-8"));
+          this.invertedIndex.load();
+        } catch (error) {
+          this.recordReadIssue("keyword", this.getKeywordReadIssueMessage(), error);
+          this.invertedIndex = new InvertedIndex(invertedIndexPath);
+        }
+      }
+      if (existsSync(readerDbPath)) {
+        try {
+          this.database = Database.openReadOnly(readerDbPath);
+        } catch (error) {
+          this.recordReadIssue("database", this.getDatabaseReadIssueMessage(), error);
+          this.database = Database.createEmptyReadOnly();
+        }
+      } else {
+        this.database = Database.createEmptyReadOnly();
+      }
+      const storedGeneration = this.database.getMetadata("index.structuralGeneration");
+      const publishedGeneration = this.readStructuralPublishedGeneration();
+      const structuralChunkCount = this.database.getStats()?.chunkCount ?? 0;
+      if (structuralChunkCount > 0 && (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)) {
+        this.recordReadIssue(
+          "keyword",
+          "Structural keyword index is missing or empty for the committed chunk catalog. Run index_codebase to recover it.",
+        );
+      } else if (storedGeneration !== publishedGeneration && structuralChunkCount > 0) {
+        this.recordReadIssue(
+          "keyword",
+          "Structural keyword publication does not match the committed chunk catalog. Run index_codebase to recover it.",
+        );
+      }
+    }
+
+    if (isGitRepo(this.materializedProjectRoot)) {
+      this.currentBranch = this.branchNameOverride ?? getBranchOrDefault(this.materializedProjectRoot);
+      this.baseBranch = getBaseBranch(this.materializedProjectRoot);
+    } else {
+      this.currentBranch = "default";
+      this.baseBranch = "default";
+    }
+    this.refreshRuntimeArtifactPaths();
+    this.loadFileHashCache();
+    this.indexCompatibility = { compatible: true };
+    if (mode === "writer" && this.config.indexing.autoGc && !options.skipAutoGc) {
+      await this.maybeRunAutoGc();
+    }
+    this.initializationMode = mode;
+    this.readerArtifactFingerprint = mode === "reader" ? this.captureReaderArtifactFingerprint() : null;
   }
 
   private async maybeRunAutoGc(): Promise<void> {
@@ -3992,6 +4299,7 @@ export class Indexer {
         this.localModuleResolutionConfigHash,
       );
     }
+    this.saveScipTypeScriptMetadata();
     if (this.config.scope === "global") {
       if (completeProjectEmbeddingStrategyReset) {
         this.database.setMetadata(this.getProjectEmbeddingStrategyMetadataKey(), EMBEDDING_STRATEGY_VERSION);
@@ -4008,6 +4316,47 @@ export class Indexer {
     if (!existingCreatedAt) {
       this.database.setMetadata("index.createdAt", now);
     }
+  }
+
+  private saveStructuralIndexMetadata(): void {
+    if (!this.database) return;
+    const now = new Date().toISOString();
+    const existingCreatedAt = this.database.getMetadata("index.createdAt");
+    this.database.setMetadata("index.version", INDEX_METADATA_VERSION);
+    this.database.setMetadata("index.pathStorageVersion", this.getExpectedPathStorageVersion());
+    this.database.setMetadata(this.getCallGraphResolutionMetadataKey(), CALL_GRAPH_RESOLUTION_VERSION);
+    if (this.localModuleResolutionConfigHash !== null) {
+      this.database.setMetadata(
+        this.getLocalModuleResolutionConfigMetadataKey(),
+        this.localModuleResolutionConfigHash,
+      );
+    }
+    this.saveScipTypeScriptMetadata();
+    this.database.setMetadata("index.updatedAt", now);
+    if (!existingCreatedAt) this.database.setMetadata("index.createdAt", now);
+  }
+
+  private saveScipTypeScriptMetadata(): void {
+    if (!this.database || this.scipTypeScriptState === null) return;
+    this.database.setMetadata(
+      this.getScipTypeScriptStateMetadataKey(),
+      JSON.stringify({
+        adapterVersion: this.scipTypeScriptState.adapterVersion,
+        stateFingerprint: this.scipTypeScriptState.fingerprint,
+        outcome: this.scipTypeScriptState.outcome,
+        freshness: this.scipTypeScriptState.freshness,
+        indexPath: this.scipTypeScriptState.indexPath ?? null,
+        indexSha256: this.scipTypeScriptState.indexSha256 ?? null,
+        indexSize: this.scipTypeScriptState.indexSize ?? null,
+        indexMtimeMs: this.scipTypeScriptState.indexMtimeMs ?? null,
+        generatorName: this.scipTypeScriptState.generatorName ?? null,
+        generatorVersion: this.scipTypeScriptState.generatorVersion ?? null,
+        matchedEdges: this.scipTypeScriptState.matchedEdges,
+        unmatchedOccurrences: this.scipTypeScriptState.unmatchedOccurrences,
+        ambiguousDefinitions: this.scipTypeScriptState.ambiguousDefinitions,
+        disagreements: this.scipTypeScriptState.disagreements,
+      }),
+    );
   }
 
   private validateIndexCompatibility(provider: ConfiguredProviderInfo): IndexCompatibility {
@@ -4084,12 +4433,7 @@ export class Indexer {
     return this.indexCompatibility;
   }
 
-  private async ensureInitialized(): Promise<{
-    store: VectorStore;
-    provider: EmbeddingProviderInterface;
-    invertedIndex: InvertedIndex;
-    configuredProviderInfo: ConfiguredProviderInfo;
-    database: Database;
+  private async ensureInitialized(): Promise<LoadedIndexState & {
     readIssues: readonly IndexReadIssue[];
     compatibility: IndexCompatibility;
   }> {
@@ -4126,18 +4470,14 @@ export class Indexer {
       return {
         ...state,
         readIssues: [...this.readIssues],
-        compatibility: this.indexCompatibility ?? this.validateIndexCompatibility(state.configuredProviderInfo),
+        compatibility: this.indexCompatibility ?? (state.configuredProviderInfo
+          ? this.validateIndexCompatibility(state.configuredProviderInfo)
+          : { compatible: true }),
       };
     }
   }
 
-  private async ensureInitializedUnlocked(recoveredOwners: readonly IndexLockOwner[] = []): Promise<{
-    store: VectorStore;
-    provider: EmbeddingProviderInterface;
-    invertedIndex: InvertedIndex;
-    configuredProviderInfo: ConfiguredProviderInfo;
-    database: Database;
-  }> {
+  private async ensureInitializedUnlocked(recoveredOwners: readonly IndexLockOwner[] = []): Promise<LoadedIndexState> {
     this.requireActiveLease();
 
     if (this.initializationPromise) {
@@ -4168,21 +4508,30 @@ export class Indexer {
     }
   }
 
-  private requireLoadedIndexState(): {
-    store: VectorStore;
-    provider: EmbeddingProviderInterface;
-    invertedIndex: InvertedIndex;
-    configuredProviderInfo: ConfiguredProviderInfo;
-    database: Database;
-  } {
-    if (!this.store || !this.provider || !this.invertedIndex || !this.configuredProviderInfo || !this.database) {
+  private requireLoadedIndexState(): LoadedIndexState {
+    const requiresEmbeddings = this.config.indexing.mode === "hybrid";
+    if (
+      !this.invertedIndex || !this.database ||
+      (requiresEmbeddings && (!this.store || !this.provider || !this.configuredProviderInfo))
+    ) {
       throw new Error("Index state is not initialized");
     }
+    if (this.config.indexing.mode === "structural") {
+      return {
+        mode: "structural",
+        store: null,
+        provider: null,
+        configuredProviderInfo: null,
+        invertedIndex: this.invertedIndex,
+        database: this.database,
+      };
+    }
     return {
-      store: this.store,
-      provider: this.provider,
+      mode: "hybrid",
+      store: this.store!,
+      provider: this.provider!,
+      configuredProviderInfo: this.configuredProviderInfo!,
       invertedIndex: this.invertedIndex,
-      configuredProviderInfo: this.configuredProviderInfo,
       database: this.database,
     };
   }
@@ -4206,7 +4555,7 @@ export class Indexer {
       }
     );
 
-    return createCostEstimate(files, configuredProviderInfo);
+    return createCostEstimate(files, requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
   }
 
   // Dry-run counterpart to index()/forceIndex(): parse the real file set and sum
@@ -4220,7 +4569,7 @@ export class Indexer {
   async dryRunCost(options: IndexOperationOptions = {}): Promise<DryRunEstimate> {
     throwIfOperationAborted(options.signal);
     const { configuredProviderInfo } = await this.ensureInitialized();
-    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
+    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
     const includePatterns = [...this.config.include, ...this.config.additionalInclude];
     const { files } = await collectFiles(
       this.materializedProjectRoot,
@@ -4414,6 +4763,10 @@ export class Indexer {
     const { store, provider, invertedIndex, database, configuredProviderInfo } = stateReady
       ? this.requireLoadedIndexState()
       : await this.ensureInitializedUnlocked(recoveredOwners);
+    const isStructural = this.config.indexing.mode === "structural";
+    const structuralGeneration = isStructural
+      ? hashContent(`${Date.now()}:${Math.random()}:${this.getBranchCatalogKey()}`)
+      : null;
     throwIfOperationAborted(signal);
     const materializedCommit = isGitRepo(this.materializedProjectRoot)
       ? await resolveLocalGitCommit(this.materializedProjectRoot, "HEAD", signal)
@@ -4433,10 +4786,10 @@ export class Indexer {
     const restrictExistingChunksToBranch = this.branchNameOverride !== undefined
       || previousBranchChunkIds.length > 0
       || database.getAllBranches().length > 0;
-    const forceScopedReembed = scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
+    const forceScopedReembed = !isStructural && scopedRoots !== null && database.getMetadata(this.getProjectForceReembedMetadataKey()) === "true";
     const failedForcedChunkIds = new Set<string>();
 
-    if (!this.indexCompatibility?.compatible) {
+    if (!isStructural && !this.indexCompatibility?.compatible) {
       throw new Error(
         `${this.indexCompatibility?.reason} ` +
         `Run index_codebase with force=true to rebuild the index.`,
@@ -4448,6 +4801,7 @@ export class Indexer {
 
     const startTime = Date.now();
     const stats: IndexStats = {
+      mode: this.config.indexing.mode,
       totalFiles: 0,
       totalChunks: 0,
       indexedChunks: 0,
@@ -4469,6 +4823,7 @@ export class Indexer {
     });
 
     this.loadFileHashCache();
+    const rebuildStructuralKeyword = isStructural && this.structuralKeywordRebuildRequired;
 
     const swiftParserMetadataKey = this.getSwiftParserVersionMetadataKey();
     const reparseCachedSwiftFiles = database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
@@ -4519,6 +4874,24 @@ export class Indexer {
 
     const localModuleResolutionState = this.getLocalModuleResolutionState(files);
     this.localModuleResolutionConfigHash = localModuleResolutionState.configHash;
+    const scipConfig = this.config.indexing.scipTypeScript;
+    this.scipTypeScriptState = await prepareScipTypeScriptEnrichment({
+      ...scipConfig,
+      materializedProjectRoot: this.materializedProjectRoot,
+      relevantFiles: files,
+      signal,
+    });
+    const storedScipState = database.getMetadata(this.getScipTypeScriptStateMetadataKey());
+    const storedScipFingerprint = this.getStoredScipTypeScriptFingerprint(database);
+    const currentScipState = this.scipTypeScriptState.fingerprint;
+    const scipStateChanged = (scipConfig.enabled || storedScipState !== null)
+      && storedScipFingerprint !== currentScipState;
+    if (this.scipTypeScriptState.outcome !== "disabled" && this.scipTypeScriptState.outcome !== "ready") {
+      this.logger.warn("SCIP TypeScript enrichment unavailable; using ordinary call graph", {
+        outcome: this.scipTypeScriptState.outcome,
+        message: this.scipTypeScriptState.message,
+      });
+    }
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -4592,7 +4965,7 @@ export class Indexer {
       const needsCallGraphRefresh = cachedHashMatches
         && (
           (
-            (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged)
+            (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged || scipStateChanged)
             && (
               isJavaScriptFamilyFilePath(storedPath)
               || database.getChunksByFile(storedPath).some((chunk) =>
@@ -4692,7 +5065,13 @@ export class Indexer {
     const existingChunksByFile = new Map<string, Set<string>>();
     const existingMetadataById = new Map<string, ChunkMetadata>();
     let processedMetadata = 0;
-    for (const { key, metadata } of store.getAllMetadata()) {
+    const storedMetadataEntries = isStructural
+      ? previousBranchChunkIds.flatMap((chunkId) => {
+          const chunk = database.getChunk(chunkId);
+          return chunk ? [{ key: chunkId, metadata: this.chunkMetadataFromData(chunk) }] : [];
+        })
+      : requireLoadedCapability(store, "vector store").getAllMetadata();
+    for (const { key, metadata } of storedMetadataEntries) {
       if (processedMetadata > 0 && processedMetadata % 256 === 0) {
         await heartbeat?.();
         throwIfOperationAborted(signal);
@@ -4740,8 +5119,10 @@ export class Indexer {
       && currentFileHashes.has(filePath)
       && unchangedFilePaths.has(filePath);
     const failedProcessing = this.prepareFailedBatchProcessing(scopedRoots, shouldRetryFailedPath);
-    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
-    const providerRateLimits = this.getProviderRateLimits(configuredProviderInfo.provider);
+    const maxChunkTokens = isStructural ? Number.MAX_SAFE_INTEGER : getSafeEmbeddingChunkTokenLimit(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
+    const providerRateLimits = isStructural
+      ? { concurrency: 1, intervalMs: 0, minRetryMs: 0, maxRetryMs: 0 }
+      : this.getProviderRateLimits(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration").provider);
     const queue = new PQueue({
       concurrency: providerRateLimits.concurrency,
       interval: providerRateLimits.intervalMs,
@@ -4843,8 +5224,8 @@ export class Indexer {
         if (blameChunkDataBatch.length > 0) {
           database.upsertChunksBatch(blameChunkDataBatch);
         }
-        if (backfillItems.length > 0) {
-          store.addBatch(backfillItems);
+        if (!isStructural && backfillItems.length > 0) {
+          requireLoadedCapability(store, "vector store").addBatch(backfillItems);
           backfilledBlameMetadata = true;
         }
       }
@@ -4982,7 +5363,7 @@ export class Indexer {
               documentKind: chunk.documentLocation?.kind,
               pageStart: chunk.documentLocation?.pageStart,
               pageEnd: chunk.documentLocation?.pageEnd,
-              sourceText: chunk.documentLocation ? chunk.content : undefined,
+              sourceText: isStructural || chunk.documentLocation ? chunk.content : undefined,
               blameSha: blameMetadata.blameSha,
               blameAuthor: blameMetadata.blameAuthor,
               blameAuthorEmail: blameMetadata.blameAuthorEmail,
@@ -4990,11 +5371,11 @@ export class Indexer {
               blameSummary: blameMetadata.blameSummary,
             });
 
-            if (existingContentHash === contentHash) {
+            if (existingContentHash === contentHash && !rebuildStructuralKeyword) {
               continue;
             }
 
-            const texts = createEmbeddingTexts(chunk, parsed.path, maxChunkTokens).map((text) => ({
+            const texts = isStructural ? [] : createEmbeddingTexts(chunk, parsed.path, maxChunkTokens).map((text) => ({
               text,
               tokenCount: estimateTokens(text),
             }));
@@ -5013,7 +5394,7 @@ export class Indexer {
                 language: chunk.language,
                 hash: contentHash,
                 documentLocation: chunk.documentLocation,
-                sourceText: chunk.documentLocation ? chunk.content : undefined,
+                sourceText: isStructural || chunk.documentLocation ? chunk.content : undefined,
                 ...blameMetadata,
               },
             });
@@ -5129,7 +5510,14 @@ export class Indexer {
           totalChunks: stats.totalChunks,
         });
 
-        if (pendingChunks.length > 0) {
+        if (pendingChunks.length > 0 && isStructural) {
+          for (const chunk of pendingChunks) {
+            invertedIndex.removeChunk(chunk.id);
+            invertedIndex.addChunk(chunk.id, chunk.content);
+          }
+          database.addChunksToBranchBatch(branchCatalogKey, pendingChunks.map((chunk) => chunk.id));
+          stats.indexedChunks += pendingChunks.length;
+        } else if (pendingChunks.length > 0) {
           onProgress?.({
             phase: "embedding",
             filesProcessed: unchangedFilePaths.size + processedChangedFiles,
@@ -5138,11 +5526,11 @@ export class Indexer {
             totalChunks: stats.totalChunks,
           });
           const batchResult = await this.processPendingChunkBatch(pendingChunks, {
-            store,
-            provider,
+            store: requireLoadedCapability(store, "vector store"),
+            provider: requireLoadedCapability(provider, "embedding provider"),
             invertedIndex,
             database,
-            configuredProviderInfo,
+            configuredProviderInfo: requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"),
             queue,
             providerRateLimits,
             rateLimitState,
@@ -5187,23 +5575,23 @@ export class Indexer {
           }
         }
         const checkpointInterval = this.getCheckpointIntervalChunks(stats.totalChunks);
-        if (stats.totalChunks - lastCheckpointChunks >= checkpointInterval) {
+        if (!isStructural && stats.totalChunks - lastCheckpointChunks >= checkpointInterval) {
           lastCheckpointChunks = stats.totalChunks;
           this.checkpointIndexRun(
             database,
-            store,
+            requireLoadedCapability(store, "vector store"),
             invertedIndex,
             failedProcessing,
             resolvedRetryChunkIds,
             currentFileHashes,
             committedFilePaths,
             scopedRoots,
-            configuredProviderInfo,
+            requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"),
           );
         }
       }
 
-      const retryableFailedChunks = this.iterateLatestFailedChunks(
+      const retryableFailedChunks = isStructural ? [] : this.iterateLatestFailedChunks(
         failedProcessing.latestById,
         scopedRoots,
         shouldRetryFailedPath,
@@ -5238,11 +5626,11 @@ export class Indexer {
           totalChunks: stats.totalChunks,
         });
         const batchResult = await this.processPendingChunkBatch(pendingChunks, {
-          store,
-          provider,
+          store: requireLoadedCapability(store, "vector store"),
+          provider: requireLoadedCapability(provider, "embedding provider"),
           invertedIndex,
           database,
-          configuredProviderInfo,
+          configuredProviderInfo: requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"),
           queue,
           providerRateLimits,
           rateLimitState,
@@ -5287,15 +5675,37 @@ export class Indexer {
           lastCheckpointChunks = stats.totalChunks;
           this.checkpointIndexRun(
             database,
-            store,
+            requireLoadedCapability(store, "vector store"),
             invertedIndex,
             failedProcessing,
             resolvedRetryChunkIds,
             currentFileHashes,
             committedFilePaths,
             scopedRoots,
-            configuredProviderInfo,
+            requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"),
           );
+        }
+      }
+
+      if (this.scipTypeScriptState?.outcome === "ready") {
+        // During a configuration-only identity transition, newly parsed symbols are
+        // added before replaceBranchCatalog retires the previous IDs. Restrict the
+        // overlay to the catalog we are about to publish so stale and current
+        // declarations cannot make otherwise unique SCIP definitions ambiguous.
+        const branchSymbols = database.getSymbolsForBranch(branchCatalogKey)
+          .filter((symbol) => allSymbolIds.has(symbol.id));
+        const allBranchEdges = branchSymbols.flatMap((symbol) => database.getCallees(symbol.id, branchCatalogKey));
+        if (allBranchEdges.length > 0) {
+          const result = this.scipTypeScriptState.apply(allBranchEdges, branchSymbols);
+          database.upsertCallEdgesBatch(result.edges);
+          if (result.matchedEdges > 0 || result.ambiguousDefinitions > 0 || result.disagreements > 0) {
+            this.logger.info("Applied SCIP TypeScript call graph enrichment", {
+              matchedEdges: result.matchedEdges,
+              unmatchedOccurrences: result.unmatchedOccurrences,
+              ambiguousDefinitions: result.ambiguousDefinitions,
+              disagreements: result.disagreements,
+            });
+          }
         }
       }
 
@@ -5329,24 +5739,27 @@ export class Indexer {
           Array.from(allSymbolIds),
         );
         const vectorPath = path.join(this.indexPath, "vectors");
-        const shouldFingerprintLegacyPair = !store.hasFingerprint() &&
+        const shouldFingerprintLegacyPair = !isStructural && !requireLoadedCapability(store, "vector store").hasFingerprint() &&
           existsSync(vectorPath) &&
           existsSync(`${vectorPath}.meta.json`);
         if (backfilledBlameMetadata || shouldFingerprintLegacyPair || removedStoredChunks) {
-          store.save();
+          if (!isStructural) requireLoadedCapability(store, "vector store").save();
         }
-        if (removedStoredChunks) {
+        if (removedStoredChunks && !isStructural) {
           this.saveInvertedIndex(invertedIndex);
         }
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
-        this.saveIndexMetadata(configuredProviderInfo);
+        if (isStructural) this.saveStructuralIndexMetadata();
+        else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
         this.indexCompatibility = { compatible: true };
+        if (structuralGeneration) database.setMetadata("index.structuralGeneration", structuralGeneration);
         throwIfOperationAborted(signal);
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        if (structuralGeneration) this.publishStructuralKeywordGeneration(invertedIndex, structuralGeneration);
         this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
         if (scopedRoots) {
           this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
@@ -5376,17 +5789,20 @@ export class Indexer {
           previousBranchSymbolIds,
           Array.from(allSymbolIds),
         );
-        store.save();
-        this.saveInvertedIndex(invertedIndex);
+        if (!isStructural) requireLoadedCapability(store, "vector store").save();
+        if (!isStructural) this.saveInvertedIndex(invertedIndex);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
-        this.saveIndexMetadata(configuredProviderInfo);
+        if (isStructural) this.saveStructuralIndexMetadata();
+        else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
         this.indexCompatibility = { compatible: true };
+        if (structuralGeneration) database.setMetadata("index.structuralGeneration", structuralGeneration);
         throwIfOperationAborted(signal);
         database.commitWriteTransaction();
         writeTransactionActive = false;
+        if (structuralGeneration) this.publishStructuralKeywordGeneration(invertedIndex, structuralGeneration);
         this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
         if (scopedRoots) {
           this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
@@ -5429,11 +5845,13 @@ export class Indexer {
         Array.from(allSymbolIds),
       );
 
-      store.save();
-      this.saveInvertedIndex(invertedIndex);
+      if (!isStructural) requireLoadedCapability(store, "vector store").save();
+      if (!isStructural) this.saveInvertedIndex(invertedIndex);
+      if (structuralGeneration) database.setMetadata("index.structuralGeneration", structuralGeneration);
       throwIfOperationAborted(signal);
       database.commitWriteTransaction();
       writeTransactionActive = false;
+      if (structuralGeneration) this.publishStructuralKeywordGeneration(invertedIndex, structuralGeneration);
       this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
       if (scopedRoots) {
         this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
@@ -5473,7 +5891,8 @@ export class Indexer {
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
-      this.saveIndexMetadata(configuredProviderInfo);
+      if (isStructural) this.saveStructuralIndexMetadata();
+      else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
       this.indexCompatibility = { compatible: true };
 
       this.logger.recordIndexingEnd();
@@ -5614,11 +6033,69 @@ export class Indexer {
     shouldPrefilterByBranch: boolean;
   } {
     const hasInitializedBranchCatalog = branchChunkIds !== null
-      && database.getAllBranches().length > 0;
+      && (database.getAllBranches().length > 0
+        || database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== null);
     return {
       hasInitializedBranchCatalog,
       shouldPrefilterByBranch: branchChunkIds !== null
         && (this.config.scope === "global" || hasInitializedBranchCatalog),
+    };
+  }
+
+  private getBranchReadiness(database: Database): BranchReadiness {
+    const branchCatalogKeys = this.getBranchCatalogKeys();
+    const allBranches = new Set(database.getAllBranches());
+    const activeCatalogKey = this.getBranchCatalogKey();
+    const activeCatalogChunkCount = new Set(branchCatalogKeys.flatMap((key) => database.getBranchChunkIds(key))).size;
+    // Empty branches have no membership rows. Successful indexing still leaves
+    // a branch-scoped migration marker, so absence and known-empty differ.
+    const registeredCatalog = allBranches.has(activeCatalogKey)
+      || database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== null;
+
+    if (registeredCatalog) {
+      if (activeCatalogChunkCount === 0) {
+        return {
+          state: "empty",
+          activeCatalogChunkCount,
+          registeredCatalog,
+          warning: "The active branch catalog contains no searchable chunks. If sources changed, run index_codebase normally or cbi index to refresh this branch.",
+        };
+      }
+
+      return {
+        state: "ready",
+        activeCatalogChunkCount,
+        registeredCatalog,
+      };
+    }
+
+    for (const legacyCatalogKey of branchCatalogKeys.slice(1)) {
+      const legacyChunkCount = database.getBranchChunkIds(legacyCatalogKey).length;
+      const legacySymbolCount = database.getBranchSymbolIds(legacyCatalogKey).length;
+      if (legacyChunkCount > 0 || legacySymbolCount > 0) {
+        return {
+          state: "legacy",
+          activeCatalogChunkCount,
+          registeredCatalog,
+          warning: "Using a legacy catalog for this branch. Run index_codebase normally or cbi index to establish current branch metadata.",
+        };
+      }
+    }
+
+    if (this.config.scope !== "global" && (allBranches.size === 0 || this.currentBranch === "default")) {
+      return {
+        state: "legacy",
+        activeCatalogChunkCount,
+        registeredCatalog: false,
+        warning: "No branch-specific coverage is established; legacy project retrieval remains available. Run index_codebase normally or cbi index to establish branch metadata.",
+      };
+    }
+
+    return {
+      state: "missing",
+      activeCatalogChunkCount,
+      registeredCatalog,
+      warning: "No catalog is registered for the active branch. Run index_codebase normally or cbi index on this branch before searching. Other branches' stored chunks are not current-branch evidence.",
     };
   }
 
@@ -5726,10 +6203,11 @@ export class Indexer {
   ): Promise<SearchResult[]> {
     throwIfOperationAborted(options?.signal);
     const { store, provider, invertedIndex, database, readIssues, compatibility } = await this.ensureInitialized();
+    const isStructural = this.config.indexing.mode === "structural";
     throwIfOperationAborted(options?.signal);
-    this.requireReadableComponents(readIssues, "vectors", "database");
+    this.requireReadableComponents(readIssues, ...(isStructural ? ["keyword", "database"] as const : ["vectors", "database"] as const));
 
-    if (!compatibility.compatible) {
+    if (!isStructural && !compatibility.compatible) {
       throw new Error(
         `${compatibility.reason ?? "Index is incompatible with current embedding provider."} ` +
         `A possible solution is to run index_codebase with force=true to rebuild the index.`
@@ -5738,7 +6216,7 @@ export class Indexer {
 
     const searchStartTime = performance.now();
 
-    if (store.count() === 0) {
+    if ((isStructural ? invertedIndex.getDocumentCount() : requireLoadedCapability(store, "vector store").count()) === 0) {
       this.logger.search("debug", "Search on empty index", { query });
       return [];
     }
@@ -5775,13 +6253,15 @@ export class Indexer {
     const embeddingQuery = stripFilePathHint(query);
     let embedding: number[] | undefined;
     try {
-      embedding = await this.getQueryEmbedding(
-        embeddingQuery,
-        provider,
-        options?.signal,
-        options?.setPhase,
-        options?.heartbeat,
-      );
+      if (!isStructural) {
+        embedding = await this.getQueryEmbedding(
+          embeddingQuery,
+          requireLoadedCapability(provider, "embedding provider"),
+          options?.signal,
+          options?.setPhase,
+          options?.heartbeat,
+        );
+      }
     } catch (error) {
       if (isOperationInterruption(error)) throw error;
       throwIfOperationAborted(options?.signal);
@@ -5809,7 +6289,7 @@ export class Indexer {
     const vectorStartTime = performance.now();
     const semanticCandidates = embedding
       ? this.searchSemanticCandidates(
-          store,
+          requireLoadedCapability(store, "vector store"),
           embedding,
           candidateLimit,
           branchChunkIds,
@@ -5823,8 +6303,9 @@ export class Indexer {
     const keywordCandidates = await this.keywordSearch(
       query,
       candidateLimit,
-      store,
+      this.config.indexing.mode === "structural" ? null : store,
       invertedIndex,
+      database,
       branchChunkIds,
       shouldPrefilterByBranch,
       temporalChunkIds,
@@ -6037,8 +6518,9 @@ export class Indexer {
   private async keywordSearch(
     query: string,
     limit: number,
-    store: VectorStore,
+    store: VectorStore | null,
     invertedIndex: InvertedIndex,
+    database: Database,
     branchChunkIds: Set<string> | null = null,
     shouldPrefilterByBranch = false,
     temporalChunkIds: Set<string> | null = null,
@@ -6067,7 +6549,12 @@ export class Indexer {
     // Only fetch metadata for chunks returned by BM25 (O(n) where n = result count)
     // instead of getAllMetadata() which fetches ALL chunks in the index
     const chunkIds = Array.from(scores.keys());
-    const metadataMap = store.getMetadataBatch(chunkIds);
+    const metadataMap = store
+      ? store.getMetadataBatch(chunkIds)
+      : new Map(chunkIds.flatMap((chunkId) => {
+          const chunk = database.getChunk(chunkId);
+          return chunk ? [[chunkId, this.chunkMetadataFromData(chunk)] as const] : [];
+        }));
 
     const results: Array<{ id: string; score: number; metadata: ChunkMetadata }> = [];
     for (const [chunkId, score] of scores) {
@@ -6084,12 +6571,17 @@ export class Indexer {
   async getStatus(): Promise<StatusResult> {
     const { store, configuredProviderInfo, database, readIssues, compatibility } = await this.ensureInitialized();
     const failedBatchesCount = this.getFailedBatchesCount();
-    const vectorCount = store.count();
+    const isStructural = this.config.indexing.mode === "structural";
+    const vectorCount = store?.count() ?? 0;
+    let indexedChunkCount = vectorCount;
+    let branchReadiness: BranchReadiness | undefined;
     const statusReadIssues = [...readIssues];
     let startupWarning = "";
     if (!statusReadIssues.some((issue) => issue.component === "database")) {
       try {
         startupWarning = database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? "";
+        branchReadiness = this.getBranchReadiness(database);
+        if (isStructural) indexedChunkCount = database.getStats().chunkCount;
       } catch (error) {
         const message = this.getDatabaseReadIssueMessage();
         statusReadIssues.push(this.createReadIssue("database", message));
@@ -6099,14 +6591,32 @@ export class Indexer {
       }
     }
     const readWarning = statusReadIssues.map((issue) => issue.message).join(" ");
-    const warning = [readWarning, startupWarning].filter((message) => message.length > 0).join(" ");
+    const readinessWarning = (!branchReadiness || branchReadiness.state === "ready" || branchReadiness.state === "legacy")
+      ? ""
+      : branchReadiness.warning ?? "";
+    const checkoutBranch = this.branchNameOverride ? undefined : getBranchOrDefault(this.materializedProjectRoot);
+    const checkoutMismatch = checkoutBranch !== undefined && checkoutBranch !== this.currentBranch;
+    const checkoutWarning = checkoutMismatch
+      ? `This reader targets branch "${this.currentBranch}", but the checkout is "${checkoutBranch}". Restart the host or run index_codebase normally to refresh branch state before relying on retrieval.`
+      : "";
+    const warning = [readWarning, startupWarning, readinessWarning, checkoutWarning]
+      .filter((message) => message.length > 0)
+      .join(" ");
     const hasBlockingReadIssue = statusReadIssues.some((issue) => issue.blocking);
+    const indexed = indexedChunkCount > 0
+      && !hasBlockingReadIssue
+      && !checkoutMismatch
+      && (!branchReadiness || !["missing", "empty"].includes(branchReadiness.state));
 
     return {
-      indexed: vectorCount > 0 && !hasBlockingReadIssue,
+      indexed,
+      mode: this.config.indexing.mode,
+      branchReadiness,
       vectorCount,
-      provider: configuredProviderInfo.provider,
-      model: configuredProviderInfo.modelInfo.model,
+      indexedChunkCount,
+      checkoutBranch,
+      provider: isStructural ? "none" : configuredProviderInfo?.provider ?? "unavailable",
+      model: isStructural ? "structural" : configuredProviderInfo?.modelInfo.model ?? "unavailable",
       indexPath: this.indexPath,
       currentBranch: this.currentBranch,
       baseBranch: this.baseBranch,
@@ -6128,7 +6638,10 @@ export class Indexer {
     if (blockingReadIssue) {
       return { readable: false, current: false, reason: "unreadable" };
     }
-    if (store.count() === 0) {
+    const indexedCount = this.config.indexing.mode === "structural"
+      ? database.getBranchChunkIds(this.getBranchCatalogKey()).length
+      : requireLoadedCapability(store, "vector store").count();
+    if (indexedCount === 0) {
       return { readable: false, current: false, reason: "missing" };
     }
     if (compatibility && !compatibility.compatible) {
@@ -6159,6 +6672,22 @@ export class Indexer {
     const localModuleResolutionState = this.getLocalModuleResolutionState(files);
     await options.heartbeat?.();
     throwIfOperationAborted(options.signal);
+    const scipConfig = this.config.indexing.scipTypeScript;
+    const currentScipState = await prepareScipTypeScriptEnrichment({
+      ...scipConfig,
+      materializedProjectRoot: this.materializedProjectRoot,
+      relevantFiles: files,
+      signal: options.signal,
+    });
+    await options.heartbeat?.();
+    throwIfOperationAborted(options.signal);
+    const storedScipState = database.getMetadata(this.getScipTypeScriptStateMetadataKey());
+    if (
+      (scipConfig.enabled || storedScipState !== null)
+      && this.getStoredScipTypeScriptFingerprint(database) !== currentScipState.fingerprint
+    ) {
+      return { readable: true, current: false, reason: "metadata-changed" };
+    }
     if (
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== localModuleResolutionState.configHash
@@ -6231,10 +6760,10 @@ export class Indexer {
       throwIfOperationAborted(options.signal);
       await this.ensureInitializedUnlocked(recoveredOwners);
       throwIfOperationAborted(options.signal);
-      const recovery = this.beginClearRecoveryState();
-      await this.clearIndexUnlocked(recovery.compatibilityDecision, options.signal);
+      const recovery = this.config.indexing.mode === "structural" ? null : this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery?.compatibilityDecision, options.signal);
       throwIfOperationAborted(options.signal);
-      this.finishClearRecoveryState();
+      if (recovery) this.finishClearRecoveryState();
       return this.indexUnlocked(
         onProgress,
         [],
@@ -6250,24 +6779,29 @@ export class Indexer {
   async clearIndex(): Promise<void> {
     await this.withIndexMutationLease("clear", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
-      const recovery = this.beginClearRecoveryState();
-      await this.clearIndexUnlocked(recovery.compatibilityDecision);
+      const recovery = this.config.indexing.mode === "structural" ? null : this.beginClearRecoveryState();
+      await this.clearIndexUnlocked(recovery?.compatibilityDecision);
     });
   }
 
   private clearGlobalIndexDataUnlocked(projectRoot = this.projectRoot): void {
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
     const clearedBranchKeys = database.getAllBranches();
-    store.clear();
-    store.save();
+    if (this.config.indexing.mode !== "structural") {
+      requireLoadedCapability(store, "vector store").clear();
+      requireLoadedCapability(store, "vector store").save();
+    }
     invertedIndex.clear();
-    this.saveInvertedIndex(invertedIndex);
+    if (this.config.indexing.mode !== "structural") this.saveInvertedIndex(invertedIndex);
 
     this.fileHashCache.clear();
     this.saveFileHashCache();
 
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
+    if (this.config.indexing.mode === "structural") {
+      this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
+    }
     this.clearFailedBatchState();
 
     database.deleteMetadata("index.version");
@@ -6283,7 +6817,9 @@ export class Indexer {
     database.deleteMetadata("index.createdAt");
     database.deleteMetadata("index.updatedAt");
 
-    this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
+    this.indexCompatibility = this.config.indexing.mode === "structural"
+      ? { compatible: true }
+      : this.validateIndexCompatibility(this.configuredProviderInfo!);
   }
 
   private clearGlobalIndexUnlocked(
@@ -6292,7 +6828,29 @@ export class Indexer {
     recoveryDecision?: IndexLockClearRecoveryState["compatibilityDecision"],
   ): void {
     const { store, invertedIndex, database } = this.requireLoadedIndexState();
-    store.load();
+    if (this.config.indexing.mode === "structural") {
+      const projectPrefix = `${this.getProjectIdentityHash(projectRoot)}:`;
+      const branchKeys = database.getAllBranches().filter((branchKey) => branchKey.startsWith(projectPrefix));
+      const chunkIds = Array.from(new Set(branchKeys.flatMap((branchKey) => database.getBranchChunkIds(branchKey))));
+      const symbolIds = Array.from(new Set(branchKeys.flatMap((branchKey) => database.getBranchSymbolIds(branchKey))));
+      for (const branchKey of branchKeys) database.clearBranch(branchKey);
+      const referencedChunkIds = new Set(database.getReferencedChunkIds(chunkIds));
+      const removableChunkIds = chunkIds.filter((chunkId) => !referencedChunkIds.has(chunkId));
+      for (const chunkId of removableChunkIds) invertedIndex.removeChunk(chunkId);
+      database.deleteChunksByIds(removableChunkIds);
+      const referencedSymbolIds = new Set(database.getReferencedSymbolIds(symbolIds));
+      const removableSymbolIds = symbolIds.filter((symbolId) => !referencedSymbolIds.has(symbolId));
+      database.clearCallEdgeTargetsForSymbols(removableSymbolIds);
+      database.gcOrphanSymbols();
+      database.gcOrphanCallEdges();
+      database.gcOrphanChunks();
+      this.deleteBranchCommitMetadata(database, branchKeys);
+      this.clearScopedFileHashCache(roots);
+      this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
+      this.indexCompatibility = { compatible: true };
+      return;
+    }
+    requireLoadedCapability(store, "vector store").load();
     invertedIndex.load();
     this.loadFileHashCache();
     const compatibility = this.checkCompatibility();
@@ -6303,7 +6861,7 @@ export class Indexer {
           ? "embedding-strategy-mismatch"
           : "incompatible"
     );
-    const allMetadata = store.getAllMetadata();
+    const allMetadata = requireLoadedCapability(store, "vector store").getAllMetadata();
     const hasForeignData =
       allMetadata.some(({ metadata }) => !this.isFileInCurrentScope(metadata.filePath, roots)) ||
       this.hasForeignScopedBranchData(projectRoot, roots) ||
@@ -6312,7 +6870,7 @@ export class Indexer {
 
     if (compatibilityDecision !== "compatible" && hasForeignData) {
       if (compatibilityDecision === "embedding-strategy-mismatch") {
-        this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
+        this.clearSharedIndexProjectData(requireLoadedCapability(store, "vector store"), invertedIndex, database, roots, projectRoot);
         this.clearScopedFileHashCache(roots);
         this.clearScopedFailedBatches(roots);
         const projectIdentityHash = this.getProjectIdentityHash(projectRoot);
@@ -6337,7 +6895,7 @@ export class Indexer {
       return;
     }
 
-    this.clearSharedIndexProjectData(store, invertedIndex, database, roots, projectRoot);
+    this.clearSharedIndexProjectData(requireLoadedCapability(store, "vector store"), invertedIndex, database, roots, projectRoot);
     this.clearScopedFileHashCache(roots);
     this.clearScopedFailedBatches(roots);
     if (projectRoot === this.projectRoot) {
@@ -6367,10 +6925,14 @@ export class Indexer {
     }
 
     const clearedBranchKeys = database.getAllBranches();
-    store.clear();
-    store.save();
+    if (this.config.indexing.mode !== "structural") {
+      requireLoadedCapability(store, "vector store").clear();
+      requireLoadedCapability(store, "vector store").save();
+    }
     invertedIndex.clear();
-    this.saveInvertedIndex(invertedIndex);
+    if (this.config.indexing.mode !== "structural") {
+      this.saveInvertedIndex(invertedIndex);
+    }
 
     this.fileHashCache.clear();
     throwIfOperationAborted(signal);
@@ -6380,6 +6942,9 @@ export class Indexer {
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
+    if (this.config.indexing.mode === "structural") {
+      this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
+    }
 
     database.deleteMetadata("index.version");
     database.deleteMetadata("index.pathStorageVersion");
@@ -6393,7 +6958,9 @@ export class Indexer {
     database.deleteMetadata("index.createdAt");
     database.deleteMetadata("index.updatedAt");
 
-    this.indexCompatibility = this.validateIndexCompatibility(this.configuredProviderInfo!);
+    this.indexCompatibility = this.config.indexing.mode === "structural"
+      ? { compatible: true }
+      : this.validateIndexCompatibility(this.configuredProviderInfo!);
     throwIfOperationAborted(signal);
   }
 
@@ -6413,7 +6980,13 @@ export class Indexer {
 
     this.logger.gc("info", "Starting health check");
 
-    const allMetadata = store.getAllMetadata();
+    const allMetadata = this.config.indexing.mode === "structural"
+      ? Array.from(new Set(this.getBranchCatalogKeys().flatMap((key) => database.getBranchChunkIds(key))))
+          .flatMap((chunkId) => {
+            const chunk = database.getChunk(chunkId);
+            return chunk ? [{ key: chunkId, metadata: this.chunkMetadataFromData(chunk) }] : [];
+          })
+      : requireLoadedCapability(store, "vector store").getAllMetadata();
     throwIfOperationAborted(options.signal);
     const filePathsToChunkKeys = new Map<string, string[]>();
 
@@ -6444,6 +7017,15 @@ export class Indexer {
     throwIfOperationAborted(options.signal);
 
     const branchCatalogKeys = this.getBranchCatalogKeys();
+    const structuralHealthGeneration = this.config.indexing.mode === "structural" && missingChunkKeys.length > 0
+      ? hashContent(`${Date.now()}:${Math.random()}:structural-health`)
+      : null;
+    if (structuralHealthGeneration) {
+      // Publish the intended SQLite generation before mutating either catalog.
+      // Any interruption until the matching BM25 publication leaves readers
+      // conservatively blocked instead of accepting stale keyword postings.
+      database.setMetadata("index.structuralGeneration", structuralHealthGeneration);
+    }
     for (const branchKey of branchCatalogKeys) {
       throwIfOperationAborted(options.signal);
       database.deleteBranchChunksForBranch(branchKey, missingChunkKeys);
@@ -6454,7 +7036,9 @@ export class Indexer {
     const removedChunkKeys = missingChunkKeys.filter((key) => !referencedChunkKeys.has(key));
 
     if (removedChunkKeys.length > 0) {
-      this.rebuildVectorStoreExcludingChunkIds(store, database, removedChunkKeys);
+      if (this.config.indexing.mode !== "structural") {
+        this.rebuildVectorStoreExcludingChunkIds(requireLoadedCapability(store, "vector store"), database, removedChunkKeys);
+      }
       for (const key of removedChunkKeys) {
         invertedIndex.removeChunk(key);
       }
@@ -6485,8 +7069,8 @@ export class Indexer {
     const removedCount = removedChunkKeys.length;
 
     if (removedCount > 0) {
-      store.save();
-      this.saveInvertedIndex(invertedIndex);
+      if (this.config.indexing.mode !== "structural") requireLoadedCapability(store, "vector store").save();
+      if (this.config.indexing.mode !== "structural") this.saveInvertedIndex(invertedIndex);
       throwIfOperationAborted(options.signal);
     }
 
@@ -6527,6 +7111,9 @@ export class Indexer {
     }
 
     this.logger.recordGc(removedCount, gcOrphanChunks, gcOrphanEmbeddings);
+    if (structuralHealthGeneration) {
+      this.publishStructuralKeywordGeneration(invertedIndex, structuralHealthGeneration);
+    }
     this.logger.gc("info", "Health check complete", {
       removedStale: removedCount,
       orphanEmbeddings: gcOrphanEmbeddings,
@@ -6545,6 +7132,9 @@ export class Indexer {
   }
 
   async retryFailedBatches(): Promise<{ succeeded: number; failed: number; remaining: number }> {
+    if (this.config.indexing.mode === "structural") {
+      return { succeeded: 0, failed: 0, remaining: 0 };
+    }
     return this.withIndexMutationLease("retry-failed-batches", async (recoveredOwners) => {
       await this.ensureInitializedUnlocked(recoveredOwners);
       return this.retryFailedBatchesUnlocked();
@@ -6553,8 +7143,8 @@ export class Indexer {
 
   private async retryFailedBatchesUnlocked(): Promise<{ succeeded: number; failed: number; remaining: number }> {
     const { store, provider, invertedIndex, database, configuredProviderInfo } = this.requireLoadedIndexState();
-    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(configuredProviderInfo);
-    const providerRateLimits = this.getProviderRateLimits(configuredProviderInfo.provider);
+    const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
+    const providerRateLimits = this.getProviderRateLimits(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration").provider);
     const roots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const shouldProcessFailedPath = (filePath: string | null): boolean =>
       filePath === null || !this.isStoredPathExcluded(filePath);
@@ -6589,11 +7179,11 @@ export class Indexer {
         // committed SQLite row but no branch association until it succeeds.
         this.restoreMissingChunkRows(database, chunks);
         const batchResult = await this.processPendingChunkBatch(chunks, {
-          store,
-          provider,
+          store: requireLoadedCapability(store, "vector store"),
+          provider: requireLoadedCapability(provider, "embedding provider"),
           invertedIndex,
           database,
-          configuredProviderInfo,
+          configuredProviderInfo: requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"),
           queue,
           providerRateLimits,
           rateLimitState,
@@ -6622,7 +7212,7 @@ export class Indexer {
 
     const remaining = this.getFailedBatchesCount();
     if (succeeded > 0) {
-      store.save();
+      requireLoadedCapability(store, "vector store").save();
       this.saveInvertedIndex(invertedIndex);
     }
 
@@ -6631,7 +7221,7 @@ export class Indexer {
         database.getMetadata(this.getProjectMigrationFinalizedMetadataKey()) === "true";
       if (migrationFinalized) {
         database.deleteMetadata(this.getProjectForceReembedMetadataKey());
-        this.saveIndexMetadata(configuredProviderInfo);
+        this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
         this.indexCompatibility = { compatible: true };
       }
     }
@@ -6718,6 +7308,11 @@ export class Indexer {
       heartbeat?: () => void | Promise<void>;
     }
   ): Promise<SearchResult[]> {
+    if (this.config.indexing.mode === "structural") {
+      throw new UnsupportedIndexOperationError(
+        "find_similar is unavailable when indexing.mode is 'structural' because semantic embeddings are not built. Switch to 'hybrid' mode for semantic similarity.",
+      );
+    }
     throwIfOperationAborted(options?.signal);
     const { store, provider, database, readIssues, compatibility } = await this.ensureInitialized();
     throwIfOperationAborted(options?.signal);
@@ -6732,7 +7327,7 @@ export class Indexer {
 
     const searchStartTime = performance.now();
 
-    if (store.count() === 0) {
+    if (requireLoadedCapability(store, "vector store").count() === 0) {
       this.logger.search("debug", "Find similar on empty index");
       return [];
     }
@@ -6749,7 +7344,7 @@ export class Indexer {
     });
 
     const embeddingStartTime = performance.now();
-    const { embedding, tokensUsed } = await provider.embedDocument(code, {
+    const { embedding, tokensUsed } = await requireLoadedCapability(provider, "embedding provider").embedDocument(code, {
       signal: options?.signal,
       setPhase: options?.setPhase,
       heartbeat: options?.heartbeat,
@@ -6772,7 +7367,7 @@ export class Indexer {
 
     const vectorStartTime = performance.now();
     const semanticCandidates = this.searchSemanticCandidates(
-      store,
+      requireLoadedCapability(store, "vector store"),
       embedding,
       limit * 2,
       branchChunkIds,
@@ -7070,6 +7665,18 @@ export class Indexer {
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.getSymbolsForBranch(resolvedBranch)
       .map((symbol) => this.resolveFilePathRecord(symbol));
+  }
+
+  async getIndexedFilePathsForActiveBranch(): Promise<string[]> {
+    const { database, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database");
+    const filePaths = new Set<string>();
+    for (const branchKey of this.getBranchCatalogKeys()) {
+      for (const filePath of database.getBranchFilePaths(branchKey)) {
+        filePaths.add(this.resolveStoredFilePath(filePath));
+      }
+    }
+    return [...filePaths].sort();
   }
 
   async getSymbolsForFiles(filePaths: string[], branch?: string): Promise<SymbolData[]> {
@@ -7514,7 +8121,7 @@ export class Indexer {
 
       // Get unique file paths from branch chunks' metadata
       const chunkIds = database.getBranchChunkIds(branchKey);
-      const metadataMap = chunkIds.length > 0 ? store.getMetadataBatch(chunkIds) : new Map<string, import("../native/index.js").ChunkMetadata>();
+      const metadataMap = chunkIds.length > 0 ? requireLoadedCapability(store, "vector store").getMetadataBatch(chunkIds) : new Map<string, import("../native/index.js").ChunkMetadata>();
       const filePaths = new Set<string>();
       for (const [, meta] of metadataMap) {
         throwIfOperationAborted(options.signal);

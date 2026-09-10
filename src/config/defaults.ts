@@ -14,6 +14,7 @@ export function getDefaultMcpConfig(): McpConfig {
 
 export function getDefaultIndexingConfig(): IndexingConfig {
   return {
+    mode: "hybrid",
     autoIndex: false,
     autoIndexWaitMs: 10_000,
     autoIndexMaxRetries: 5,
@@ -36,6 +37,14 @@ export function getDefaultIndexingConfig(): IndexingConfig {
     // fallback used when a native caller omits the argument).
     linesPerChunk: 30,
     gitBlame: { enabled: false },
+    scipTypeScript: {
+      enabled: false,
+      indexFile: "index.scip",
+      decoderCommand: "scip",
+      timeoutMs: 30_000,
+      maxOutputBytes: 64 * 1024 * 1024,
+      requireFreshIndex: true,
+    },
   };
 }
 

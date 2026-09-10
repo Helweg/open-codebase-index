@@ -180,6 +180,10 @@ export default function codebaseIndexPiExtension(pi: ExtensionAPI): void {
         Type.Integer({ minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET, maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET }),
         Type.Null(),
       ], { default: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET })),
+      includeApiImpact: Type.Optional(Type.Boolean({
+        default: false,
+        description: "Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only.",
+      })),
     }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await resolveCodebaseEditContext(projectRoot(ctx), HOST, params);

@@ -295,6 +295,40 @@ describe("config schema", () => {
         expect(parseConfig({ indexing: { linesPerChunk: 9_999_999_999 } }).indexing.linesPerChunk).toBe(4294967295);
       });
 
+      it("should parse bounded optional SCIP TypeScript settings", () => {
+        expect(parseConfig({}).indexing.scipTypeScript).toEqual({
+          enabled: false,
+          indexFile: "index.scip",
+          decoderCommand: "scip",
+          timeoutMs: 30_000,
+          maxOutputBytes: 64 * 1024 * 1024,
+          requireFreshIndex: true,
+        });
+        expect(parseConfig({ indexing: { scipTypeScript: {
+          enabled: true,
+          indexFile: "  .codebase-index/scip/index.scip  ",
+          decoderCommand: "  /opt/local/bin/scip  ",
+          timeoutMs: 1,
+          maxOutputBytes: Number.MAX_SAFE_INTEGER,
+          requireFreshIndex: false,
+        } } }).indexing.scipTypeScript).toEqual({
+          enabled: true,
+          indexFile: ".codebase-index/scip/index.scip",
+          decoderCommand: "/opt/local/bin/scip",
+          timeoutMs: 1_000,
+          maxOutputBytes: 256 * 1024 * 1024,
+          requireFreshIndex: false,
+        });
+        expect(parseConfig({ indexing: { scipTypeScript: {
+          indexFile: "   ", decoderCommand: "", timeoutMs: Infinity, maxOutputBytes: NaN,
+        } } }).indexing.scipTypeScript).toMatchObject({
+          indexFile: "",
+          decoderCommand: "",
+          timeoutMs: 30_000,
+          maxOutputBytes: 64 * 1024 * 1024,
+        });
+      });
+
       it("should enforce minimum of 1 for gcIntervalDays", () => {
         expect(parseConfig({ indexing: { gcIntervalDays: 0 } }).indexing.gcIntervalDays).toBe(1);
         expect(parseConfig({ indexing: { gcIntervalDays: -1 } }).indexing.gcIntervalDays).toBe(1);

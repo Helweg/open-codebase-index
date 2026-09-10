@@ -1,4 +1,4 @@
-import type { CallSiteData, CodeChunk, FileInput, ParsedFile, ParsedSymbol, ChunkType } from "./types.js";
+import type { ApiUsageExtractionData, CallSiteData, CodeChunk, FileInput, ParsedFile, ParsedSymbol, ChunkType } from "./types.js";
 import { native } from "./binding.js";
 
 export function parseFile(filePath: string, content: string, linesPerChunk?: number): CodeChunk[] {
@@ -56,6 +56,10 @@ export function hashFile(filePath: string): string {
 
 export function extractCalls(content: string, language: string): CallSiteData[] {
   return native.extractCalls(content, language);
+}
+
+export function extractApiUsages(content: string, language: string): ApiUsageExtractionData {
+  return native.extractApiUsages(content, language);
 }
 
 export function generateChunkId(filePath: string, chunk: CodeChunk): string {

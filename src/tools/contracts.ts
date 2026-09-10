@@ -54,6 +54,7 @@ export interface SharedCodebaseEditContextArgs {
   callerLimit?: number | null;
   calleeLimit?: number | null;
   tokenBudget?: number | null;
+  includeApiImpact?: boolean;
 }
 
 export const MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 1 as const;

@@ -23,8 +23,23 @@ import {
 export { isValidModel } from "./validators.js";
 
 export type IndexScope = "project" | "global";
+export type IndexingMode = "hybrid" | "structural";
+
+export interface ScipTypeScriptConfig {
+  enabled: boolean;
+  indexFile: string;
+  decoderCommand: string;
+  timeoutMs: number;
+  maxOutputBytes: number;
+  requireFreshIndex: boolean;
+}
 
 export interface IndexingConfig {
+  /**
+   * hybrid builds semantic vectors plus the structural catalog. structural builds
+   * only chunks, BM25, symbols, and call edges and never initializes embeddings.
+   */
+  mode: IndexingMode;
   autoIndex: boolean;
   /** Maximum time retrieval tools wait for first-use auto-indexing. */
   autoIndexWaitMs: number;
@@ -79,6 +94,7 @@ export interface IndexingConfig {
   gitBlame: {
     enabled: boolean;
   };
+  scipTypeScript: ScipTypeScriptConfig;
 }
 
 export interface SearchConfig {
@@ -235,7 +251,16 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const defaultMcp = getDefaultMcpConfig();
 
   const rawIndexing = (input.indexing && typeof input.indexing === "object" ? input.indexing : {}) as Record<string, unknown>;
+  const rawScipTypeScript = rawIndexing.scipTypeScript && typeof rawIndexing.scipTypeScript === "object"
+    ? rawIndexing.scipTypeScript as Record<string, unknown>
+    : {};
+  if (rawIndexing.mode !== undefined && rawIndexing.mode !== "hybrid" && rawIndexing.mode !== "structural") {
+    throw new Error("indexing.mode must be either 'hybrid' or 'structural'.");
+  }
   const indexing: IndexingConfig = {
+    mode: rawIndexing.mode === "structural" || rawIndexing.mode === "hybrid"
+      ? rawIndexing.mode
+      : defaultIndexing.mode,
     autoIndex: typeof rawIndexing.autoIndex === "boolean" ? rawIndexing.autoIndex : defaultIndexing.autoIndex,
     autoIndexWaitMs: typeof rawIndexing.autoIndexWaitMs === "number"
       ? Math.min(60_000, Math.max(0, Math.floor(rawIndexing.autoIndexWaitMs)))
@@ -267,6 +292,26 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
       enabled: rawIndexing.gitBlame && typeof rawIndexing.gitBlame === "object" && typeof (rawIndexing.gitBlame as Record<string, unknown>).enabled === "boolean"
         ? (rawIndexing.gitBlame as { enabled: boolean }).enabled
         : defaultIndexing.gitBlame.enabled,
+    },
+    scipTypeScript: {
+      enabled: typeof rawScipTypeScript.enabled === "boolean"
+        ? rawScipTypeScript.enabled
+        : defaultIndexing.scipTypeScript.enabled,
+      indexFile: typeof rawScipTypeScript.indexFile === "string"
+        ? rawScipTypeScript.indexFile.trim()
+        : defaultIndexing.scipTypeScript.indexFile,
+      decoderCommand: typeof rawScipTypeScript.decoderCommand === "string"
+        ? rawScipTypeScript.decoderCommand.trim()
+        : defaultIndexing.scipTypeScript.decoderCommand,
+      timeoutMs: typeof rawScipTypeScript.timeoutMs === "number" && Number.isFinite(rawScipTypeScript.timeoutMs)
+        ? Math.min(300_000, Math.max(1_000, Math.floor(rawScipTypeScript.timeoutMs)))
+        : defaultIndexing.scipTypeScript.timeoutMs,
+      maxOutputBytes: typeof rawScipTypeScript.maxOutputBytes === "number" && Number.isFinite(rawScipTypeScript.maxOutputBytes)
+        ? Math.min(256 * 1024 * 1024, Math.max(1024 * 1024, Math.floor(rawScipTypeScript.maxOutputBytes)))
+        : defaultIndexing.scipTypeScript.maxOutputBytes,
+      requireFreshIndex: typeof rawScipTypeScript.requireFreshIndex === "boolean"
+        ? rawScipTypeScript.requireFreshIndex
+        : defaultIndexing.scipTypeScript.requireFreshIndex,
     },
   };
 

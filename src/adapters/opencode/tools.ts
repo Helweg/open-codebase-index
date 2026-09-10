@@ -149,6 +149,8 @@ export const codebase_edit_context: ToolDefinition = tool({
       .nullable().optional().default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT),
     tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
       .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),
+    includeApiImpact: z.boolean().optional().default(false)
+      .describe("Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only."),
   },
   async execute(args, context) {
     return (await executeCodebaseEditContext(context?.worktree, DEFAULT_HOST, args)).text;

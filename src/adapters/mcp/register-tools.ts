@@ -143,6 +143,8 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         .default(DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT)),
       tokenBudget: allowNullAsUndefined(z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
         .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)),
+      includeApiImpact: z.boolean().optional().default(false)
+        .describe("Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only."),
     },
     async (args, control) => {
       const result = await executeCodebaseEditContext(runtime.projectRoot, runtime.host, args, control);

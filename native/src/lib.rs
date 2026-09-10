@@ -1,5 +1,6 @@
 #![deny(clippy::all)]
 
+mod api_usage_extractor;
 mod bindings;
 mod call_extractor;
 mod chunker;
@@ -92,6 +93,62 @@ pub fn extract_calls(content: String, language: String) -> Result<Vec<CallSiteDa
                 .collect()
         })
         .map_err(|e| Error::from_reason(e.to_string()))
+}
+
+#[napi(object)]
+pub struct ApiRouteUsageData {
+    pub method: String,
+    pub path: String,
+    pub handler_name: Option<String>,
+    pub handler_start_line: u32,
+    pub handler_end_line: u32,
+    pub line: u32,
+    pub column: u32,
+}
+
+#[napi(object)]
+pub struct ApiFetchUsageData {
+    pub method: String,
+    pub path: String,
+    pub line: u32,
+    pub column: u32,
+}
+
+#[napi(object)]
+pub struct ApiUsageExtractionData {
+    pub routes: Vec<ApiRouteUsageData>,
+    pub fetches: Vec<ApiFetchUsageData>,
+}
+
+#[napi]
+pub fn extract_api_usages(content: String, language: String) -> Result<ApiUsageExtractionData> {
+    api_usage_extractor::extract_api_usages(&content, &language)
+        .map(|result| ApiUsageExtractionData {
+            routes: result
+                .routes
+                .into_iter()
+                .map(|route| ApiRouteUsageData {
+                    method: route.method,
+                    path: route.path,
+                    handler_name: route.handler_name,
+                    handler_start_line: route.handler_start_line,
+                    handler_end_line: route.handler_end_line,
+                    line: route.line,
+                    column: route.column,
+                })
+                .collect(),
+            fetches: result
+                .fetches
+                .into_iter()
+                .map(|fetch| ApiFetchUsageData {
+                    method: fetch.method,
+                    path: fetch.path,
+                    line: fetch.line,
+                    column: fetch.column,
+                })
+                .collect(),
+        })
+        .map_err(|error| Error::from_reason(error.to_string()))
 }
 
 #[napi]

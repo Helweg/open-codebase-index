@@ -12,6 +12,8 @@ function runCliCommand(args, {
   killAfterMs = null,
   action = null,
   actionDelayMs = 1_000,
+  actionAfterStdout = null,
+  stdinText = null,
   cliPathOverride = null,
 } = {}) {
   return new Promise((resolve, reject) => {
@@ -24,10 +26,17 @@ function runCliCommand(args, {
 
     let stdout = "";
     let stderr = "";
+    let actionPerformed = false;
+    const performAction = () => {
+      if (actionPerformed || !action) return;
+      actionPerformed = true;
+      action(child);
+    };
     child.stdout?.setEncoding("utf8");
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk) => {
       stdout += chunk;
+      if (actionAfterStdout && stdout.includes(actionAfterStdout)) performAction();
     });
     child.stderr?.on("data", (chunk) => {
       stderr += chunk;
@@ -41,11 +50,13 @@ function runCliCommand(args, {
       }, killAfterMs)
       : null;
 
-    const actionTimer = action
+    const actionTimer = action && !actionAfterStdout
       ? setTimeout(() => {
-        action(child);
+        performAction();
       }, actionDelayMs)
       : null;
+
+    if (stdinText !== null) child.stdin.write(stdinText);
 
     child.once("exit", (code, signal) => {
       if (cleanupTimer !== null) {
@@ -131,8 +142,24 @@ try {
       { name: "SIGHUP", action: (child) => { child.kill("SIGHUP"); } },
     );
   }
+  const initializeRequest = `${JSON.stringify({
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-11-25",
+      capabilities: {},
+      clientInfo: { name: "built-cli-signal-smoke", version: "1.0.0" },
+    },
+  })}\n`;
   for (const scenario of shutdownScenarios) {
-    const result = await runCliCommand(projectArgs, { killAfterMs: 5_000, action: scenario.action });
+    const requiresProtocolReadiness = scenario.name !== "stdin EOF";
+    const result = await runCliCommand(projectArgs, {
+      killAfterMs: 5_000,
+      action: scenario.action,
+      actionAfterStdout: requiresProtocolReadiness ? '"id":1' : null,
+      stdinText: requiresProtocolReadiness ? initializeRequest : null,
+    });
     if (result.code !== 0 || result.signal !== null) {
       throw new Error(
         `Built ESM CLI did not shut down cleanly on ${scenario.name} (code=${result.code}, signal=${result.signal}):\n${result.stderr}`,

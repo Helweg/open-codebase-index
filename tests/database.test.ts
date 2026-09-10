@@ -752,6 +752,17 @@ describe("Database", () => {
       expect(branchChunks).toContain("c3");
     });
 
+    it("should list distinct active branch file paths including chunks without symbols", () => {
+      db.upsertChunksBatch([
+        { chunkId: "top-level-consumer", contentHash: "hc1", filePath: "/src/client.ts", startLine: 1, endLine: 1, language: "typescript" },
+        { chunkId: "top-level-test", contentHash: "hc2", filePath: "/tests/route.test.ts", startLine: 1, endLine: 1, language: "typescript" },
+        { chunkId: "duplicate-file", contentHash: "hc3", filePath: "/src/client.ts", startLine: 2, endLine: 2, language: "typescript" },
+      ]);
+      db.addChunksToBranchBatch("api-impact", ["top-level-consumer", "top-level-test", "duplicate-file"]);
+
+      expect(db.getBranchFilePaths("api-impact")).toEqual(["/src/client.ts", "/tests/route.test.ts"]);
+    });
+
     it("should handle empty branch batch", () => {
       db.addChunksToBranchBatch("empty-branch", []);
       expect(db.getBranchChunkIds("empty-branch").length).toBe(0);

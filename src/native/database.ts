@@ -181,6 +181,11 @@ export class Database {
     return this.inner.getBranchChunkIds(branch);
   }
 
+  getBranchFilePaths(branch: string): string[] {
+    this.throwIfClosed();
+    return this.inner.getBranchFilePaths(branch);
+  }
+
   getChunkIdsByBlameDate(since?: number, until?: number): string[] {
     this.throwIfClosed();
     return this.inner.getChunkIdsByBlameDate(since, until);
