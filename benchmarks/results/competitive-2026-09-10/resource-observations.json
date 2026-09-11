@@ -1,0 +1,546 @@
+{
+  "note": "Workspace bytes include source. Not peak memory or isolated index size. Interface runtimes are not comparable, and failures retain their index cap.",
+  "records": [
+    {
+      "repository": "axios",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 42841.609834
+      },
+      "sourceBytes": 2740799,
+      "workspaceBytesAfter": 27073210,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "axios",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 1613.2692079999833
+      },
+      "sourceBytes": 2740799,
+      "workspaceBytesAfter": 7398201,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "axios",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 950.6048340000561
+      },
+      "sourceBytes": 2740799,
+      "workspaceBytesAfter": 8209188,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "axios",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14250.996874999999
+      },
+      "sourceBytes": 2740799,
+      "workspaceBytesAfter": 2740799,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 9732106,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "axios",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 43290.316332999995
+      },
+      "sourceBytes": 2740799,
+      "workspaceBytesAfter": 10320130,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "express",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 34867.21462499999
+      },
+      "sourceBytes": 703790,
+      "workspaceBytesAfter": 24476214,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "express",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 1249.1987500000032
+      },
+      "sourceBytes": 703790,
+      "workspaceBytesAfter": 4643611,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "express",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 894.6094999999914
+      },
+      "sourceBytes": 703790,
+      "workspaceBytesAfter": 5570067,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "express",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14229.648458000003
+      },
+      "sourceBytes": 703790,
+      "workspaceBytesAfter": 703790,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 6127834,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "express",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 34167.660208
+      },
+      "sourceBytes": 703790,
+      "workspaceBytesAfter": 7426817,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "click",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 44951.577292
+      },
+      "sourceBytes": 1580621,
+      "workspaceBytesAfter": 29155400,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "click",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 1111.0063749999972
+      },
+      "sourceBytes": 1580621,
+      "workspaceBytesAfter": 12266426,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "click",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 1058.1197500000126
+      },
+      "sourceBytes": 1580621,
+      "workspaceBytesAfter": 7958322,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "click",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14652.069167
+      },
+      "sourceBytes": 1580621,
+      "workspaceBytesAfter": 1580621,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 17071878,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "click",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 46793.84591599999
+      },
+      "sourceBytes": 1580621,
+      "workspaceBytesAfter": 8433144,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "cobra",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 24666.455541000003
+      },
+      "sourceBytes": 705271,
+      "workspaceBytesAfter": 15728028,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "cobra",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 1354.2102920000034
+      },
+      "sourceBytes": 705271,
+      "workspaceBytesAfter": 4567395,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "cobra",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 803.4677079999819
+      },
+      "sourceBytes": 705271,
+      "workspaceBytesAfter": 4662236,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "cobra",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14442.154667000003
+      },
+      "sourceBytes": 705271,
+      "workspaceBytesAfter": 705271,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 9535181,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "cobra",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 27930.426166999998
+      },
+      "sourceBytes": 705271,
+      "workspaceBytesAfter": 4526082,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "Original timing overlaps calibration; separate quiet run retained, no replacement quality"
+    },
+    {
+      "repository": "ripgrep",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 73802.84016700002
+      },
+      "sourceBytes": 3255965,
+      "workspaceBytesAfter": 48814777,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "ripgrep",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 2303.255582999962
+      },
+      "sourceBytes": 3255965,
+      "workspaceBytesAfter": 24040872,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "ripgrep",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 1670.8613329999498
+      },
+      "sourceBytes": 3255965,
+      "workspaceBytesAfter": 17543042,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "ripgrep",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14974.834
+      },
+      "sourceBytes": 3255965,
+      "workspaceBytesAfter": 3255965,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 32932042,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "ripgrep",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 104074.09933400003
+      },
+      "sourceBytes": 3255965,
+      "workspaceBytesAfter": 16312202,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "gson",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 4219.889249999999
+      },
+      "sourceBytes": 2320573,
+      "workspaceBytesAfter": 4013877,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "gson",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 328.22579199999996
+      },
+      "sourceBytes": 2320573,
+      "workspaceBytesAfter": 3435275,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "gson",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 1895.3370829999913
+      },
+      "sourceBytes": 2320573,
+      "workspaceBytesAfter": 32631202,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "gson",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 15109.672999999999
+      },
+      "sourceBytes": 2320573,
+      "workspaceBytesAfter": 2320573,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 49840270,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "gson",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 103427.00137499999
+      },
+      "sourceBytes": 2320573,
+      "workspaceBytesAfter": 23159424,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 215460.02875000006
+      },
+      "sourceBytes": 16568887,
+      "workspaceBytesAfter": 113716575,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 1578.8011249999981
+      },
+      "sourceBytes": 16568887,
+      "workspaceBytesAfter": 58185626,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 3828.3774170000106
+      },
+      "sourceBytes": 16568887,
+      "workspaceBytesAfter": 76391196,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 18866.411416
+      },
+      "sourceBytes": 16568887,
+      "workspaceBytesAfter": 16568887,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 180735318,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 300029.12674999994,
+        "error": "grepai watcher readiness timed out"
+      },
+      "sourceBytes": 16568887,
+      "workspaceBytesAfter": 16571880,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "symfony-console",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 36325.864458
+      },
+      "sourceBytes": 785060,
+      "workspaceBytesAfter": 27212967,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "symfony-console",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 4056.6140830000004
+      },
+      "sourceBytes": 785060,
+      "workspaceBytesAfter": 6227422,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "symfony-console",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 967.4473750000179
+      },
+      "sourceBytes": 785060,
+      "workspaceBytesAfter": 8231817,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "symfony-console",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14430.730666
+      },
+      "sourceBytes": 785060,
+      "workspaceBytesAfter": 785060,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 14516779,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "symfony-console",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 33107.059083
+      },
+      "sourceBytes": 785060,
+      "workspaceBytesAfter": 6677367,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "sinatra",
+      "condition": "ocbi-hybrid",
+      "index": {
+        "elapsedMs": 27676.170000000002
+      },
+      "sourceBytes": 950171,
+      "workspaceBytesAfter": 20512180,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "sinatra",
+      "condition": "ocbi-structural",
+      "index": {
+        "elapsedMs": 486.4804590000001
+      },
+      "sourceBytes": 950171,
+      "workspaceBytesAfter": 4719678,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "sinatra",
+      "condition": "codegraph",
+      "index": {
+        "elapsedMs": 856.1894169999869
+      },
+      "sourceBytes": 950171,
+      "workspaceBytesAfter": 4399232,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "sinatra",
+      "condition": "codebase-memory",
+      "index": {
+        "elapsedMs": 14242.108624999993
+      },
+      "sourceBytes": 950171,
+      "workspaceBytesAfter": 950171,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 10863985,
+      "timingCaveat": "one descriptive index observation"
+    },
+    {
+      "repository": "sinatra",
+      "condition": "grepai",
+      "index": {
+        "elapsedMs": 33440.920084000005
+      },
+      "sourceBytes": 950171,
+      "workspaceBytesAfter": 5372560,
+      "ownedHomeBytes": 0,
+      "ownedCbmCacheBytes": 0,
+      "timingCaveat": "one descriptive index observation"
+    }
+  ]
+}

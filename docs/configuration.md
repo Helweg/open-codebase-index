@@ -220,11 +220,19 @@ Changing provider, model, dimensions, or embedding strategy can make an existing
 | `gcIntervalDays` | `7` | Cleanup interval |
 | `gcOrphanThreshold` | `100` | Orphan threshold for cleanup |
 | `requireProjectMarker` | `true` | Require `.git`, `package.json`, or another project marker before watching |
-| `maxDepth` | `5` | Directory traversal depth; `-1` is unlimited |
+| `maxDepth` | `-1` | Directory traversal depth; unlimited by default so nested source packages are included. Set a nonnegative limit explicitly for a bounded scan. |
 | `maxFilesPerDirectory` | `100` | Per-directory file cap |
 | `fallbackToTextOnMaxChunks` | `true` | Fall back to line chunks when the semantic cap is reached, except for sanitized XML and SVG chunks |
 | `linesPerChunk` | `30` | Max lines per chunk for line-based parsing (`.jsonl`, `.txt`, unknown extensions, and the AST fallback). Lower it for finer-grained retrieval on line-delimited files. Only the line-based path is affected; AST-parsed languages are unchanged |
 | `gitBlame.enabled` | `false` | Store git blame metadata for filtering |
+
+Unlimited depth retains hidden/build/ignored-path exclusions, does not follow symlinks, and keeps file-size and per-directory caps. Compared with older defaults, normal indexing can discover more source files and therefore take more time or use more embedding tokens in hybrid mode. Existing explicit `maxDepth` settings are preserved; set `5` to retain the former depth bound.
+
+For the disabled-by-default compiler-index pilot, see [Optional SCIP TypeScript enrichment](scip-typescript.md).
+
+Python call graphs support conservative local relative imports such as `from .formatting import format_payment` and explicit aliases. The importer and target must be indexed, package paths must have indexed `__init__.py` files, and the target must be a unique top-level function. Absolute/namespace imports, multiline imports, decorated targets, ambiguous modules, shadowing and detected dynamic rebinding are not resolved by this extension. Complex string interpolation also causes conservative abstention. This is static source analysis, not execution of Python's runtime import machinery. Normal indexing updates older graph metadata and refreshes affected Python graph sources in both indexing modes.
+
+`indexing.mode` defaults to `"hybrid"`. Set it to `"structural"` for a separate provider-free keyword and graph index. See [structural indexing](structural-indexing.md) for storage isolation and unsupported semantic operations.
 
 XML and SVG are opt-in formats. Add `**/*.xml` or `**/*.svg` to `additionalInclude` when they are useful to the project. XML chunks preserve element paths, text, and bounded attributes. SVG chunks preserve `text`, `title`, `desc`, and accessibility attributes while excluding geometry, styles, classes, and layer metadata.
 
@@ -405,7 +413,7 @@ Debug defaults:
     "maxChunksPerFile": 100,
     "semanticOnly": false,
     "requireProjectMarker": true,
-    "maxDepth": 5,
+    "maxDepth": -1,
     "maxFilesPerDirectory": 100,
     "fallbackToTextOnMaxChunks": true,
     "gitBlame": {

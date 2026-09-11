@@ -1,0 +1,55 @@
+{
+  "scope": "development-only retrieval, not overall superiority",
+  "productionRevision": "ebd07022fe99b95a6ec4c56d5324fd8be6a2941d",
+  "parserCorrection": "0170744",
+  "replayRevision": "c3f9e79",
+  "reportSha256": "7a2d17c26e7fcbf1833cfa83a423a5f76c58c7460285ded0d92e7ffea8dfcc3c",
+  "rawArtifactsPubliclyPackaged": false,
+  "records": [
+    {
+      "repository": "axios",
+      "originalRunSha256": "34aefe3ee55ccd986d6a0858707ce3a336fcd27ebbc1c12498e9338abba35a4f",
+      "correctionManifestSha256": "23a88bfacc03355ecf8846729b4d4b12674e96877752c39ad9109f45166949a3"
+    },
+    {
+      "repository": "express",
+      "originalRunSha256": "7d2c37164ded861c4e79b97da7b37a1cd757ddb2dd470d5922d6c71841f728ab",
+      "correctionManifestSha256": "04c1ad9f70f2a39c89231155cfca177af4873c0be01917e511bcf11b8b69a7ef"
+    },
+    {
+      "repository": "click",
+      "originalRunSha256": "9df345c9c940637b99ca05a10ed666f6e88db35cb755d0b9769bdf9b1f07c449",
+      "correctionManifestSha256": "7ee316dc9123655aab150e53445049f7f640de622e09c22f6014bec4097e44da"
+    },
+    {
+      "repository": "cobra",
+      "originalRunSha256": "c0b3a14fb31be81fd74baad35f6001117c7d101cbb753e7826bd3dfbc1de75ae",
+      "correctionManifestSha256": "4673becdc2d5e8070d38be5c8c5440bb150aa64b78b8c1f4e0ea239b2bd7558e"
+    },
+    {
+      "repository": "ripgrep",
+      "originalRunSha256": "c08ef90d98fe36b2afb5f775df7814bc6aeca28260954bb7bd4ceab38ec365f9",
+      "correctionManifestSha256": "9f59c351c097e399b367f53714ba89ea57cac7a64acf88eaa5d4cec6a77d3a75"
+    },
+    {
+      "repository": "gson",
+      "originalRunSha256": "b91a43b08f6c956bdc7c34473278e78244183d5c28719fc99494e5d525a8e536",
+      "correctionManifestSha256": "a508316d4c053f8d4a3ffd12cd73de8601faf5c19b8006895c163009dff9e453"
+    },
+    {
+      "repository": "newtonsoft-json",
+      "originalRunSha256": "2caa79084d10d23b297e90d40e069e6bdbe220e1a31271ae0744abd5bc6e5f84",
+      "correctionManifestSha256": "908585487e3897c1794d855d8c4542bf03032cdedd432e89f2e4abab8c86cd16"
+    },
+    {
+      "repository": "symfony-console",
+      "originalRunSha256": "fd7678225df09efb4790d18c4a3442f64fa23cc72c5551d28c4741c1b9b70742",
+      "correctionManifestSha256": "52f0d86b93bd6c54aabc2b472ab9bc0d4f2d4d5137f473dbc99155b31343f154"
+    },
+    {
+      "repository": "sinatra",
+      "originalRunSha256": "fcde03f54b9ff2c3d1c24bc4f3fad128225eabf84786328a64dba27db1d612b7",
+      "correctionManifestSha256": "c9871864e6cf31c535694415be8012e6ed2c270dec1a4ce609e05716e294d3a5"
+    }
+  ]
+}

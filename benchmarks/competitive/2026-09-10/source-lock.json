@@ -1,0 +1,86 @@
+{
+  "ocbiCommit": "ebd07022fe99b95a6ec4c56d5324fd8be6a2941d",
+  "repositories": [
+    {
+      "name": "axios",
+      "url": "https://github.com/axios/axios.git",
+      "revision": "d8233d9e8e9a64bfba9bbe01d475ba417510b82b",
+      "language": "JavaScript",
+      "dataset": "axios.json",
+      "archiveSha256": "7c540396ce07ef0f495f7af5ad848ca7f97f8a40c78733552d66fab74221665b",
+      "datasetSha256": "8bc66b22bef866b3136149fc3f7539bacb5ce467fb530985adeb5dc3a0f61970"
+    },
+    {
+      "name": "express",
+      "url": "https://github.com/expressjs/express.git",
+      "revision": "2cd372e34cd6613f4d00836c2ee122f28bddfcb3",
+      "language": "JavaScript",
+      "dataset": "express.json",
+      "archiveSha256": "53b4460e2a8df62f68302187e32cbddd0e6ee603872cfd576514168094e88893",
+      "datasetSha256": "0f0e68024a66386f0ec285aab577b982be22e9bbd3c50f507f19558259238094"
+    },
+    {
+      "name": "click",
+      "url": "https://github.com/pallets/click.git",
+      "revision": "00e592cea702e0b2caa0dee42489fdb1c22cd845",
+      "language": "Python",
+      "dataset": "click.json",
+      "archiveSha256": "49a92579ee9bfca7980b086c356ae3729258c2fa8c100947e23cff80b55984bf",
+      "datasetSha256": "3bb69bcaefa17412bc4d264950e4549ed513e81fdda5ac25f6fe746cd5551659"
+    },
+    {
+      "name": "cobra",
+      "url": "https://github.com/spf13/cobra.git",
+      "revision": "adbc8813901bba65827259daa8e22ff94ec1f30e",
+      "language": "Go",
+      "dataset": "cobra.json",
+      "archiveSha256": "a0c5e8e316a7fd7ac87dab681ecdb842850b8d660bf76c43be4ff54260e443a8",
+      "datasetSha256": "84246f0df94255860e69121ad3aa1494ea00afe477dadc4283e555bdea3d70ac"
+    },
+    {
+      "name": "ripgrep",
+      "url": "https://github.com/BurntSushi/ripgrep.git",
+      "revision": "3fce3b5bb0236da2df6d99672afb8a719642eca7",
+      "language": "Rust",
+      "dataset": "ripgrep.json",
+      "archiveSha256": "d7997b44111000aa86d338f83710146840391451e1607b05c8759561eacfd518",
+      "datasetSha256": "f94ccc728b433b227b121bd9d34aabc51a08d2b331bdd0b4b0a2d6117528f68d"
+    },
+    {
+      "name": "gson",
+      "url": "https://github.com/google/gson.git",
+      "revision": "119818bc666d3b9f897d6c0ca7546ce28e9bbcac",
+      "language": "Java",
+      "dataset": "gson.json",
+      "archiveSha256": "1ccf208b76ba2e3ebf9af05093a1a7663cd2cb8cb7a7418c513d55e5bac6b75e",
+      "datasetSha256": "ec17733f8e8363102b8803dc8297454a117e6cf6e07cba8f2a4b59df92dbe6cb"
+    },
+    {
+      "name": "newtonsoft-json",
+      "url": "https://github.com/JamesNK/Newtonsoft.Json.git",
+      "revision": "13f774fa5a984374295c67bf5610e379135067db",
+      "language": "C#",
+      "dataset": "newtonsoft-json.json",
+      "archiveSha256": "6ad694109cccb52286d053e3267789d0d33628a8ecd2d0ee5fb91cb7594e70f3",
+      "datasetSha256": "0697a35ed1bb623eb8f9df88075495572ba25f08ba911cecca51a0295ad36b7c"
+    },
+    {
+      "name": "symfony-console",
+      "url": "https://github.com/symfony/console.git",
+      "revision": "8a42f59125da6a5d4bde376e5df6411a3de807fe",
+      "language": "PHP",
+      "dataset": "symfony-console.json",
+      "archiveSha256": "539ffaf98d79427fbf7dab527287a2f976cf0877f234e95f988ce8ff34908daf",
+      "datasetSha256": "03cc260f89fb2c2795bc2ec42ea191931cc0d7b993307ff025b1a686ad6ca33f"
+    },
+    {
+      "name": "sinatra",
+      "url": "https://github.com/sinatra/sinatra.git",
+      "revision": "cb22afd7902b566b6eaba6c4ea89739494a65d12",
+      "language": "Ruby",
+      "dataset": "sinatra.json",
+      "archiveSha256": "b754a212e9fff8c3bcfe2fbc310de98b6d5c612f3e3bdd64563154f2fce5dde1",
+      "datasetSha256": "e16f42297f1e0d0da754761ff8839f2aca4905f71c8cbd45df7e147bba5d76f7"
+    }
+  ]
+}

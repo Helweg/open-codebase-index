@@ -15,6 +15,7 @@ import {
 } from "./architecture-context.js";
 import { getRecentGitActivityAbortable } from "./visualize/activity.js";
 import { transformForVisualization } from "./visualize/transform.js";
+import { buildApiImpactEvidence, type ApiImpactEvidence, type ApiImpactTarget } from "./api-impact.js";
 import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
@@ -491,6 +492,21 @@ export async function getCallGraphData(
   const result = await getCallGraphDataForIndexer(indexer, root, params, control);
   throwIfOperationAborted(control?.signal);
   return result;
+}
+
+export async function getApiImpactEvidence(
+  projectRoot: string | undefined,
+  host: HostMode,
+  target: ApiImpactTarget,
+  control?: OperationControl,
+): Promise<ApiImpactEvidence> {
+  await runOperationPhase(control, "waiting_for_index");
+  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  const root = getProjectRoot(projectRoot, host);
+  const indexer = getIndexerForProject(root, host);
+  const indexedFilePaths = await indexer.getIndexedFilePathsForActiveBranch();
+  throwIfOperationAborted(control?.signal);
+  return buildApiImpactEvidence(root, target, indexedFilePaths, control);
 }
 
 export async function getCallGraphDataForIndexer(

@@ -7,6 +7,7 @@ import type {
 } from "@modelcontextprotocol/sdk/types.js";
 
 import { isIndexLockContentionError } from "../../indexer/index-lock.js";
+import { UnsupportedIndexOperationError } from "../../indexer/errors.js";
 import {
   AutoIndexRetrievalUnavailableError,
   getRuntimeConfigForProject,
@@ -28,6 +29,7 @@ export type McpOperationErrorCode =
   | "PROVIDER_ERROR"
   | "INDEX_BUSY"
   | "INDEX_UNAVAILABLE"
+  | "UNSUPPORTED_OPERATION"
   | "INTERNAL_ERROR";
 
 export interface McpOperationError {
@@ -107,6 +109,10 @@ function errorDetails(
     nextAction = retryable
       ? "Retry after the provider recovers or reduce the indexing workload."
       : "Check the embedding or reranking provider configuration before retrying.";
+  } else if (error instanceof UnsupportedIndexOperationError) {
+    code = "UNSUPPORTED_OPERATION";
+    retryable = false;
+    nextAction = error.message;
   } else if (isIndexLockContentionError(error) || (error instanceof ReportedToolError && error.kind === "busy")) {
     code = "INDEX_BUSY";
     retryable = true;

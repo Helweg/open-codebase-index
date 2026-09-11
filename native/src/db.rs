@@ -1020,6 +1020,19 @@ pub fn get_branch_chunk_ids(conn: &Connection, branch: &str) -> DbResult<Vec<Str
     Ok(results)
 }
 
+/// Get distinct indexed file paths for a branch from its active chunk catalog.
+pub fn get_branch_file_paths(conn: &Connection, branch: &str) -> DbResult<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT c.file_path FROM branch_chunks bc JOIN chunks c ON c.chunk_id = bc.chunk_id WHERE bc.branch = ? ORDER BY c.file_path",
+    )?;
+    let rows = stmt.query_map(params![branch], |row| row.get::<_, String>(0))?;
+    let mut results = Vec::new();
+    for row in rows {
+        results.push(row?);
+    }
+    Ok(results)
+}
+
 /// Get chunk IDs whose blame commit timestamp is within the inclusive bounds.
 /// A temporal filter excludes chunks without blame metadata.
 pub fn get_chunk_ids_by_blame_date(

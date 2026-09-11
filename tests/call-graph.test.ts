@@ -2882,7 +2882,7 @@ main() {
 
         await indexer.close();
         const migratedDatabase = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("9");
+        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("10");
         migratedDatabase.close();
       } finally {
         await indexer.close();

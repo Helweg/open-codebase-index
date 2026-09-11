@@ -91,6 +91,9 @@ function createMockNativeBinding() {
     extractCalls: () => {
       throw error;
     },
+    extractApiUsages: () => {
+      throw error;
+    },
     VectorStore: class {
       constructor() {
         throw error;

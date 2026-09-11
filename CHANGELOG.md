@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Provider-free structural indexing**: Opt-in `indexing.mode: "structural"` builds a separate SQLite, BM25 and call-graph index without initializing an embedding provider. Hybrid remains the default; semantic similarity and embedding-cost operations are explicitly unsupported in structural mode.
+- **Optional TypeScript compiler evidence**: Disabled-by-default SCIP import enriches eligible unresolved local JS/TS call edges using an explicitly generated compiler artifact, with bounded decoding, local-source validation and branch-isolated enrichment state.
+- **Bounded API change evidence**: `codebase_edit_context` accepts `includeApiImpact` across MCP, OpenCode and Pi, associating supported local Express registrations with literal relative `fetch` consumers and candidate test files. Evidence is labeled syntactic and does not claim resolved call edges or runtime test coverage.
+- **Read-only workspace readiness**: `cbi workspace status --repo NAME=PATH` reports independent checkout identity and index coverage for up to 20 repositories. SQLite snapshots preserve live-WAL visibility without creating sidecars in the source repository; source freshness is explicitly not checked.
+
+### Fixed
+
+- **Python relative-import graph resolution**: Direct calls through unambiguous, single-line relative `from` imports can resolve to indexed top-level functions, including aliases and explicit package paths. Shadowed, detected dynamically rebound, ambiguous and unsupported bindings remain unresolved. Normal indexing migrates prior graph resolution and refreshes Python callers after source additions, edits or deletions without requiring a forced rebuild.
+- **Deep source discovery**: Default scans no longer stop at five directory levels, allowing deeply nested source packages such as Maven Java layouts to be indexed. Explicit `indexing.maxDepth` limits, ignored/hidden/build paths, symlink handling and per-directory file limits remain unchanged. Existing indexes can discover the additional sources through normal indexing.
+- **Active-branch readiness**: Status distinguishes globally stored chunks from the active branch's catalog and provides normal-index recovery guidance. Known-empty completed catalogs no longer fall back to stale unscoped evidence; genuinely legacy catalogs retain compatibility handling.
+
 ## [0.28.0] - 2026-09-10
 
 ### Added
