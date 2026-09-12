@@ -11,6 +11,11 @@ const processes: ChildProcessWithoutNullStreams[] = [];
 const directories: string[] = [];
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 async function client(args: string[] = []) {
+  if (args.includes("--sdk")) {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-sdk-supervisor-"));
+    directories.push(directory);
+    args = [...args, "--project", directory];
+  }
   const child = spawn(process.execPath, ["--import", "tsx", fileURLToPath(new URL("./fixtures/mcp-idle/runner.ts", import.meta.url)), ...args]);
   processes.push(child);
   const messages: Message[] = [];
@@ -18,8 +23,8 @@ async function client(args: string[] = []) {
   child.stderr.on("data", (chunk: Buffer) => errors.push(chunk.toString()));
   createInterface({ input: child.stdout }).on("line", (line) => messages.push(JSON.parse(line) as Message));
   const send = (message: Message) => child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
-  const wait = async (predicate: (message: Message) => boolean): Promise<Message> => {
-    const until = Date.now() + 5000;
+  const wait = async (predicate: (message: Message) => boolean, timeoutMs = 5000): Promise<Message> => {
+    const until = Date.now() + timeoutMs;
     while (Date.now() < until) {
       const index = messages.findIndex(predicate);
       if (index !== -1) return messages.splice(index, 1)[0];
@@ -28,7 +33,9 @@ async function client(args: string[] = []) {
     throw new Error(`Message timed out: ${errors.join("")}`);
   };
   const request = (id: number, name: string) => { send({ id, method: "tools/call", params: { name } }); return wait((m) => m.id === id); };
-  send({ id: "init", method: "initialize", params: {} });
+  send({ id: "init", method: "initialize", params: {
+    protocolVersion: "2025-03-26", capabilities: { roots: {} }, clientInfo: { name: "fixture-client", version: "1" },
+  } });
   const initialization = await wait((m) => m.id === "init");
   send({ method: "notifications/initialized" });
   return { child, send, wait, request, errors, initialization, messages };
@@ -77,14 +84,12 @@ describe("MCP idle supervisor", () => {
     expect((await c.request(2, "crash")).error?.message).toContain("not replayed");
     expect((await c.request(3, "index_status")).result?.pid).toBeTypeOf("number");
   });
-  it("relays server requests, progress and cancellation notifications", async () => {
+  it("relays server requests and progress notifications", async () => {
     const c = await client();
     const result = c.request(1, "reverse");
     const reverse = await c.wait((m) => m.method === "roots/list");
     c.send({ id: reverse.id, result: { pid: 0 } });
     expect((await c.wait((m) => m.params?.progressToken === "reverse-reply")).method).toBe("notifications/progress");
-    c.send({ method: "notifications/cancelled", params: { requestId: 1 } });
-    await c.wait((m) => m.params?.progressToken === "cancelled");
     expect((await result).error).toBeUndefined();
   });
   it("keeps numeric and string reverse request IDs distinct", async () => {
@@ -134,6 +139,62 @@ describe("MCP idle supervisor", () => {
     const initial = await c.request(1, "index_status");
     await vi.waitFor(() => expect(c.errors.join("")).toContain("fixture preparing sleep"));
     expect((await c.request(2, "index_status")).result?.pid).toBe(initial.result?.pid);
+  });
+  it("retires submitted SDK cancellations without responses, then sleeps and resumes", async () => {
+    const c = await client(["--sdk"]);
+    const initial = await c.request(0, "index_status");
+    for (let id = 1; id <= 130; id++) {
+      c.send({ id, method: "tools/call", params: { name: "cancel" } });
+      await c.wait((m) => m.params?.progressToken === id);
+      c.send({ method: "notifications/cancelled", params: { requestId: id } });
+      await c.wait((m) => m.params?.progressToken === `settled-${id}`);
+    }
+    expect((await c.request(131, "index_status")).result?.pid).toBe(initial.result?.pid);
+    expect(c.messages.some((m) => m.id !== undefined)).toBe(false);
+    await vi.waitFor(() => expect(c.errors.join("")).toContain("engine sleeping"));
+    expect((await c.request(132, "index_status")).result?.pid).not.toBe(initial.result?.pid);
+  });
+  it("retires SDK reverse cancellations and ignores late replies", async () => {
+    const c = await client(["--sdk"]);
+    const initial = await c.request(0, "index_status");
+    const reverseIds: Message["id"][] = [];
+    for (let id = 1; id <= 130; id++) {
+      const pending = c.request(id, "reverse");
+      const reverse = await c.wait((m) => m.method === "roots/list");
+      await c.wait((m) => m.method === "notifications/cancelled" && m.params?.requestId === reverse.id);
+      reverseIds.push(reverse.id);
+      expect((await pending).result?.pid).toBe(initial.result?.pid);
+    }
+    for (const id of reverseIds) c.send({ id, result: { pid: 0 } });
+    await vi.waitFor(() => expect(c.errors.join("")).toContain("engine sleeping"));
+    expect((await c.request(131, "index_status")).result?.pid).not.toBe(initial.result?.pid);
+  });
+  it("keeps a cancelled SDK handler alive until its cleanup settles", async () => {
+    const c = await client(["--sdk"]);
+    const initial = await c.request(0, "index_status");
+    c.send({ id: 1, method: "tools/call", params: { name: "slow-cancel" } });
+    await c.wait((m) => m.params?.progressToken === 1);
+    c.send({ method: "notifications/cancelled", params: { requestId: 1 } });
+    await delay(200);
+    expect((await c.request(2, "index_status")).result?.pid).toBe(initial.result?.pid);
+    expect(c.errors.join("")).not.toContain("engine sleeping");
+    await c.wait((m) => m.params?.progressToken === "settled-1");
+    await vi.waitFor(() => expect(c.errors.join("")).toContain("engine sleeping"));
+  });
+  it("bounds stalled sleep negotiation and kills the old worker before resuming queued calls", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "mcp-supervisor-owner-"));
+    directories.push(directory);
+    const c = await client(["--stall-sleep", "--owner-file", path.join(directory, "owner")]);
+    const initial = await c.request(1, "index_status");
+    await vi.waitFor(() => expect(c.errors.join("")).toContain("fixture preparing sleep"));
+    c.send({ id: 2, method: "tools/call", params: { name: "index_status" } });
+    c.send({ id: 3, method: "ping" });
+    expect((await c.wait((m) => m.id === 3)).error).toBeUndefined();
+    const resumed = await c.wait((m) => m.id === 2, 12_000);
+    expect(resumed.result?.pid).toBeTypeOf("number");
+    expect(resumed.result?.pid).not.toBe(initial.result?.pid);
+    expect(() => process.kill(initial.result!.pid, 0)).toThrow();
+    expect(c.errors.join("")).toContain("sleep negotiation timed out");
   });
   it("bounds index_status crash recovery to one retry", async () => {
     const c = await client(["--always-crash"]);

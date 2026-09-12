@@ -43,6 +43,12 @@ export interface McpOperationError {
 export type McpOperationExtra = RequestHandlerExtra<ServerRequest, ServerNotification>;
 type McpOperationHandler = (control: OperationControl) => CallToolResult | Promise<CallToolResult>;
 const DIAGNOSTIC_IO_TIMEOUT_MS = 5_000;
+let activeExecutions = 0;
+
+/** Protocol cancellation can finish before the underlying handler releases its resources. */
+export function hasActiveMcpExecutions(): boolean {
+  return activeExecutions > 0;
+}
 
 class ReportedToolError extends Error {
   constructor(
@@ -329,7 +335,8 @@ export async function executeMcpOperation(
       reportProgress,
     };
     throwIfOperationAborted(operationController.signal);
-    handlerPromise = Promise.resolve().then(() => handler(control));
+    activeExecutions++;
+    handlerPromise = Promise.resolve().then(() => handler(control)).finally(() => { activeExecutions--; });
     result = await raceWithOperationSignal(handlerPromise, operationController.signal);
     await raceWithOperationSignal(activityQueue, operationController.signal);
     await raceWithOperationSignal(notificationQueue, operationController.signal);

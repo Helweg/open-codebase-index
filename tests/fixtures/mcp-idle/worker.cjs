@@ -1,5 +1,18 @@
 const readline = require("node:readline");
 const fs = require("node:fs");
+if (process.argv.includes("--owner-file")) {
+  const ownerFile = process.argv[process.argv.indexOf("--owner-file") + 1];
+  if (fs.existsSync(ownerFile)) {
+    let alive = true;
+    try { process.kill(Number(fs.readFileSync(ownerFile, "utf8")), 0); }
+    catch (error) {
+      if (error.code !== "ESRCH") throw error;
+      alive = false;
+    }
+    if (alive) throw new Error("Replacement started before the old worker exited.");
+  }
+  fs.writeFileSync(ownerFile, String(process.pid));
+}
 const input = readline.createInterface({ input: process.stdin });
 const write = (message) => process.stdout.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
 let active = 0;
@@ -9,8 +22,15 @@ let lastActivity = Date.now();
 const activity = setInterval(() => process.send({ type: "activity", busy: active > 0, lastActivity }), 20);
 process.on("disconnect", () => process.exit(0));
 process.on("message", (message) => {
-  if (message.type === "shutdown") process.exit(0);
+  if (message.type === "shutdown") {
+    if (process.argv.includes("--stall-sleep")) return;
+    process.exit(0);
+  }
   if (message.type === "prepare-sleep") {
+    if (process.argv.includes("--stall-sleep")) {
+      console.error("fixture preparing sleep");
+      return;
+    }
     if (process.argv.includes("--reject-sleep") && !rejected) {
       rejected = true;
       console.error("fixture preparing sleep");

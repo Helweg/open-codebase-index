@@ -150,7 +150,7 @@ describe("FileWatcher", () => {
     expect(watcher.isBusy()).toBe(true);
     try {
       await watcher.waitUntilReady();
-      expect(watcher.isBusy()).toBe(false);
+      await vi.waitFor(() => expect(watcher.isBusy()).toBe(false));
       fs.writeFileSync(path.join(tempDir, "src", "idle-guard.ts"), "export const value = 1;");
       await vi.waitFor(() => expect(watcher.isBusy()).toBe(true), { timeout: 5000 });
       await vi.waitFor(() => expect(handler).toHaveBeenCalled(), { timeout: 5000 });

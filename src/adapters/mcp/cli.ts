@@ -26,6 +26,7 @@ import { BackgroundWorkerStopError, isBackgroundWorkerBusy, stopBackgroundWorker
 import { getAutoIndexActivity, isAutoIndexBusy, isHomeDirectory } from "../../utils/auto-index.js";
 import { createWatcherWithIndexer } from "../../watcher/index.js";
 import { attachRecentActivity } from "../../tools/visualize/activity.js";
+import { hasActiveMcpExecutions } from "./operation-execution.js";
 import { generateVisualizationHtml, transformForVisualization } from "../../tools/visualize/index.js";
 
 export interface CliIndexArgs {
@@ -233,6 +234,7 @@ export async function runMcpCli(argv: string[]): Promise<void> {
   let lastActivity = Date.now();
   let activityTimer: ReturnType<typeof setInterval> | undefined;
   const isBusy = (): boolean => !startupComplete
+    || hasActiveMcpExecutions()
     || isAutoIndexBusy(args.project, args.host) || isBackgroundWorkerBusy(args.project, args.host);
   const sampleActivity = (): boolean => {
     const busy = isBusy();

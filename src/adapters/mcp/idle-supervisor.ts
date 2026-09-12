@@ -86,7 +86,7 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
     if (generation !== current || current.failed) return;
     current.failed = true;
     clearTimeout(current.timer);
-    log("interrupted");
+    log(`interrupted: ${reason}`);
     const retry: PendingRequest[] = [];
     for (const request of current.pending.values()) {
       if (initialized && !request.retried && request.message.method === "tools/call"
@@ -102,7 +102,8 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
     }
     current.reverse.clear();
     // Buffered replies belong to reverse requests from this engine only.
-    queue = queue.filter((request) => request.message.method !== undefined);
+    queue = queue.filter((request) => request.message.method !== undefined
+      && request.message.method !== "notifications/cancelled");
     // Failed startup must finish queued calls, rather than silently loop on them.
     if (!current.ready) {
       for (const request of queue) error(request, reason);
@@ -148,10 +149,14 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
         busy = activity.busy !== false;
         if (typeof activity.lastActivity === "number") lastActivity = Math.max(lastActivity, activity.lastActivity);
       } else if (activity.type === "sleep-rejected") {
+        if (!current.sleeping) return;
+        clearTimeout(current.timer);
         current.sleeping = false;
         lastActivity = Date.now();
         flush(current);
       } else if (activity.type === "sleep-accepted") {
+        if (!current.sleeping) return;
+        clearTimeout(current.timer);
         log("sleeping");
         stopChild(current);
       }
@@ -173,6 +178,7 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
       }
       if (message.id !== undefined && !message.method) {
         const request = current.pending.get(message.id);
+        if (!request) return;
         current.pending.delete(message.id);
         if (request?.message.method === "initialize" && !message.error) {
           current.ready = true;
@@ -187,7 +193,9 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
       }
       if (message.method === "notifications/cancelled") {
         const reverse = [...current.reverse].find(([, originalId]) => originalId === message.params?.requestId);
-        if (reverse) message = { ...message, params: { ...message.params, requestId: reverse[0] } };
+        if (!reverse) return;
+        current.reverse.delete(reverse[0]);
+        message = { ...message, params: { ...message.params, requestId: reverse[0] } };
       }
       writeClient(message);
       flush(current);
@@ -219,6 +227,7 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
       || current.pending.size || current.reverse.size || queue.length
       || Date.now() - lastActivity < idleMs) return;
     current.sleeping = true;
+    current.timer = setTimeout(() => fail(current, "MCP engine sleep negotiation timed out after 5 seconds."), 5000);
     current.child.send({ type: "prepare-sleep", idleSince: lastActivity, idleMs });
   }, Math.min(1000, Math.max(10, idleMs / 4)));
 
@@ -235,16 +244,19 @@ export async function runIdleSupervisor(workerUrl: URL, args: string[], idleMs: 
     }
     if (message.method === "initialize") initialize = message;
     if (message.method === "notifications/initialized") initialized = true;
+    const current = generation;
     if (message.method === "notifications/cancelled") {
       const id = message.params?.requestId;
-      const queued = queue.find((request) => request.message.id === id);
+      if (typeof id !== "string" && typeof id !== "number") return;
+      const queued = queue.find((request) => request.message.method && request.message.id === id);
       if (queued) {
         queue = queue.filter((request) => request !== queued);
         error(queued, "Request cancelled before the MCP engine received it.");
         return;
       }
+      // The SDK sends no response after cancellation. Execution stays busy in the worker until cleanup settles.
+      if (!current || current.failed || !current.pending.delete(id)) return;
     }
-    const current = generation;
     if (!message.method && message.id !== undefined) {
       // Only the engine which asked a reverse request may receive its answer.
       const originalId = current?.reverse.get(message.id);

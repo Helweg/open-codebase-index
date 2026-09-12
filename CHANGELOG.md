@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MCP supervisor cancellation and sleep recovery**: Cancelled requests release protocol bookkeeping in both directions while running handlers still prevent idle shutdown. Sleep negotiation now times out after five seconds and stops the old engine before resuming queued calls in a replacement.
 - **Transitive dependency security**: Updated dependency overrides for `hono` to `4.13.5` and `js-yaml` to `4.3.2`, with a lockfile-only bump of `nanoid` to `3.3.18`, addressing the current security advisories in these packages.
 - **PDF definition exclusion**: Definition-oriented retrieval now excludes PDF passages before ranking and external reranking, while ordinary document search retains page-aware results.
 
