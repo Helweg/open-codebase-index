@@ -11,6 +11,7 @@ export type BranchChangeHandler = (oldBranch: string | null, newBranch: string) 
  */
 export class GitHeadWatcher {
   private watcher: FSWatcher | null = null;
+  private activeCallbacks = 0;
   private projectRoot: string;
   private currentBranch: string | null = null;
   private onBranchChange: BranchChangeHandler | null = null;
@@ -68,7 +69,8 @@ export class GitHeadWatcher {
     }
 
     this.debounceTimer = setTimeout(() => {
-      this.checkBranchChange();
+      this.debounceTimer = null;
+      void this.checkBranchChange();
     }, this.debounceMs);
   }
 
@@ -80,13 +82,20 @@ export class GitHeadWatcher {
       this.currentBranch = newBranch;
 
       try {
+        this.activeCallbacks += 1;
         await this.onBranchChange(oldBranch, newBranch);
       } catch (error) {
         console.error("Error handling branch change:", error);
+      } finally {
+        this.activeCallbacks -= 1;
       }
     } else if (newBranch) {
       this.currentBranch = newBranch;
     }
+  }
+
+  isBusy(): boolean {
+    return this.resolveReady !== null || this.debounceTimer !== null || this.activeCallbacks > 0;
   }
 
   getCurrentBranch(): string | null {

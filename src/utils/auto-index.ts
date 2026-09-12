@@ -356,6 +356,15 @@ class AutoIndexCoordinator {
     this.activation = pendingActivation;
   }
 
+  activityAt(): number {
+    return Date.parse(this.status.updatedAt);
+  }
+
+  isBusy(): boolean {
+    return Boolean(this.activation || this.inFlight || this.pendingRequest || this.pendingFollowUp
+      || this.batteryCheck || this.batteryIndexJob || this.batteryDeferredRequest);
+  }
+
   snapshot(): AutoIndexStatusSnapshot {
     this.refreshSafety();
     return {
@@ -1297,4 +1306,12 @@ async function waitForPublishedSnapshot(
       control?.signal,
     );
   }
+}
+
+export function isAutoIndexBusy(projectRoot: string, host: HostMode): boolean {
+  return getCoordinator(projectRoot, host)?.isBusy() ?? false;
+}
+
+export function getAutoIndexActivity(projectRoot: string, host: HostMode): number {
+  return getCoordinator(projectRoot, host)?.activityAt() ?? 0;
 }

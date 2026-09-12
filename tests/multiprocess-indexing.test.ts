@@ -308,6 +308,7 @@ describe("multiprocess indexing", () => {
     host: "claude" | "codex" | "jcode" | "opencode" | "pi" = "opencode",
     options: {
       builtCli?: boolean;
+      mcpIdleTimeout?: number;
       environment?: Record<string, string>;
       preloads?: string[];
     } = {},
@@ -324,6 +325,8 @@ describe("multiprocess indexing", () => {
     const args = options.builtCli ? [] : ["--import", "tsx"];
     for (const preload of options.preloads ?? []) args.push("--import", preload);
     args.push(cliPath, "--project", projectRoot, "--config", configPath, "--host", host);
+    // Existing lease and crash tests intentionally address the engine PID directly.
+    args.push("--mcp-idle-timeout", String(options.mcpIdleTimeout ?? 0));
     const transport = new StdioClientTransport({
       command: process.execPath,
       args,
@@ -1218,6 +1221,68 @@ describe("multiprocess indexing", () => {
     expect(recoveredStatus.indexed).toBe(true);
     expect(embeddingServer.requestCount).toBe(0);
     assertIndexIntegrity();
+  });
+
+  it("sleeps after useful work across lease heartbeats while pings remain active", async () => {
+    const configPath = path.join(tempDir, "supervised-heartbeat-config.json");
+    writeBackgroundMcpConfig(configPath);
+    const mcp = await createMcpClient(configPath, "codex", { mcpIdleTimeout: 6 });
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    fs.writeFileSync(sourcePath, "export function heartbeatRegression() { return 'updated-source'; }\n");
+    await embeddingServer.waitForRequestCount(2);
+    await embeddingServer.waitForIdle();
+    const completedAt = Date.now();
+    const deadline = completedAt + 10_000;
+    while (!mcp.stderr.join("").includes("MCP engine sleeping")) {
+      expect(Date.now(), "Engine must sleep despite its five-second lease heartbeat").toBeLessThan(deadline);
+      await mcp.client.ping();
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    expect(Date.now() - completedAt).toBeGreaterThanOrEqual(5500);
+    expect(embeddingServer.requestCount).toBe(2);
+    await mcp.client.ping();
+    expect(mcp.stderr.join("")).not.toContain("MCP engine resuming");
+    const resumed = await mcp.client.callTool({ name: "index_status", arguments: {} });
+    expect(resumed.isError).not.toBe(true);
+    expect(mcp.stderr.join("")).toContain("MCP engine resuming");
+  });
+
+  it("shares one background writer across two supervised clients and leaves both asleep", async () => {
+    const configPath = path.join(tempDir, "supervised-background-config.json");
+    const config = writeBackgroundMcpConfig(configPath);
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex", { mcpIdleTimeout: 1 }),
+      createMcpClient(configPath, "codex", { mcpIdleTimeout: 1 }),
+    ]);
+    await embeddingServer.waitForRequestCount(1);
+    await embeddingServer.waitForIdle();
+    const leasePath = getBackgroundWorkerLeasePath(projectRoot, config, "codex");
+    const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf8")) as { pid: number };
+    expect(owner.pid).not.toBe(first.transport.pid);
+    expect(owner.pid).not.toBe(second.transport.pid);
+    await vi.waitFor(() => {
+      expect(first.stderr.join("")).toContain("MCP engine sleeping");
+      expect(second.stderr.join("")).toContain("MCP engine sleeping");
+      expect(fs.existsSync(leasePath)).toBe(false);
+    }, { timeout: 10_000 });
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    expect(first.stderr.join("")).not.toContain("MCP engine resuming");
+    expect(second.stderr.join("")).not.toContain("MCP engine resuming");
+    expect(embeddingServer.requestCount).toBe(1);
+  });
+
+  it("connects to a supervised source CLI with the inherited TypeScript loader", async () => {
+    const configPath = path.join(tempDir, "source-supervisor-config.json");
+    writeForegroundMcpConfig(configPath);
+    const mcp = await createMcpClient(configPath, "codex", { mcpIdleTimeout: 1 });
+    const initial = await mcp.client.callTool({ name: "index_status", arguments: {} });
+    expect(initial.isError).not.toBe(true);
+    await vi.waitFor(() => expect(mcp.stderr.join("")).toContain("MCP engine sleeping"), { timeout: 5000 });
+    const resumed = await mcp.client.callTool({ name: "index_status", arguments: {} });
+    expect(resumed.isError).not.toBe(true);
+    expect(mcp.stderr.join("")).toContain("MCP engine resuming");
   });
 
   it("allows only one of two real MCP stdio servers to index", async () => {
