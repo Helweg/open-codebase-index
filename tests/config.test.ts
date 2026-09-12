@@ -88,8 +88,13 @@ describe("config schema", () => {
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
+      expect(config.indexing.maxDepth).toBe(-1);
       expect(config.search.communityBoost).toBe(0);
       expect(config.mcp.stallTimeoutMs).toBe(300_000);
+    });
+
+    it.each([-1, 0, 5, 9])("preserves explicitly configured discovery depth %s", (maxDepth) => {
+      expect(parseConfig({ indexing: { maxDepth } }).indexing.maxDepth).toBe(maxDepth);
     });
 
     it("normalizes the MCP stall timeout", () => {
@@ -295,6 +300,40 @@ describe("config schema", () => {
         // layer never receives a wrapped value.
         expect(parseConfig({ indexing: { linesPerChunk: 4_294_967_296 } }).indexing.linesPerChunk).toBe(4294967295);
         expect(parseConfig({ indexing: { linesPerChunk: 9_999_999_999 } }).indexing.linesPerChunk).toBe(4294967295);
+      });
+
+      it("should parse bounded optional SCIP TypeScript settings", () => {
+        expect(parseConfig({}).indexing.scipTypeScript).toEqual({
+          enabled: false,
+          indexFile: "index.scip",
+          decoderCommand: "scip",
+          timeoutMs: 30_000,
+          maxOutputBytes: 64 * 1024 * 1024,
+          requireFreshIndex: true,
+        });
+        expect(parseConfig({ indexing: { scipTypeScript: {
+          enabled: true,
+          indexFile: "  .codebase-index/scip/index.scip  ",
+          decoderCommand: "  /opt/local/bin/scip  ",
+          timeoutMs: 1,
+          maxOutputBytes: Number.MAX_SAFE_INTEGER,
+          requireFreshIndex: false,
+        } } }).indexing.scipTypeScript).toEqual({
+          enabled: true,
+          indexFile: ".codebase-index/scip/index.scip",
+          decoderCommand: "/opt/local/bin/scip",
+          timeoutMs: 1_000,
+          maxOutputBytes: 256 * 1024 * 1024,
+          requireFreshIndex: false,
+        });
+        expect(parseConfig({ indexing: { scipTypeScript: {
+          indexFile: "   ", decoderCommand: "", timeoutMs: Infinity, maxOutputBytes: NaN,
+        } } }).indexing.scipTypeScript).toMatchObject({
+          indexFile: "",
+          decoderCommand: "",
+          timeoutMs: 30_000,
+          maxOutputBytes: 64 * 1024 * 1024,
+        });
       });
 
       it("should enforce minimum of 1 for gcIntervalDays", () => {

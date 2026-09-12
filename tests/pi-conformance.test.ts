@@ -84,7 +84,7 @@ interface RegisteredTool {
   readonly name: string;
   readonly parameters?: {
     readonly properties?: Record<string, {
-      readonly default?: number;
+      readonly default?: number | boolean;
       readonly minimum?: number;
       readonly maximum?: number;
       readonly anyOf?: ReadonlyArray<{ readonly minimum?: number; readonly maximum?: number; readonly type?: string }>;
@@ -344,6 +344,9 @@ describe("Pi adapter conformance", () => {
       expect.objectContaining({
         anyOf: expect.arrayContaining([expect.objectContaining({ type: "boolean" })]),
       }),
+    );
+    expect(tools.get("codebase_edit_context")?.parameters?.properties?.includeApiImpact).toEqual(
+      expect.objectContaining({ default: false, type: "boolean" }),
     );
   });
 

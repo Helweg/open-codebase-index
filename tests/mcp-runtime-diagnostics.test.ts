@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { McpRuntimeDiagnostics } from "../src/adapters/mcp/runtime-diagnostics.js";
 
@@ -38,6 +38,39 @@ describe("MCP runtime diagnostics", () => {
       schemaVersion: 1,
       activeOperations: [],
     });
+  });
+
+  it("drains pending completion persistence during ordered shutdown", async () => {
+    const diagnostics = new McpRuntimeDiagnostics(indexRoot);
+    const operation = await diagnostics.begin("index_codebase");
+    let releaseWrite!: () => void;
+    let markWriteStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+    const writeStarted = new Promise<void>((resolve) => { markWriteStarted = resolve; });
+    const mkdir = fs.promises.mkdir.bind(fs.promises);
+    const mkdirSpy = vi.spyOn(fs.promises, "mkdir").mockImplementationOnce(async (...args) => {
+      markWriteStarted();
+      await writeGate;
+      return mkdir(...args);
+    });
+    const completion = operation.complete();
+    let shutdown: Promise<void> | undefined;
+    let shutdownSettled = false;
+    try {
+      await writeStarted;
+      // complete() has removed the active entry, but its disk write is still blocked.
+      shutdown = diagnostics.markOrderedShutdown().then(() => { shutdownSettled = true; });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(shutdownSettled).toBe(false);
+      releaseWrite();
+      await shutdown;
+      expect(fs.readdirSync(path.join(indexRoot, "mcp-runtime"))).toEqual([]);
+    } finally {
+      releaseWrite();
+      await completion;
+      await shutdown;
+      mkdirSpy.mockRestore();
+    }
   });
 
   it("corrects permissions on an existing runtime directory", async () => {

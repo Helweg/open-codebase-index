@@ -14,11 +14,13 @@ import {
 } from "./contracts.js";
 import {
   getCallGraphData,
+  getApiImpactEvidence,
   implementationLookup,
   searchCodebase,
   type CallGraphDataResult,
   type CallGraphSymbolResolution,
 } from "./operations.js";
+import type { ApiImpactEvidence, ApiImpactTarget } from "./api-impact.js";
 import {
   buildContextPack,
   DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
@@ -36,6 +38,8 @@ export interface CodebaseEditContextResult {
     sourceIncluded: boolean;
     callerCount: number;
     calleeCount: number;
+    apiImpactIncluded?: boolean;
+    apiImpactTruncated?: boolean;
   };
 }
 
@@ -55,6 +59,10 @@ export interface CodebaseEditContextDependencies {
     filePath?: string;
     direction: "callers" | "callees";
   }, control?: OperationControl) => Promise<CallGraphDataResult>;
+  getApiImpactEvidence?: (
+    target: ApiImpactTarget,
+    control?: OperationControl,
+  ) => Promise<ApiImpactEvidence>;
 }
 
 function edgeLimit(value: number | null | undefined): number {
@@ -260,13 +268,40 @@ export async function resolveCodebaseEditContextWithDependencies(
   const sourceText = source
     ? fitTextToContextBudget(formatSource(source), sourceBudget).text
     : `## Target implementation\nRisk: no implementation source matched the resolved target at ${resolution.filePath}:${resolution.startLine}.`;
-  const fitted = fitTextToContextBudget([
+  let apiImpact: ApiImpactEvidence | undefined;
+  if (input.includeApiImpact && dependencies.getApiImpactEvidence) {
+    try {
+      apiImpact = await dependencies.getApiImpactEvidence({
+        symbol: resolution.name,
+        filePath: resolution.filePath,
+        startLine: resolution.startLine,
+      }, control);
+    } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      apiImpact = {
+        text: "## API impact evidence\nRisk: API evidence could not be collected from the bounded indexed-file scope.",
+        scannedFileCount: 0,
+        candidateFileCount: 0,
+        routeCount: 0,
+        consumerCount: 0,
+        candidateTestCount: 0,
+        truncated: false,
+      };
+    }
+  }
+  const precedingText = [
     `# Pre-edit context for ${resolution.name}`,
     graphRisk,
     sourceText,
     formatCallers(callers),
     formatCallees(callees, resolution.filePath),
-  ].filter((section) => section !== undefined).join("\n\n"), input.tokenBudget ?? undefined);
+  ].filter((section) => section !== undefined).join("\n\n");
+  const completeText = apiImpact ? `${precedingText}\n\n${apiImpact.text}` : precedingText;
+  const fitted = fitTextToContextBudget(completeText, input.tokenBudget ?? undefined);
+  const apiImpactOffset = Array.from(`${precedingText}\n\n`).length;
+  const renderedApiTail = Array.from(fitted.text).slice(apiImpactOffset).join("");
+  const apiImpactRendered = apiImpact ? renderedApiTail.startsWith("## API impact evidence") : false;
+  const apiImpactFullyRendered = apiImpact ? renderedApiTail.startsWith(apiImpact.text) : false;
 
   return {
     text: fitted.text,
@@ -278,6 +313,10 @@ export async function resolveCodebaseEditContextWithDependencies(
       sourceIncluded: source !== undefined,
       callerCount: callers.length,
       calleeCount: callees.length,
+      ...(apiImpact ? {
+        apiImpactIncluded: apiImpactRendered,
+        apiImpactTruncated: apiImpact.truncated || !apiImpactFullyRendered,
+      } : {}),
     },
   };
 }
@@ -307,6 +346,12 @@ export async function resolveCodebaseEditContext(
       projectRoot,
       host,
       params,
+      operationControl,
+    ),
+    getApiImpactEvidence: (target, operationControl) => getApiImpactEvidence(
+      projectRoot,
+      host,
+      target,
       operationControl,
     ),
   }, control);

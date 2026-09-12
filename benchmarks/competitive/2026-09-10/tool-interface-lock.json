@@ -1,0 +1,1747 @@
+{
+  "schemaVersion": 1,
+  "status": "frozen",
+  "ocbiCommit": "ebd07022fe99b95a6ec4c56d5324fd8be6a2941d",
+  "runtime": {
+    "nodeVersion": "v26.6.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "nodeSha256": "1ef99ea25fe70c9b67e7efe768ef8ee22148d3cabc703db6131b57aeb617d040"
+  },
+  "artifacts": [
+    {
+      "root": "project",
+      "path": "dist/cli.js",
+      "sha256": "09fb023cb45b525770414eef14422dc64837d4d6b1a6265f0ad379b626a043b9"
+    },
+    {
+      "root": "project",
+      "path": "native/codebase-index-native.darwin-arm64.node",
+      "sha256": "4571ba1d6b92f1373bc36130468e2998f8c480d995d3ce7415d8423cc078843f"
+    },
+    {
+      "root": "project",
+      "path": "package-lock.json",
+      "sha256": "e37ce8dc860fafebbcdf660316a1542df4c643133d6c504ab7523596dffe47fc"
+    },
+    {
+      "root": "tools",
+      "path": "grepai/grepai",
+      "sha256": "643608712779a7b8463960b6901bad7c221425840836f631afb1fb01ad8663e8"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/bin/codegraph",
+      "sha256": "3184bbf582b5db7cffd07373017631fdc4392842860c2e3991be3f23b6fb3559"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/bin/codegraph.js",
+      "sha256": "0836f2e963bf76163223f7802a94971cc6e2b74a594508770c4f5d3fcbad97a3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/bin/command-supervision.js",
+      "sha256": "cc727707827220d49748754ee6754d78374ed1ef5f4ffcd2bd9b8d1d758d8f83"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/bin/fatal-handler.js",
+      "sha256": "3cc60392f665b0457ecb659699623971560b6fb176d2c50351f35a904d7a8eb8"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/bin/node-version-check.js",
+      "sha256": "ae1cbd23fab80d8081be8e6436bf1f752e662f3990cc169695612ae577bd5df4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/bin/uninstall.js",
+      "sha256": "6e10491dd1f67249535644c5e552ff6444c4697188d188a963ea28f2aa0a67c7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/context/formatter.js",
+      "sha256": "b8fbaf1445e335f2c1d1e6d28c757daf2dddacb01367922b78650194acd818ea"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/context/index.js",
+      "sha256": "c04a2936b6dea6990ecc434616ac76a32e9d44f93a27a47f3f27e1c094e4d5d6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/context/markers.js",
+      "sha256": "d101daffe71d036c034def5bd8148c3cdfc099a37b866cdf0ea7af9d01f351a0"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/db/index.js",
+      "sha256": "b346971e50780533318792c1b98b4925e24a742baacd9eedabc8d24bd5042560"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/db/migrations.js",
+      "sha256": "89cf51765315ec2c907a6452283c4c8f16a7c1a650ea3cddba72ad468d255be1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/db/queries.js",
+      "sha256": "e90d5998289638353291f69e09c1328df79858b039f9baaa6ce608fd045843ce"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/db/sqlite-adapter.js",
+      "sha256": "9856a972357caf93fc79ab9e15f67ebb23349309796207e20ccb824f8ed65242"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/db/wal-valve.js",
+      "sha256": "3134f67fc81b91ea5b91472c885ae56990c4d1969b61c43741d80eceeb1d7216"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/directory.js",
+      "sha256": "0ccabb909eb770cf3e3aac4051ecb9dcc6fb1bcb5306cefba7a4e35527b5bce4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/errors.js",
+      "sha256": "c0d8264489023bdc1e30b616c922834bcfb5ee4c5bb6bcd0c6251035dc5cf271"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/astro-extractor.js",
+      "sha256": "866262f6a519184eeaf480827428ce0bec2e11dae3040039a76ae9b5ef4e2d9d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/cfml-extractor.js",
+      "sha256": "11adce908a40218183e1169d6571377ab24e7ebdc87606675e5dd26c41db9707"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/dfm-extractor.js",
+      "sha256": "47fe803c805c6aa28d2c9324be8d44d79dfd83bbe9dca15a064498c4616e10ae"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/extraction-version.js",
+      "sha256": "f34f648bb7f6270b958086e886f6e863e9e8164ec54dc6402189bf43c5209508"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/function-ref.js",
+      "sha256": "4ee6fe214cafdb3b2050ed9ad11853b58d58cf16e23083eb6eb890c02565e8aa"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/generated-detection.js",
+      "sha256": "a08f5dcff770d78dbfcda302b05c21837f3ca4cd12b50c648daf357d69a1b5f6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/grammars.js",
+      "sha256": "31e8b62d7d388d0c871559df944706b4b6c534d2d02ed7278693da7d53b97c31"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/index.js",
+      "sha256": "f0750c1580c90e6cfeb9144ae2696c5d52bfe1818a1870d9ee8ddb716e6b27a2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/kernel/decode.js",
+      "sha256": "9b5400dd47bf32c17c31642037dfdf5de612c853d56a2b34a46659d4cccea1f9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/kernel/index.js",
+      "sha256": "7673458446ec9c18fd4155fed1df35aeb0600495836db8d295c731d01cf15e98"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/kernel/layout.js",
+      "sha256": "00d5e329d5d1c28ec59d961167286a6cd55d0f5ab6c5dc94b61fc0a78ecb7047"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/kernel/loader.js",
+      "sha256": "a5e0c6cd72982489648bf87eaad6caa2338a8f7e76b676a619b830aa98f529a7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/arkts.js",
+      "sha256": "bdb1ea2b0687a744b10dc4b5eed8ec1409e608a9444e1b5282c2085acadda3f3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/c-cpp.js",
+      "sha256": "e0b3bbe34e72fe769adadb42d23579cc906d7e62b5bf35e3ca97b1640ee3b4f9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/cfquery.js",
+      "sha256": "b2bc5ca6716fe9c885fe4bc3c42a785ad012fe01ef1221e99fdea2e27ab952f8"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/cfscript.js",
+      "sha256": "480975fd8a829e96c228980d3f1ab2b9f98c62aa3e82fd7e360211ec65bb91fb"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/cobol.js",
+      "sha256": "5608f4ea59cf3679e3e438a36400e9fc21b2361042d330067de0fd13ab85a14d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/csharp.js",
+      "sha256": "cd66eb6ea606d59b959b2998fdb85fe312ed9bfe36f9cd0281b384c4db557192"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/dart.js",
+      "sha256": "d8127412826f13edf9cfb9d51a02f1a683c6cada267fa2a91bebaa422e4bfc94"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/erlang.js",
+      "sha256": "09c58fc5b5e3b767e9949e5bf08def3a0f10c559f46805238fe28aa242ea697b"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/go.js",
+      "sha256": "872b62dc1accbbd4635bfbe732f480f0cb0113b722058a41583df2ae5ebb11c5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/index.js",
+      "sha256": "37bfd2c77795457a14bbaa6fea7928f9a52a79453668eccd41d167934de63c9e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/java.js",
+      "sha256": "d33eac85725ef6532c314b2e53035f2910769648999e1af2ab54409808976437"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/javascript.js",
+      "sha256": "877e44d1635e3e4b2f363c3f0af90913a5e930989b3e93f9eda88f329c9ee955"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/kotlin.js",
+      "sha256": "8785eb535b97d96f2d19a6b193091e0a8ade176579d4799025cc7a88380fb7e9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/lua.js",
+      "sha256": "814cb065a8333c5376cbd2bde4945b32470f98cabc128b5f47b903691df57ac5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/luau.js",
+      "sha256": "e82812e420e7cb5510cddeae70fd56849344fabf50020807683437f1f40f12f5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/nix.js",
+      "sha256": "3506a5e34e80f1d1abb58fe5ebdd77e490808fa256228ebc4441dcf10563e31f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/objc.js",
+      "sha256": "5bcc6458118a87039582a6f1f008ecbc62bde567c36459dab0fa3574bec5cfeb"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/pascal.js",
+      "sha256": "f1625d393ea03aed071bb95c9b84e952cb4551bbb3bdc6cc2c9c85a8abbc6036"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/php.js",
+      "sha256": "8657ee181ace22ef1fb8b2e6a78628aaf47bf0ed874ceb40e1f2a0ee91538e8d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/python.js",
+      "sha256": "1aa161bc8db5fbe9397175bc39522d1bf7c566647d496afbab4c0698171edafd"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/r.js",
+      "sha256": "8b98ee2839be5dc106f615d827eb92a9b99e52bf2d4c01f0d0d072cf8a1cfa47"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/ruby.js",
+      "sha256": "7702b060f1f78834eb7701602f40747a8cadbfa45419a69ce38fa1bd077b7300"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/rust.js",
+      "sha256": "2763f1da760cc9dc120ffac1045775c6845b83d11397ef2931b01690cd257e82"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/scala.js",
+      "sha256": "cf147fe778787bd78b320178189e9e09666c290d01b14b76e6961bdac767f739"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/solidity.js",
+      "sha256": "d4a361d625348ce9250de0fa1a1468d9f9573a7913fe91d7cffeed1119e803c3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/swift.js",
+      "sha256": "11db9b78b608a1dcd10bbe5fca8796aadfd6f2b0a072d6056d208f40bf28f491"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/terraform.js",
+      "sha256": "90ebeb3774153f5ed72d3e98389f17d53abc652e7eb657b4cea739f164319586"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/typescript.js",
+      "sha256": "8d34eb1b83cbd0d1e86b4f6665768cd39711209946f2c36a2d39cbff45a9ec13"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/languages/vbnet.js",
+      "sha256": "a8f16cfd744dac7985e3946219bd6c526e591f17b188fab7f28b083408c11c18"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/liquid-extractor.js",
+      "sha256": "a8270864e1b88df51aba9402d5700fc1c6da9d0f738b5dba060d1eb3aca0baa8"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/mybatis-extractor.js",
+      "sha256": "6abdfd8123a68834137a8040ce7197f29481dd839b13032f2cf61439916e7366"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/parse-pool.js",
+      "sha256": "61b8d6d33c70ad4095faf351dfecfe580084c339eefd7961778e86ebe41c6eed"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/parse-worker.js",
+      "sha256": "c4180a4529dd28120141331dcbf45d14a73cfed008d0c09b2e2273c9cb80a3da"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/razor-extractor.js",
+      "sha256": "31c73da7a67c176aa8c70a2adbffe5f683c134d08d884fd8393a156c72285ef7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/store-worker.js",
+      "sha256": "0e373065a01bba73277d842cc244839735a47115de21253192921a57298a2361"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/store-writer.js",
+      "sha256": "af32fdd9d9f48d693b39289abb1b926ef50994b0bb9a99d32e729f21caf6682d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/svelte-extractor.js",
+      "sha256": "15c579bed7784de7c01594e1d509ec29a9707adcc8b7c827b9c73dfcd388aa36"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/tree-sitter-helpers.js",
+      "sha256": "98b714a56a46b495338acfd51d43bb1c334fb6faffc8b05b55dd3ea7215f9864"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/tree-sitter-types.js",
+      "sha256": "b89920fd54fb9b3924a3444add42440d2f4dc089447c3b2ba3689d383f4584ea"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/tree-sitter.js",
+      "sha256": "a2273a63a8ece406ac749451b411a7608ec2c30b7bba285963f7d11eb7256285"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/vue-extractor.js",
+      "sha256": "7bc0dd28d92c70161afeb9349aada23e27249047be762a7fb83707068cb354a9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-arkts.wasm",
+      "sha256": "db0812971109457d22b3fe9dcdb1cd8e614fba2a338e220670bd254485753623"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-c.wasm",
+      "sha256": "a271e584616c7c3c0ac663f01cd05dd5f1a6c2ce6d4cd23096548985a95d0ccb"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-c_sharp.wasm",
+      "sha256": "6f69e1cae44e1c32c1eccc170dc5a9778fb94ff716f71113fe1f8c4299aa2f40"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-cfml.wasm",
+      "sha256": "17aeb294c58dd47045b470fc082ccceac3100c8e548b13764d4f3987a062322f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-cfquery.wasm",
+      "sha256": "9d4eaaec46eec7e6400d4b8d6c85fac7dfe33867ed5b4e5c218dfa7851c32558"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-cfscript.wasm",
+      "sha256": "e381db5d2b8a7744fc7d8e51b0a14ff03f86c8ff497cdfe32d1da467f19d4096"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-cobol.wasm",
+      "sha256": "65b98799f92e831d8b5ed8cd811464c71fac31c4beabf66990a545a4f65e02f1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-cpp.wasm",
+      "sha256": "70f5e2b9976dad56bdcd1fafcb3af8c839c7a92e7beaa437162bcf45f390e83d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-dart.wasm",
+      "sha256": "7f5364e4256cf7e55efd01dd52421ef2663caa8061b82659b7e4bf61064545ec"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-erlang.wasm",
+      "sha256": "dbab33f03e07b89f4385fcdd48d87d86ba35c82a0a426788d55b8c25410bc491"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-go.wasm",
+      "sha256": "4eda5d91c99ca981e88bc7d3d33f0db166b4bab0a84d0021a9abf39b364c78ef"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-java.wasm",
+      "sha256": "181a6fbc34d7864a551d91c13882fc33007e923b3c81a4bdbe7fa47492090077"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-javascript.wasm",
+      "sha256": "7978e62bcc851ab1d1f6dcd4678f9eda79df2b3b3490e75f81dd819d9bccccfa"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-kotlin.wasm",
+      "sha256": "c80c88867a589a1a0959bcea89de84b7e9684b3693b2cdb2944812458e62ff48"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-lua.wasm",
+      "sha256": "6d95607fc7d78964cfdf065ccb1ba76be5ed217c5ec0d0a3cace13c59fa1ae43"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-luau.wasm",
+      "sha256": "f1647052518f2bdfae8e8c0b033ffdeca1193d69d11c78ba20f84c8374fd0fe3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-nix.wasm",
+      "sha256": "4acffa1c013df751193a21ce429777ca214c7d3a7e3665085b6df00dad8869f0"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-pascal.wasm",
+      "sha256": "be3634fca99c19f5e1035a1a9c7d93d6ee82b35e6d5024f02be4883b71329c3e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-php.wasm",
+      "sha256": "6545a9a110bc878e26ed329950147e190c83da038bb17e999de646fe6c4d6c82"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-python.wasm",
+      "sha256": "a7fdc587e77bd729b9f5b783c659be23c896e305a2c374472bed7114d9e01fac"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-r.wasm",
+      "sha256": "2a8f5acd1c53d91e0ec5c01a6830d8ac7f5a7f96f0ac4b3768c016c8e9d07711"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-ruby.wasm",
+      "sha256": "4cb5a4b12870876ca864c1e92fe1f5cd47036b2adc083e9306488af88867dbb4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-rust.wasm",
+      "sha256": "206031e0f67fb41ecae505868ca3bb917df7375031aebafd2f97314a849713fe"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-scala.wasm",
+      "sha256": "7945b13e6f9b15b578c5e5e4e60253c049fec07c531518163f3415a76c0621aa"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-swift.wasm",
+      "sha256": "cc77a63b8487956270e2f385e29a03ba0773ba532a3c8a8844a26b4c98793843"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-terraform.wasm",
+      "sha256": "0d9ef3ae926acc0411bfecba9b34df4ea659061917b96455570a45a70824e890"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-tsx.wasm",
+      "sha256": "8f647a1b2cafe9ab00fb2056d79021d2a144ba17a72f45511072311c1b05d08e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-typescript.wasm",
+      "sha256": "3a44d634c9840dccec36f33b99592bd086a2f940e9cd80c64347c45b7dce662f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm/tree-sitter-vbnet.wasm",
+      "sha256": "e38a09e1826c7ec06340c0531a98bbb5ee79bdd710bba3d3349b79a19721e844"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/extraction/wasm-runtime-flags.js",
+      "sha256": "25c309eb2e1b0d5f3a418a408dfd2228beda6057675ec6e500e20910c67d1614"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/graph/index.js",
+      "sha256": "280c444c0fc861b1a49d89a630992c661eaab67ee30a5907c56affbebb137863"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/graph/queries.js",
+      "sha256": "f95b5dfd1439b94a64adff078dc80b17d56f68d45530a056de1b03b515209836"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/graph/traversal.js",
+      "sha256": "cc1710382ea69d17c525a5c9189289ce861711e883f1e0ba3392d0aef8299de2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/index.js",
+      "sha256": "e4c5f144d8cab8f53d4e50cffaf88fd1d5b0c2ae1bd794ab3b5eedc49596105e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/beta-signup.js",
+      "sha256": "ec57af4ad723989fc7c2422d43defb0f9a20f352d340aad39d85ca75f673ead6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/config-writer.js",
+      "sha256": "31b6d2d0e2343ef021a56c435bdab5a23082ab7562326fd02697e1272d0fa241"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/index.js",
+      "sha256": "bf89ae3289102e4a03d42a2a2d20eb7edba8f1b8fd4fcfd5d404bac3cdf6a7b3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/instructions-template.js",
+      "sha256": "94c5e5d0c42d14de3966a2963332d7b3f163fbc14ca1731c5e990b193b0a250c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/antigravity.js",
+      "sha256": "20b76e7a156bb148407741ace880b314cc8f2ae18877b7c8765c24159aa4c5a5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/claude.js",
+      "sha256": "94439be7ba6da193952ddc704b126d4aa36d39cebcfde472739ab9b4771af645"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/codex.js",
+      "sha256": "64f2b88017ce0c4acaae6ac775616733e03579af866ec4f12d499be2d974aa03"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/copilot-cli.js",
+      "sha256": "78927b48e4de694b40425dbd93eaa1feb8b28b99a395834b7c19db5bb30b67f3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/copilot-jetbrains.js",
+      "sha256": "66d8209dedbd7049595458a26793e354351c0e999dfd6e6c1d68db6652ee71af"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/copilot-vscode.js",
+      "sha256": "8ccd4ed21846b47b347702c02a58009fcac3e8b5e77c2c8dea90a0be68346678"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/cursor.js",
+      "sha256": "6616c9b46c7a4d5c25168569dc8acc977a2743dc499298afe49d8d663df2d29e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/gemini.js",
+      "sha256": "c266692ba885d1c225bb5f8c0884eb733e400b188606fca9ef1809aacb267e48"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/hermes.js",
+      "sha256": "069bbb17831ed75a513646b59dbb3b07658f3a94e7ccbf853bf1f49cfd22882c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/kiro.js",
+      "sha256": "3582f7d73c18c4b5d375ef03d7e8d089cd262c737c190934f1fcaa7e4841050c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/opencode.js",
+      "sha256": "a738e08f692d967818c093653bfd9b650d199b8f125b7f176180770ea25c4186"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/registry.js",
+      "sha256": "4dbf205e5fd023f049693f3216363fc49a0f2fad2266e908d1596397f8634a2c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/shared.js",
+      "sha256": "73b40b23fe4b376790a69f5c8c4d29fb6d3021c4651a68ab435b5bf169759e1e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/toml.js",
+      "sha256": "e8114e900304054a93206e3b1a3385774c6a69e7b114caf43273e0af4dc6ef8e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/installer/targets/types.js",
+      "sha256": "6888a15db3c4991d91f8064564c5f3af37363fbf9c852e9ab3a5a3870b7875d2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/daemon-manager.js",
+      "sha256": "742ce5a11d1f506a67e75d7926ab76f25809c61797c90168b44a6269d2a3dba2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/daemon-paths.js",
+      "sha256": "5554c754be13c2aa13b8e0933c1f737499adb02e7f07b4ac1a3e548a77e1293a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/daemon-registry.js",
+      "sha256": "f3d13fc67b9cd8a5927566ec0ff2a2126f710717f71a50bc4a89f3891ceeb8ae"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/daemon.js",
+      "sha256": "c9f1326dfd83d08cc73b1de098e9a82c8c18fcf750c845d1affd8a4f5f412ca2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/dynamic-boundaries.js",
+      "sha256": "b88ed0c00866f725409398a5c1657990f8f814367d200b6e22cd05266013e227"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/early-ppid.js",
+      "sha256": "7d31865642a30496ba55e370bbbc2e6b8e177e422ca3eef36d3f91b1144b6aef"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/engine.js",
+      "sha256": "6411f747e58e21fc1ee5885ea264322551f1f2d3a79125cb4717917e7397d367"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/explore-dedup.js",
+      "sha256": "388d83ec3b902d36dab9987984582b63a9e6b8d937907c32e442fc55eb93d01a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/explore-diagnostics.js",
+      "sha256": "fcbe35d6fc6702ac9b90fbcbc12771a470d49282fd26c11f3c58162beb99397a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/explore-session-state.js",
+      "sha256": "641d8b425e7eb0cadbc01f40a32c472d54710df9e26834b4653da9effe606690"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/index.js",
+      "sha256": "8856bc850c51ee6f77c0e7583b6a8993d50598bb32facfd8836257ef3acd0757"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/liveness-watchdog.js",
+      "sha256": "da87c8a189bc8584bcc3f3a990dfdaebbcd4fd38b68a6ae72029e75808a4df04"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/ppid-watchdog.js",
+      "sha256": "086a93ccacc7d97f54b6e5c7aa9efa1bf185c524f762fa40b6383e7308d807cf"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/proxy.js",
+      "sha256": "9538220bfd1549aeaeaedcebe671a83897bbccbf9a2770d44127db1e58995939"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/query-pool.js",
+      "sha256": "0a47fa7ce27820a3ea7c5f0d6f78dbe9177eb5493a0b25415953446facadcb51"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/query-worker.js",
+      "sha256": "7248d585c60e6564b93fad4c1a41f62d8dcbb01db37c3d0de7673d750e0b939c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/server-instructions.js",
+      "sha256": "2ac85b2d3087a67b68e7c2166c0df61db35ab614045bdb423da91b4edd88487d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/session.js",
+      "sha256": "ad788c2695409f02d36615ee6e668c3d64fc3e8822b323dd0c36b34446b971e9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/startup-handshake.js",
+      "sha256": "d6823742df29f929ac426119712342566ffd716b3788036721304a129017f0c9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/stdin-teardown.js",
+      "sha256": "5d0e634896a3ddfa541595626eb45f29f873071310de3d90286d60217745d97c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/tools.js",
+      "sha256": "033a979e706e434aeebc7154201d06da8f2737fde763b5ba91d0618c863fc6a3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/transport.js",
+      "sha256": "058af57de79839e5c667c2f5829a4dae10c238417f631b810b557a8fc08ef41b"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/mcp/version.js",
+      "sha256": "1c88d116429e96dda55fe89b1eb197446b6014eb05213d194aa907f2204bfa26"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/project-config.js",
+      "sha256": "94c0586a284e24d9cd87b4d56164ed5e3adb1f07b6b2be9057643f8e0e3e8026"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/c-fnptr-synthesizer.js",
+      "sha256": "d3a5a9805be7c9cda594f13282818aa96bc632a6d3822caf5de177ff304ce62a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/callback-synthesizer.js",
+      "sha256": "3cfc4d6cc3052288ef9af638ec9d16878fe7581cb78355ee31249f3b77b2a23c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/cooperative-yield.js",
+      "sha256": "32f11196de3a96f5d95c1438c512c5635062f3d4e20e1bd3942ec0823fe6856f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/astro.js",
+      "sha256": "b058966129737a85e8751eba9fc6e157428f9499ba9f91b78299bc147aacb89d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/cargo-workspace.js",
+      "sha256": "2c4277a5a2e4edd1b492a84a05427ac2a0704583d71d2b6b1fa0f6812623280f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/cics.js",
+      "sha256": "87a2020050eff6c25ea2d7e836c14d5eb25091c5dd0fdf3eb8814c971f1e825d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/csharp.js",
+      "sha256": "1eaaa26426446670ea714a56d4fc4b597b2eb6f1ad1ca684402344ca6f017bf1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/drupal.js",
+      "sha256": "1bd25a519fc9e902fb4d8c57091c66ab74689cd2fb65e2f0b6f10d80d0db6fe7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/expo-modules.js",
+      "sha256": "4066de4644812c272997b1fe8fb0289bb4b11e55cb6ffb4a66950ce8d0ed89c9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/express.js",
+      "sha256": "c354ff461477db79268b52fbfd75d7c3c6a06a88883ca3198af2f37319713fb5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/fabric.js",
+      "sha256": "accc411f07ab06648caa6ec1ddda246361bbc1fc3ff48a2158c3ab09bc73756c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/go.js",
+      "sha256": "ad03ac72104838c43ff410939601281ef9a466c4b9628766900ffd6cf873a63d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/goframe.js",
+      "sha256": "d853cb5817e83e6ab56a9a4a043359b8f12a9e022417e23a6edd7ed90b727418"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/index.js",
+      "sha256": "966789f4ce73f72c7622b9f07c622f5f9a801135cdf7f4dee74d28b386f88097"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/java.js",
+      "sha256": "a2410dcb7bea2047a7ec2c6e1fd03f6662f549985db15aadc38c0aef6e6a32f9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/laravel.js",
+      "sha256": "3fdd336288414bb4d7984f91625c81e1e88090195dd5b10546c1d2053906be5c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/nestjs.js",
+      "sha256": "c304759dca39fbef0a22ec5fcf8452e814e56fdfe2bd80bdb8685030c3c822f3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/play.js",
+      "sha256": "9619c8dfbf345351fa6f6443b8a0546d7025b00b3cce80362035889b9a676e98"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/python.js",
+      "sha256": "efaefa80737a1411bbab2691631ebb363674634b83635a03b9cb5adafd58931f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/react-native.js",
+      "sha256": "08efd2aae864b0fcaea7136c64870054d31e85ac26e759fba7878ad1a1f325ee"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/react.js",
+      "sha256": "8ef7da9a6e6de50973d06988020d318e422f067bb76a30d9ef298f61df52eae7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/ruby.js",
+      "sha256": "3bfbe02b9218811e7f7dea74fff411f8c069e50d83af081f3a9de3f4abe8cc64"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/rust.js",
+      "sha256": "980f3d55d5c9407d6ce805a80dfe8f748447073a5312fc1959b861ab7d56c1e2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/svelte.js",
+      "sha256": "50f6c69d5c304b721b7343aa30e9763e6db8cb8f0d04bfc81e61f8acd7cb99d4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/swift-objc.js",
+      "sha256": "cb59f6ad1b38cd9135fc9e39156ab97f3993b9971e9dd50630261d5ea7e0c9a4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/swift.js",
+      "sha256": "4faa6d9e86fbb4f480ecf1b42ecb97c9e4bd557e16a840a3b7f64345821a78dd"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/terraform.js",
+      "sha256": "37ce098cf0252ce65dca92afda136e39c942839e44bf71d79d68db7cf830c34a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/frameworks/vue.js",
+      "sha256": "e206ded8df35c2c36ab7c65071eeb1f1591b44044b2345b2790150aacbc09765"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/go-module.js",
+      "sha256": "8ac2b7d158a4834c42e349f07d9569ed50ff8b0103ada1da22ad19ea5e24a052"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/goframe-synthesizer.js",
+      "sha256": "95e59f619bc79ce3cf343cb0064610d63264132f7cbf7a6a0a6524f17258d488"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/import-resolver.js",
+      "sha256": "02c3164d51378c4bf36eb38917db65684714914542025a00a050a55f21e5033b"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/index.js",
+      "sha256": "5454dcae8441cde089a14bc0a63ef4b5db4e9998426b959d6ba624dc151c9b3c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/lru-cache.js",
+      "sha256": "278efd5949af0d8b0f55c13784dbc70628a81546598bb85147d1bfb94a80996f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/memory-budget.js",
+      "sha256": "62138bf2dfeebede129a5a2f5ab1393ea82416dce66d9c0e2bc17461ec521f41"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/name-matcher.js",
+      "sha256": "e2b9cbc2b1c1e9f76854a9294ec5750a2c76e6bee7ea231c55865c26a0f1483e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/path-aliases.js",
+      "sha256": "ed3ebb7918e42c2398c94c9d450e183408433af54d881d13a5d19222b411d0b0"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/resolver-pool.js",
+      "sha256": "5b1af2469f84a8fe6da5b4c10fa53f189aaf5f14e806200b07edd88abf7b5475"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/resolver-worker.js",
+      "sha256": "514204ab40d8575a35848f92c7105db228e00481643b732f9b4c38825bf6d2ca"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/strip-comments.js",
+      "sha256": "137b79ce6c610e0ef51424e931b63996d51149a657a51501344f09f2287869cc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/swift-objc-bridge.js",
+      "sha256": "97002771b272407a8f272f7eee547f0e325f5bf922b6c933328e6bc6691505f2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/types.js",
+      "sha256": "123427906b73765b6cdc3fee04cdc9def97127b761d43ba66248646dbbc474b3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/resolution/workspace-packages.js",
+      "sha256": "0056e4657b4dc287f5687031256601b82c700d0b8bf6b18d06f21a753ff9902b"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/search/identifier-segments.js",
+      "sha256": "2cc6b9e89836c2d5464fb0072298c787e8aa1dcf52354c0ccf9b67c15210efbf"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/search/query-parser.js",
+      "sha256": "024986c5fcc173cfe55ad8a814551d9822e87bae8601dae79919fbb164719a70"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/search/query-paths.js",
+      "sha256": "fc94dde44be3f207dfc0dd27365a1b115cd0b26bd4e2450fcf22bb46e57264ea"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/search/query-utils.js",
+      "sha256": "2b845dedcfe4169ced0916bd80f90a8ebac8237762bc613c7748932b4f3ab9d6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/sync/git-hooks.js",
+      "sha256": "53b2adcabbc42404004f3756058d3672255e4d86e12c6a8e487aed89288917a5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/sync/index.js",
+      "sha256": "c7a3e6e871a5ffd9cc39505fae181ce05fa0fba5402ace4160598fd9ded3eb4a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/sync/watch-policy.js",
+      "sha256": "99e732d379327b579f2fbde67c14079691397e1a8a4a6127c70e8ec24fd7ac2e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/sync/watcher.js",
+      "sha256": "fbb036bfd56d36c936933d198abcb81ce4ce8ca00d8b337a1838841569c81d59"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/sync/worktree.js",
+      "sha256": "2560e192cf6d9f5dad20c47c5e7617905a0f40c53fd5377b05acbb8f2be3fce3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/telemetry/index.js",
+      "sha256": "ed3048f09994249d96ec428a2d3c5f612d5bc5a0d50f29f5735ba27a412e8e46"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/types.js",
+      "sha256": "512476d241ecafac20ed74d46fb7a63c752d59924c5f60ecb3475308a7d6a9dc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/ui/color.js",
+      "sha256": "b28e381b5a802bc4d19aa84b5427a1cd8893353afe7972bf109e07b8ea1278bc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/ui/glyphs.js",
+      "sha256": "6f03135b7708a1f36ae9a1cb921bfa0fe7f43fcc5b48f365ecc78b86d2ab452d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/ui/shimmer-progress.js",
+      "sha256": "ee24c13aad07f750f43f4fa2cef9a4d2712918e472b4fb1f57110f94fe3b1106"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/ui/shimmer-worker.js",
+      "sha256": "dbf756a9d41ddf2194bd155634184a8965ae9195c01cd474d19d44e5cdab5e25"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/ui/types.js",
+      "sha256": "b0d2bc4142d0c62d43f996aaeb64f22c4889ac853f8a3765758b505d972d0149"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/upgrade/index.js",
+      "sha256": "2420ac998abdca0204388f1db29460e5b4e33accb598ceced1f71e9ea92a421c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/upgrade/remove-binary.js",
+      "sha256": "223433cb8006b715987389546df4850607befb2a30fdce19febedc572889f644"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/upgrade/update-check.js",
+      "sha256": "72e71f56aa577de76c13b99eed800bb262caffbc84c196ca9d51b94c8a6eefa1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/dist/utils.js",
+      "sha256": "ce085743930d231f92c842da021416581680775b1c41c1371e218a71ada82461"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/kernel/codegraph-kernel.node",
+      "sha256": "cd85203e9da3309086aad8abc283d048ba53a6007fd67325744fb1128650cdc1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/.package-lock.json",
+      "sha256": "60e14f61c5b05bf2fbd70a09d8506c6e951393ccdafef8652c406a0062d27818"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/@clack/core/package.json",
+      "sha256": "3ab8ccf477262f631480c7ba024af9f16eb7b164b825f7e54e61729588374333"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/@clack/prompts/package.json",
+      "sha256": "b8276e9fb93a10869d539ad831633c2ec173a04b45515fc7d4de17e5c22a027c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/index.js",
+      "sha256": "a1bb4f6511f3801f961ab3efe5b735e6f248dd52c3937b260fc6c0d85d1896b3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/argument.js",
+      "sha256": "bc36a8a2438a051556ee150ab5af0b4f6a017af243a43cc44a26bb42abea9bae"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/command.js",
+      "sha256": "c161e3d99c26a125ec591a32f64f65975a7d7aac56dc29a5ff644d39d61c8831"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/error.js",
+      "sha256": "013d254f21524dc912aa61a53394d5ebb97e722be1c683f7bd2313c14597d521"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/help.js",
+      "sha256": "7d5757c053964023d45d82a4d4de01dadf32a2055f15d8ab58166914f035b9ea"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/option.js",
+      "sha256": "b5cf136f3db9dd92654d3d3dfd82929079c3aef62584d7f11c9782e8576cec97"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/lib/suggestSimilar.js",
+      "sha256": "6a3a368ace1abd1cc6b551ae10bcbae18eda3fed0fb0cfd60c7960c6663dad58"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/package-support.json",
+      "sha256": "fdce1022e389b2774b706b3f4851c7938a52d099ee39153fc1d965ab7b5b7f81"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/commander/package.json",
+      "sha256": "abcadf3d5575510b0ebcc9c04d39a838b01a5932861cf2454beb985eae4b4ea3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-truncated-width/dist/index.js",
+      "sha256": "5e7ee74641239c2fff739890ecc9b019872d6dee7615afb0924893fa4956e9dc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-truncated-width/dist/types.js",
+      "sha256": "d99f969d7455894d5b3ee7632c54f4ffb79d666c0dd8dc49dfa6e7815f74196c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-truncated-width/dist/utils.js",
+      "sha256": "6909b1628b2aafa77427b5ac519307e1b30a9ea7b30d26d1c5622c8eb77b7acc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-truncated-width/package.json",
+      "sha256": "68f98cd59ee3f050e88ad1924dd29dd6a3522199cb480e9ae08f95fd7f8c6f4a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-width/dist/index.js",
+      "sha256": "3f5556b4288f58e506ccf41b13a437d746c7945cdc88f0485e94ecd129c054b4"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-string-width/package.json",
+      "sha256": "2c49e010864a982bf0084dc4c7c267672f38462446e9911a64d0383e16e02712"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-wrap-ansi/lib/main.js",
+      "sha256": "c124f3753187ed29ff5851bd3814a302c7b8ea98caa268ad3c98a5bf591097ef"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/fast-wrap-ansi/package.json",
+      "sha256": "9ceb8756123476ddf40a7f3a4d45a12b3f399ec0b0084ef23a37ca4fca99ecb7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/ignore/index.js",
+      "sha256": "56e047fefe8e36a8a1529b31e2992314006372bd271703d9d62ba4b5d5777340"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/ignore/legacy.js",
+      "sha256": "84ea51ad201a4e7c6791aa920a4bf28bea9ce38ad9b0c8be9477e76da76311c7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/ignore/package.json",
+      "sha256": "9aea50de5a5f199b29b8f6d5e3c46ffac58958dd4d4f525bfde14214ad39417f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/impl/edit.js",
+      "sha256": "7e7bf98e740f560026df079056d3b0f5f34628124a8d34e2765fb101dde12911"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/impl/format.js",
+      "sha256": "e57dee56700a844b18dea11548f9ba42b17bc857bde5bcd39554af06ca95bb1f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/impl/parser.js",
+      "sha256": "74fae1bbebf290a04e46c5457ac5d97988146a5503ea35d9f0c4c3768acd5a26"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/impl/scanner.js",
+      "sha256": "e737e1774f87ca88d85d73e3bafff688b78cac06b81c53b96c54da8b3ca86cd9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/impl/string-intern.js",
+      "sha256": "3a0aad3f56c3e0728812c7584568c0ff200bce1ca58cf40e946f01fdb54c5752"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/esm/main.js",
+      "sha256": "72ff182105e158a1505ca3ecbf3f30359abb138a3980edaef1db7f4010ffb7dc"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/impl/edit.js",
+      "sha256": "9ecd115039cf7a478f223e4a9649170c7f5e8fd8016df1b267723b57553f9483"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/impl/format.js",
+      "sha256": "f9e468e436bf1014a4395b1ac70374edb918739ba90b19e6e6a22ca0214564a9"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/impl/parser.js",
+      "sha256": "a35db1bfb9631dcba643fa42972e9ebe2a318b4de3cac239d29081577a43d688"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/impl/scanner.js",
+      "sha256": "581d82c4f1aa84b0605369c01f414fb0164ee462e03daa298cb960076a2a9e82"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/impl/string-intern.js",
+      "sha256": "e590d27909a7c132382fbf9b8c4668054ab425734c1e0789753063356826c30f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/lib/umd/main.js",
+      "sha256": "6dc132e2e792a9616688ff93d10dd671c1fbcfa3301d76bff3e81193d049337d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/jsonc-parser/package.json",
+      "sha256": "a7a9192caaac00d9330592f4fd572908bee037518128a0fc3db96d2cd652e2b5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/index.js",
+      "sha256": "02ae26406508e28f9ba0865be16cf77f0b33de6c4d4d49c212c4176df1d5625a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/lib/constants.js",
+      "sha256": "d386ec4ee55ba11bf99e4c1a4b0b7e673726dcac56d401b52f6f669dc70957b6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/lib/parse.js",
+      "sha256": "e8dba2cc1f3663fff122933848349d2d9a6ff1caf725336a90050f32fb59b885"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/lib/picomatch.js",
+      "sha256": "808ceda04cf4a7911e9d4eab72ac8d590685960d56238018917d17b57baf9ddd"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/lib/scan.js",
+      "sha256": "227fcc994a477ea95c5a0435d32783566334c6bd0dcc4a103029735ad8c9c535"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/lib/utils.js",
+      "sha256": "f04604f70cd1a3f6ace80b84766468674ff38b4bb83818d2ef1d81fc6355f935"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/package.json",
+      "sha256": "ef0245814fbc6d3cee835c9a9c43f31daab1825cebcd6d005723aabea0f9136f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/picomatch/posix.js",
+      "sha256": "5695ff5dfcd5a338a40630bd506056f2950bcb08fe1cc068519cbbfe60add480"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/sisteransi/package.json",
+      "sha256": "4a17bc5c93db1b8f01d84708031339f3a22f39e60e1a92e089cde82f0bb48633"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/sisteransi/src/index.js",
+      "sha256": "279f11bfe5f11e91eb935786d2251bcc55d4d61339177f3c5fe1fec18a4ca51f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-bash.wasm",
+      "sha256": "807dcdb1380a59befb112ed8fbd3d3872c7fadaf5903a769282b50973b30696d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-c.wasm",
+      "sha256": "056b25072382f72deee2c64ec238ffc4bb8cf42844ef21502c0e70f03a8a0d66"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-c_sharp.wasm",
+      "sha256": "6266a7e32d68a3459104d994dc848df15d5672b0ea8e86d327274b694f8e6991"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-cpp.wasm",
+      "sha256": "f6afdf53bfd6de76557bb7edb624a3a3869e14d9a83b78433f93617ecee42527"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-css.wasm",
+      "sha256": "5fc615467b1b98420ed7517e5bf9e1f88468132dd903d842dfb13714f6a1cb0c"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-dart.wasm",
+      "sha256": "7f5364e4256cf7e55efd01dd52421ef2663caa8061b82659b7e4bf61064545ec"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-elisp.wasm",
+      "sha256": "deedb03ccf150329ddfcc4ed92861c235bbae6f9692be6b93cac71617a4d42ab"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-elixir.wasm",
+      "sha256": "82e91b9759ddca30d8978ebbfa8e347b4451b64c931f9ae62112e6db9b8fac20"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-elm.wasm",
+      "sha256": "962b8668a0e16a6fb1fe232ba3e07ba4537a6b72c47293fddea0f6ea6ff9912e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-embedded_template.wasm",
+      "sha256": "68584527f712dbf2cc39776c56980c08516991f184a4a17bb67c2f436f0fc373"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-go.wasm",
+      "sha256": "9963ca89b616eaf04b08a43bc1fb0f07b85395bec313330851f1f1ead2f755b6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-html.wasm",
+      "sha256": "11b3405c1543fb012f5ed7f8ee73125076dce8b168301e1e787e4c717da6b456"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-java.wasm",
+      "sha256": "637aac4415fb39a211a4f4292d63c66b5ce9c32fa2cd35464af4f681d91b9a1f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-javascript.wasm",
+      "sha256": "63812b9e275d26851264734868d27a1656bd44a2ef6eb3e85e6b03728c595ab5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-json.wasm",
+      "sha256": "fdb5219abe058369e16897aaa11eecf47ef4f546752c3ddbac339cdd89e1e667"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-kotlin.wasm",
+      "sha256": "b5cb00c8d06ed0f10f1dbe497205b437809d7e87db1f638721a8cfb30e044449"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-lua.wasm",
+      "sha256": "75ef809136d610068c5b2135741d89f5df62690a3d55169203351cb7cc85727d"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-objc.wasm",
+      "sha256": "7c1b5bfdca7e64b6c63b6040bb7ba0afc347df116f9030ca32f8535d7377f6ff"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-ocaml.wasm",
+      "sha256": "60849b6320ee956233d77b017c65c45660e507d03ae70aa1bd5783458e2e9e18"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-php.wasm",
+      "sha256": "55bb617b6f01e14bab997861f0b20a2420cf6ba3199ffeb295b9ec398966d8a3"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-python.wasm",
+      "sha256": "9056d0fb0c337810d019fae350e8167786119da98f0f282aceae7ab89ee8253b"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-ql.wasm",
+      "sha256": "836b2a51f6b2b4605ef7bfa908b978fed0fe838afb4eabaa9451552f12e953c1"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-rescript.wasm",
+      "sha256": "ae18d46336768b6c0eea07eb0b003408848766b3b67df1d807b40cbd93017bda"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-ruby.wasm",
+      "sha256": "93a5022855314cdb45458c7bb026a24a0ebc3a5ff6439e542e881f14dfa13a39"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-rust.wasm",
+      "sha256": "4409921a70d0aa5bec7d1d7ce809a557a8ee1cf6ace901e3ac6a76e62cfea903"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-scala.wasm",
+      "sha256": "160cfbb8ff7220886e99ed9699abceb6d837b4cd28993b9282c7f445a0554abd"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-solidity.wasm",
+      "sha256": "160745e470f234cae903a9ba445d19e758d0b02e1197401fc765976c6254d2b6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-swift.wasm",
+      "sha256": "41c4fdb2249a3aa6d87eed0d383081ff09725c2248b4977043a43825980ffcc7"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-systemrdl.wasm",
+      "sha256": "09129542bbea6d19aa33b54f93bae2b41128144970be13ce09af6697146c4527"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-tlaplus.wasm",
+      "sha256": "72a07f94b0bc88b9123a6e41058e37ab9ca70d84a03b79511b25af7f435129b5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-toml.wasm",
+      "sha256": "7849ac8ce9d10a4684ca189ea8ad3654c20c38acb2d674a014a164398cbd37a2"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-tsx.wasm",
+      "sha256": "6aa3b2c70e76f5d48eafef1093e9c4de383e13f2fdde2f4e9b98a378f6a8f1b6"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-typescript.wasm",
+      "sha256": "8515404dceed38e1ed86aa34b09fcf3379fff1b4ff9dd3967bcd6d1eb5ac3d8f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-vue.wasm",
+      "sha256": "6244521bb3fb60f34ce5f677f2af81facb2c38691193985ca5fa85e1b6f29250"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-yaml.wasm",
+      "sha256": "5dea7cfff83d41d8f87fb8e434e1a5b292c0d670bfcdc42cb2af420ef490dde5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/out/tree-sitter-zig.wasm",
+      "sha256": "59cc4531aa661e2de4c5bc04e4045b6bdd5d2bfa75045cbda5f673102d140eef"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/tree-sitter-wasms/package.json",
+      "sha256": "d08bdba4e2f2d9c90d9bcaa65df6fee733cfa280edcf6762ca60516c32bf96f5"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/debug/tree-sitter.js",
+      "sha256": "77d5e8956cf5e1342764e5648ba7733c2d56b7391d22939322fc53616d149832"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/debug/tree-sitter.wasm",
+      "sha256": "2b8b96e0f0f4624c4f885d40d76e25a25d9c58d40fe8ff4ab9563ee0297eed5e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/lib/tree-sitter.wasm",
+      "sha256": "2b8b96e0f0f4624c4f885d40d76e25a25d9c58d40fe8ff4ab9563ee0297eed5e"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/package.json",
+      "sha256": "6636903505f3a3739fa8f11d6de7264cf3cc0ae6e0c2e2aec0f079656899cc06"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/tree-sitter.js",
+      "sha256": "d4fc466df6358055253bc4cdaab23cdf84fe00741fa5a4ff56506c06c533da42"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/node_modules/web-tree-sitter/tree-sitter.wasm",
+      "sha256": "f38dcc4b43b818f9a0785bc1c6d5611a75ac4cdd428ff3f02757c34ca4e46d7f"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/lib/package.json",
+      "sha256": "0112ff636d89344bb56f2e7ff6146f4cc0e0030f196e943648b33d63457f5937"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/node",
+      "sha256": "1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/@colbymchenry/codegraph-darwin-arm64/package.json",
+      "sha256": "78c13a8463ed5fb8340d205b3975ae1c33c9e3cdec3bd83ea700e91d60c1e15a"
+    },
+    {
+      "root": "tools",
+      "path": "npm/node_modules/codebase-memory-mcp/bin/codebase-memory-mcp",
+      "sha256": "2412e017268bef8f847f38d1b0f79f63185b38c27fe6fba637067bfc87c0eedf"
+    },
+    {
+      "root": "project",
+      "path": "native/codebase-index-native.node",
+      "sha256": "7e6eb92b62e4aec37d7025591c64abf6b420cdde65f092acd137c6205192d789"
+    },
+    {
+      "root": "project",
+      "path": "scripts/competitive-adapters.ts",
+      "sha256": "d2555f5b639c4ba1c72f758ecb254933a47651575b6f3fa1df1dcec2a5697a47"
+    },
+    {
+      "root": "project",
+      "path": "scripts/competitive-benchmark.ts",
+      "sha256": "7c1dad25d839abe84ba9185d7492a4198a000e71e29f63a30a93e47868052687"
+    },
+    {
+      "root": "project",
+      "path": "scripts/competitive-scoring.ts",
+      "sha256": "4df4b1763f27c82d1d91d335b67ea42d87f86e4d966c469026aa3d574d50a84a"
+    }
+  ],
+  "models": {
+    "embedding": {
+      "name": "nomic-embed-text:latest",
+      "digest": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+      "endpoint": "http://127.0.0.1:11434"
+    }
+  },
+  "limits": {
+    "indexTimeoutMs": 300000,
+    "queryTimeoutMs": 60000,
+    "maxOutputBytes": 16777216,
+    "rawResultLimit": 50,
+    "scoredDistinctFiles": 10
+  },
+  "interfaces": {
+    "ocbi-hybrid": {
+      "version": "0.27.0+ebd0702",
+      "symbol": "MCP implementation_lookup(query=input.symbol, limit=50)",
+      "naturalLanguage": "MCP codebase_peek(query=input.query, limit=50)",
+      "transport": "persistent stdio MCP",
+      "mode": "hybrid",
+      "host": "opencode",
+      "reranker": false,
+      "indexing": {
+        "autoIndex": false,
+        "watchFiles": false,
+        "requireProjectMarker": false,
+        "maxFileSize": 1000000,
+        "maxChunksPerFile": 100
+      }
+    },
+    "ocbi-structural": {
+      "version": "0.27.0+ebd0702",
+      "symbol": "MCP implementation_lookup(query=input.symbol, limit=50)",
+      "naturalLanguage": "MCP codebase_peek(query=input.query, limit=50)",
+      "transport": "persistent stdio MCP",
+      "mode": "structural",
+      "host": "opencode",
+      "embeddingProvider": null,
+      "indexing": {
+        "autoIndex": false,
+        "watchFiles": false,
+        "requireProjectMarker": false,
+        "maxFileSize": 1000000,
+        "maxChunksPerFile": 100
+      }
+    },
+    "codegraph": {
+      "version": "1.6.0",
+      "package": "@colbymchenry/codegraph",
+      "upstream": "https://github.com/colbymchenry/codegraph",
+      "symbol": "query SYMBOL --path ROOT --limit 50 --json",
+      "naturalLanguage": "context QUERY --path ROOT --format json --max-nodes 50 --no-code",
+      "transport": "one-shot native-bundle CLI; bundled Node runtime",
+      "telemetry": "disabled via verified DO_NOT_TRACK=1"
+    },
+    "codebase-memory": {
+      "version": "0.10.8",
+      "package": "codebase-memory-mcp",
+      "upstream": "https://github.com/DeusData/codebase-memory-mcp",
+      "symbol": "cli --json search_graph {project,name_pattern:anchored escaped symbol,limit:50,format:json}",
+      "naturalLanguage": "unsupported in this preregistered single-call interface track; no claim about multi-step agent use",
+      "transport": "one-shot native CLI"
+    },
+    "grepai": {
+      "version": "0.36.1",
+      "upstream": "https://github.com/yoanbernabeu/grepai",
+      "symbol": "search SYMBOL --json --compact --limit 50",
+      "naturalLanguage": "search QUERY --json --compact --limit 50",
+      "transport": "one-shot Go CLI with owned foreground watcher",
+      "embeddingProvider": "ollama",
+      "model": "nomic-embed-text",
+      "backend": "gob",
+      "graphMode": "fast (default regex trace)",
+      "hybrid": false,
+      "dedup": true,
+      "pathBoosts": true,
+      "chunking": {
+        "size": 512,
+        "overlap": 50
+      },
+      "frameworkProcessing": {
+        "enabled": true,
+        "mode": "auto",
+        "vue": true,
+        "svelte": false,
+        "astro": false,
+        "solid": false
+      },
+      "rpg": false,
+      "updateCheckOnStartup": false
+    }
+  },
+  "calibration": {
+    "kind": "unscored toy public-interface calibration; not accuracy evidence",
+    "completedAt": "2026-09-10T08:32:11Z",
+    "allFiveAdaptersIndexQueryClosePassed": true,
+    "observations": {
+      "ocbi-hybrid": "symbol/prose found source; nonexistent identifier empty",
+      "ocbi-structural": "symbol found source; prose and nonexistent identifier empty",
+      "codegraph": "symbol/prose found source; nonexistent identifier empty",
+      "codebase-memory": "symbol found source; nonexistent identifier empty; prose unsupported in selected interface",
+      "grepai": "symbol/prose/nonexistent identifier all returned nearest source and package metadata, consistent with vector retrieval"
+    },
+    "priorAdapterBug": "Initial readiness regex incorrectly required adjacent grepai log lines and timed out despite tool readiness; fixed before scored runs; failed raw evidence retained.",
+    "artifacts": [
+      {
+        "path": "coordinator-calibration-v2/codebase-memory/artifacts/query-0.json",
+        "sha256": "5c9622a4b34ac07768886eec3e8b99dd4b68fe023f9b7ce3e8c79cb29b718bd4"
+      },
+      {
+        "path": "coordinator-calibration-v2/codebase-memory/artifacts/query-1.json",
+        "sha256": "636e0bbb5c2578dc7908a3ff3371c54800f68e5b89fed2de4aba3fb3e3e47ac2"
+      },
+      {
+        "path": "coordinator-calibration-v2/codebase-memory/artifacts/query-2.json",
+        "sha256": "1ea479478aef0b0f4bdc8470a4b27d06c86c4e13f7615f532b0453f84d844cad"
+      },
+      {
+        "path": "coordinator-calibration-v2/codegraph/artifacts/query-0.json",
+        "sha256": "95791861db998070ad8ee1b32da702b86e73c8571eda5ee29e1286bf59030560"
+      },
+      {
+        "path": "coordinator-calibration-v2/codegraph/artifacts/query-1.json",
+        "sha256": "e3a4f0b1f07f52703f9749cad13688c0f807a0f8083c59609cccb3fc4312af60"
+      },
+      {
+        "path": "coordinator-calibration-v2/codegraph/artifacts/query-2.json",
+        "sha256": "86d1fe4f42f7ce73f15b590e47abc3494bf26f862b767920b35b55f9bb2feff8"
+      },
+      {
+        "path": "coordinator-calibration-v2/grepai/artifacts/query-0.json",
+        "sha256": "eb61e06eda2ab6390e817d7696ca6cd86b2363567bd3e50f9fce280d0709a0e6"
+      },
+      {
+        "path": "coordinator-calibration-v2/grepai/artifacts/query-1.json",
+        "sha256": "c356c94962f52fab9cbefd7d405bd7eced3cee5c885788397a61071a5040c53f"
+      },
+      {
+        "path": "coordinator-calibration-v2/grepai/artifacts/query-2.json",
+        "sha256": "cd4a376e7649f70c63dad5c8392ad9698f3eaa31e9a2d6d96b5708035ae8cd99"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-hybrid/artifacts/query-0.json",
+        "sha256": "5eaefc1483a71ca2de624bf6d3b31639cc52cda11f1a62fbb9defc23e4f6a0c8"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-hybrid/artifacts/query-1.json",
+        "sha256": "e8c2ccaf7e45638f95befd95facfe270c73bea0c577ef85ed83518fbdd8a18a8"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-hybrid/artifacts/query-2.json",
+        "sha256": "6cb2877464a8d42897997dd05b58579d9ac61b9eb703e2e06026c0772ae8977c"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-structural/artifacts/query-0.json",
+        "sha256": "fedd139ac0980b9f71d5d1a9c755afcda549d560776f5537e53da2cac0011b97"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-structural/artifacts/query-1.json",
+        "sha256": "ba5e2594938f18539a3e718edc70937e915deab452b6b73ad4a3bea80bbeec33"
+      },
+      {
+        "path": "coordinator-calibration-v2/ocbi-structural/artifacts/query-2.json",
+        "sha256": "31b3e48baf58874e5433370736b872d21854ca934d5d0dcd1df6b26190dd3603"
+      }
+    ]
+  },
+  "frozenAt": "2026-09-10T08:37:20Z",
+  "amendments": [
+    {
+      "id": "A1",
+      "recordedAt": "2026-09-10T09:21:00Z",
+      "reason": "Project file projection must omit explicitly typed Folder/Channel-only CBM groups and validate every remaining physical file. No tool invocation, ranking or scorer change. Apply uniformly to all CBM raw responses in derived corrected artifacts.",
+      "previousAdapterSha256": "a84e10a3f413a626d67ee8f90e08d5c7332f31950f0be361a829b9d17751cb7a",
+      "correctedAdapterSha256": "d2555f5b639c4ba1c72f758ecb254933a47651575b6f3fa1df1dcec2a5697a47",
+      "completedOriginalRepositories": [
+        "axios",
+        "express",
+        "click"
+      ],
+      "protocol": "docs/benchmarks/2026-09-10-competitive-preregistration.md#amendment-a1-typed-graph-node-file-projection-2026-09-10-0903-utc"
+    }
+  ]
+}

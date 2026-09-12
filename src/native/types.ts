@@ -68,6 +68,28 @@ export interface CallSiteData {
   confidence: Confidence;
 }
 
+export interface ApiRouteUsageData {
+  method: string;
+  path: string;
+  handlerName?: string;
+  handlerStartLine: number;
+  handlerEndLine: number;
+  line: number;
+  column: number;
+}
+
+export interface ApiFetchUsageData {
+  method: string;
+  path: string;
+  line: number;
+  column: number;
+}
+
+export interface ApiUsageExtractionData {
+  routes: ApiRouteUsageData[];
+  fetches: ApiFetchUsageData[];
+}
+
 export interface SymbolData {
   id: string;
   filePath: string;

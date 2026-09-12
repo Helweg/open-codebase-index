@@ -14,6 +14,7 @@ export function getDefaultMcpConfig(): McpConfig {
 
 export function getDefaultIndexingConfig(): IndexingConfig {
   return {
+    mode: "hybrid",
     autoIndex: false,
     autoIndexWaitMs: 10_000,
     autoIndexMaxRetries: 5,
@@ -29,13 +30,21 @@ export function getDefaultIndexingConfig(): IndexingConfig {
     gcIntervalDays: 7,
     gcOrphanThreshold: 100,
     requireProjectMarker: true,
-    maxDepth: 5,
+    maxDepth: -1,
     maxFilesPerDirectory: 100,
     fallbackToTextOnMaxChunks: true,
     // Must stay in sync with DEFAULT_LINES_PER_CHUNK in native/src/lib.rs (the napi
     // fallback used when a native caller omits the argument).
     linesPerChunk: 30,
     gitBlame: { enabled: false },
+    scipTypeScript: {
+      enabled: false,
+      indexFile: "index.scip",
+      decoderCommand: "scip",
+      timeoutMs: 30_000,
+      maxOutputBytes: 64 * 1024 * 1024,
+      requireFreshIndex: true,
+    },
   };
 }
 

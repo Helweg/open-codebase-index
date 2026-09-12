@@ -15,6 +15,12 @@ import {
 import { initializeTools } from "../tools/operation-runtime.js";
 import { searchCodebase } from "../tools/operations.js";
 import { formatSearchResults } from "../tools/utils.js";
+import {
+  formatWorkspaceStatus,
+  getWorkspaceStatus,
+  parseWorkspaceRepoSpecs,
+  type WorkspaceStatusResult,
+} from "../tools/workspace-status.js";
 import { handleIndexCommand, redactSensitiveText } from "./mcp/cli.js";
 
 type TextSink = (text: string) => void;
@@ -33,6 +39,7 @@ export interface CbiDeps {
     direction: GraphDirection,
     filePath?: string,
   ) => Promise<Result>;
+  runWorkspaceStatus?: (repoSpecs: string[], cwd: string, host: HostMode) => Promise<WorkspaceStatusResult>;
   initializeRuntimeForConfig?: (projectRoot: string, config: ReturnType<typeof parseConfig>, host: HostMode) => void;
   readConfigFile?: (filePath: string) => unknown;
   printStdout?: TextSink;
@@ -57,6 +64,8 @@ Commands:
   search <query> [--limit <n>]    Full-content semantic search
   definition <symbol>             Find authoritative definitions
   graph <callers|callees> <symbol> Inspect direct call-graph edges
+  workspace status --repo NAME=PATH [--repo NAME=PATH ...] [--host <mode>] [--json]
+                                  Show bounded multi-repository readiness
 
 Global options:
   --project <path>  Project root, default: current directory
@@ -73,6 +82,7 @@ function printCommandUsage(output: TextSink, command: string): void {
     search: "Usage: cbi search <query> [--limit <n>] [--project <path>] [--host <mode>] [--config <path>]",
     definition: "Usage: cbi definition <symbol> [--project <path>] [--host <mode>] [--config <path>]",
     graph: "Usage: cbi graph <callers|callees> <symbol> [--file <path>] [--project <path>] [--host <mode>] [--config <path>]",
+    workspace: "Usage: cbi workspace status --repo NAME=PATH [--repo NAME=PATH ...] [--host <mode>] [--json]",
   };
   output(usage[command] ?? "Usage: cbi <command> [options]");
 }
@@ -167,13 +177,46 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
     return 0;
   }
 
-  if (!["status", "index", "search", "definition", "graph"].includes(command)) {
+  if (!["status", "index", "search", "definition", "graph", "workspace"].includes(command)) {
     stderr(`Unknown command: ${command}`);
     printUsage(stderr);
     return 1;
   }
 
   try {
+    if (command === "workspace") {
+      const args = argv.slice(3);
+      if (args[0] !== "status") throw new Error("workspace requires the status subcommand.");
+      let host: HostMode = "opencode";
+      let json = false;
+      const repoSpecs: string[] = [];
+      for (let index = 1; index < args.length; index += 1) {
+        const arg = args[index];
+        if (arg === "--help" || arg === "-h") throw new Error("help-requested");
+        if (arg === "--json") {
+          json = true;
+          continue;
+        }
+        if (arg === "--host" || arg.startsWith("--host=")) {
+          const parsed = optionValue(args, index, "host");
+          host = parseHostMode(parsed.value);
+          index += parsed.consumed;
+          continue;
+        }
+        if (arg === "--repo" || arg.startsWith("--repo=")) {
+          const parsed = optionValue(args, index, "repo");
+          repoSpecs.push(parsed.value);
+          index += parsed.consumed;
+          continue;
+        }
+        throw new Error(arg.startsWith("--") ? `Unknown option: ${arg}` : `Unexpected argument: ${arg}`);
+      }
+      const result = await (deps.runWorkspaceStatus ?? (async (specs, root, hostMode) =>
+        getWorkspaceStatus(parseWorkspaceRepoSpecs(specs, root), hostMode)))(repoSpecs, cwd, host);
+      stdout(json ? JSON.stringify(result, null, 2) : formatWorkspaceStatus(result));
+      return result.ready ? 0 : 1;
+    }
+
     if (command === "index") {
       return await (deps.runIndex ?? handleIndexCommand)(argv.slice(3), cwd, {
         printStdout: stdout,

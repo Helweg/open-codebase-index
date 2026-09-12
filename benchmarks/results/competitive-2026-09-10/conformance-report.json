@@ -1,0 +1,587 @@
+{
+  "scope": "synthetic conformance only; adapter blocked and abstraction differences are not blanket product failures",
+  "runnerRevision": "87ac8f6",
+  "rows": [
+    {
+      "family": "freshness",
+      "scenario": "f1-js-add",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "44398c507ad2007565bae3cf73147449fd0daa33897fdf3a495f69caa2bd1da7"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f1-js-add",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "b22d7bd8e2de82d2089c45de69634578d3589babd3effff83792768023f18f04"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f1-js-add",
+      "condition": "grepai",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "Missing canonical source path",
+      "sha256": "7c0940203e78d868b363c2e5b3d986334a1900cc6c8fdadf8611afe783d6fb66"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f1-js-add",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "0d61ab66a954dd9b915833059e302c7024271b04bfb439f0ac147a149a7bd176"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f1-js-add",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "45b69d49be9f7cf0fa953893635f2f84282cd94ebbcd5879847266595345eb03"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f2-py-modify",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "fd3127f3d25da5914f5f9c18bb69815c3e6a05e257b239c2f39f9f2634e02ac1"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f2-py-modify",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "6021fac492932ce3380d01cb0997005b187c5342eadcb792adfba8b07e9d32f5"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f2-py-modify",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "sha256": "7bb185e4f644dc87515333c8690fc2f1c3c3476b303e65ca95edc23317c05203"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f2-py-modify",
+      "condition": "ocbi-hybrid",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "Public OCBI edge is unresolved; no target-path inference permitted",
+      "sha256": "f67adc8887d93df93c3613ccf25701d5a539e19db887ab58763b5d3cdd4d5492"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f2-py-modify",
+      "condition": "ocbi-structural",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "Public OCBI edge is unresolved; no target-path inference permitted",
+      "sha256": "f67adc8887d93df93c3613ccf25701d5a539e19db887ab58763b5d3cdd4d5492"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f3-js-delete",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "b59029392be265d488b4a296d5a219c6e149b43656abed6c23fb9e640fd50d1b"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f3-js-delete",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "b59029392be265d488b4a296d5a219c6e149b43656abed6c23fb9e640fd50d1b"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f3-js-delete",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "sha256": "dbb468046603aeab779a6260373a35e7771f347011d497e3703ea98bc18c4663"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f3-js-delete",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "14655df1dcb2ad5dc898f32e7ac8255687f596dd957898d47468c3aff6611cf1"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f3-js-delete",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "14655df1dcb2ad5dc898f32e7ac8255687f596dd957898d47468c3aff6611cf1"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f4-py-rename",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "fd923cf039ec0f3ff2a2789bdd9a03217d625a9c483f353b205a0a086515f98e"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f4-py-rename",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "3b8e7c90da4f6b72f7d498bc32198971fd00e350867303a1b624e6f5aed3cb86"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f4-py-rename",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "sha256": "262f8727194d2e757d36a73f40a5e91901549d6d06fdffac9547714114ec4dd2"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f4-py-rename",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "0e5d8d5ccb82046e7d50da8e43f6e0e3c739762bffd6bae8f448b13a43f009f2"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f4-py-rename",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "aaa6b73f6781abd626b5065d49dc48a2b6b50d77e7caf8fce416b20d70ba5e1e"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f5-js-real-branch-switch",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "fd7f38421a4c22d8aaed9191f4b58adb4dbeebdacbec6d2a04f3a5fe73fcedd3"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f5-js-real-branch-switch",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "575c348182b4a7b2a53208ba6e76a0035f13fc3d2b23275a48da54a4b4353e09"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f5-js-real-branch-switch",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "sha256": "0704d2bee51e10ac54b535ff2e713f995deff5b0a8240eb08ba502e6747a58d5"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f5-js-real-branch-switch",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "36c0dcc3ad2f618a76a886d6cfb9365dbfce648c6408bd6e53e4dae505d9c6f5"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f5-js-real-branch-switch",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "dfbef1f98fb6efe83129691126d036ffa2bf3750c7dcbbbb2b83c796d35b3076"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f6-py-long-lived-reader-external-writer",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "fb6b828093d99ed9c2106ec7b2242b07075124876caea9cf06b81f2eb6a73374"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f6-py-long-lived-reader-external-writer",
+      "condition": "codegraph",
+      "status": "adapter-blocked",
+      "conforms": null,
+      "reason": "Calibrated persistent-reader adapter unavailable",
+      "sha256": "93660cf430ea5e2cc0dfd1b4fd4ebff2f9bdffb5ee5f2b35ea116ae6586078a3"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f6-py-long-lived-reader-external-writer",
+      "condition": "grepai",
+      "status": "adapter-blocked",
+      "conforms": null,
+      "reason": "Calibrated persistent-reader adapter unavailable",
+      "sha256": "93660cf430ea5e2cc0dfd1b4fd4ebff2f9bdffb5ee5f2b35ea116ae6586078a3"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f6-py-long-lived-reader-external-writer",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "af3cab65256e0d969d9618eccc79ed17e52e0081a89423f8a98a75baaf8b1315"
+    },
+    {
+      "family": "freshness",
+      "scenario": "f6-py-long-lived-reader-external-writer",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "sha256": "71edcafe5a25516af8b1f617bf10ce0a6d18fa69f14c45e85a36bc1c8e72e339"
+    },
+    {
+      "family": "graph",
+      "scenario": "g1-js-direct-callees",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "2ef77322e1e1d01ee6094d185e4a914579cd58ea45d16208154d5c3dd9d4869d"
+    },
+    {
+      "family": "graph",
+      "scenario": "g1-js-direct-callees",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "34b50f078aea57328f74af5ed882ffeb3bfe1c4baa73d9ad6f6d164856d3f1a3"
+    },
+    {
+      "family": "graph",
+      "scenario": "g1-js-direct-callees",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "missing": [
+        {
+          "fromPath": "src/orders.js",
+          "fromSymbol": "processOrder",
+          "toPath": "src/format.js",
+          "toSymbol": "formatOrder",
+          "relationship": "call"
+        }
+      ],
+      "extra": [],
+      "sha256": "314c233d257aec463339cc2ad8897849424b11b3fc2d87cf2544d6ee164d34a4"
+    },
+    {
+      "family": "graph",
+      "scenario": "g1-js-direct-callees",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "0351a3e1e1059bed6b0e771b685131840f092b6a3981534009a9b5e6e7d7899c"
+    },
+    {
+      "family": "graph",
+      "scenario": "g1-js-direct-callees",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "0351a3e1e1059bed6b0e771b685131840f092b6a3981534009a9b5e6e7d7899c"
+    },
+    {
+      "family": "graph",
+      "scenario": "g2-py-direct-callers",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "7a91f3a56301d21d06c91f92d482bb91fd0b2d965969070cf88d5c528af3a490"
+    },
+    {
+      "family": "graph",
+      "scenario": "g2-py-direct-callers",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": false,
+      "missing": [],
+      "extra": [
+        {
+          "fromPath": "payments/reports.py",
+          "fromSymbol": "reports.py",
+          "toPath": "payments/formatting.py",
+          "toSymbol": "format_payment",
+          "relationship": "call"
+        },
+        {
+          "fromPath": "payments/service.py",
+          "fromSymbol": "service.py",
+          "toPath": "payments/formatting.py",
+          "toSymbol": "format_payment",
+          "relationship": "call"
+        }
+      ],
+      "sha256": "5df0a36997589bc17e6808929fe3d2f0fde593d212f75dacdae3ca03eacbe377"
+    },
+    {
+      "family": "graph",
+      "scenario": "g2-py-direct-callers",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "missing": [],
+      "extra": [
+        {
+          "fromPath": "payments/formatting.py",
+          "fromSymbol": "format_payment",
+          "toPath": "payments/formatting.py",
+          "toSymbol": "format_payment",
+          "relationship": "call"
+        }
+      ],
+      "sha256": "b486278db47a43591f67a4a21fd6c50df19c2018fba46c472a2968861a5e3e45"
+    },
+    {
+      "family": "graph",
+      "scenario": "g2-py-direct-callers",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "eb01cc7cadec532797b3030380ceb70e4d6b171e44683233604cdcc9ee93b1f0"
+    },
+    {
+      "family": "graph",
+      "scenario": "g2-py-direct-callers",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "eb01cc7cadec532797b3030380ceb70e4d6b171e44683233604cdcc9ee93b1f0"
+    },
+    {
+      "family": "graph",
+      "scenario": "g3-js-shortest-path",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "628bf361119274260cfb439ca40706ba5fb5058735d97b4a54a161cf4c0c3e89"
+    },
+    {
+      "family": "graph",
+      "scenario": "g3-js-shortest-path",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "628bf361119274260cfb439ca40706ba5fb5058735d97b4a54a161cf4c0c3e89"
+    },
+    {
+      "family": "graph",
+      "scenario": "g3-js-shortest-path",
+      "condition": "grepai",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "grepai edge lacks returned node endpoint",
+      "sha256": "2c97f56094d7af9a149734e101b466d8696cf3661b917e4669b45372fbbe96b9"
+    },
+    {
+      "family": "graph",
+      "scenario": "g3-js-shortest-path",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "628bf361119274260cfb439ca40706ba5fb5058735d97b4a54a161cf4c0c3e89"
+    },
+    {
+      "family": "graph",
+      "scenario": "g3-js-shortest-path",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "628bf361119274260cfb439ca40706ba5fb5058735d97b4a54a161cf4c0c3e89"
+    },
+    {
+      "family": "graph",
+      "scenario": "g4-py-negative-callers",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "07e994357bd138551e851bb234d522d8bc43c3c9a5ee68cfe1017e30016396c2"
+    },
+    {
+      "family": "graph",
+      "scenario": "g4-py-negative-callers",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "07e994357bd138551e851bb234d522d8bc43c3c9a5ee68cfe1017e30016396c2"
+    },
+    {
+      "family": "graph",
+      "scenario": "g4-py-negative-callers",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": false,
+      "missing": [],
+      "extra": [
+        {
+          "fromPath": "payments/unused.py",
+          "fromSymbol": "archive_payment",
+          "toPath": "payments/unused.py",
+          "toSymbol": "archive_payment",
+          "relationship": "call"
+        }
+      ],
+      "sha256": "3b92dbbfb15d1a50de8ee7fba404d26c05ba69a0082802cd95ca7103fd10a6ee"
+    },
+    {
+      "family": "graph",
+      "scenario": "g4-py-negative-callers",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "07e994357bd138551e851bb234d522d8bc43c3c9a5ee68cfe1017e30016396c2"
+    },
+    {
+      "family": "graph",
+      "scenario": "g4-py-negative-callers",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "07e994357bd138551e851bb234d522d8bc43c3c9a5ee68cfe1017e30016396c2"
+    },
+    {
+      "family": "graph",
+      "scenario": "g5-js-duplicate-ambiguous",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "854bb645bf90a1736a84ba73d24e42f4f472e3a8dc8d8e3a7194e470ebb11fd3"
+    },
+    {
+      "family": "graph",
+      "scenario": "g5-js-duplicate-ambiguous",
+      "condition": "codegraph",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "CodeGraph callers/callees CLI lacks file disambiguation; node trail on duplicate names needs separate calibration",
+      "sha256": "734a4420aeadcb98438618990b2dde5893e78d9555489addb879f46f68f24673"
+    },
+    {
+      "family": "graph",
+      "scenario": "g5-js-duplicate-ambiguous",
+      "condition": "grepai",
+      "status": "manual-adjudication-required",
+      "conforms": null,
+      "reason": "The calibrated trace interface returns one root, not an exhaustive duplicate-definition enumeration",
+      "sha256": "6c752a0c6064cd0b6ca17b180bcf9059087c5b4d40c4324fe08ea658285ec0c5"
+    },
+    {
+      "family": "graph",
+      "scenario": "g5-js-duplicate-ambiguous",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "3e7cfa483a7c5ebf938748ac52b4abf954f8035f9c1c5e90480b0679c14624ae"
+    },
+    {
+      "family": "graph",
+      "scenario": "g5-js-duplicate-ambiguous",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "72c3ee1b7b5b7fd5a61dfe390c49f4fb9d21bd64f7681d61b9e6ccfe355e1790"
+    },
+    {
+      "family": "graph",
+      "scenario": "g6-py-transitive-reachability",
+      "condition": "codebase-memory",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "8e089d927e5466952097680149783c54d4a2d1f84f83e0e4ed58248652494c5e"
+    },
+    {
+      "family": "graph",
+      "scenario": "g6-py-transitive-reachability",
+      "condition": "codegraph",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "8e089d927e5466952097680149783c54d4a2d1f84f83e0e4ed58248652494c5e"
+    },
+    {
+      "family": "graph",
+      "scenario": "g6-py-transitive-reachability",
+      "condition": "grepai",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "8e089d927e5466952097680149783c54d4a2d1f84f83e0e4ed58248652494c5e"
+    },
+    {
+      "family": "graph",
+      "scenario": "g6-py-transitive-reachability",
+      "condition": "ocbi-hybrid",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "8e089d927e5466952097680149783c54d4a2d1f84f83e0e4ed58248652494c5e"
+    },
+    {
+      "family": "graph",
+      "scenario": "g6-py-transitive-reachability",
+      "condition": "ocbi-structural",
+      "status": "completed",
+      "conforms": true,
+      "missing": [],
+      "extra": [],
+      "sha256": "8e089d927e5466952097680149783c54d4a2d1f84f83e0e4ed58248652494c5e"
+    }
+  ]
+}

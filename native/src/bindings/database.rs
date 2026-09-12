@@ -446,6 +446,13 @@ impl Database {
     }
 
     #[napi]
+    pub fn get_branch_file_paths(&self, branch: String) -> Result<Vec<String>> {
+        self.with_conn(|conn| {
+            db::get_branch_file_paths(conn, &branch).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
     pub fn get_chunk_ids_by_blame_date(
         &self,
         since: Option<i64>,

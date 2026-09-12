@@ -4,6 +4,7 @@ import { countContextTokens } from "../src/tools/utils.js";
 import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 const operationMocks = vi.hoisted(() => ({
+  getApiImpactEvidence: vi.fn(),
   getCallGraphData: vi.fn(),
   implementationLookup: vi.fn(),
   searchCodebase: vi.fn(),
@@ -46,6 +47,7 @@ const conceptual = {
 describe("codebase edit context", () => {
   beforeEach(() => {
     operationMocks.getCallGraphData.mockReset();
+    operationMocks.getApiImpactEvidence.mockReset();
     operationMocks.implementationLookup.mockReset();
     operationMocks.searchCodebase.mockReset();
     operationMocks.implementationLookup.mockResolvedValue([source]);
@@ -125,6 +127,76 @@ describe("codebase edit context", () => {
     expect(result.text).toContain("parseToken from src/auth.ts:14 (MethodCall, resolved)");
     expect(result.details.callerCount).toBe(1);
     expect(result.details.calleeCount).toBe(1);
+  });
+
+  it("keeps default output unchanged and adds API evidence only when explicitly requested", async () => {
+    operationMocks.getCallGraphData.mockImplementation(async (_root, _host, args) => ({
+      direction: args.direction,
+      resolution: resolved,
+      callers: [],
+      callees: [],
+    }));
+    operationMocks.getApiImpactEvidence.mockResolvedValue({
+      text: "## API impact evidence\n- POST /users at src/routes.ts:20 [syntactic_route_registration]",
+      scannedFileCount: 3,
+      candidateFileCount: 3,
+      routeCount: 1,
+      consumerCount: 1,
+      candidateTestCount: 0,
+      truncated: false,
+    });
+
+    const defaultResult = await resolveCodebaseEditContext("/repo", "jcode", {
+      query: "tighten token validation",
+      symbol: "validateToken",
+      tokenBudget: 512,
+    });
+    expect(defaultResult.text).not.toContain("API impact evidence");
+    expect(operationMocks.getApiImpactEvidence).not.toHaveBeenCalled();
+
+    const optedIn = await resolveCodebaseEditContext("/repo", "jcode", {
+      query: "tighten token validation",
+      symbol: "validateToken",
+      includeApiImpact: true,
+      tokenBudget: 256,
+    });
+    expect(optedIn.text).toContain("API impact evidence");
+    expect(operationMocks.getApiImpactEvidence).toHaveBeenCalledTimes(1);
+    expect(countContextTokens(optedIn.text)).toBeLessThanOrEqual(256);
+  });
+
+  it("reports API impact as budget-truncated when the appended section is not rendered", async () => {
+    operationMocks.getCallGraphData.mockImplementation(async (_root, _host, args) => ({
+      direction: args.direction,
+      resolution: resolved,
+      callers: [],
+      callees: [],
+    }));
+    operationMocks.implementationLookup.mockResolvedValue([{
+      ...source,
+      content: `const marker = "## API impact evidence";\nfunction validateToken() {\n${"  validateMore();\n".repeat(200)}}`,
+    }]);
+    operationMocks.getApiImpactEvidence.mockResolvedValue({
+      text: "## API impact evidence\n- POST /users at src/routes.ts:20 [syntactic_route_registration]",
+      scannedFileCount: 3,
+      candidateFileCount: 3,
+      routeCount: 1,
+      consumerCount: 1,
+      candidateTestCount: 0,
+      truncated: false,
+    });
+
+    const result = await resolveCodebaseEditContext("/repo", "jcode", {
+      query: "tighten token validation",
+      symbol: "validateToken",
+      includeApiImpact: true,
+      tokenBudget: 128,
+    });
+
+    expect(result.text.match(/## API impact evidence/g)).toHaveLength(1);
+    expect(result.details.apiImpactIncluded).toBe(false);
+    expect(result.details.apiImpactTruncated).toBe(true);
+    expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
   });
 
   it("returns a risk note and conceptual evidence for an ambiguous target", async () => {

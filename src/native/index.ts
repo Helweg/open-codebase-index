@@ -1,5 +1,8 @@
 export type {
   BranchDelta,
+  ApiFetchUsageData,
+  ApiRouteUsageData,
+  ApiUsageExtractionData,
   CallEdgeData,
   CallSiteData,
   CentralityData,
@@ -38,6 +41,7 @@ export {
   hashContent,
   hashFile,
   extractCalls,
+  extractApiUsages,
   generateChunkId,
   generateChunkHash,
 } from "./parsing.js";

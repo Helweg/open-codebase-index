@@ -531,6 +531,16 @@ describe("MCP server tools and prompts", () => {
     expect(properties).toHaveProperty("diagnostic");
   });
 
+  it("should expose the bounded API impact opt-in on codebase_edit_context schema", async () => {
+    const tools = await client.listTools();
+    const editContext = tools.tools.find((tool) => tool.name === "codebase_edit_context");
+
+    const properties = editContext?.inputSchema?.properties;
+    expect(properties).toBeDefined();
+    expect(properties).toHaveProperty("includeApiImpact");
+    expect(properties?.includeApiImpact).toEqual(expect.objectContaining({ type: "boolean", default: false }));
+  });
+
   it("should register all 5 prompts", async () => {
     const prompts = await client.listPrompts();
 

@@ -49,7 +49,9 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
   } else if (stats.indexedChunks === 0) {
     lines.push(`${stats.totalFiles} files, removed ${stats.removedChunks} stale chunks, ${stats.existingChunks} chunks remain.`);
   } else {
-    let main = `${stats.totalFiles} files processed, ${stats.indexedChunks} new chunks embedded.`;
+    let main = stats.mode === "structural"
+      ? `${stats.totalFiles} files processed, ${stats.indexedChunks} structural chunks indexed.`
+      : `${stats.totalFiles} files processed, ${stats.indexedChunks} new chunks embedded.`;
     if (stats.existingChunks > 0) {
       main += ` ${stats.existingChunks} unchanged chunks skipped.`;
     }
@@ -63,7 +65,9 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
       lines.push(`Failed: ${stats.failedChunks} chunks.`);
     }
 
-    lines.push(`Tokens: ${stats.tokensUsed.toLocaleString()}, Duration: ${(stats.durationMs / 1000).toFixed(1)}s`);
+    lines.push(stats.mode === "structural"
+      ? `Duration: ${(stats.durationMs / 1000).toFixed(1)}s`
+      : `Tokens: ${stats.tokensUsed.toLocaleString()}, Duration: ${(stats.durationMs / 1000).toFixed(1)}s`);
   }
 
   if (stats.parseFailures.length > 0) {
@@ -99,9 +103,21 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
 export function formatStatus(status: StatusResult | IndexStatusResult): string {
   const autoIndex = "autoIndex" in status ? status.autoIndex : undefined;
   const autoIndexLines = autoIndex ? formatAutoIndexStatus(autoIndex) : [];
+  const countLine = status.mode === "structural"
+    ? `Stored chunks (structural, all branches): ${(status.indexedChunkCount ?? 0).toLocaleString()}`
+    : `${status.branchReadiness ? "Indexed chunks (all branches)" : "Indexed chunks"}: ${status.vectorCount.toLocaleString()}`;
+  const branchLines = status.branchReadiness ? [
+    `Current branch: ${status.currentBranch}`,
+    ...(status.checkoutBranch && status.checkoutBranch !== status.currentBranch
+      ? [`Checkout branch: ${status.checkoutBranch}`] : []),
+    `Active branch catalog state: ${status.branchReadiness.state}`,
+    `Active branch catalog chunks: ${status.branchReadiness.activeCatalogChunkCount.toLocaleString()}`,
+    `Active branch catalog registered: ${status.branchReadiness.registeredCatalog ? "yes" : "no"}`,
+  ] : [];
+  const unindexedDetails = status.branchReadiness ? [countLine, `Location: ${status.indexPath}`, ...branchLines] : [];
   if (!status.indexed) {
     if (status.warning) {
-      return [...autoIndexLines, status.warning].join("\n");
+      return [...autoIndexLines, ...unindexedDetails, status.warning].join("\n");
     }
 
     if (status.failedBatchesCount > 0) {
@@ -114,22 +130,30 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
         lines.push(`Failed batches: ${status.failedBatchesPath}`);
       }
 
-      return [...autoIndexLines, ...lines].join("\n");
+      return [...autoIndexLines, ...unindexedDetails, ...lines].join("\n");
     }
 
-    return [...autoIndexLines, "Codebase is not indexed. Run index_codebase to create an index."].join("\n");
+    return [...autoIndexLines, ...unindexedDetails, "Codebase is not indexed. Run index_codebase to create an index."].join("\n");
   }
 
   const lines = [
     ...autoIndexLines,
-    `Indexed chunks: ${status.vectorCount.toLocaleString()}`,
+    ...("mode" in status && status.mode ? [`Indexing mode: ${status.mode}`] : []),
+    countLine,
     `Provider: ${status.provider}`,
     `Model: ${status.model}`,
     `Location: ${status.indexPath}`,
+    ...branchLines,
   ];
 
+  if (status.branchReadiness) {
+    if (status.branchReadiness.state !== "ready" && status.branchReadiness.warning) {
+      lines.push(`Active branch catalog warning: ${status.branchReadiness.warning}`);
+    }
+  }
+
   if (status.currentBranch !== "default") {
-    lines.push(`Current branch: ${status.currentBranch}`);
+    if (!status.branchReadiness) lines.push(`Current branch: ${status.currentBranch}`);
     lines.push(`Base branch: ${status.baseBranch}`);
   }
 
@@ -154,6 +178,8 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
       lines.push(`Index was built with: ${stored.embeddingProvider}/${stored.embeddingModel} (${stored.embeddingDimensions}D)`);
       lines.push(`Current config:       ${status.provider}/${status.model}`);
     }
+  } else if (status.mode === "structural") {
+    lines.push("Compatibility: Structural index; no embedding provider required.");
   } else if (!status.compatibility) {
     lines.push(`Compatibility: No compatibility information found. Maybe the index is not initialized yet, try running index_codebase.`);
   } else {
