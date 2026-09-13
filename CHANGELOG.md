@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-09-13
+
 ### Added
 
 - **Resumable MCP engine idle shutdown**: Codex keeps a lightweight stdio connection while its indexing engine stops after fifteen idle minutes and restarts on demand. Active calls, indexing, and pending watcher work prevent shutdown. Other MCP hosts can opt in with `--mcp-idle-timeout <seconds>`, and `0` preserves the direct lifecycle. Interrupted `index_status` calls can retry once without replaying other submitted operations.
