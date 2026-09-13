@@ -208,7 +208,7 @@ Start with:
 
 Common provider, native module, stale index, branch, and performance issues are covered in [Troubleshooting](TROUBLESHOOTING.md).
 
-MCP operations report structured, redacted failures and durable phase diagnostics through `index_status`. If a client has already lost its stdio transport, start a fresh client session before retrying.
+MCP operations report structured, redacted failures and durable phase diagnostics through `index_status`. Codex keeps a lightweight connection while its idle indexing engine sleeps and resumes on demand. See [MCP engine idle timeout](docs/configuration.md#mcp-engine-idle-timeout) for configuration and external cleanup requirements. If the supervisor itself is terminated and the client loses stdio, start a fresh client session before retrying.
 
 ## Evaluation and performance
 

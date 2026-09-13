@@ -1,10 +1,12 @@
+import { parseArgs, loadCliRawConfig } from "./cli-options.js";
+export { parseArgs, loadCliRawConfig, isCliEntrypoint } from "./cli-options.js";
+export type { CliArgs } from "./cli-options.js";
 import type { SharedIndexCodebaseArgs } from "../../tools/contracts.js";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { realpathSync, writeFileSync } from "fs";
+import { writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
-import { fileURLToPath } from "url";
 
 import { parseConfig } from "../../config/schema.js";
 import { parseHostMode, HOST_MODES, type HostMode } from "../../config/host.js";
@@ -20,17 +22,12 @@ import { getIndexerForProject } from "../../tools/operations.js";
 import { initializeTools } from "../../tools/operation-runtime.js";
 import { executeIndexCodebase } from "../../tools/execute-common.js";
 import { hasProjectMarker } from "../../utils/files.js";
-import { BackgroundWorkerStopError, stopBackgroundWorker } from "../../utils/background-worker.js";
-import { isHomeDirectory } from "../../utils/auto-index.js";
+import { BackgroundWorkerStopError, isBackgroundWorkerBusy, stopBackgroundWorker } from "../../utils/background-worker.js";
+import { getAutoIndexActivity, isAutoIndexBusy, isHomeDirectory } from "../../utils/auto-index.js";
 import { createWatcherWithIndexer } from "../../watcher/index.js";
 import { attachRecentActivity } from "../../tools/visualize/activity.js";
+import { hasActiveMcpExecutions } from "./operation-execution.js";
 import { generateVisualizationHtml, transformForVisualization } from "../../tools/visualize/index.js";
-
-export interface CliArgs {
-  project: string;
-  config?: string;
-  host: HostMode;
-}
 
 export interface CliIndexArgs {
   project: string;
@@ -47,26 +44,6 @@ interface VisualizeArgs {
   includeOrphans: boolean;
   maxNodes: number;
   project: string;
-}
-
-export function parseArgs(argv: string[]): CliArgs {
-  let project = process.cwd();
-  let config: string | undefined;
-  let host: HostMode = "opencode";
-
-  for (let i = 2; i < argv.length; i++) {
-    if (argv[i] === "--project" && argv[i + 1]) {
-      project = path.resolve(argv[++i]);
-    } else if (argv[i] === "--config" && argv[i + 1]) {
-      config = path.resolve(argv[++i]);
-    } else if (argv[i] === "--host" && argv[i + 1]) {
-      host = parseHostMode(argv[++i]);
-    } else if (argv[i] === "--host") {
-      host = parseHostMode(undefined);
-    }
-  }
-
-  return { project, config, host };
 }
 
 export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
@@ -144,10 +121,6 @@ export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
   return { project, host, config, force, estimateOnly, dryRun, verbose };
 }
 
-export function loadCliRawConfig(args: CliArgs): unknown {
-  return args.config ? loadConfigFile(args.config) : loadMergedConfig(args.project, args.host);
-}
-
 export function printUsage(output: (text: string) => void = (text) => console.error(text)): void {
   output(`
 Usage:
@@ -166,10 +139,6 @@ Options:
 Run '${process.argv[1]} eval' and '${process.argv[1]} visualize' for existing behavior.
 Progress and diagnostics are written to stderr. Final index output is written to stdout.`
   );
-}
-
-export function isCliEntrypoint(moduleUrl: string, argvPath: string | undefined): boolean {
-  return argvPath !== undefined && realpathSync(fileURLToPath(moduleUrl)) === realpathSync(argvPath);
 }
 
 function parseVisualizeArgs(argv: string[], cwd: string): VisualizeArgs {
@@ -261,10 +230,26 @@ export async function runMcpCli(argv: string[]): Promise<void> {
   const server = createMcpServer(args.project, config, args.host);
   const transport = new StdioServerTransport();
   let shutdownPromise: Promise<number> | undefined;
+  let startupComplete = false;
+  let lastActivity = Date.now();
+  let activityTimer: ReturnType<typeof setInterval> | undefined;
+  const isBusy = (): boolean => !startupComplete
+    || hasActiveMcpExecutions()
+    || isAutoIndexBusy(args.project, args.host) || isBackgroundWorkerBusy(args.project, args.host);
+  const sampleActivity = (): boolean => {
+    const busy = isBusy();
+    const updatedAt = getAutoIndexActivity(args.project, args.host);
+    if (Number.isFinite(updatedAt)) lastActivity = Math.max(lastActivity, updatedAt);
+    if (busy) lastActivity = Date.now();
+    return busy;
+  };
   const onServerClose = server.server.onclose;
 
   const shutdown = (): Promise<number> => {
     if (shutdownPromise) return shutdownPromise;
+    if (activityTimer) clearInterval(activityTimer);
+    process.removeListener("disconnect", requestShutdown);
+    process.removeListener("message", onParentMessage);
     process.stdin.removeListener("end", requestShutdown);
     process.stdin.removeListener("close", requestShutdown);
     process.removeListener("SIGHUP", requestShutdown);
@@ -310,6 +295,44 @@ export async function runMcpCli(argv: string[]): Promise<void> {
     void shutdown().then((exitCode) => process.exit(exitCode));
   };
 
+  const sendParent = (message: object): void => {
+    if (process.connected) process.send?.(message, (error) => {
+      if (error) {
+        console.error("[codebase-index] MCP supervisor channel closed.");
+        requestShutdown();
+      }
+    });
+  };
+  const onParentMessage = (message: unknown): void => {
+    if (!message || typeof message !== "object") return;
+    const command = message as { type?: string; idleSince?: number; idleMs?: number };
+    if (command.type === "shutdown") requestShutdown();
+    if (command.type !== "prepare-sleep" || shutdownPromise) return;
+    const busy = sampleActivity();
+    if (busy || typeof command.idleSince !== "number" || typeof command.idleMs !== "number"
+      || Date.now() - Math.max(lastActivity, command.idleSince) < command.idleMs) {
+      sendParent({ type: "sleep-rejected" });
+      return;
+    }
+    // Freeze new background work synchronously before yielding to shutdown.
+    const stopping = stopBackgroundWorker(args.project, args.host, true);
+    void stopping.then(() => {
+      sendParent({ type: "sleep-accepted" });
+      requestShutdown();
+    }).catch((error: unknown) => {
+      console.error("[codebase-index] MCP idle shutdown failed:", error);
+      requestShutdown();
+    });
+  };
+  if (process.send) {
+    process.on("message", onParentMessage);
+    process.once("disconnect", requestShutdown);
+    if (!process.connected) { requestShutdown(); return; }
+    activityTimer = setInterval(() => {
+      sendParent({ type: "activity", busy: sampleActivity(), lastActivity });
+    }, 100);
+  }
+
   server.server.onclose = () => {
     try {
       onServerClose?.();
@@ -354,6 +377,8 @@ export async function runMcpCli(argv: string[]): Promise<void> {
       watcherFactoryForConfig,
     );
     if (shutdownPromise) return;
+    startupComplete = true;
+    lastActivity = Date.now();
   } catch (error: unknown) {
     await shutdown();
     throw error;
