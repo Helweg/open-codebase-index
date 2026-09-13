@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { analyzeQueryIntent } from "../src/indexer/intent-aware-ranking.js";
+import { analyzeQueryIntent, isExplicitIdentifierLookup } from "../src/indexer/intent-aware-ranking.js";
 import { vi } from "vitest";
 import {
   buildDeterministicIdentifierPass,
@@ -42,6 +42,19 @@ function candidate(
 }
 
 describe("definition ranking helpers", () => {
+  it("distinguishes explicit identifier lookup from multi-term source prose", () => {
+    expect(isExplicitIdentifierLookup("PaymentValidator")).toBe(true);
+    expect(isExplicitIdentifierLookup("`PaymentValidator`")).toBe(true);
+    expect(isExplicitIdentifierLookup("find `PaymentValidator`")).toBe(true);
+    expect(isExplicitIdentifierLookup("where is PaymentValidator defined")).toBe(true);
+    expect(isExplicitIdentifierLookup("find PaymentValidator implementation")).toBe(true);
+    expect(isExplicitIdentifierLookup("PaymentValidator validates payment requests")).toBe(false);
+    expect(isExplicitIdentifierLookup("explain `PaymentValidator` request validation")).toBe(false);
+    expect(analyzeQueryIntent("find tests for `PaymentValidator`").preferSourcePaths).toBe(false);
+    expect(analyzeQueryIntent("find docs for 'PaymentValidator'").preferSourcePaths).toBe(false);
+    expect(isExplicitIdentifierLookup("conceptual view of how a JsonReader token stream is validated")).toBe(false);
+  });
+
   it("extracts, strips, and matches normalized file path hints", () => {
     const query = "where is createSystem implementation in packages/react/src/system.ts";
 
@@ -283,6 +296,96 @@ end
         result.chunkType === "module" &&
         result.filePath === rubyFilePath
       )).toBe(true);
+    } finally {
+      await indexer.close();
+      fetchSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps hybrid evidence ahead of identifier lanes for multi-term identifier prose", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "identifier-prose-search-"));
+    const sourcePath = path.join(tempDir, "Src", "Library", "DefaultContractResolver.cs");
+    const testPath = path.join(tempDir, "Src", "Library.Tests", "ContractResolverTests.cs");
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.mkdirSync(path.dirname(testPath), { recursive: true });
+    const fillerMethods = Array.from({ length: 120 }, (_, index) =>
+      `  public void Filler${index}() { var value = ${index}; }`
+    ).join("\n");
+    fs.writeFileSync(sourcePath, `public class DefaultContractResolver {
+${fillerMethods}
+  public void CreateProperties() {
+    GetSerializableMembers();
+    NamingStrategy.ResolveContractProperties();
+  }
+}
+`, "utf-8");
+    fs.writeFileSync(testPath, Array.from({ length: 20 }, (_, index) => `
+public class NamingStrategy${index} {
+  public void CreateProperties() { NamingStrategy.ResolveContractProperties(); }
+}
+`).join(""), "utf-8");
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+      const texts = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+      return new Response(JSON.stringify({
+        data: texts.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.125) })),
+        usage: { total_tokens: Math.max(1, texts.length) },
+      }), { status: 200 });
+    });
+    const indexer = new Indexer(tempDir, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-model", dimensions: 8 },
+      indexing: { watchFiles: false },
+      search: { maxResults: 50, minScore: 0 },
+    }), "opencode");
+
+    try {
+      await indexer.index();
+      let proseTrace: import("../src/indexer/index.js").SearchTrace | undefined;
+      const results = await indexer.search(
+        "CreateProperties GetSerializableMembers NamingStrategy resolve contract properties",
+        50,
+        { metadataOnly: true, filterByBranch: false, trace: (trace) => { proseTrace = trace; } },
+      );
+      const sourceResult = results.slice(0, 5).find((result) => result.filePath === sourcePath);
+      expect(sourceResult).toBeDefined();
+      expect(proseTrace?.tieredCandidates.map((entry) => entry.id)).toEqual(
+        proseTrace?.postExternalRerankCandidates.slice(0, 200).map((entry) => entry.id),
+      );
+
+      let noIdentifierTrace: import("../src/indexer/index.js").SearchTrace | undefined;
+      await indexer.search("resolve contract properties", 50, {
+        metadataOnly: true,
+        filterByBranch: false,
+        prioritizeSourcePaths: true,
+        trace: (trace) => { noIdentifierTrace = trace; },
+      });
+      expect(noIdentifierTrace?.tieredCandidates.map((entry) => entry.id)).not.toEqual(
+        noIdentifierTrace?.postExternalRerankCandidates.slice(0, 200).map((entry) => entry.id),
+      );
+
+      const loneIdentifier = await indexer.search("NamingStrategy0", 10, {
+        metadataOnly: true,
+        filterByBranch: false,
+      });
+      expect(loneIdentifier[0]).toMatchObject({
+        filePath: testPath,
+        name: "NamingStrategy0",
+        chunkType: "class_declaration",
+      });
+
+      const explicitDefinition = await indexer.search("NamingStrategy0", 10, {
+        definitionIntent: true,
+        metadataOnly: true,
+        filterByBranch: false,
+      });
+      expect(explicitDefinition[0]).toMatchObject({
+        filePath: testPath,
+        name: "NamingStrategy0",
+        chunkType: "class_declaration",
+      });
     } finally {
       await indexer.close();
       fetchSpy.mockRestore();
