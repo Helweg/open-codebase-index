@@ -520,6 +520,7 @@ describe("retrieval ranking", () => {
     ["explain TokenReader implementation details", "implementation", true],
     ["TokenReader", "neutral", true],
     ["ExplainTokenReader validates token streams", "neutral", true],
+    ["explain TokenReader", "neutral", true],
     ["explainTokenReader", "neutral", true],
     ["overviewed TokenReader internals", "neutral", true],
     ["how TokenReader validates token streams", "neutral", true],
@@ -564,12 +565,17 @@ describe("retrieval ranking", () => {
     const candidates = [...sourceCandidates, ...distractors];
 
     const ranked = rerankResults("explain how SessionState handles renewal failures", candidates, 20);
-    expect(ranked.slice(0, 5).map((candidate) => candidate.id)).toEqual([
+    expect(ranked.map((candidate) => candidate.id)).toEqual([
       "source-0",
       "source-1",
       "source-2",
       "source-3",
       "source-4",
+      "source-5",
+      "config",
+      "docs",
+      "tests",
+      "fixture",
     ]);
   });
 

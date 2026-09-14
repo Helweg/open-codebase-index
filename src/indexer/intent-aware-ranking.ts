@@ -186,7 +186,7 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   const broadConceptualIntent = /\b(?:conceptual|overview)\b/u.test(normalized);
 
   // Queries like "conceptual overview of FooBar" should stay conceptual for broader retrieval,
-  // while bare identifiers (e.g. "FooBar") remain identifier-driven neutral.
+  // while bare or explain-only identifier queries remain identifier-driven neutral.
   const conceptual = (identifierHints.length === 0 || broadConceptualIntent) && queryWords(query).filter((word) => {
     const wordNormalized = normalizeRankingText(word);
     return !STOPWORDS.has(wordNormalized) && !INTENT_WORDS.has(wordNormalized);
