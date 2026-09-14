@@ -508,9 +508,10 @@ describe("retrieval ranking", () => {
   });
 
   it.each<[string, string, boolean]>([
-    ["explain how TokenReader validates token streams", "conceptual", false],
+    ["explain how TokenReader validates token streams", "neutral", true],
+    ["conceptual view of TokenReader validation and token streams", "conceptual", false],
     ["conceptual overview of RequestRouter dispatch and middleware ordering", "conceptual", false],
-    ["explanation of ConnectionPool lifecycle and recycling", "conceptual", false],
+    ["explanation of ConnectionPool lifecycle and recycling", "neutral", true],
     ["overview of TokenReader documentation", "docs", false],
     ["explain TokenReader tests and validation", "test", false],
     ["explain TokenReader configuration settings", "config", false],
@@ -519,16 +520,17 @@ describe("retrieval ranking", () => {
     ["explain TokenReader implementation details", "implementation", true],
     ["TokenReader", "neutral", true],
     ["ExplainTokenReader validates token streams", "neutral", true],
-    ["explain TokenReader", "neutral", true],
+    ["explainTokenReader", "neutral", true],
+    ["overviewed TokenReader internals", "neutral", true],
     ["how TokenReader validates token streams", "neutral", true],
   ])("preserves bounded explanatory intent and explicit priorities for %s", (query, primary, preferSourcePaths) => {
     expect(analyzeQueryIntent(query)).toMatchObject({ primary, preferSourcePaths });
   });
 
   it.each([
-    { query: "explain how TokenReader validates token streams", symbol: "TokenReader" },
     { query: "conceptual overview of RequestRouter dispatch and middleware ordering", symbol: "RequestRouter" },
-  ])("does not treat explicit explanatory intent as bare symbol lookup for $query", ({ query, symbol }) => {
+    { query: "conceptual view of TokenReader validation and token streams", symbol: "TokenReader" },
+  ])("does not treat broader conceptual view intent as bare symbol lookup for $query", ({ query, symbol }) => {
     const candidates: Candidate[] = [
       { id: "declaration", score: 0.35, metadata: meta({ filePath: "/repo/src/declaration.ts", name: symbol, chunkType: "class_declaration", hash: "declaration" }) },
       { id: "behavior", score: 0.95, metadata: meta({ filePath: "/repo/src/behavior.ts", chunkType: "block", hash: "behavior" }) },
@@ -536,6 +538,39 @@ describe("retrieval ranking", () => {
 
     expect(rerankResults(query, candidates, candidates.length).map((candidate) => candidate.id))
       .toEqual(["behavior", "declaration"]);
+  });
+
+  it("keeps same-named source chunks ahead of artifact files for explain-only identifier queries", () => {
+    const sourceCandidates: Candidate[] = Array.from({ length: 6 }, (_value, index) => ({
+      id: `source-${index}`,
+      score: 0.89,
+      metadata: meta({
+        filePath: `/repo/src/session-${index % 2}.ts`,
+        name: "SessionState",
+        chunkType: "function",
+        startLine: index * 20 + 1,
+        endLine: index * 20 + 10,
+        hash: `source-${index}`,
+      }),
+    }));
+
+    const distractors: Candidate[] = [
+      { id: "docs", score: 0.99, metadata: meta({ filePath: "/repo/docs/session.md", name: "SessionState guide", chunkType: "other", hash: "docs" }) },
+      { id: "tests", score: 0.98, metadata: meta({ filePath: "/repo/tests/session.test.ts", name: "SessionState tests", chunkType: "test_declaration", hash: "tests" }) },
+      { id: "config", score: 0.97, metadata: meta({ filePath: "/repo/config/session.yaml", name: "SessionState config", chunkType: "other", hash: "config" }) },
+      { id: "fixture", score: 0.96, metadata: meta({ filePath: "/repo/fixtures/session.json", name: "SessionState fixture", chunkType: "other", hash: "fixture" }) },
+    ];
+
+    const candidates = [...sourceCandidates, ...distractors];
+
+    const ranked = rerankResults("explain how SessionState handles renewal failures", candidates, 20);
+    expect(ranked.slice(0, 5).map((candidate) => candidate.id)).toEqual([
+      "source-0",
+      "source-1",
+      "source-2",
+      "source-3",
+      "source-4",
+    ]);
   });
 
   it("keeps exact-symbol ranking for bare and definition-seeking TokenReader queries", () => {
