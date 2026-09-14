@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Explanatory queries with identifiers**: Longer queries with explicit explanatory wording such as “explain” or “conceptual overview” now retain conceptual ranking even when they mention code identifiers, rather than over-promoting exact-name declarations. Bare-symbol lookup and explicit definition, implementation, documentation, test, configuration, and call-flow requests retain their existing priorities.
+
 ## [0.29.1] - 2026-09-14
 
 ### Fixed
