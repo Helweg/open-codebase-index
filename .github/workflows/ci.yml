@@ -127,10 +127,30 @@ jobs:
           fi
 
       - name: Run eval harness smoke check (mock embeddings)
-        run: npm run eval:smoke
+        run: |
+          npm run eval:smoke -- --output "${RUNNER_TEMP}/eval-smoke/node-${{ matrix.node }}"
+
+      - name: Upload eval smoke outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eval-smoke-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/eval-smoke/node-${{ matrix.node }}
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Run pre-edit context eval gate (mock embeddings)
-        run: npm run eval:pre-edit:ci
+        run: |
+          npm run eval:pre-edit:ci -- --output "${RUNNER_TEMP}/eval-pre-edit/node-${{ matrix.node }}"
+
+      - name: Upload pre-edit context eval outputs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: eval-pre-edit-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/eval-pre-edit/node-${{ matrix.node }}
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Stop mock embeddings server
         if: always()
