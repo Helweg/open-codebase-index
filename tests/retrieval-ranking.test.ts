@@ -19,6 +19,7 @@ import {
   rerankResults,
 } from "../src/indexer/index.js";
 import { parseConfig } from "../src/config/schema.js";
+import { analyzeQueryIntent } from "../src/indexer/intent-aware-ranking.js";
 import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 type Candidate = { id: string; score: number; metadata: ChunkMetadata };
@@ -504,6 +505,114 @@ describe("retrieval ranking", () => {
     expect(rerankResults("documentation for resolveSession", candidates, candidates.length)[0]?.id).toBe("docs");
     expect(rerankResults("session configuration settings", candidates, candidates.length)[0]?.id).toBe("config");
     expect(rerankResults("who calls resolveSession", candidates, candidates.length)[0]?.id).toBe("call-flow");
+  });
+
+  it.each<[string, string, boolean]>([
+    ["explain how TokenReader validates token streams", "conceptual", false],
+    ["conceptual overview of RequestRouter dispatch and middleware ordering", "conceptual", false],
+    ["explanation of ConnectionPool lifecycle and recycling", "conceptual", false],
+    ["overview of TokenReader documentation", "docs", false],
+    ["explain TokenReader tests and validation", "test", false],
+    ["explain TokenReader configuration settings", "config", false],
+    ["explain who calls TokenReader", "call-flow", true],
+    ["overview of where TokenReader is defined", "definition", true],
+    ["explain TokenReader implementation details", "implementation", true],
+    ["TokenReader", "neutral", true],
+    ["ExplainTokenReader validates token streams", "neutral", true],
+    ["explain TokenReader", "neutral", true],
+    ["how TokenReader validates token streams", "neutral", true],
+  ])("preserves bounded explanatory intent and explicit priorities for %s", (query, primary, preferSourcePaths) => {
+    expect(analyzeQueryIntent(query)).toMatchObject({ primary, preferSourcePaths });
+  });
+
+  it.each([
+    { query: "explain how TokenReader validates token streams", symbol: "TokenReader" },
+    { query: "conceptual overview of RequestRouter dispatch and middleware ordering", symbol: "RequestRouter" },
+  ])("does not treat explicit explanatory intent as bare symbol lookup for $query", ({ query, symbol }) => {
+    const candidates: Candidate[] = [
+      { id: "declaration", score: 0.35, metadata: meta({ filePath: "/repo/src/declaration.ts", name: symbol, chunkType: "class_declaration", hash: "declaration" }) },
+      { id: "behavior", score: 0.95, metadata: meta({ filePath: "/repo/src/behavior.ts", chunkType: "block", hash: "behavior" }) },
+    ];
+
+    expect(rerankResults(query, candidates, candidates.length).map((candidate) => candidate.id))
+      .toEqual(["behavior", "declaration"]);
+  });
+
+  it("keeps exact-symbol ranking for bare and definition-seeking TokenReader queries", () => {
+    const candidates: Candidate[] = [
+      {
+        id: "declaration",
+        score: 0.81,
+        metadata: meta({
+          filePath: "/repo/src/parser/token-reader.ts",
+          name: "TokenReader",
+          chunkType: "class_declaration",
+          startLine: 10,
+          endLine: 46,
+          hash: "token-reader-class",
+        }),
+      },
+      {
+        id: "behavior",
+        score: 0.99,
+        metadata: meta({
+          filePath: "/repo/src/parser/token-reader.ts",
+          name: "TokenReader validation strategy",
+          chunkType: "other",
+          startLine: 52,
+          endLine: 90,
+          hash: "token-reader-behavior",
+        }),
+      },
+      {
+        id: "docs",
+        score: 0.72,
+        metadata: meta({
+          filePath: "/repo/docs/token-reader.md",
+          name: "TokenReader guide",
+          chunkType: "other",
+          hash: "token-reader-doc",
+        }),
+      },
+      {
+        id: "tests",
+        score: 0.71,
+        metadata: meta({
+          filePath: "/repo/tests/token-reader.test.ts",
+          name: "TokenReader tests",
+          chunkType: "test_declaration",
+          hash: "token-reader-test",
+        }),
+      },
+      {
+        id: "config",
+        score: 0.70,
+        metadata: meta({
+          filePath: "/repo/config/token-reader.yaml",
+          name: "TokenReader settings",
+          chunkType: "other",
+          hash: "token-reader-config",
+        }),
+      },
+      {
+        id: "call-flow",
+        score: 0.95,
+        metadata: meta({
+          filePath: "/repo/src/call-graph/token-reader-callers.ts",
+          name: "TokenReader caller",
+          chunkType: "function",
+          hash: "token-reader-callflow",
+        }),
+      },
+    ];
+
+    expect(rerankResults("TokenReader", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("where is TokenReader defined", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("TokenReader implementation", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("TokenReader documentation", candidates, candidates.length)[0]?.id).toBe("docs");
+    expect(rerankResults("TokenReader tests", candidates, candidates.length)[0]?.id).toBe("tests");
+    expect(rerankResults("TokenReader configuration", candidates, candidates.length)[0]?.id).toBe("config");
+    expect(rerankResults("who calls TokenReader", candidates, candidates.length)[0]?.id).toBe("call-flow");
   });
 
   it("removes nested same-symbol containers without collapsing distinct nested symbols", () => {
