@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.29.1] - 2026-09-14
+
 ### Fixed
 
 - **Descriptive code retrieval**: Queries that mention identifiers while describing behavior no longer promote large identifier-match lanes ahead of stronger fused evidence. Relevant implementation-path blocks remain eligible for these queries, while explicit definition/lone-identifier lookup and source-preferring queries without identifier hints retain their existing behavior.
