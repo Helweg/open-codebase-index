@@ -784,7 +784,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...HEAD
+[0.29.1]: https://github.com/Helweg/open-codebase-index/compare/v0.29.0...v0.29.1
+[0.29.0]: https://github.com/Helweg/open-codebase-index/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/Helweg/open-codebase-index/compare/v0.27.0...v0.28.0
 [0.22.2]: https://github.com/Helweg/open-codebase-index/compare/v0.22.1...v0.22.2
 [0.22.1]: https://github.com/Helweg/open-codebase-index/compare/v0.22.0...v0.22.1
