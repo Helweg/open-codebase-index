@@ -211,6 +211,18 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   };
 }
 
+export function isExplicitIdentifierLookup(query: string): boolean {
+  const intent = analyzeQueryIntent(query);
+  if (intent.primary === "definition" || intent.primary === "implementation") {
+    return true;
+  }
+  const contentWords = queryWords(query).filter((word) => {
+    const normalized = normalizeRankingText(word);
+    return normalized.length >= 2 && !STOPWORDS.has(normalized) && !INTENT_WORDS.has(normalized);
+  });
+  return contentWords.length === 1 && intent.identifierHints.length > 0;
+}
+
 export function isTestPath(filePath: string): boolean {
   const normalized = normalizePath(filePath);
   return /(?:^|\/)(?:test|tests|__tests__|spec|specs)(?:\/|$)/u.test(normalized) ||

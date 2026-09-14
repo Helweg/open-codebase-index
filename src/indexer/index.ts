@@ -42,7 +42,7 @@ import type { PrImpactResult } from "./pr-impact-types.js";
 import { UnsupportedIndexOperationError } from "./errors.js";
 export { UnsupportedIndexOperationError } from "./errors.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
-import { analyzeQueryIntent } from "./intent-aware-ranking.js";
+import { analyzeQueryIntent, isExplicitIdentifierLookup } from "./intent-aware-ranking.js";
 import {
   applyCommunityBoost,
   classifyQueryIntentRaw,
@@ -6460,6 +6460,8 @@ export class Indexer {
     throwIfOperationAborted(options?.signal);
     const fusionMs = performance.now() - fusionStartTime;
 
+    const explicitIdentifierLookup = options?.definitionIntent === true || isExplicitIdentifierLookup(query);
+    const prioritizeIdentifierLanes = !sourceIntent || identifierHints.length === 0 || explicitIdentifierLookup;
     const rescued = promoteIdentifierMatches(
       query,
       rerankedCombined,
@@ -6467,38 +6469,34 @@ export class Indexer {
       scopedKeywordCandidates,
       database,
       branchChunkIds,
-      sourceIntent
+      sourceIntent && prioritizeIdentifierLanes
     );
 
     const union = unionCandidates(scopedSemanticCandidates, scopedKeywordCandidates);
 
-    const deterministicIdentifierLane = buildDeterministicIdentifierPass(
-      query,
-      union,
-      maxResults,
-      sourceIntent
-    );
+    const deterministicIdentifierLane = prioritizeIdentifierLanes
+      ? buildDeterministicIdentifierPass(query, union, maxResults, sourceIntent)
+      : [];
 
-    const identifierLane = buildIdentifierDefinitionLane(
-      query,
-      union,
-      maxResults,
-      sourceIntent
-    );
+    const identifierLane = prioritizeIdentifierLanes
+      ? buildIdentifierDefinitionLane(query, union, maxResults, sourceIntent)
+      : [];
 
-    const symbolLane = buildSymbolDefinitionLane(
-      query,
-      database,
-      branchChunkIds,
-      branchSymbolIds,
-      maxResults,
-      union,
-      sourceIntent,
-      options?.definitionIntent === true && (
-        (options.directory?.trim().length ?? 0) > 0 ||
-        (options.fileType?.trim().length ?? 0) > 0
-      ),
-    );
+    const symbolLane = prioritizeIdentifierLanes
+      ? buildSymbolDefinitionLane(
+          query,
+          database,
+          branchChunkIds,
+          branchSymbolIds,
+          maxResults,
+          union,
+          sourceIntent,
+          options?.definitionIntent === true && (
+            (options.directory?.trim().length ?? 0) > 0 ||
+            (options.fileType?.trim().length ?? 0) > 0
+          ),
+        )
+      : [];
 
     const prePrimaryLane = mergeTieredResults(deterministicIdentifierLane, identifierLane, maxResults * 4);
     // An explicit definition lookup can resolve to a symbol whose declaration
@@ -6538,7 +6536,7 @@ export class Indexer {
 
     const implementationOnly = communityRanked.filter((r) =>
       isLikelyImplementationPath(r.metadata.filePath) &&
-      isImplementationChunkType(r.metadata.chunkType)
+      (!prioritizeIdentifierLanes || isImplementationChunkType(r.metadata.chunkType))
     );
 
     const filtered = (sourceIntent && hasCodeHints && implementationOnly.length > 0
