@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Embedding fallback replica**: Configure one compatible secondary endpoint for queries, documents and indexing batches. Calls prefer the primary and switch on network failures, timeouts or HTTP 401/403/404/429/5xx. Supports OpenAI-compatible and native Ollama protocol changes, Google-compatible replicas, offline primary startup, independent credentials and project-level disabling without rebuilding compatible indexes.
+
 ## [0.29.1] - 2026-09-14
 
 ### Fixed

@@ -1,5 +1,6 @@
 import type {
   EmbeddingProvider,
+  EmbeddingProviderModelInfo,
   IndexScope,
   LogLevel,
   ProviderModels,
@@ -12,6 +13,11 @@ import { substituteEnvString } from "./env-substitution.js";
 
 const VALID_SCOPES: IndexScope[] = ["project", "global"];
 const VALID_LOG_LEVELS: LogLevel[] = ["error", "warn", "info", "debug"];
+
+export function findCatalogOllamaModel(model: string): EmbeddingProviderModelInfo["ollama"] | null {
+  const stableName = model.endsWith(":latest") ? model.slice(0, -":latest".length) : model;
+  return Object.values(EMBEDDING_MODELS.ollama).find((candidate) => candidate.model === stableName) ?? null;
+}
 
 export function isValidFusionStrategy(value: unknown): value is SearchConfig["fusionStrategy"] {
   return value === "weighted" || value === "rrf";

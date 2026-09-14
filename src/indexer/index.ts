@@ -7,7 +7,8 @@ import PQueue from "p-queue";
 import pRetry from "p-retry";
 
 import { type EmbeddingBatchConfig, ParsedCodebaseIndexConfig, type RerankerConfig } from "../config/schema.js";
-import { detectEmbeddingProvider, ConfiguredProviderInfo, tryDetectProvider, createCustomProviderInfo } from "../embeddings/detector.js";
+import { ConfiguredProviderInfo, resolveConfiguredEmbeddingProvider } from "../embeddings/detector.js";
+import { EmbeddingFallbackError, reportEmbeddingFallback } from "../embeddings/fallback.js";
 import {
   createEmbeddingProvider,
   EmbeddingProviderInterface,
@@ -328,6 +329,10 @@ function getErrorMessage(error: unknown): string {
 }
 
 function isRateLimitError(error: unknown): boolean {
+  if (error instanceof EmbeddingFallbackError) {
+    return isRateLimitError(error.primaryError) || isRateLimitError(error.fallbackError);
+  }
+  if (error instanceof ProviderRequestError && error.statusCode === 429) return true;
   const message = getErrorMessage(error);
   return message.includes("429") || message.toLowerCase().includes("rate limit") || message.toLowerCase().includes("too many requests");
 }
@@ -3739,16 +3744,7 @@ export class Indexer {
       return;
     }
 
-    if (this.config.embeddingProvider === 'custom') {
-      if (!this.config.customProvider) {
-        throw new Error("embeddingProvider is 'custom' but customProvider config is missing.");
-      }
-      this.configuredProviderInfo = createCustomProviderInfo(this.config.customProvider);
-    } else if (this.config.embeddingProvider === 'auto') {
-      this.configuredProviderInfo = await tryDetectProvider();
-    } else {
-      this.configuredProviderInfo = await detectEmbeddingProvider(this.config.embeddingProvider, this.config.embeddingModel);
-    }
+    this.configuredProviderInfo = await resolveConfiguredEmbeddingProvider(this.config);
 
     if (!this.configuredProviderInfo) {
       throw new Error(
@@ -3763,7 +3759,13 @@ export class Indexer {
       rerankerEnabled: this.config.reranker?.enabled ?? false,
     });
 
-    this.provider = createEmbeddingProvider(this.configuredProviderInfo);
+    this.provider = createEmbeddingProvider(this.configuredProviderInfo, this.config.embeddingFallback, (error) => {
+      reportEmbeddingFallback(error);
+      this.logger.warn("Using fallback embeddings after a primary request failed", {
+        statusCode: error.statusCode,
+        timedOut: error.timedOut,
+      });
+    });
 
     const dimensions = this.configuredProviderInfo.modelInfo.dimensions;
     const storePath = path.join(this.indexPath, "vectors");

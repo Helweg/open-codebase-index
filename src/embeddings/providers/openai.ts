@@ -38,7 +38,7 @@ export class OpenAIEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         const response = await fetch(`${this.credentials.baseUrl}/embeddings`, {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${this.credentials.apiKey}`,
+            ...(this.credentials.apiKey ? { Authorization: `Bearer ${this.credentials.apiKey}` } : {}),
             "Content-Type": "application/json",
           },
           body: JSON.stringify({

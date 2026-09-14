@@ -159,6 +159,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(this.credentials.apiKey ? { Authorization: `Bearer ${this.credentials.apiKey}` } : {}),
           },
           body: JSON.stringify({
             model: this.modelInfo.model,
@@ -250,6 +251,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(this.credentials.apiKey ? { Authorization: `Bearer ${this.credentials.apiKey}` } : {}),
         },
         body: JSON.stringify({
           model: this.modelInfo.model,

@@ -190,6 +190,79 @@ The `/embeddings` path is appended to `baseUrl`. `apiKey` and `maxBatchSize` are
 
 Changing provider, model, dimensions, or embedding strategy can make an existing index incompatible. Check `index_status` and rebuild with `force: true` only when required.
 
+### Embedding fallback replica
+
+Configure one optional `embeddingFallback` in the global or project configuration. Each query,
+document or batch tries the primary first, then the replica after a network failure, request timeout,
+or HTTP 401, 403, 404, 429 or 5xx response. The next call tries the primary again. There is no
+background probing or sticky routing. Without this option, provider behavior is unchanged.
+
+```json
+{
+  "embeddingProvider": "custom",
+  "customProvider": {
+    "baseUrl": "https://primary.example/v1",
+    "model": "nomic-embed-text",
+    "dimensions": 768,
+    "maxTokens": 8192,
+    "timeoutMs": 120000
+  },
+  "embeddingFallback": {
+    "provider": "custom",
+    "baseUrl": "http://localhost:11434/v1",
+    "model": "nomic-embed-text",
+    "dimensions": 768
+  }
+}
+```
+
+- Required replica fields: `provider`, `baseUrl`, `model`, and positive integer `dimensions`.
+  Providers are `custom`, `ollama`, `openai`, and `google`. Pin the primary provider explicitly
+  (not `auto`) and specify `embeddingModel` for an Ollama primary.
+- Both endpoints must serve the **same model, weights, quantization and preprocessing**. Model names
+  must match exactly (including quantization tags), except for existing built-in Ollama `:latest` aliases.
+  Replica requests use the configured model name. Vectors must match the primary dimensions. Equal dimensions alone do not
+  establish compatibility. Verify actual retrieval quality when switching inference engines or hardware.
+- `maxTokens` inherits the primary contract. Declare it for an uncatalogued Ollama primary: with fallback
+  enabled, its contract comes from these explicit dimensions/token limits instead of online discovery.
+  A supplied token limit must match the primary contract. An unreachable primary therefore cannot block startup.
+- `custom` and `openai` append `/embeddings` to the base URL. `ollama` uses native `/api/embed` and
+  `/api/embeddings`, so give the Ollama server root without `/v1`. Switching between these protocols is
+  supported. Google must use another Google-compatible endpoint, preserving query/document tasks.
+- Optional `apiKey` belongs only to the replica. Primary credentials are never inherited. URL and key
+  strings support `{env:NAME}` substitution. Private addresses and localhost are allowed by the existing
+  outbound URL policy.
+- With a replica configured, missing primary OpenAI/Google credentials do not block startup. The primary
+  request is still attempted, and an authentication failure follows the same 401/403 fallback rule with
+  a warning. Without a replica, the existing startup authentication checks remain.
+- The project replaces the entire global fallback object. Set `"embeddingFallback": false` in a project
+  to disable an inherited replica. An incompatible effective configuration fails before embedding requests.
+- Existing request deadlines remain in effect. A custom replica inherits the primary custom timeout
+  (otherwise 120 seconds). Native Ollama, OpenAI and Google retain their 120-second request deadlines.
+  A refused connection fails immediately, but a silent primary can consume its whole deadline on every call.
+- A split batch is replayed in full on the replica, without persisting partial primary results. Existing
+  indexing retries still apply if both endpoints fail. The primary identity remains in index metadata,
+  so enabling a compatible replica does not require rebuilding the index or change cache keys.
+- Cancellation, invalid vectors, malformed responses and other HTTP client errors do not trigger replica
+  switching. Existing provider-internal recovery still applies, including Ollama's legacy endpoint support.
+  A fallback warning on stderr records the primary status/timeout even when debug logging is disabled, without credentials or input text. If both fail,
+  the error retains both causes and uses the final failure's retry policy. If indexing retries,
+  a rate-limit response from either endpoint activates the existing shared backoff.
+
+The opt-in live regression uses only synthetic source text and a temporary index. Provide two
+OpenAI-compatible Ollama URLs and the exact shared model contract, then run:
+
+```bash
+CBI_LIVE_PRIMARY_URL=http://primary-host:11434/v1 \
+CBI_LIVE_FALLBACK_URL=http://localhost:11434/v1 \
+CBI_LIVE_MODEL=nomic-embed-text CBI_LIVE_DIMENSIONS=768 \
+npm exec -- vitest run tests/embedding-fallback-live.test.ts
+```
+
+It compares semantic retrieval ranks to the primary-only reference, tests both replica protocols,
+reopens the index to bypass query caches, and simulates an outage through a local relay. Neither
+Ollama server is stopped. The standard suite uses deterministic HTTP replicas without external models.
+
 ## Scope
 
 ```json
