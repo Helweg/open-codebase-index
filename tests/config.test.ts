@@ -1097,3 +1097,47 @@ describe("config schema", () => {
     });
   });
 });
+
+
+describe("embedding fallback configuration", () => {
+  const primary = { embeddingProvider: "custom", customProvider: { baseUrl: "http://primary.test/v1", model: "model", dimensions: 2 } };
+  const fallback = { provider: "custom", baseUrl: "http://replica.test/v1", model: "model", dimensions: 2 };
+
+  it("keeps fallback opt-in and supports explicit disabling", () => {
+    expect(parseConfig(primary).embeddingFallback).toBeUndefined();
+    expect(parseConfig({ ...primary, embeddingFallback: false }).embeddingFallback).toBe(false);
+  });
+
+  it("normalizes URLs and resolves endpoint-specific environment values", () => {
+    vi.stubEnv("CBI_REPLICA_URL", "http://replica.test/v1///");
+    vi.stubEnv("CBI_REPLICA_KEY", "replica-secret");
+    try {
+      expect(parseConfig({ ...primary, embeddingFallback: { ...fallback, baseUrl: "{env:CBI_REPLICA_URL}", apiKey: "{env:CBI_REPLICA_KEY}" } }).embeddingFallback)
+        .toEqual({ ...fallback, apiKey: "replica-secret", maxTokens: undefined });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it.each([null, [], true, "url", {}, { ...fallback, dimensions: 0 }, { ...fallback, dimensions: 1.5 }, { ...fallback, maxTokens: Infinity },
+    { ...fallback, apiKey: 1 }, { ...fallback, model: "other" }, { ...fallback, baseUrl: "file:///tmp/secret" },
+    { ...fallback, baseUrl: "http://metadata.google.internal" }, { ...fallback, baseUrl: "http://user:secret@replica.test" }])("rejects invalid fallback %j", (embeddingFallback) => {
+    expect(() => parseConfig({ ...primary, embeddingFallback })).toThrow(/embeddingFallback/);
+  });
+
+  it("requires a pinned primary provider and Ollama model", () => {
+    expect(() => parseConfig({ embeddingFallback: fallback })).toThrow(/explicit/);
+    expect(() => parseConfig({ embeddingProvider: "ollama", embeddingFallback: fallback })).toThrow(/explicit/);
+    for (const embeddingModel of [true, 123, " "]) {
+      expect(() => parseConfig({ embeddingProvider: "ollama", embeddingModel,
+        embeddingFallback: { ...fallback, model: "nomic-embed-text", dimensions: 768 } })).toThrow(/explicit/);
+    }
+  });
+
+  it("rejects crossings of the Google protocol boundary", () => {
+    expect(() => parseConfig({ ...primary, embeddingFallback: { ...fallback, provider: "google" } })).toThrow(/Google/);
+    expect(() => parseConfig({ embeddingProvider: "google", embeddingFallback: fallback })).toThrow(/Google/);
+    expect(() => parseConfig({ embeddingProvider: "google", embeddingModel: "gemini-embedding-001",
+      embeddingFallback: { ...fallback, provider: "google", model: "gemini-embedding-2", dimensions: 1536 } })).toThrow(/must match/);
+  });
+});

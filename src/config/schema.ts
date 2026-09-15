@@ -1,5 +1,6 @@
 // Config schema without zod dependency to avoid version conflicts with OpenCode SDK
 
+import { parseEmbeddingFallback } from "./embedding-fallback.js";
 import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, EMBEDDING_MODELS, DEFAULT_PROVIDER_MODELS } from "./constants.js";
 import {
   getDefaultDebugConfig,
@@ -196,8 +197,20 @@ export interface EmbeddingBatchConfig {
 }
 
 export interface EmbeddingConfig {
-  /** Embedding request batching options. Currently applied to the ollama provider. */
+  /** Embedding request batching options. Applied when one of the configured embedding
+   * endpoints is Ollama, primary or fallback replica; ignored otherwise. */
   batch?: EmbeddingBatchConfig;
+}
+
+export interface EmbeddingFallbackConfig {
+  provider: EmbeddingProvider | "custom";
+  baseUrl: string;
+  model: string;
+  dimensions: number;
+  /** Required for an uncatalogued Ollama primary, whose metadata may be offline. */
+  maxTokens?: number;
+  /** Credentials belong only to the fallback endpoint, never inherited from the primary. */
+  apiKey?: string;
 }
 
 export interface CodebaseIndexConfig {
@@ -205,7 +218,10 @@ export interface CodebaseIndexConfig {
   embeddingModel?: EmbeddingModelName;
   /** Configuration for custom OpenAI-compatible embedding providers (required when embeddingProvider is 'custom') */
   customProvider?: CustomProviderConfig;
-  /** Embedding request shape options (e.g. batch sizes). Currently applied to the ollama provider. */
+  /** One compatible replica, tried after an eligible primary failure. False disables inheritance. */
+  embeddingFallback?: EmbeddingFallbackConfig | false;
+  /** Embedding request shape options (e.g. batch sizes). Applied when one of the configured
+   * embedding endpoints is Ollama, primary or fallback replica; ignored otherwise. */
   embedding?: EmbeddingConfig;
   scope: IndexScope;
   indexing?: Partial<IndexingConfig>;
@@ -439,8 +455,11 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   } else if (isValidProvider(embeddingProviderValue)) {
     embeddingProvider = embeddingProviderValue;
     const rawEmbeddingModel = input.embeddingModel;
+    const embeddingModelValue = getResolvedString(rawEmbeddingModel, "$root.embeddingModel");
+    if (input.embeddingFallback && embeddingProvider === "ollama" && !embeddingModelValue?.trim()) {
+      throw new Error("embeddingFallback requires an explicit non-empty Ollama model string.");
+    }
     if (typeof rawEmbeddingModel === "string") {
-      const embeddingModelValue = getResolvedString(rawEmbeddingModel, "$root.embeddingModel");
       if (embeddingModelValue) {
         embeddingModel = isValidModel(embeddingModelValue, embeddingProvider) ? embeddingModelValue : DEFAULT_PROVIDER_MODELS[embeddingProvider];
       }
@@ -509,6 +528,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     embeddingProvider,
     embeddingModel,
     customProvider,
+    embeddingFallback: parseEmbeddingFallback(input.embeddingFallback, embeddingProvider, embeddingModel, customProvider),
     embedding,
     scope: isValidScope(scopeValue) ? scopeValue : "project",
     include: includeValue ?? DEFAULT_INCLUDE,
@@ -567,8 +587,8 @@ export interface GoogleEmbeddingModelInfo extends BaseModelInfo {
 }
 
 export type EmbeddingProviderModelInfo = {
-  [P in EmbeddingProvider]: P extends "ollama"
-    ? BaseModelInfo & { provider: "ollama" }
+  [P in EmbeddingProvider]: P extends "ollama" | "openai"
+    ? BaseModelInfo & { provider: P }
     : P extends "google"
       ? GoogleEmbeddingModelInfo
     : (typeof EMBEDDING_MODELS)[P][keyof (typeof EMBEDDING_MODELS)[P]]

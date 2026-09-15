@@ -2,6 +2,8 @@ import { type EmbeddingProvider, type CustomProviderConfig, type BaseModelInfo, 
 import { existsSync, readFileSync } from "fs";
 import * as path from "path";
 import * as os from "os";
+import type { ParsedCodebaseIndexConfig } from "../config/schema.js";
+import { findCatalogOllamaModel } from "../config/validators.js";
 
 export interface ProviderCredentials {
   provider: EmbeddingProvider | 'custom';
@@ -16,6 +18,47 @@ export interface CustomModelInfo extends BaseModelInfo {
   provider: 'custom';
   timeoutMs: number;
   maxBatchSize?: number;
+}
+
+/** Resolve a pinned contract without requiring a reachable primary replica. */
+export async function resolveConfiguredEmbeddingProvider(config: ParsedCodebaseIndexConfig): Promise<ConfiguredProviderInfo> {
+  if (config.embeddingProvider === "custom") {
+    if (!config.customProvider) throw new Error("embeddingProvider is 'custom' but customProvider config is missing.");
+    return createCustomProviderInfo(config.customProvider);
+  }
+  if (!config.embeddingFallback) {
+    return config.embeddingProvider === "auto"
+      ? tryDetectProvider()
+      : detectEmbeddingProvider(config.embeddingProvider, config.embeddingModel);
+  }
+  if (config.embeddingProvider === "auto") throw new Error("embeddingFallback requires an explicit primary provider.");
+  const provider = config.embeddingProvider;
+  if (provider === "ollama") {
+    if (!config.embeddingModel) throw new Error("embeddingFallback requires an explicit Ollama model.");
+    const catalogModel = findCatalogOllamaModel(config.embeddingModel);
+    if (!catalogModel && !config.embeddingFallback.maxTokens) {
+      throw new Error("embeddingFallback.maxTokens is required for an uncatalogued Ollama primary so startup works while it is offline.");
+    }
+    return {
+      provider,
+      credentials: { provider, baseUrl: (process.env.OLLAMA_HOST || "http://localhost:11434").replace(/\/+$/, "") },
+      modelInfo: catalogModel ?? {
+        provider, model: config.embeddingModel, dimensions: config.embeddingFallback.dimensions,
+        maxTokens: config.embeddingFallback.maxTokens!, costPer1MTokens: 0,
+      },
+    };
+  }
+  const credentials = provider === "openai" ? getOpenAICredentials() : getGoogleCredentials();
+  const modelInfo = config.embeddingModel
+    ? Object.values(EMBEDDING_MODELS[provider]).find((model) => model.model === config.embeddingModel)
+    : getDefaultModelForProvider(provider);
+  if (!modelInfo) throw new Error("Invalid primary embedding model.");
+  // Missing primary credentials result in an HTTP authentication failure and may use the explicit replica.
+  return {
+    provider,
+    credentials: credentials ?? { provider, baseUrl: provider === "openai" ? "https://api.openai.com/v1" : "https://generativelanguage.googleapis.com/v1beta" },
+    modelInfo,
+  } as ConfiguredProviderInfo;
 }
 
 export type ConfiguredProviderInfo = {
@@ -199,16 +242,6 @@ interface OllamaTagsResponse {
 interface OllamaShowResponse {
   capabilities?: string[];
   model_info?: Record<string, unknown>;
-}
-
-function findCatalogOllamaModel(
-  model: string,
-): EmbeddingProviderModelInfo["ollama"] | null {
-  const stableName = model.endsWith(":latest")
-    ? model.slice(0, -":latest".length)
-    : model;
-  return Object.values(EMBEDDING_MODELS.ollama)
-    .find((candidate) => candidate.model === stableName) ?? null;
 }
 
 function getPositiveIntegerMetadata(
