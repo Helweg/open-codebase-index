@@ -8,7 +8,7 @@ export const DEFAULT_INCLUDE = [
   "**/*.{vue,svelte,astro}",
   "**/*.{sql,graphql,proto}",
   "**/*.{yaml,yml,toml}",
-  "**/*.{md,mdx}",
+  "**/*.{md,mdx,rst}",
   "**/*.{sh,bash,zsh}",
   "**/*.{txt,html,htm}",
   "**/*.zig",

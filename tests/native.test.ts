@@ -133,6 +133,19 @@ const add = (a, b) => a + b;
       expect(chunks[0]?.chunkType).toBe("block");
     });
 
+    it("should produce valid bounded chunks for reStructuredText files", () => {
+      const content = Array.from({ length: 12 }, (_, index) => `RST documentation line ${index + 1}`).join("\n");
+      const chunks = parseFile("guide.rst", content, 5);
+
+      expect(chunks.length).toBeGreaterThan(1);
+      expect(chunks.every((chunk) => chunk.chunkType === "block")).toBe(true);
+      expect(chunks.every((chunk) => chunk.startLine >= 1)).toBe(true);
+      expect(chunks.every((chunk) => chunk.endLine >= chunk.startLine)).toBe(true);
+      expect(chunks.every((chunk) => chunk.endLine <= 12)).toBe(true);
+      expect(chunks.every((chunk) => chunk.endLine - chunk.startLine + 1 <= 5)).toBe(true);
+      expect(chunks.map((chunk) => chunk.content).join("\n")).toContain("RST documentation line 12");
+    });
+
     it("honors linesPerChunk for line-based (.jsonl) files", () => {
       const lines = Array.from({ length: 20 }, (_, i) => `{"i":${i}}`);
       const content = lines.join("\n");
