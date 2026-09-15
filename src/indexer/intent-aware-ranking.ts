@@ -183,7 +183,11 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   const definitionIntent = /\b(?:defined|definition|declaration|symbol)\b/u.test(normalized) ||
     /\bwhere\s+is\b/u.test(normalized);
   const implementationIntent = /\b(?:implement|implementation|implemented|implements|source|logic|body)\b/u.test(normalized);
-  const conceptual = identifierHints.length === 0 && queryWords(query).filter((word) => {
+  const broadConceptualIntent = /\b(?:conceptual|overview)\b/u.test(normalized);
+
+  // Queries like "conceptual overview of FooBar" should stay conceptual for broader retrieval,
+  // while bare or explain-only identifier queries remain identifier-driven neutral.
+  const conceptual = (identifierHints.length === 0 || broadConceptualIntent) && queryWords(query).filter((word) => {
     const wordNormalized = normalizeRankingText(word);
     return !STOPWORDS.has(wordNormalized) && !INTENT_WORDS.has(wordNormalized);
   }).length >= 3;

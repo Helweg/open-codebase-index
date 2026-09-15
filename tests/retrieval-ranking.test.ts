@@ -19,6 +19,7 @@ import {
   rerankResults,
 } from "../src/indexer/index.js";
 import { parseConfig } from "../src/config/schema.js";
+import { analyzeQueryIntent } from "../src/indexer/intent-aware-ranking.js";
 import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 type Candidate = { id: string; score: number; metadata: ChunkMetadata };
@@ -504,6 +505,155 @@ describe("retrieval ranking", () => {
     expect(rerankResults("documentation for resolveSession", candidates, candidates.length)[0]?.id).toBe("docs");
     expect(rerankResults("session configuration settings", candidates, candidates.length)[0]?.id).toBe("config");
     expect(rerankResults("who calls resolveSession", candidates, candidates.length)[0]?.id).toBe("call-flow");
+  });
+
+  it.each<[string, string, boolean]>([
+    ["explain how TokenReader validates token streams", "neutral", true],
+    ["conceptual view of TokenReader validation and token streams", "conceptual", false],
+    ["conceptual overview of RequestRouter dispatch and middleware ordering", "conceptual", false],
+    ["explanation of ConnectionPool lifecycle and recycling", "neutral", true],
+    ["overview of TokenReader documentation", "docs", false],
+    ["explain TokenReader tests and validation", "test", false],
+    ["explain TokenReader configuration settings", "config", false],
+    ["explain who calls TokenReader", "call-flow", true],
+    ["overview of where TokenReader is defined", "definition", true],
+    ["explain TokenReader implementation details", "implementation", true],
+    ["TokenReader", "neutral", true],
+    ["ExplainTokenReader validates token streams", "neutral", true],
+    ["explain TokenReader", "neutral", true],
+    ["explainTokenReader", "neutral", true],
+    ["overviewed TokenReader internals", "neutral", true],
+    ["how TokenReader validates token streams", "neutral", true],
+  ])("preserves bounded explanatory intent and explicit priorities for %s", (query, primary, preferSourcePaths) => {
+    expect(analyzeQueryIntent(query)).toMatchObject({ primary, preferSourcePaths });
+  });
+
+  it.each([
+    { query: "conceptual overview of RequestRouter dispatch and middleware ordering", symbol: "RequestRouter" },
+    { query: "conceptual view of TokenReader validation and token streams", symbol: "TokenReader" },
+  ])("does not treat broader conceptual view intent as bare symbol lookup for $query", ({ query, symbol }) => {
+    const candidates: Candidate[] = [
+      { id: "declaration", score: 0.35, metadata: meta({ filePath: "/repo/src/declaration.ts", name: symbol, chunkType: "class_declaration", hash: "declaration" }) },
+      { id: "behavior", score: 0.95, metadata: meta({ filePath: "/repo/src/behavior.ts", chunkType: "block", hash: "behavior" }) },
+    ];
+
+    expect(rerankResults(query, candidates, candidates.length).map((candidate) => candidate.id))
+      .toEqual(["behavior", "declaration"]);
+  });
+
+  it("keeps same-named source chunks ahead of artifact files for explain-only identifier queries", () => {
+    const sourceCandidates: Candidate[] = Array.from({ length: 6 }, (_value, index) => ({
+      id: `source-${index}`,
+      score: 0.89,
+      metadata: meta({
+        filePath: `/repo/src/session-${index % 2}.ts`,
+        name: "SessionState",
+        chunkType: "function",
+        startLine: index * 20 + 1,
+        endLine: index * 20 + 10,
+        hash: `source-${index}`,
+      }),
+    }));
+
+    const distractors: Candidate[] = [
+      { id: "docs", score: 0.99, metadata: meta({ filePath: "/repo/docs/session.md", name: "SessionState guide", chunkType: "other", hash: "docs" }) },
+      { id: "tests", score: 0.98, metadata: meta({ filePath: "/repo/tests/session.test.ts", name: "SessionState tests", chunkType: "test_declaration", hash: "tests" }) },
+      { id: "config", score: 0.97, metadata: meta({ filePath: "/repo/config/session.yaml", name: "SessionState config", chunkType: "other", hash: "config" }) },
+      { id: "fixture", score: 0.96, metadata: meta({ filePath: "/repo/fixtures/session.json", name: "SessionState fixture", chunkType: "other", hash: "fixture" }) },
+    ];
+
+    const candidates = [...sourceCandidates, ...distractors];
+
+    const ranked = rerankResults("explain how SessionState handles renewal failures", candidates, 20);
+    expect(ranked.map((candidate) => candidate.id)).toEqual([
+      "source-0",
+      "source-1",
+      "source-2",
+      "source-3",
+      "source-4",
+      "source-5",
+      "config",
+      "docs",
+      "tests",
+      "fixture",
+    ]);
+  });
+
+  it("keeps exact-symbol ranking for bare and definition-seeking TokenReader queries", () => {
+    const candidates: Candidate[] = [
+      {
+        id: "declaration",
+        score: 0.81,
+        metadata: meta({
+          filePath: "/repo/src/parser/token-reader.ts",
+          name: "TokenReader",
+          chunkType: "class_declaration",
+          startLine: 10,
+          endLine: 46,
+          hash: "token-reader-class",
+        }),
+      },
+      {
+        id: "behavior",
+        score: 0.99,
+        metadata: meta({
+          filePath: "/repo/src/parser/token-reader.ts",
+          name: "TokenReader validation strategy",
+          chunkType: "other",
+          startLine: 52,
+          endLine: 90,
+          hash: "token-reader-behavior",
+        }),
+      },
+      {
+        id: "docs",
+        score: 0.72,
+        metadata: meta({
+          filePath: "/repo/docs/token-reader.md",
+          name: "TokenReader guide",
+          chunkType: "other",
+          hash: "token-reader-doc",
+        }),
+      },
+      {
+        id: "tests",
+        score: 0.71,
+        metadata: meta({
+          filePath: "/repo/tests/token-reader.test.ts",
+          name: "TokenReader tests",
+          chunkType: "test_declaration",
+          hash: "token-reader-test",
+        }),
+      },
+      {
+        id: "config",
+        score: 0.70,
+        metadata: meta({
+          filePath: "/repo/config/token-reader.yaml",
+          name: "TokenReader settings",
+          chunkType: "other",
+          hash: "token-reader-config",
+        }),
+      },
+      {
+        id: "call-flow",
+        score: 0.95,
+        metadata: meta({
+          filePath: "/repo/src/call-graph/token-reader-callers.ts",
+          name: "TokenReader caller",
+          chunkType: "function",
+          hash: "token-reader-callflow",
+        }),
+      },
+    ];
+
+    expect(rerankResults("TokenReader", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("where is TokenReader defined", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("TokenReader implementation", candidates, candidates.length)[0]?.id).toBe("declaration");
+    expect(rerankResults("TokenReader documentation", candidates, candidates.length)[0]?.id).toBe("docs");
+    expect(rerankResults("TokenReader tests", candidates, candidates.length)[0]?.id).toBe("tests");
+    expect(rerankResults("TokenReader configuration", candidates, candidates.length)[0]?.id).toBe("config");
+    expect(rerankResults("who calls TokenReader", candidates, candidates.length)[0]?.id).toBe("call-flow");
   });
 
   it("removes nested same-symbol containers without collapsing distinct nested symbols", () => {

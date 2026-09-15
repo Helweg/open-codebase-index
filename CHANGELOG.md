@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Embedding fallback replica**: Configure one compatible secondary endpoint for queries, documents and indexing batches. Calls prefer the primary and switch on network failures, timeouts or HTTP 401/403/404/429/5xx, including when the primary sends an eligible status and then drops the connection while the error body is read. Supports OpenAI-compatible and native Ollama protocol changes, Google-compatible replicas, offline primary startup, independent credentials and project-level disabling without rebuilding compatible indexes. An Ollama replica keeps its default request-size guards, so a replayed batch is split into requests of at most sixteen texts.
 
+### Fixed
+
+- **Identifier-bearing explanatory queries**: Only broad `conceptual`/`overview` cues now keep the conceptual ranking path. Queries that are identifier-focused and only say “explain”/“explanation” now stay source-oriented/neutral, preserving explicit definition, implementation, documentation, test, configuration, and call-flow priorities.
+
 ## [0.29.1] - 2026-09-14
 
 ### Fixed
