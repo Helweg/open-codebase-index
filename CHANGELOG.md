@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **reStructuredText discovery**: `.rst` documentation files are now included by default and use the existing bounded generic-text parser.
 - **Identifier-bearing explanatory queries**: Only broad `conceptual`/`overview` cues now keep the conceptual ranking path. Queries that are identifier-focused and only say “explain”/“explanation” now stay source-oriented/neutral, preserving explicit definition, implementation, documentation, test, configuration, and call-flow priorities.
 
 ## [0.29.1] - 2026-09-14
