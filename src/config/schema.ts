@@ -197,7 +197,8 @@ export interface EmbeddingBatchConfig {
 }
 
 export interface EmbeddingConfig {
-  /** Embedding request batching options. Currently applied to the ollama provider. */
+  /** Embedding request batching options. Applied when one of the configured embedding
+   * endpoints is Ollama, primary or fallback replica; ignored otherwise. */
   batch?: EmbeddingBatchConfig;
 }
 
@@ -219,7 +220,8 @@ export interface CodebaseIndexConfig {
   customProvider?: CustomProviderConfig;
   /** One compatible replica, tried after an eligible primary failure. False disables inheritance. */
   embeddingFallback?: EmbeddingFallbackConfig | false;
-  /** Embedding request shape options (e.g. batch sizes). Currently applied to the ollama provider. */
+  /** Embedding request shape options (e.g. batch sizes). Applied when one of the configured
+   * embedding endpoints is Ollama, primary or fallback replica; ignored otherwise. */
   embedding?: EmbeddingConfig;
   scope: IndexScope;
   indexing?: Partial<IndexingConfig>;

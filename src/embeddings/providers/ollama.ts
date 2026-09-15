@@ -5,6 +5,7 @@ import {
   BaseEmbeddingProvider,
   type EmbeddingBatchResult,
   type EmbeddingRequestOptions,
+  readProviderErrorBody,
 } from "../provider-types.js";
 import {
   createProviderRequestSignal,
@@ -13,6 +14,7 @@ import {
   raceWithOperationSignal,
   throwIfOperationAborted,
 } from "../../utils/operation-control.js";
+import { isFallbackEligibleStatus } from "../fallback.js";
 
 export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProviderModelInfo["ollama"]> {
   private static readonly MIN_TRUNCATION_CHARS = 512;
@@ -171,8 +173,17 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         responseReceived = true;
 
         if (!response.ok) {
-          const body = await response.text();
-          const contextLength = body.toLowerCase().includes("context length");
+          const body = await readProviderErrorBody(response);
+          // Same rule as the batched path: an unreadable body keeps the status for
+          // failover, and a non-eligible status stays retryable.
+          if (body === null && !isFallbackEligibleStatus(response.status)) {
+            throw new ProviderRequestError({
+              kind: "malformed_response",
+              retryable: true,
+              message: "Ollama embedding provider returned an unreadable error body.",
+            });
+          }
+          const contextLength = (body ?? "").toLowerCase().includes("context length");
           throw new ProviderRequestError({
             statusCode: response.status,
             kind: contextLength ? "context_length" : undefined,
@@ -263,7 +274,16 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         responseReceived = true;
 
         if (!response.ok) {
-          const body = await response.text();
+          const body = await readProviderErrorBody(response);
+          // An unreadable body keeps the known HTTP status, so an eligible status still
+          // reaches the replica, while a non-eligible one keeps the per-text recovery.
+          if (body === null && !isFallbackEligibleStatus(response.status)) {
+            throw new ProviderRequestError({
+              kind: "malformed_response",
+              retryable: true,
+              message: "Ollama embedding provider returned an unreadable error body.",
+            });
+          }
           if (response.status === 404) {
             throw new ProviderRequestError({
               statusCode: response.status,
@@ -271,7 +291,7 @@ export class OllamaEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
               message: "Ollama does not expose the batch embedding endpoint.",
             });
           }
-          const contextLength = body.toLowerCase().includes("context length");
+          const contextLength = (body ?? "").toLowerCase().includes("context length");
           throw new ProviderRequestError({
             statusCode: response.status,
             kind: contextLength ? "context_length" : undefined,

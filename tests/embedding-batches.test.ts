@@ -166,6 +166,28 @@ describe("embedding batch helpers", () => {
     expect(getDynamicBatchOptions(custom, aggressiveBatch)).toEqual({});
   });
 
+  it("applies the Ollama item cap when Ollama is only the fallback replica", () => {
+    const custom = { provider: "custom", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    const openai = { provider: "openai", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
+    const ollamaReplica = { provider: "ollama", baseUrl: "http://localhost:11434", model: "m", dimensions: 768 };
+
+    // The wrapper replays the whole outer batch on the replica, so an Ollama replica
+    // gets the same bounded request size as an Ollama primary.
+    expect(getDynamicBatchOptions(custom, undefined, ollamaReplica)).toEqual({ maxBatchItems: 16 });
+    expect(getDynamicBatchOptions(openai, undefined, ollamaReplica)).toEqual({ maxBatchItems: 16 });
+    // An explicit token override still reaches the replica; the Ollama default does not,
+    // because the primary's own default token cap is already tighter.
+    expect(getDynamicBatchOptions(custom, { maxBatchTokens: 1000 }, ollamaReplica)).toEqual({ maxBatchItems: 16, maxBatchTokens: 1000 });
+    expect(getDynamicBatchOptions(custom, { maxBatchTokens: Number.NaN }, ollamaReplica)).toEqual({ maxBatchItems: 16 });
+    // A user override still wins, and a non-finite value still falls back per-field.
+    expect(getDynamicBatchOptions(custom, { maxBatchItems: 4 }, ollamaReplica)).toEqual({ maxBatchItems: 4 });
+    expect(getDynamicBatchOptions(custom, { maxBatchItems: Number.NaN }, ollamaReplica)).toEqual({ maxBatchItems: 16 });
+    // Disabling inheritance or using a non-Ollama replica changes nothing.
+    expect(getDynamicBatchOptions(custom, undefined, false)).toEqual({});
+    expect(getDynamicBatchOptions(custom, undefined, { ...ollamaReplica, provider: "openai" })).toEqual({});
+    expect(getDynamicBatchOptions(custom)).toEqual({});
+  });
+
   it("ignores non-finite embedding.batch.* values and falls back to the ollama defaults", () => {
     const ollama = { provider: "ollama", credentials: {}, modelInfo: { maxTokens: 8192 } } as unknown as ConfiguredProviderInfo;
     // NaN, Infinity, and -Infinity are typeof "number" but must not poison the batch

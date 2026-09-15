@@ -45,6 +45,35 @@ async function replicaServer() {
   return { state, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1` };
 }
 
+// Native Ollama protocol replica. /api/embed accepts an array and /api/embeddings a
+// single prompt, so both request shapes are served and their sizes recorded.
+async function ollamaReplicaServer(dimensions: number) {
+  const state = { requests: 0, maxInputs: 0, inputCounts: [] as number[] };
+  const server = createServer(async (request, response) => {
+    const buffers: Buffer[] = [];
+    for await (const buffer of request) buffers.push(buffer);
+    const body = JSON.parse(Buffer.concat(buffers).toString()) as { input?: string[]; prompt?: string };
+    const inputs = body.input ?? (body.prompt === undefined ? [] : [body.prompt]);
+    state.requests++;
+    state.inputCounts.push(inputs.length);
+    state.maxInputs = Math.max(state.maxInputs, inputs.length);
+    const vector = Array.from({ length: dimensions }, (_, index) => (index === 0 ? 1 : 0));
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify(
+      body.input ? { embeddings: inputs.map(() => vector) } : { embedding: vector },
+    ));
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  cleanups.push(() => new Promise<void>((resolve, reject) => {
+    server.closeAllConnections();
+    server.close((error) => error ? reject(error) : resolve());
+  }));
+  return { state, baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}` };
+}
+
 async function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "cbi-embedding-replica-"));
   cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -137,4 +166,40 @@ it.each([[429, 429], [503, 429], [429, 503]])("applies shared rate-limit backoff
   const rateLimitLog = indexer.getLogger().getLogs().find((entry) => entry.message === "Rate limited, backing off");
   expect(rateLimitLog?.data?.backoffMs).toBeGreaterThan(0);
   expect((await indexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+});
+
+it("bounds every Ollama replica request when a non-Ollama primary fails", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cbi-embedding-ollama-replica-"));
+  cleanups.push(() => fs.rmSync(root, { recursive: true, force: true }));
+  // More embedding texts than the default 16-item Ollama batch cap.
+  for (const file of ["alpha", "beta", "gamma", "delta"]) {
+    fs.writeFileSync(
+      path.join(root, `${file}.ts`),
+      Array.from(
+        { length: 20 },
+        (_, index) => `export function ${file}Handler${index}(value: string) { return "handler-${file}-${index}-" + value; }`,
+      ).join("\n") + "\n",
+    );
+  }
+  const primary = await replicaServer();
+  const fallback = await ollamaReplicaServer(4);
+  primary.state.status = 503;
+  const config = parseConfig({
+    embeddingProvider: "custom",
+    customProvider: { baseUrl: primary.baseUrl, model: "replica-model", dimensions: 4, maxTokens: 8192, concurrency: 1, requestIntervalMs: 0, timeoutMs: 1000 },
+    embeddingFallback: { provider: "ollama", baseUrl: fallback.baseUrl, model: "replica-model", dimensions: 4 },
+    include: ["**/*.ts"],
+    indexing: { autoIndex: false, watchFiles: false, requireProjectMarker: false, retries: 0, gitBlame: { enabled: false } },
+    search: { minScore: 0 },
+  });
+  const indexer = new Indexer(root, config, "codex");
+  cleanups.push(async () => { await indexer.close(); });
+  await indexer.index();
+  const status = await indexer.getStatus();
+  expect(status.failedBatchesCount).toBe(0);
+  // Every text in the outer batch is still embedded, but split across replica requests.
+  const forwardedInputs = fallback.state.inputCounts.reduce((total, count) => total + count, 0);
+  expect(forwardedInputs).toBeGreaterThan(16);
+  expect(fallback.state.maxInputs).toBeLessThanOrEqual(16);
+  expect(fallback.state.inputCounts.length).toBeGreaterThan(1);
 });

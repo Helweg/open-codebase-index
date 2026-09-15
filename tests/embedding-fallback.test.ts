@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { parseConfig } from "../src/config/schema.js";
-import { createCustomProviderInfo, resolveConfiguredEmbeddingProvider } from "../src/embeddings/detector.js";
+import { parseConfig, type EmbeddingFallbackConfig } from "../src/config/schema.js";
+import { createCustomProviderInfo, resolveConfiguredEmbeddingProvider, type ConfiguredProviderInfo } from "../src/embeddings/detector.js";
 import { createEmbeddingProvider } from "../src/embeddings/provider.js";
 import { EmbeddingFallbackError } from "../src/embeddings/fallback.js";
 import { shouldRetryEmbeddingRequest } from "../src/indexer/index.js";
@@ -12,6 +12,37 @@ const info = createCustomProviderInfo(primaryConfig);
 const vectors = [[1, 0], [0, 1]];
 const response = (embeddings = vectors) => new Response(JSON.stringify({ data: embeddings.map((embedding) => ({ embedding })), usage: { total_tokens: 7 } }));
 const makeProvider = (fallback = replica, onFallback = vi.fn()) => createEmbeddingProvider(info, fallback, onFallback);
+
+// One primary per provider protocol: every request path drains the error body
+// before it builds the status error.
+const openAIPrimary: ConfiguredProviderInfo = {
+  provider: "openai",
+  credentials: { provider: "openai", baseUrl: "http://primary.test/v1", apiKey: "primary-secret" },
+  modelInfo: { provider: "openai", model: "text-embedding-3-small", dimensions: 2, maxTokens: 8192, costPer1MTokens: 0 },
+};
+const ollamaPrimary: ConfiguredProviderInfo = {
+  provider: "ollama",
+  credentials: { provider: "ollama", baseUrl: "http://primary.test" },
+  modelInfo: { provider: "ollama", model: "replica-model", dimensions: 2, maxTokens: 8192, costPer1MTokens: 0 },
+};
+const googlePrimary: ConfiguredProviderInfo = {
+  provider: "google",
+  credentials: { provider: "google", baseUrl: "http://primary.test", apiKey: "primary-secret" },
+  modelInfo: { provider: "google", model: "gemini-embedding-001", dimensions: 2, maxTokens: 8192, costPer1MTokens: 0, taskAble: true },
+};
+// Headers arrive, then the body read fails: the HTTP status is already known.
+const truncatedBody = (status = 503) => new Response(new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode("{\"error\":\"upstream"));
+    controller.error(new TypeError("terminated"));
+  },
+}), { status });
+const drainCases: Array<[string, ConfiguredProviderInfo, EmbeddingFallbackConfig, () => Response]> = [
+  ["custom", info, replica, () => response()],
+  ["openai", openAIPrimary, { ...replica, model: "text-embedding-3-small" }, () => response()],
+  ["ollama", ollamaPrimary, { ...replica, provider: "ollama", baseUrl: "http://replica.test" }, () => new Response(JSON.stringify({ embeddings: vectors }))],
+  ["google", googlePrimary, { ...replica, provider: "google", model: "gemini-embedding-001" }, () => new Response(JSON.stringify({ embeddings: vectors.map((values) => ({ values })) }))],
+];
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
@@ -69,6 +100,51 @@ describe("embedding fallback requests", () => {
     await expect(makeProvider().embedBatch(["a", "b"])).rejects.toBeInstanceOf(ProviderRequestError);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+
+  it.each(drainCases)("keeps the known HTTP 503 when the %s error body disconnects mid-read", async (_provider, primaryInfo, fallbackConfig, healthy) => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(truncatedBody()).mockResolvedValueOnce(healthy());
+    const instance = createEmbeddingProvider(primaryInfo, fallbackConfig, vi.fn());
+    expect((await instance.embedBatch(["a", "b"])).embeddings).toEqual(vectors);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a per-text Ollama status when the legacy error body disconnects", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(truncatedBody())
+      .mockResolvedValueOnce(response());
+    const instance = createEmbeddingProvider(ollamaPrimary, replica, vi.fn());
+    expect((await instance.embedBatch(["a", "b"])).embeddings).toEqual(vectors);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://primary.test/api/embed", "http://primary.test/api/embeddings", "http://replica.test/v1/embeddings",
+    ]);
+  });
+
+  it("does not fail over when a successful response body disconnects mid-read", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(truncatedBody(200));
+    await expect(makeProvider().embedBatch(["a", "b"])).rejects.toMatchObject({ kind: "malformed_response" });
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("still recovers per text when a non-eligible Ollama batch body is unreadable", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(truncatedBody(400))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ embedding: [1, 0] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ embedding: [0, 1] })));
+    expect((await createEmbeddingProvider(ollamaPrimary, undefined, vi.fn()).embedBatch(["a", "b"])).embeddings)
+      .toEqual(vectors);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://primary.test/api/embed", "http://primary.test/api/embeddings", "http://primary.test/api/embeddings",
+    ]);
+  });
+
+  it("still reaches the replica when an eligible Ollama batch body is unreadable", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(truncatedBody(503)).mockResolvedValueOnce(response());
+    expect((await createEmbeddingProvider(ollamaPrimary, replica, vi.fn()).embedBatch(["a", "b"])).embeddings)
+      .toEqual(vectors);
+    expect(fetch.mock.calls[1][0]).toBe("http://replica.test/v1/embeddings");
+  });
+
 
   it("retains both sanitized failures and the final retry policy", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(new Response("primary secret", { status: 503 }))

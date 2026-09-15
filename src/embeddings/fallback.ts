@@ -9,11 +9,15 @@ export function reportEmbeddingFallback(error: ProviderRequestError): void {
   });
 }
 
+/** HTTP statuses that make a primary failure eligible for the replica. */
+export function isFallbackEligibleStatus(statusCode: number): boolean {
+  return statusCode === 401 || statusCode === 403 || statusCode === 404 || statusCode === 429 || statusCode >= 500;
+}
+
 export function shouldFallbackEmbeddingRequest(error: unknown): error is ProviderRequestError {
   if (!(error instanceof ProviderRequestError) || isOperationInterruption(error) || error.kind) return false;
   return error.timedOut || (error.statusCode === undefined && error.retryable === true)
-    || [401, 403, 404, 429].includes(error.statusCode ?? 0)
-    || (error.statusCode !== undefined && error.statusCode >= 500);
+    || (error.statusCode !== undefined && isFallbackEligibleStatus(error.statusCode));
 }
 
 export class EmbeddingFallbackError extends ProviderRequestError {

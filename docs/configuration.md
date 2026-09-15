@@ -136,8 +136,14 @@ text and not to the batch total. Set `maxBatchTokens` to bound the request size 
 the processing time. Set `maxBatchItems` to bound the number of texts (a chunk split
 into multiple parts counts as one text per part). Both values are optional and must
 be at least 1. When you omit a value, the indexer uses the Ollama default. These
-knobs apply only to the Ollama provider; OpenAI, Google, and custom providers ignore
-them and keep their existing request behavior.
+knobs are driven by the presence of an Ollama endpoint, primary or replica. With no
+Ollama endpoint on either side they are ignored: OpenAI, Google, and custom primaries
+keep their existing request behavior because their own default token cap is already
+tighter than the Ollama default. When one of the endpoints is Ollama, the shared outer
+batch is bounded by `maxBatchItems`, and an explicit `maxBatchTokens` override bounds it
+by tokens as well. The fallback wrapper replays a failed outer batch in full on the
+replica, so this shared bound is what protects an Ollama replica; the same bound also
+applies to the primary request.
 
 The indexer runs up to five Ollama requests at the same time. Each request carries
 up to `maxBatchItems` texts, so the worst case is five times `maxBatchItems` texts

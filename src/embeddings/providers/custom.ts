@@ -4,6 +4,7 @@ import {
   CustomProviderNonRetryableError,
   type EmbeddingBatchResult,
   type EmbeddingRequestOptions,
+  readProviderErrorBody,
   validateEmbeddingVectors,
 } from "../provider-types.js";
 import { validateExternalUrl } from "../../utils/url-validation.js";
@@ -76,7 +77,7 @@ export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelIn
         responseReceived = true;
 
         if (!response.ok) {
-          await response.text();
+          await readProviderErrorBody(response);
           if (response.status >= 400 && response.status < 500 && response.status !== 429) {
             throw new CustomProviderNonRetryableError(
               `Custom embedding provider returned HTTP ${response.status}.`,
