@@ -466,7 +466,7 @@ export async function handleIndexCommand(
       return 1;
     }
 
-    printStdout(result.text);
+    printStdout(redactSensitiveText(result.text));
     return 0;
   } catch (error) {
     printStderr(error instanceof Error ? error.message : String(error));
