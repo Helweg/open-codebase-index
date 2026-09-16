@@ -24,6 +24,9 @@ export function getNativeBindingFilename(
   if (platform === "win32" && arch === "x64") {
     return `${STABLE_NATIVE_BINARY_NAME}.win32-x64-msvc.node`;
   }
+  if (platform === "win32" && arch === "arm64") {
+    return `${STABLE_NATIVE_BINARY_NAME}.win32-arm64-msvc.node`;
+  }
 
   throw new Error(`Unsupported platform: ${platform}-${arch}`);
 }
