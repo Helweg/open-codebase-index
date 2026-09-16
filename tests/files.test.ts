@@ -202,6 +202,44 @@ describe("files utilities", () => {
   });
 
   describe("collectFiles", () => {
+    it("should discover root and nested reStructuredText files by default without weakening filters", async () => {
+      fs.mkdirSync(path.join(tempDir, "docs", "nested"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "docs", "drafts"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "ignored"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "node_modules", "package"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "ignored/\n");
+      fs.writeFileSync(path.join(tempDir, "index.rst"), "Project documentation");
+      fs.writeFileSync(path.join(tempDir, "docs", "nested", "guide.rst"), "Nested guide");
+      fs.writeFileSync(path.join(tempDir, "docs", "drafts", "proposal.rst"), "Draft proposal");
+      fs.writeFileSync(path.join(tempDir, "ignored", "hidden.rst"), "Ignored guide");
+      fs.writeFileSync(path.join(tempDir, "node_modules", "package", "README.rst"), "Dependency docs");
+
+      const result = await collectFiles(
+        tempDir,
+        DEFAULT_INCLUDE,
+        [...DEFAULT_EXCLUDE, "**/drafts/**"],
+        1048576
+      );
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual([
+        path.join("docs", "nested", "guide.rst"),
+        "index.rst",
+      ]);
+    });
+
+    it("should respect custom includes", async () => {
+      fs.mkdirSync(path.join(tempDir, "docs"), { recursive: true });
+      fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "docs", "guide.rst"), "Guide");
+      fs.writeFileSync(path.join(tempDir, "src", "index.ts"), "export const value = 1;");
+
+      const result = await collectFiles(tempDir, ["**/*.ts"], DEFAULT_EXCLUDE, 1048576);
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("src", "index.ts"),
+      ]);
+    });
+
     it("should collect matching files", async () => {
       fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
       fs.writeFileSync(path.join(tempDir, "src/index.ts"), "export const x = 1;");
