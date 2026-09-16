@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Ollama evaluation gate**: Corrected `eval:ci:ollama` to use the documented absolute Ollama budget without comparing against the paid-provider baseline.
 - **reStructuredText discovery**: `.rst` documentation files are now included by default and use the existing bounded generic-text parser.
 - **Identifier-bearing explanatory queries**: Only broad `conceptual`/`overview` cues now keep the conceptual ranking path. Queries that are identifier-focused and only say “explain”/“explanation” now stay source-oriented/neutral, preserving explicit definition, implementation, documentation, test, configuration, and call-flow priorities.
 - **CLI output redaction**: Successful `cbi index` output now redacts API keys, tokens, passwords, secrets, and authorization values before writing to stdout.
