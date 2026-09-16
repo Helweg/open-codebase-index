@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.30.0] - 2026-09-16
+
 ### Added
 
 - **Embedding fallback replica**: Configure one compatible secondary endpoint for queries, documents and indexing batches. Calls prefer the primary and switch on network failures, timeouts or HTTP 401/403/404/429/5xx, including when the primary sends an eligible status and then drops the connection while the error body is read. Supports OpenAI-compatible and native Ollama protocol changes, Google-compatible replicas, offline primary startup, independent credentials and project-level disabling without rebuilding compatible indexes. An Ollama replica keeps its default request-size guards, so a replayed batch is split into requests of at most sixteen texts.
@@ -15,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **reStructuredText discovery**: `.rst` documentation files are now included by default and use the existing bounded generic-text parser.
 - **Identifier-bearing explanatory queries**: Only broad `conceptual`/`overview` cues now keep the conceptual ranking path. Queries that are identifier-focused and only say “explain”/“explanation” now stay source-oriented/neutral, preserving explicit definition, implementation, documentation, test, configuration, and call-flow priorities.
+- **CLI output redaction**: Successful `cbi index` output now redacts API keys, tokens, passwords, secrets, and authorization values before writing to stdout.
 
 ## [0.29.1] - 2026-09-14
 
@@ -793,7 +796,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...HEAD
+[0.30.0]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/Helweg/open-codebase-index/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/Helweg/open-codebase-index/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/Helweg/open-codebase-index/compare/v0.27.0...v0.28.0
