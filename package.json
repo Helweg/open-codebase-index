@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.29.1",
+  "version": "0.30.0",
   "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
@@ -55,7 +55,7 @@
     "eval:pre-edit:ci": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/pre-edit-context.json --ci --budget benchmarks/budgets/pre-edit.json",
     "eval:smoke": "npx tsx src/cli.ts eval run --config .github/eval-config.json --reindex --dataset benchmarks/golden/small.json",
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
-    "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
+    "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/ollama.json",
     "eval:compare": "npx tsx src/cli.ts eval compare",
     "eval:effectiveness": "npx tsx scripts/effectiveness-report.ts",
     "benchmark:indexing-memory": "npx tsx benchmarks/indexing-memory.ts",
