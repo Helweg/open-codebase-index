@@ -8,6 +8,7 @@ import { resolveInheritedKnowledgeBaseEntries } from "./rebase.js";
 const PROJECT_OVERRIDE_KEYS = [
   "embeddingProvider",
   "customProvider",
+  "embeddingFallback",
   "embeddingModel",
   "reranker",
   "include",
@@ -70,6 +71,10 @@ function mergeKnowledgeBasePaths(values: unknown[]): string[] {
 function validateConfigLayerShape(rawConfig: unknown, filePath: string): Record<string, unknown> {
   if (!isRecord(rawConfig)) {
     throw new Error(`Config file ${filePath} must contain a JSON object at the root.`);
+  }
+
+  if (rawConfig.embeddingFallback !== undefined && rawConfig.embeddingFallback !== false && !isRecord(rawConfig.embeddingFallback)) {
+    throw new Error(`Config file ${filePath} field 'embeddingFallback' must be an object or false.`);
   }
 
   if (rawConfig.knowledgeBases !== undefined && !isStringArray(rawConfig.knowledgeBases)) {

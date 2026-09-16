@@ -6,8 +6,9 @@ import { promisify } from "util";
 import PQueue from "p-queue";
 import pRetry from "p-retry";
 
-import { type EmbeddingBatchConfig, ParsedCodebaseIndexConfig, type RerankerConfig } from "../config/schema.js";
-import { detectEmbeddingProvider, ConfiguredProviderInfo, tryDetectProvider, createCustomProviderInfo } from "../embeddings/detector.js";
+import { type EmbeddingBatchConfig, type EmbeddingFallbackConfig, ParsedCodebaseIndexConfig, type RerankerConfig } from "../config/schema.js";
+import { ConfiguredProviderInfo, resolveConfiguredEmbeddingProvider } from "../embeddings/detector.js";
+import { EmbeddingFallbackError, reportEmbeddingFallback } from "../embeddings/fallback.js";
 import {
   createEmbeddingProvider,
   EmbeddingProviderInterface,
@@ -328,6 +329,10 @@ function getErrorMessage(error: unknown): string {
 }
 
 function isRateLimitError(error: unknown): boolean {
+  if (error instanceof EmbeddingFallbackError) {
+    return isRateLimitError(error.primaryError) || isRateLimitError(error.fallbackError);
+  }
+  if (error instanceof ProviderRequestError && error.statusCode === 429) return true;
   const message = getErrorMessage(error);
   return message.includes("429") || message.toLowerCase().includes("rate limit") || message.toLowerCase().includes("too many requests");
 }
@@ -350,18 +355,30 @@ const DEFAULT_OLLAMA_MAX_BATCH_TOKENS = 65_536;
 export function getDynamicBatchOptions(
   provider: ConfiguredProviderInfo,
   embeddingBatch?: EmbeddingBatchConfig,
+  fallback?: EmbeddingFallbackConfig | false,
 ): { maxBatchTokens?: number; maxBatchItems?: number } {
-  // embedding.batch.* is documented as ollama-only. Non-ollama providers keep
-  // their existing (unbatched-by-this-layer) behavior, so return an empty
-  // options object regardless of any user-supplied batch config.
-  if (provider.provider !== "ollama") {
+  // The wrapper replays a failed outer batch in full on the replica, so these
+  // caps must hold when Ollama is the replica too, not only when it is the primary.
+  // embedding.batch.* is documented as ollama-only, so an unrelated replica leaves
+  // non-ollama providers unbatched by this layer.
+  const ollamaEndpoint = provider.provider === "ollama" || fallback !== false && fallback?.provider === "ollama";
+  if (!ollamaEndpoint) {
     return {};
   }
-  const base = { maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS, maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS };
-  return {
-    ...base,
+  const options = {
+    maxBatchTokens: DEFAULT_OLLAMA_MAX_BATCH_TOKENS,
+    maxBatchItems: DEFAULT_OLLAMA_MAX_BATCH_ITEMS,
     ...(typeof embeddingBatch?.maxBatchTokens === "number" && Number.isFinite(embeddingBatch.maxBatchTokens) ? { maxBatchTokens: embeddingBatch.maxBatchTokens } : {}),
     ...(typeof embeddingBatch?.maxBatchItems === "number" && Number.isFinite(embeddingBatch.maxBatchItems) ? { maxBatchItems: embeddingBatch.maxBatchItems } : {}),
+  };
+  // A non-ollama primary keeps the tighter default token cap from this layer, so the
+  // default 65536 is not forwarded. An explicit embedding.batch override still applies
+  // to the replica, because the wrapper replays the whole batch there.
+  return provider.provider === "ollama" ? options : {
+    maxBatchItems: options.maxBatchItems,
+    ...(typeof embeddingBatch?.maxBatchTokens === "number" && Number.isFinite(embeddingBatch.maxBatchTokens)
+      ? { maxBatchTokens: embeddingBatch.maxBatchTokens }
+      : {}),
   };
 }
 
@@ -2866,7 +2883,7 @@ export class Indexer {
     const embeddingPartsByChunk = new Map<string, Array<{ vector: number[]; tokenCount: number } | undefined>>();
     const completedVectorsByChunkId = new Map<string, number[]>();
     const completedChunkIds = new Set<string>();
-    const batchOptions = getDynamicBatchOptions(options.configuredProviderInfo, this.config.embedding?.batch);
+    const batchOptions = getDynamicBatchOptions(options.configuredProviderInfo, this.config.embedding?.batch, this.config.embeddingFallback);
     // On the recovery path, embed previously-failed chunks one per request so a
     // permanently-failing chunk is isolated instead of failing its whole batch.
     // Scoped to ollama (whose default batch size groups chunks); other providers
@@ -3739,16 +3756,7 @@ export class Indexer {
       return;
     }
 
-    if (this.config.embeddingProvider === 'custom') {
-      if (!this.config.customProvider) {
-        throw new Error("embeddingProvider is 'custom' but customProvider config is missing.");
-      }
-      this.configuredProviderInfo = createCustomProviderInfo(this.config.customProvider);
-    } else if (this.config.embeddingProvider === 'auto') {
-      this.configuredProviderInfo = await tryDetectProvider();
-    } else {
-      this.configuredProviderInfo = await detectEmbeddingProvider(this.config.embeddingProvider, this.config.embeddingModel);
-    }
+    this.configuredProviderInfo = await resolveConfiguredEmbeddingProvider(this.config);
 
     if (!this.configuredProviderInfo) {
       throw new Error(
@@ -3763,7 +3771,13 @@ export class Indexer {
       rerankerEnabled: this.config.reranker?.enabled ?? false,
     });
 
-    this.provider = createEmbeddingProvider(this.configuredProviderInfo);
+    this.provider = createEmbeddingProvider(this.configuredProviderInfo, this.config.embeddingFallback, (error) => {
+      reportEmbeddingFallback(error);
+      this.logger.warn("Using fallback embeddings after a primary request failed", {
+        statusCode: error.statusCode,
+        timedOut: error.timedOut,
+      });
+    });
 
     const dimensions = this.configuredProviderInfo.modelInfo.dimensions;
     const storePath = path.join(this.indexPath, "vectors");

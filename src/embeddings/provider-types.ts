@@ -28,6 +28,20 @@ export function validateEmbeddingVectors(
   return value as number[][];
 }
 
+/**
+ * Reads a non-2xx body for diagnostics. A connection that drops while the body is
+ * being read must not hide the HTTP status that was already received, because failover
+ * eligibility is decided from that status. Returns null on a failed read so a caller
+ * that classifies from the body does not mistake a truncated read for an empty body.
+ */
+export async function readProviderErrorBody(response: Response): Promise<string | null> {
+  try {
+    return await response.text();
+  } catch {
+    return null;
+  }
+}
+
 export interface EmbeddingResult {
   embedding: number[];
   tokensUsed: number;

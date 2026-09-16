@@ -44,6 +44,22 @@ describe("host-aware path resolution", () => {
     fs.writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
   });
 
+  it("inherits, replaces and disables the global embedding fallback", () => {
+    const globalPath = resolveGlobalConfigPath("codex");
+    const projectPath = resolveWritableProjectConfigPath(mainRepoDir, "codex");
+    fs.mkdirSync(path.dirname(globalPath), { recursive: true });
+    fs.mkdirSync(path.dirname(projectPath), { recursive: true });
+    const replica = { provider: "custom", baseUrl: "http://replica.test/v1", model: "model", dimensions: 2, apiKey: "global-key" };
+    fs.writeFileSync(globalPath, JSON.stringify({ embeddingFallback: replica }));
+    fs.writeFileSync(projectPath, JSON.stringify({ search: { maxResults: 3 } }));
+    expect((loadMergedConfig(mainRepoDir, "codex") as Record<string, unknown>).embeddingFallback).toEqual(replica);
+    const localReplica = { ...replica, apiKey: undefined, baseUrl: "http://localhost:11434/v1" };
+    fs.writeFileSync(projectPath, JSON.stringify({ embeddingFallback: localReplica }));
+    expect((loadMergedConfig(mainRepoDir, "codex") as Record<string, unknown>).embeddingFallback).toEqual(JSON.parse(JSON.stringify(localReplica)));
+    fs.writeFileSync(projectPath, JSON.stringify({ embeddingFallback: false }));
+    expect((loadMergedConfig(mainRepoDir, "codex") as Record<string, unknown>).embeddingFallback).toBe(false);
+  });
+
   afterEach(() => {
     vi.unstubAllEnvs();
     fs.rmSync(homeDir, { recursive: true, force: true });

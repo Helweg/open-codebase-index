@@ -57,6 +57,7 @@ benchmark-results/
 benchmarks/results/
 
 # Local agent/session artifacts
+.codex/environments/
 .sisyphus/
 .superset/
 

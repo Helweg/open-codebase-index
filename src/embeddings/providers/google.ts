@@ -6,6 +6,7 @@ import {
   type EmbeddingBatchResult,
   type EmbeddingRequestOptions,
   type EmbeddingResult,
+  readProviderErrorBody,
   validateEmbeddingVectors,
 } from "../provider-types.js";
 import {
@@ -112,7 +113,7 @@ export class GoogleEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
             responseReceived = true;
 
             if (!response.ok) {
-              await response.text();
+              await readProviderErrorBody(response);
               throw new ProviderRequestError({
                 statusCode: response.status,
                 message: `Google embedding provider returned HTTP ${response.status}.`,
