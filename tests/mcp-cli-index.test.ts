@@ -106,7 +106,7 @@ describe("mcp cli index command execution", () => {
       if (onProgress) {
         await onProgress("scan", { phase: "collect", files: 12, apiKey: "should-not-leak" });
       }
-      return { text: "ok" };
+      return { text: "ok apiKey=should-not-leak" };
     });
 
     const exitCode = await handleIndexCommand(
@@ -120,7 +120,8 @@ describe("mcp cli index command execution", () => {
     );
 
     expect(exitCode).toBe(0);
-    expect(stdout).toEqual(["ok"]);
+    expect(stdout).toEqual(["ok apiKey=[REDACTED]"]);
+    expect(stdout.join("\n")).not.toContain("should-not-leak");
     expect(stderr.join("\n")).toContain("scan phase=collect files=12");
     expect(stderr.join("\n")).toContain("apiKey=[REDACTED]");
     expect(stderr.join("\n")).not.toContain("should-not-leak");
