@@ -334,6 +334,7 @@ describe("Phase 1 product identity compatibility", () => {
     expect(getNativeBindingFilename("linux", "x64")).toBe("codebase-index-native.linux-x64-gnu.node");
     expect(getNativeBindingFilename("linux", "arm64")).toBe("codebase-index-native.linux-arm64-gnu.node");
     expect(getNativeBindingFilename("win32", "x64")).toBe("codebase-index-native.win32-x64-msvc.node");
+    expect(getNativeBindingFilename("win32", "arm64")).toBe("codebase-index-native.win32-arm64-msvc.node");
 
     for (const packageName of [
       IDENTITY_CATALOG.product.current.packageName,
