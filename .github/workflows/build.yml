@@ -45,10 +45,16 @@ jobs:
             os: ubuntu-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # windows-11-arm is a public-preview runner, so this target is
+          # best-effort and must not be able to block a release. The publish
+          # job verifies the guaranteed binary set and reports this one either
+          # way, so an absent binding is always visible rather than silent.
           - target: aarch64-pc-windows-msvc
             os: windows-11-arm
+            experimental: true
 
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental == true }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -128,6 +134,35 @@ jobs:
 
       - name: List native binaries
         run: ls -la native/*.node
+
+      - name: Verify native binary set
+        run: |
+          required=(
+            codebase-index-native.darwin-x64.node
+            codebase-index-native.darwin-arm64.node
+            codebase-index-native.linux-x64-gnu.node
+            codebase-index-native.linux-arm64-gnu.node
+            codebase-index-native.win32-x64-msvc.node
+          )
+          optional=(codebase-index-native.win32-arm64-msvc.node)
+
+          missing=()
+          for file in "${required[@]}"; do
+            [ -f "native/${file}" ] || missing+=("${file}")
+          done
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::error::Missing required native binaries: ${missing[*]}"
+            exit 1
+          fi
+
+          for file in "${optional[@]}"; do
+            if [ -f "native/${file}" ]; then
+              echo "Including optional native binary: ${file}"
+            else
+              echo "::warning::Optional native binary not built: ${file}. Publishing without Windows ARM64 support."
+            fi
+          done
 
       - name: Publish to npm
         env:
