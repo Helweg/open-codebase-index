@@ -394,6 +394,17 @@ describe("Phase 1 product identity compatibility", () => {
 
     expect(resolvedNames.size).toBe(declared.length);
     expect(resolvedNames).toContain("codebase-index-native.win32-arm64-msvc.node");
+
+    // Every native file name the release workflow references must correspond to
+    // a declared, resolvable target, so the publish-time verification list
+    // cannot drift from the build matrix.
+    const workflowFilenames = [...workflow.matchAll(/codebase-index-native\.[a-z0-9.-]+\.node/g)].map(
+      (match) => match[0],
+    );
+    expect(workflowFilenames.length).toBeGreaterThan(0);
+    for (const filename of workflowFilenames) {
+      expect(resolvedNames.has(filename), `workflow references unroutable native binary ${filename}`).toBe(true);
+    }
   });
 
   it("keeps publication release-gated while accepting an explicit known package identity", () => {
