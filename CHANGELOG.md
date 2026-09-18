@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-09-18
+
 ### Added
 
 - **Windows ARM64 native binary**: Prebuilt `aarch64-pc-windows-msvc` bindings are now published alongside the existing macOS, Linux and Windows x64 targets, and the module resolves them from `win32`/`arm64` hosts. Previously no binding shipped for Windows on ARM, so the native module failed to load on those devices.
+
+### Changed
+
+- **Release resilience**: The Windows ARM64 target builds on the public-preview `windows-11-arm` runner, so it is now best-effort and can no longer block a release. Publishing verifies the guaranteed binary set explicitly and warns when the Windows ARM64 binding was not produced, so an incomplete package is reported rather than shipped silently.
 
 ## [0.30.0] - 2026-09-16
 
@@ -802,6 +808,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
 [Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...HEAD
+[0.31.0]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/Helweg/open-codebase-index/compare/v0.29.0...v0.29.1
 [0.29.0]: https://github.com/Helweg/open-codebase-index/compare/v0.28.0...v0.29.0
