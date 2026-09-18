@@ -347,6 +347,55 @@ describe("Phase 1 product identity compatibility", () => {
     }
   });
 
+  it("keeps every declared napi target buildable and resolvable", () => {
+    // Maps each published Rust target to the platform/architecture pair that
+    // `getNativeBindingFilename` resolves at runtime. Adding a target to the
+    // manifests without extending this table fails the test below on purpose.
+    const targetPlatforms: Record<string, [NodeJS.Platform, NodeJS.Architecture]> = {
+      "aarch64-apple-darwin": ["darwin", "arm64"],
+      "x86_64-apple-darwin": ["darwin", "x64"],
+      "x86_64-unknown-linux-gnu": ["linux", "x64"],
+      "aarch64-unknown-linux-gnu": ["linux", "arm64"],
+      "x86_64-pc-windows-msvc": ["win32", "x64"],
+      "aarch64-pc-windows-msvc": ["win32", "arm64"],
+    };
+
+    const rootManifest = JSON.parse(readFileSync("package.json", "utf-8")) as {
+      scripts?: Record<string, string>;
+      napi?: { targets?: string[] };
+    };
+    const nativeManifest = JSON.parse(readFileSync("native/package.json", "utf-8")) as {
+      napi?: { targets?: string[] };
+    };
+
+    const declared = rootManifest.napi?.targets ?? [];
+    expect(declared.length).toBeGreaterThan(0);
+
+    // Both manifests and both build entry points must stay in step, otherwise a
+    // target can be declared but never built, or built but never resolvable.
+    expect(nativeManifest.napi?.targets).toEqual(declared);
+
+    const buildAll = rootManifest.scripts?.["build:native:all"] ?? "";
+    const workflow = readFileSync(".github/workflows/build.yml", "utf-8");
+    const resolvedNames = new Set<string>();
+
+    for (const target of declared) {
+      const platformArch = targetPlatforms[target];
+      expect(platformArch, `napi target ${target} has no platform/arch mapping`).toBeDefined();
+      if (!platformArch) continue;
+
+      expect(buildAll).toContain(`--target ${target}`);
+      expect(workflow).toContain(`target: ${target}`);
+
+      const filename = getNativeBindingFilename(platformArch[0], platformArch[1]);
+      expect(resolvedNames.has(filename), `duplicate binding filename ${filename}`).toBe(false);
+      resolvedNames.add(filename);
+    }
+
+    expect(resolvedNames.size).toBe(declared.length);
+    expect(resolvedNames).toContain("codebase-index-native.win32-arm64-msvc.node");
+  });
+
   it("keeps publication release-gated while accepting an explicit known package identity", () => {
     const workflow = readFileSync(".github/workflows/build.yml", "utf-8");
     expect(workflow).not.toContain("inputs:");
