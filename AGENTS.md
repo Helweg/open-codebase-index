@@ -378,7 +378,7 @@ Releases are prepared on `release/vX.Y.Z`merged into `main`then tagged and publi
    - publishes `open-codebase-index`  `opencode-codebase-index` through npm trusted publishing
 10. Smoke-test clean installs, both MCP binary names, ESM/CJS loading, MCP initialization, and native loading.
 
-Supported release targets are macOS ARM64/x64, Linux ARM64/x64 GNU, and Windows x64 MSVC.
+Supported release targets are macOS ARM64/x64, Linux ARM64/x64 GNU, and Windows x64/ARM64 MSVC.
 
 Do not manually publish release version that workflow is expected to publish. Do not reuse or overwrite existing npm version.
 

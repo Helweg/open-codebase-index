@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Windows ARM64 native binary**: Prebuilt `aarch64-pc-windows-msvc` bindings are now published alongside the existing macOS, Linux and Windows x64 targets, and the module resolves them from `win32`/`arm64` hosts. Previously no binding shipped for Windows on ARM, so the native module failed to load on those devices.
+
 ## [0.30.0] - 2026-09-16
 
 ### Added
