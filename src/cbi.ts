@@ -11,7 +11,7 @@ function handleCbiMainError(error: unknown): never {
     process.exit(1);
   }
 
-  console.error("Failed to start CBI CLI. Check your command and configuration.");
+  console.error("Failed to start OCBI CLI. Check your command and configuration.");
   if (message) {
     console.error(message);
   }

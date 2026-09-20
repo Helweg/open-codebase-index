@@ -1,5 +1,5 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -149,7 +149,7 @@ describe("Phase 1 product identity compatibility", () => {
     const claudeMarketplace = readJson<{ owner: { url: string } }>(".claude-plugin/marketplace.json");
     const codexManifest = readJson<CodexManifestMetadata>(".codex-plugin/plugin.json");
 
-    const expectedBin = { [current.mcpBinary]: "dist/cli.js", cbi: "dist/cbi.js" };
+    const expectedBin = { [current.mcpBinary]: "dist/cli.js", ocbi: "dist/cbi.js", cbi: "dist/cbi.js" };
     expect(packageJson.name).toBe(current.packageName);
     expect(packageJson.bin).toEqual(expectedBin);
     expect(packageJson.repository.url).toBe(current.repository);
@@ -177,7 +177,7 @@ describe("Phase 1 product identity compatibility", () => {
     expect(codexManifest.author?.url).toBe(current.repository);
   });
 
-  it("stages current metadata with only the legacy binary", () => {
+  it("stages current metadata with the legacy MCP binary and both human CLI aliases", () => {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-current-metadata-"));
     try {
       prepareMetadata(IDENTITY_CATALOG.product.current.packageName, tempDir);
@@ -185,7 +185,7 @@ describe("Phase 1 product identity compatibility", () => {
       const packageLock = readJson<PackageLockMetadata>(path.join(tempDir, "package-lock.json"));
       const checkedInPackageJson = readJson<PackageMetadata>("package.json");
       const checkedInPackageLock = readJson<PackageLockMetadata>("package-lock.json");
-      const expectedBin = { [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js", cbi: "dist/cbi.js" };
+      const expectedBin = { [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js", ocbi: "dist/cbi.js", cbi: "dist/cbi.js" };
 
       expect(packageJson.name).toBe(IDENTITY_CATALOG.product.current.packageName);
       expect(packageJson.bin).toEqual(expectedBin);
@@ -226,6 +226,7 @@ describe("Phase 1 product identity compatibility", () => {
       const expectedBin = {
         [IDENTITY_CATALOG.product.future.mcpBinary]: "dist/cli.js",
         [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js",
+        ocbi: "dist/cbi.js",
         cbi: "dist/cbi.js",
       };
       const expectedMcpArgs = [
@@ -306,6 +307,32 @@ describe("Phase 1 product identity compatibility", () => {
       expect(stagedCodexManifest.interface.termsOfServiceURL).toBe(`${repositoryUrl}/blob/main/LICENSE`);
       expect(stagedClaudeMarketplace.owner.url).toBe(repositoryUrl);
       expect(stagedMcpManifest.mcpServers["codebase-index"].args[2]).toBe(IDENTITY_CATALOG.product.future.packageName);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["missing-primary", "missing-alias", "mismatched-alias"])("rejects %s human CLI metadata before staging", (scenario) => {
+    const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-invalid-bin-"));
+    try {
+      const packageJson = readJson<PackageMetadata>("package.json");
+      if (scenario === "missing-primary") delete packageJson.bin.ocbi;
+      else if (scenario === "missing-alias") delete packageJson.bin.cbi;
+      else packageJson.bin.cbi = "dist/wrong.js";
+      writeFileSync(path.join(tempDir, "package.json"), JSON.stringify(packageJson));
+      writeFileSync(path.join(tempDir, "package-lock.json"), readText("package-lock.json"));
+      const outputDir = path.join(tempDir, "staged");
+      const result = spawnSync(process.execPath, [
+        path.join(process.cwd(), "scripts", "prepare-package-metadata.mjs"),
+        "--package-name", IDENTITY_CATALOG.product.current.packageName,
+        "--project-root", tempDir,
+        "--output-dir", outputDir,
+      ], { encoding: "utf8" });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(scenario === "missing-primary"
+        ? "Missing ocbi binary entry"
+        : "cbi binary alias must match ocbi");
+      expect(existsSync(outputDir)).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

@@ -6186,7 +6186,7 @@ export class Indexer {
           state: "empty",
           activeCatalogChunkCount,
           registeredCatalog,
-          warning: "The active branch catalog contains no searchable chunks. If sources changed, run index_codebase normally or cbi index to refresh this branch.",
+          warning: "The active branch catalog contains no searchable chunks. If sources changed, run index_codebase normally or ocbi index to refresh this branch.",
         };
       }
 
@@ -6205,7 +6205,7 @@ export class Indexer {
           state: "legacy",
           activeCatalogChunkCount,
           registeredCatalog,
-          warning: "Using a legacy catalog for this branch. Run index_codebase normally or cbi index to establish current branch metadata.",
+          warning: "Using a legacy catalog for this branch. Run index_codebase normally or ocbi index to establish current branch metadata.",
         };
       }
     }
@@ -6215,7 +6215,7 @@ export class Indexer {
         state: "legacy",
         activeCatalogChunkCount,
         registeredCatalog: false,
-        warning: "No branch-specific coverage is established; legacy project retrieval remains available. Run index_codebase normally or cbi index to establish branch metadata.",
+        warning: "No branch-specific coverage is established; legacy project retrieval remains available. Run index_codebase normally or ocbi index to establish branch metadata.",
       };
     }
 
@@ -6223,7 +6223,7 @@ export class Indexer {
       state: "missing",
       activeCatalogChunkCount,
       registeredCatalog,
-      warning: "No catalog is registered for the active branch. Run index_codebase normally or cbi index on this branch before searching. Other branches' stored chunks are not current-branch evidence.",
+      warning: "No catalog is registered for the active branch. Run index_codebase normally or ocbi index on this branch before searching. Other branches' stored chunks are not current-branch evidence.",
     };
   }
 

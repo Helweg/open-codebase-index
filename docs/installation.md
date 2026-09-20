@@ -129,20 +129,20 @@ Claude uses:
 
 ## Human CLI
 
-The concise `cbi` command is for terminal use. It shares `open-codebase-index` index and retrieval operations, while `open-codebase-index-mcp` remains the MCP-server binary.
+The concise `ocbi` command is for terminal use. `cbi` remains available as a compatibility alias. It shares `open-codebase-index` index and retrieval operations, while `open-codebase-index-mcp` remains the MCP-server binary.
 
 ```bash
 # Inspect readiness, then create or refresh the index
-cbi status --project /path/to/repo --host jcode
-cbi index --project /path/to/repo --host jcode
+ocbi status --project /path/to/repo --host jcode
+ocbi index --project /path/to/repo --host jcode
 
 # Search and inspect code from the terminal
-cbi search "retry recovery" --project /path/to/repo --limit 5
-cbi definition Indexer --project /path/to/repo
-cbi graph callers Indexer --project /path/to/repo
+ocbi search "retry recovery" --project /path/to/repo --limit 5
+ocbi definition Indexer --project /path/to/repo
+ocbi graph callers Indexer --project /path/to/repo
 ```
 
-Use `cbi index --dry-run` for a parse-only embedding-token total, `--estimate-only` for an estimate, and `cbi --help` for command usage.
+Use `ocbi index --dry-run` for a parse-only embedding-token total, `--estimate-only` for an estimate, and `ocbi --help` for command usage.
 
 ## Generic MCP clients
 

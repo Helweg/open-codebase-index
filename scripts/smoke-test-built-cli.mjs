@@ -135,8 +135,8 @@ try {
   const projectArgs = ["--host", "codex", "--project", tempDir, "--config", configPath];
 
   const cbiHelp = await runCliCommand(["--help"], { cliPathOverride: "dist/cbi.js" });
-  if (cbiHelp.code !== 0 || !cbiHelp.stdout.includes("Usage: cbi")) {
-    throw new Error(`Built CBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
+  if (cbiHelp.code !== 0 || !cbiHelp.stdout.includes("Usage: ocbi")) {
+    throw new Error(`Built OCBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
   }
 
   await Promise.all([

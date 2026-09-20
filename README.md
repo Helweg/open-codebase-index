@@ -12,15 +12,15 @@
 
 New installs should use `open-codebase-index` and `open-codebase-index-mcp`. The legacy package `opencode-codebase-index` and `opencode-codebase-index-mcp` remain supported aliases.
 
-For terminal use outside an MCP client, install the package globally and use the concise `cbi` command:
+For terminal use outside an MCP client, install the package globally and use the concise `ocbi` command:
 
 ```bash
 npm install -g open-codebase-index
-cbi status --project /path/to/repo --host jcode
-cbi search "retry recovery" --project /path/to/repo
+ocbi status --project /path/to/repo --host jcode
+ocbi search "retry recovery" --project /path/to/repo
 ```
 
-`cbi` provides status, indexing, search, definition lookup, and direct caller or callee inspection. See [Installation and host setup](docs/installation.md#human-cli) for the full command reference.
+`cbi` remains available as a compatibility alias. `ocbi` provides status, indexing, search, definition lookup, and direct caller or callee inspection. See [Installation and host setup](docs/installation.md#human-cli) for the full command reference.
 
 ## Highlights
 

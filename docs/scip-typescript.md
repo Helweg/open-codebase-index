@@ -77,7 +77,7 @@ Add the following to the host-specific OCBI configuration described in [Configur
 Run normal indexing after generating the artifact or changing this configuration:
 
 ```bash
-cbi index --project /path/to/repository
+ocbi index --project /path/to/repository
 ```
 
 ## Supported pilot scope

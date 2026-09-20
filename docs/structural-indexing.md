@@ -15,11 +15,11 @@ The default remains `hybrid`, which uses semantic vectors as well as structural 
 ## Workflow
 
 ```bash
-cbi index --project /path/to/repository --host jcode
-cbi status --project /path/to/repository --host jcode
-cbi definition parseConfig --project /path/to/repository --host jcode
-cbi graph callers parseConfig --project /path/to/repository --host jcode
-cbi search 'configuration validation' --project /path/to/repository --host jcode
+ocbi index --project /path/to/repository --host jcode
+ocbi status --project /path/to/repository --host jcode
+ocbi definition parseConfig --project /path/to/repository --host jcode
+ocbi graph callers parseConfig --project /path/to/repository --host jcode
+ocbi search 'configuration validation' --project /path/to/repository --host jcode
 ```
 
 In structural mode, search is keyword-based, not semantic similarity. Definitions and graph operations use the indexed structural catalog. Retrieval quality for paraphrases can differ substantially from hybrid mode. `find_similar` and embedding-cost estimation are unsupported rather than simulated with dummy vectors. MCP reports unsupported operations as non-retryable `UNSUPPORTED_OPERATION` errors.
