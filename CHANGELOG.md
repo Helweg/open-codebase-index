@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.31.1] - 2026-09-20
+
 ### Changed
 
 - **Primary terminal command**: Use `ocbi` for the human CLI. `cbi` remains a compatibility alias to the same executable. MCP binaries, package identities, configuration paths, and existing indexes are unchanged.
+
+### Fixed
+
+- **Human CLI index help**: `ocbi index --help` now displays human CLI usage instead of MCP-server usage. The `cbi` compatibility alias shares this behavior.
 
 ## [0.31.0] - 2026-09-18
 
