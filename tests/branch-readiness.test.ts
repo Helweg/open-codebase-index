@@ -70,7 +70,7 @@ describe("branch readiness diagnostics", () => {
     const text = formatStatus(status);
     expect(text).toContain("Current branch: missing");
     expect(text).toContain("Indexed chunks (all branches):");
-    expect(text).toContain("cbi index");
+    expect(text).toContain("ocbi index");
     expect(await indexer.search("readinessTarget", 10, { definitionIntent: true })).toEqual([]);
     await indexer.index();
     expect((await indexer.getStatus()).branchReadiness?.state).toBe("ready");

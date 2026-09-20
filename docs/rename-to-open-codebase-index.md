@@ -164,6 +164,7 @@ During the transition, the new `package.json` should expose both MCP binary name
   "bin": {
     "open-codebase-index-mcp": "dist/cli.js",
     "opencode-codebase-index-mcp": "dist/cli.js",
+    "ocbi": "dist/cbi.js",
     "cbi": "dist/cbi.js"
   }
 }
@@ -174,7 +175,7 @@ Keep `src/cli.ts` and `dist/cli.*` as stable MCP executable facades. Keep `src/c
 Before publishing, test:
 
 - direct npm execution of both binary names,
-- direct npm execution and global installation of `cbi`,
+- direct npm execution and global installation of `ocbi` and the compatibility alias `cbi`,
 - global and local installs,
 - symlink entrypoint detection,
 - ESM and CommonJS loading,

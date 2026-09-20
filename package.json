@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.31.0",
+  "version": "0.31.1",
   "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
@@ -14,6 +14,7 @@
   },
   "bin": {
     "opencode-codebase-index-mcp": "dist/cli.js",
+    "ocbi": "dist/cbi.js",
     "cbi": "dist/cbi.js"
   },
   "license": "MIT",

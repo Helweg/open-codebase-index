@@ -2,15 +2,29 @@ import { describe, expect, it, vi } from "vitest";
 
 import { parseCbiCommandArgs, runCbiCli } from "../src/adapters/cbi.js";
 
-describe("cbi CLI", () => {
+describe("ocbi CLI (with cbi compatibility alias)", () => {
+  it.each(["ocbi", "cbi"])("prints primary help through the %s alias", async (binary) => {
+    for (const command of [undefined, "status", "index", "search", "definition", "graph", "workspace"]) {
+      const output: string[] = [];
+      const args = command === "workspace" ? ["workspace", "status"] : command ? [command] : [];
+      const exitCode = await runCbiCli(["node", binary, ...args, "--help"], "/tmp", {
+        printStdout: (text) => output.push(text),
+        printStderr: (text) => output.push(text),
+      });
+      expect(exitCode).toBe(0);
+      expect(output.join("\n")).toContain(`Usage: ocbi ${command ?? "<command>"}`);
+      expect(output.join("\n")).not.toContain("Usage: cbi");
+    }
+  });
+
   it("parses search options without treating option values as positional arguments", () => {
     expect(parseCbiCommandArgs("search", ["retry logic", "--limit", "3", "--project", "repo", "--host", "jcode"], "/tmp"))
       .toMatchObject({ positionals: ["retry logic"], limit: 3, project: "/tmp/repo", host: "jcode" });
   });
 
-  it("prints status through the shared status operation", async () => {
+  it.each(["ocbi", "cbi"])("prints status through the shared status operation via %s", async (binary) => {
     const stdout: string[] = [];
-    const exitCode = await runCbiCli(["node", "cbi", "status", "--project", "/repo", "--host", "jcode"], "/tmp", {
+    const exitCode = await runCbiCli(["node", binary, "status", "--project", "/repo", "--host", "jcode"], "/tmp", {
       runStatus: async () => ({ text: "Indexed chunks: 10" }),
       printStdout: (text) => stdout.push(text),
       printStderr: () => undefined,

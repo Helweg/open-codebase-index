@@ -59,6 +59,13 @@ function smokeIdentity(identity, expectedBinaries) {
       throw new Error(`Packed package ${identity.packageName} is missing binary ${binaryName}`);
     }
 
+    if (binaryName === "ocbi" || binaryName === "cbi") {
+      const help = spawnSync(executable, ["--help"], { cwd: projectRoot, encoding: "utf8" });
+      if (help.status !== 0 || !help.stdout.includes("Usage: ocbi")) {
+        throw new Error(`Packed CLI help failed for ${identity.packageName}/${binaryName}: ${help.stderr}`);
+      }
+    }
+
     const result = spawnSync(executable, [
       "index",
       "--project",
@@ -81,8 +88,8 @@ function smokeIdentity(identity, expectedBinaries) {
 }
 
 try {
-  smokeIdentity(catalog.product.current, [catalog.product.current.mcpBinary, "cbi"]);
-  smokeIdentity(catalog.product.future, [catalog.product.future.mcpBinary, catalog.product.current.mcpBinary, "cbi"]);
+  smokeIdentity(catalog.product.current, [catalog.product.current.mcpBinary, "ocbi", "cbi"]);
+  smokeIdentity(catalog.product.future, [catalog.product.future.mcpBinary, catalog.product.current.mcpBinary, "ocbi", "cbi"]);
 } finally {
   rmSync(scratchRoot, { recursive: true, force: true });
 }

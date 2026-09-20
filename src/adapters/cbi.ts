@@ -56,7 +56,7 @@ export interface CbiCommandArgs {
 }
 
 function printUsage(output: TextSink): void {
-  output(`Usage: cbi <command> [options]
+  output(`Usage: ocbi <command> [options]
 
 Commands:
   status                          Show index status
@@ -77,14 +77,14 @@ Global options:
 
 function printCommandUsage(output: TextSink, command: string): void {
   const usage: Record<string, string> = {
-    status: "Usage: cbi status [--project <path>] [--host <mode>] [--config <path>]",
-    index: "Usage: cbi index [--project <path>] [--host <mode>] [--config <path>] [--force] [--estimate-only] [--dry-run] [--verbose]",
-    search: "Usage: cbi search <query> [--limit <n>] [--project <path>] [--host <mode>] [--config <path>]",
-    definition: "Usage: cbi definition <symbol> [--project <path>] [--host <mode>] [--config <path>]",
-    graph: "Usage: cbi graph <callers|callees> <symbol> [--file <path>] [--project <path>] [--host <mode>] [--config <path>]",
-    workspace: "Usage: cbi workspace status --repo NAME=PATH [--repo NAME=PATH ...] [--host <mode>] [--json]",
+    status: "Usage: ocbi status [--project <path>] [--host <mode>] [--config <path>]",
+    index: "Usage: ocbi index [--project <path>] [--host <mode>] [--config <path>] [--force] [--estimate-only] [--dry-run] [--verbose]",
+    search: "Usage: ocbi search <query> [--limit <n>] [--project <path>] [--host <mode>] [--config <path>]",
+    definition: "Usage: ocbi definition <symbol> [--project <path>] [--host <mode>] [--config <path>]",
+    graph: "Usage: ocbi graph <callers|callees> <symbol> [--file <path>] [--project <path>] [--host <mode>] [--config <path>]",
+    workspace: "Usage: ocbi workspace status --repo NAME=PATH [--repo NAME=PATH ...] [--host <mode>] [--json]",
   };
-  output(usage[command] ?? "Usage: cbi <command> [options]");
+  output(usage[command] ?? "Usage: ocbi <command> [options]");
 }
 
 function optionValue(args: string[], index: number, name: string): { value: string; consumed: number } {
@@ -156,7 +156,7 @@ async function initializeFromConfig(args: CbiCommandArgs, deps: CbiDeps): Promis
 const defaultSearch = async (projectRoot: string | undefined, host: HostMode, query: string, limit: number): Promise<Result> => {
   const results = await searchCodebase(projectRoot, host, query, { limit });
   return results.length === 0
-    ? { text: "No matching code found. Try a different query or run `cbi index` first." }
+    ? { text: "No matching code found. Try a different query or run `ocbi index` first." }
     : { text: `Found ${results.length} results for "${query}":\n\n${formatSearchResults(results, "score")}` };
 };
 
@@ -218,6 +218,10 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
     }
 
     if (command === "index") {
+      if (argv.slice(3).some((arg) => arg === "--help" || arg === "-h")) {
+        printCommandUsage(stdout, command);
+        return 0;
+      }
       return await (deps.runIndex ?? handleIndexCommand)(argv.slice(3), cwd, {
         printStdout: stdout,
         printStderr: stderr,
