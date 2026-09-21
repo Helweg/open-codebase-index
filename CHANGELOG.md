@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Fresh-study novelty gate**: Cross-repository source validation can require an independently reviewed approval bound to the exact cohort manifest and repository pins. Invalid or rejected approvals fail before a workspace is created or Git fetches sources, preventing protocol-invalid cohorts from being presented as fresh holdout evidence.
+
 ## [0.31.1] - 2026-09-20
 
 ### Changed
