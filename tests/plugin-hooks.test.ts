@@ -127,7 +127,8 @@ vi.mock("../src/routing-hints.js", () => {
   };
 });
 
-import plugin from "../src/index.js";
+import mod from "../src/index.js";
+const plugin = mod.server;
 import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";

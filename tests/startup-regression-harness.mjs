@@ -1,7 +1,9 @@
 /* global process, console */
 import * as path from "node:path";
 
-import plugin from "../dist/index.js";
+import mod from "../dist/index.js";
+
+const plugin = typeof mod === "function" ? mod : mod.server;
 
 const projectRoot = process.argv[2];
 const scenario = process.argv[3];

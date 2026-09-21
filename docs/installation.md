@@ -20,13 +20,31 @@ npm install opencode-codebase-index
 
 Add it to `opencode.json`:
 
+For OpenCode 2.x:
+
+```json
+{
+  "plugins": ["open-codebase-index"]
+}
+```
+
+For OpenCode 1.x:
+
 ```json
 {
   "plugin": ["open-codebase-index"]
 }
 ```
 
-Legacy OpenCode alias:
+Legacy OpenCode alias (OpenCode 2.x):
+
+```json
+{
+  "plugins": ["opencode-codebase-index"]
+}
+```
+
+Legacy OpenCode alias (OpenCode 1.x):
 
 ```json
 {
