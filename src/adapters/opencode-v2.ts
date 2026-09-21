@@ -74,6 +74,18 @@ function withoutMentions<T extends { mention?: unknown }>(references?: readonly 
   return (references || []).map(({ mention: _mention, ...reference }) => reference);
 }
 
+async function disposeRegistrations(regs: readonly Registration[]): Promise<void> {
+  if (regs.length === 0) {
+    return;
+  }
+  const results = await Promise.allSettled(regs.map((r) => r.dispose()));
+  for (const r of results) {
+    if (r.status === "rejected") {
+      console.error("[codebase-index] Failed to dispose OpenCode v2 registration:", r.reason);
+    }
+  }
+}
+
 export const v2Definition = {
   id: "codebase-index",
   async setup(ctx: V2Context): Promise<V2Cleanup | void> {
@@ -254,19 +266,17 @@ export const v2Definition = {
       }
 
       return async () => {
-        if (registrations.length > 0) {
-          await Promise.allSettled(registrations.map((r) => r.dispose()));
-        }
+        await disposeRegistrations(registrations);
         await stopBackgroundWorker(projectRoot, "opencode", true).catch((error: unknown) => {
           console.error("[codebase-index] Failed to stop OpenCode background worker on cleanup:", error);
         });
       };
     } catch (error: unknown) {
-      if (registrations.length > 0) {
-        await Promise.allSettled(registrations.map((r) => r.dispose()));
-      }
+      await disposeRegistrations(registrations);
       if (workerConfigured && configuredProjectRoot) {
-        await stopBackgroundWorker(configuredProjectRoot, "opencode", true).catch(() => {});
+        await stopBackgroundWorker(configuredProjectRoot, "opencode", true).catch((error: unknown) => {
+          console.error("[codebase-index] Failed to stop OpenCode background worker after failed setup:", error);
+        });
       }
       console.error("[codebase-index] Failed to initialize plugin (check config and network):", error);
       return;

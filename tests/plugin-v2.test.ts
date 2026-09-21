@@ -83,10 +83,15 @@ vi.mock("../src/tools/index.js", () => {
   const toolStub = {
     description: "stub tool description",
     args: {},
-    execute: vi.fn(async (_args: unknown, ctx: any) => {
-      ctx?.metadata?.({ title: "t", metadata: { k: 1 } });
-      return "OK";
-    }),
+    execute: vi.fn(
+      async (
+        _args: unknown,
+        ctx: { metadata?: (u: { title?: string; metadata?: Record<string, unknown> }) => void },
+      ) => {
+        ctx?.metadata?.({ title: "t", metadata: { k: 1 } });
+        return "OK";
+      },
+    ),
   };
   return {
     codebase_context: toolStub,
@@ -315,12 +320,32 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
       expect(toolDef.description.length).toBeGreaterThan(0);
       expect(toolDef.input).toBeDefined();
 
-      const input = toolDef.input as any;
-      if (typeof input === "object" && input !== null && "~standard" in input) {
+      const input = toolDef.input as
+        | { "~standard"?: { validate: (v: unknown) => unknown | Promise<unknown> }; type?: string }
+        | undefined;
+      if (typeof input === "object" && input !== null && "~standard" in input && input["~standard"]) {
         expect(typeof input["~standard"].validate).toBe("function");
-        const validationResult = input["~standard"].validate({});
-        expect(typeof validationResult).toBe("object");
-        expect(validationResult).not.toBeNull();
+
+        const emptyResult = await input["~standard"].validate({});
+        expect(typeof emptyResult).toBe("object");
+        expect(emptyResult).not.toBeNull();
+        const hasValueOrIssues =
+          typeof emptyResult === "object" &&
+          emptyResult !== null &&
+          ("value" in emptyResult || "issues" in emptyResult);
+        expect(hasValueOrIssues).toBe(true);
+
+        const invalidResult = await input["~standard"].validate(42);
+        expect(typeof invalidResult).toBe("object");
+        expect(invalidResult).not.toBeNull();
+        const issues =
+          typeof invalidResult === "object" &&
+          invalidResult !== null &&
+          "issues" in invalidResult &&
+          Array.isArray(invalidResult.issues)
+            ? invalidResult.issues
+            : [];
+        expect(issues.length).toBeGreaterThan(0);
       } else {
         expect(typeof input === "object" && input !== null && input.type === "object").toBe(true);
       }
@@ -598,6 +623,51 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
       expect(errorSpy).toHaveBeenCalledWith(
         "[codebase-index] Failed to initialize plugin (check config and network):",
         expect.any(Error),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  // Case 13: Registration disposal failure logging
+  it("13. logs error when registration disposal rejects during cleanup", async () => {
+    const projectRoot = "/tmp/v2-disposal-fail-project";
+    const { ctx, disposeMocks } = createFakeContext({ directory: projectRoot });
+
+    const cleanup = await (mod as any).setup(ctx);
+    expect(typeof cleanup).toBe("function");
+
+    const disposalError = new Error("Simulated disposal rejection");
+    disposeMocks[0].mockRejectedValueOnce(disposalError);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await cleanup();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[codebase-index] Failed to dispose OpenCode v2 registration:",
+        disposalError,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  // Case 14: Teardown worker stop failure logging
+  it("14. logs error when background worker stop fails during setup failure teardown", async () => {
+    const projectRoot = "/tmp/v2-teardown-fail-project";
+    const { ctx } = createFakeContext({ directory: projectRoot });
+
+    ctx.command.transform.mockRejectedValueOnce(new Error("Simulated setup error"));
+    const stopError = new Error("Simulated stop failure");
+    backgroundWorkerMocks.stopBackgroundWorker.mockRejectedValueOnce(stopError);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const setupResult = await (mod as any).setup(ctx);
+      expect(setupResult).toBeUndefined();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[codebase-index] Failed to stop OpenCode background worker after failed setup:",
+        stopError,
       );
     } finally {
       errorSpy.mockRestore();
