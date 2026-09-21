@@ -83,7 +83,10 @@ vi.mock("../src/tools/index.js", () => {
   const toolStub = {
     description: "stub tool description",
     args: {},
-    execute: vi.fn(async () => "stub result"),
+    execute: vi.fn(async (_args: unknown, ctx: any) => {
+      ctx?.metadata?.({ title: "t", metadata: { k: 1 } });
+      return "OK";
+    }),
   };
   return {
     codebase_context: toolStub,
@@ -160,6 +163,13 @@ function createFakeContext(options?: {
   const sessionHooks = new Map<string, Function>();
   const toolHooks = new Map<string, Function>();
   const promptMock = vi.fn(async () => {});
+  const disposeMocks: Array<ReturnType<typeof vi.fn>> = [];
+
+  const createRegistration = () => {
+    const dispose = vi.fn(async () => {});
+    disposeMocks.push(dispose);
+    return { dispose };
+  };
 
   const ctx: any = {
     location: {
@@ -186,17 +196,17 @@ function createFakeContext(options?: {
           update: vi.fn(),
           remove: vi.fn(),
         });
-        return { dispose: async () => {} };
+        return createRegistration();
       }),
       hook: vi.fn(async (name: string, cb: Function) => {
         toolHooks.set(name, cb);
-        return { dispose: async () => {} };
+        return createRegistration();
       }),
     },
     session: {
       hook: vi.fn(async (name: string, cb: Function) => {
         sessionHooks.set(name, cb);
-        return { dispose: async () => {} };
+        return createRegistration();
       }),
       prompt: promptMock,
     },
@@ -205,7 +215,7 @@ function createFakeContext(options?: {
         cb({
           add: (c: any) => addedCommands.push(c),
         });
-        return { dispose: async () => {} };
+        return createRegistration();
       }),
     },
   };
@@ -217,6 +227,7 @@ function createFakeContext(options?: {
     sessionHooks,
     toolHooks,
     promptMock,
+    disposeMocks,
   };
 }
 
@@ -304,9 +315,15 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
       expect(toolDef.description.length).toBeGreaterThan(0);
       expect(toolDef.input).toBeDefined();
 
-      const isStandardSchema = typeof toolDef.input === "object" && toolDef.input !== null && "~standard" in toolDef.input;
-      const isJsonSchema = typeof toolDef.input === "object" && toolDef.input !== null && "type" in toolDef.input;
-      expect(isStandardSchema || isJsonSchema).toBe(true);
+      const input = toolDef.input as any;
+      if (typeof input === "object" && input !== null && "~standard" in input) {
+        expect(typeof input["~standard"].validate).toBe("function");
+        const validationResult = input["~standard"].validate({});
+        expect(typeof validationResult).toBe("object");
+        expect(validationResult).not.toBeNull();
+      } else {
+        expect(typeof input === "object" && input !== null && input.type === "object").toBe(true);
+      }
 
       expect(typeof toolDef.execute).toBe("function");
     }
@@ -328,8 +345,9 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
     };
 
     const result = await firstTool.execute({}, fakeToolContext);
-    expect(result).toHaveProperty("content");
-    expect(typeof result.content).toBe("string");
+    expect(result).toEqual({ content: "OK" });
+    expect(progressMock).toHaveBeenCalledTimes(1);
+    expect(progressMock).toHaveBeenCalledWith(expect.objectContaining({ title: "t", k: 1 }));
   });
 
   // Case 5: Commands
@@ -381,14 +399,14 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
         agents: [],
         skills: [],
       },
-      delivery: "inline",
+      delivery: "queue",
     });
 
     expect(promptMock).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionID: "s2",
         text: "Review prompt\n\nextra argument",
-        delivery: "inline",
+        delivery: "queue",
       }),
     );
   });
@@ -414,11 +432,18 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
     expect(controller.observeUserMessage).toHaveBeenCalledWith("s1", [{ type: "text", text: "user message text" }]);
 
     // 2. context hook
+    controller.getSystemHints.mockResolvedValueOnce(["h1"]).mockResolvedValueOnce([]);
     const contextHook = sessionHooks.get("context");
-    const contextEvent = { sessionID: "s1", system: [] as Array<{ type: string; text: string }> };
-    await contextHook?.(contextEvent);
+    const contextEvent1 = { sessionID: "s1", system: [] as Array<{ type: string; text: string }> };
+    await contextHook?.(contextEvent1);
     expect(controller.getSystemHints).toHaveBeenCalledWith("s1");
-    expect(contextEvent.system).toEqual([{ type: "text", text: "runtime-routing-hint" }]);
+    expect(contextEvent1.system).toEqual([{ type: "text", text: "h1" }]);
+    expect(typeof contextEvent1.system[0]).toBe("object");
+    expect(contextEvent1.system[0]).toEqual({ type: "text", text: "h1" });
+
+    const contextEvent2 = { sessionID: "s1", system: [] as Array<{ type: string; text: string }> };
+    await contextHook?.(contextEvent2);
+    expect(contextEvent2.system).toEqual([]);
 
     // 3. tool execute.after hook
     const toolAfterHook = toolHooks.get("execute.after");
@@ -487,7 +512,7 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
 
       expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
       expect(backgroundWorkerMocks.configureBackgroundWorker).not.toHaveBeenCalled();
-      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(homeLink, "opencode");
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(homeLink, "opencode", true);
     } finally {
       warn.mockRestore();
       rmSync(tempDir, { recursive: true, force: true });
@@ -507,7 +532,7 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
 
       expect(mockState.createWatcherWithIndexer).not.toHaveBeenCalled();
       expect(backgroundWorkerMocks.configureBackgroundWorker).not.toHaveBeenCalled();
-      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode");
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode", true);
     } finally {
       warn2.mockRestore();
     }
@@ -526,22 +551,56 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
 
       expect(setupResult).toBeUndefined();
       expect(addedTools.length).toBe(0);
-      expect(errorSpy).toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[codebase-index] Failed to initialize plugin (check config and network):",
+        expect.any(Error),
+      );
     } finally {
       errorSpy.mockRestore();
     }
   });
 
   // Case 11: Cleanup
-  it("11. returns cleanup function that stops background worker", async () => {
+  it("11. returns cleanup function that stops background worker and disposes registrations", async () => {
     const projectRoot = "/tmp/v2-cleanup-project";
-    const { ctx } = createFakeContext({ directory: projectRoot });
+    const { ctx, disposeMocks } = createFakeContext({ directory: projectRoot });
 
     const cleanup = await (mod as any).setup(ctx);
     expect(typeof cleanup).toBe("function");
 
     backgroundWorkerMocks.stopBackgroundWorker.mockClear();
     await cleanup();
-    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode");
+    expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode", true);
+    expect(disposeMocks.length).toBeGreaterThan(0);
+    for (const dispose of disposeMocks) {
+      expect(dispose).toHaveBeenCalled();
+    }
+  });
+
+  // Case 12: Setup failure after worker start stops worker and disposes registrations
+  it("12. stops worker and disposes registrations when setup fails after worker start", async () => {
+    const projectRoot = "/tmp/v2-fail-cleanup-project";
+    const { ctx, disposeMocks } = createFakeContext({ directory: projectRoot });
+
+    ctx.command.transform.mockRejectedValueOnce(new Error("Simulated registration error"));
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      backgroundWorkerMocks.stopBackgroundWorker.mockClear();
+      const setupResult = await (mod as any).setup(ctx);
+
+      expect(setupResult).toBeUndefined();
+      expect(backgroundWorkerMocks.stopBackgroundWorker).toHaveBeenCalledWith(projectRoot, "opencode", true);
+      expect(disposeMocks.length).toBeGreaterThan(0);
+      for (const dispose of disposeMocks) {
+        expect(dispose).toHaveBeenCalled();
+      }
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[codebase-index] Failed to initialize plugin (check config and network):",
+        expect.any(Error),
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });

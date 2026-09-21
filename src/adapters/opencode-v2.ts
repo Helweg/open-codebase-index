@@ -1,4 +1,4 @@
-import type { Plugin as V2Plugin, Context as V2Context, Cleanup as V2Cleanup } from "./opencode-v2-types.js";
+import type { Plugin as V2Plugin, Context as V2Context, Cleanup as V2Cleanup, Registration } from "./opencode-v2-types.js";
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -77,8 +77,13 @@ function withoutMentions<T extends { mention?: unknown }>(references?: readonly 
 export const v2Definition = {
   id: "codebase-index",
   async setup(ctx: V2Context): Promise<V2Cleanup | void> {
+    let configuredProjectRoot: string | undefined;
+    let workerConfigured = false;
+    const registrations: Registration[] = [];
+
     try {
       const projectRoot = resolveProjectRoot(ctx.location.directory, ctx.location.project.directory);
+      configuredProjectRoot = projectRoot;
       const rawConfig = loadMergedConfig(projectRoot, "opencode");
       const config = parseConfig(rawConfig);
 
@@ -106,7 +111,7 @@ export const v2Definition = {
       }
 
       if (!isValidProject) {
-        await stopBackgroundWorker(projectRoot, "opencode").catch((error: unknown) => {
+        await stopBackgroundWorker(projectRoot, "opencode", true).catch((error: unknown) => {
           console.error("[codebase-index] Failed to stop unsafe OpenCode background worker:", error);
         });
       } else {
@@ -126,6 +131,7 @@ export const v2Definition = {
         }, {
           restartAutoIndex: true,
         });
+        workerConfigured = true;
         await waitForBackgroundWorkerStart(projectRoot, "opencode");
       }
 
@@ -152,7 +158,7 @@ export const v2Definition = {
         [TOOL_NAME.INDEX_VISUALIZE]: index_visualize,
       };
 
-      await ctx.tool.transform((editor) => {
+      const regTools = await ctx.tool.transform((editor) => {
         for (const [name, def] of Object.entries(v1Tools)) {
           const inputSchema = tool.schema.object(def.args);
           editor.add({
@@ -167,7 +173,12 @@ export const v2Definition = {
                 worktree: projectRoot,
                 metadata: (update: { title?: string; metadata?: Record<string, unknown> }) => {
                   if (context?.progress) {
-                    context.progress(update);
+                    const { metadata: extraMetadata, ...rest } = update ?? {};
+                    const progressPayload: Record<string, unknown> = {
+                      ...(typeof extraMetadata === "object" && extraMetadata !== null ? extraMetadata : {}),
+                      ...rest,
+                    };
+                    void Promise.resolve(context.progress(progressPayload)).catch(() => {});
                   }
                 },
                 ask: () => {
@@ -180,14 +191,20 @@ export const v2Definition = {
           });
         }
       });
+      if (regTools && typeof regTools.dispose === "function") {
+        registrations.push(regTools);
+      }
 
-      await ctx.session.hook("prompt", async (event) => {
+      const regPrompt = await ctx.session.hook("prompt", async (event) => {
         if (routingHints && event?.prompt?.text) {
           routingHints.observeUserMessage(event.sessionID, [{ type: "text", text: event.prompt.text }]);
         }
       });
+      if (regPrompt && typeof regPrompt.dispose === "function") {
+        registrations.push(regPrompt);
+      }
 
-      await ctx.session.hook("context", async (event) => {
+      const regContext = await ctx.session.hook("context", async (event) => {
         if (!routingHints) return;
         if (config.search.routingHintRole === "system" || config.search.routingHintRole === "developer") {
           const hints = await routingHints.getSystemHints(event.sessionID);
@@ -196,17 +213,23 @@ export const v2Definition = {
           }
         }
       });
+      if (regContext && typeof regContext.dispose === "function") {
+        registrations.push(regContext);
+      }
 
-      await ctx.tool.hook("execute.after", async (event) => {
+      const regToolHook = await ctx.tool.hook("execute.after", async (event) => {
         if (routingHints && event?.tool && event?.sessionID) {
           routingHints.markToolUsed(event.sessionID, event.tool);
         }
       });
+      if (regToolHook && typeof regToolHook.dispose === "function") {
+        registrations.push(regToolHook);
+      }
 
       const commandsDir = getCommandsDir();
       const commands = loadCommandsFromDirectory(commandsDir);
 
-      await ctx.command.transform((editor) => {
+      const regCommand = await ctx.command.transform((editor) => {
         for (const [name, definition] of commands) {
           editor.add({
             name,
@@ -226,14 +249,26 @@ export const v2Definition = {
           });
         }
       });
+      if (regCommand && typeof regCommand.dispose === "function") {
+        registrations.push(regCommand);
+      }
 
-      return () => {
-        stopBackgroundWorker(projectRoot, "opencode").catch((error: unknown) => {
+      return async () => {
+        if (registrations.length > 0) {
+          await Promise.allSettled(registrations.map((r) => r.dispose()));
+        }
+        await stopBackgroundWorker(projectRoot, "opencode", true).catch((error: unknown) => {
           console.error("[codebase-index] Failed to stop OpenCode background worker on cleanup:", error);
         });
       };
-    } catch {
-      console.error("[codebase-index] Failed to initialize plugin (check config and network)");
+    } catch (error: unknown) {
+      if (registrations.length > 0) {
+        await Promise.allSettled(registrations.map((r) => r.dispose()));
+      }
+      if (workerConfigured && configuredProjectRoot) {
+        await stopBackgroundWorker(configuredProjectRoot, "opencode", true).catch(() => {});
+      }
+      console.error("[codebase-index] Failed to initialize plugin (check config and network):", error);
       return;
     }
   },
