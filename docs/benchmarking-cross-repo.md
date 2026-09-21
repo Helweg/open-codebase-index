@@ -123,6 +123,36 @@ npm run benchmark:cross-repo:sources:check
 
 Run the full local benchmark manually or from a scheduled quality workflow when a retrieval change needs measured quality results.
 
+## Fresh-study novelty gate
+
+Before acquiring sources for a new quality study, require an independently reviewed approval bound to the exact cohort manifest:
+
+```bash
+npx tsx scripts/validate-cross-repo-cohort.ts \
+  --cohort-dir /path/to/fresh-cohort \
+  --study-approval /path/to/study-approval.json \
+  --work-dir ./.tmp/fresh-study-sources
+```
+
+The validator checks the approval before creating the work directory or invoking Git. Existing integrity checks may omit `--study-approval`, but results intended as fresh holdout evidence must use it. The approval JSON contract is:
+
+```json
+{
+  "schemaVersion": 1,
+  "noveltyDecision": "accepted_novel",
+  "sourceAcquisitionAuthorized": true,
+  "auditor": "independent reviewer identity",
+  "auditedAt": "2026-09-21T00:00:00.000Z",
+  "evidenceSha256": "<lowercase SHA-256 of the novelty evidence>",
+  "cohortSha256": "<lowercase SHA-256 of the exact cohort.json bytes>",
+  "repositories": [
+    { "name": "repo", "url": "https://example/repo.git", "revision": "<pinned revision>" }
+  ]
+}
+```
+
+The approved repository name, URL, and revision set must exactly match `cohort.json`. A rejected novelty decision, absent authorization, changed manifest, changed repository pin, malformed provenance, or duplicate approval entry fails closed before source acquisition.
+
 ## Optional baseline toggles
 
 ```bash

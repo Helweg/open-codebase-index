@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import * as fs from "node:fs";
+import * as crypto from "node:crypto";
 import * as os from "node:os";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
@@ -14,6 +15,7 @@ const execFileAsync = promisify(execFile);
 export interface CrossRepoCohortValidationOptions {
   cohortDir: string;
   workDir?: string;
+  studyApproval?: string;
 }
 
 interface CohortManifestRepository {
@@ -25,6 +27,12 @@ interface CohortManifestRepository {
 
 interface CohortManifest {
   repositories: CohortManifestRepository[];
+}
+
+interface StudyApprovalRepository {
+  name: string;
+  url: string;
+  revision: string;
 }
 
 interface RepoDefinitionMiss {
@@ -150,6 +158,88 @@ function parseCohortManifest(manifestPath: string): CohortManifest {
   });
 
   return { repositories };
+}
+
+function requireNonEmptyString(value: unknown, field: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`Invalid study approval: ${field} must be a non-empty string`);
+  }
+  return value;
+}
+
+function repositoryKey(repository: StudyApprovalRepository): string {
+  return JSON.stringify([repository.name, repository.url, repository.revision]);
+}
+
+function validateStudyApproval(
+  approvalPath: string,
+  manifestPath: string,
+  cohort: CohortManifest,
+): void {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(fs.readFileSync(approvalPath, "utf-8"));
+  } catch (error: unknown) {
+    throw new Error(`Cannot parse study approval ${approvalPath}: ${getErrorMessage(error)}`);
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid study approval: expected object");
+  }
+
+  const approval = parsed as Record<string, unknown>;
+  if (approval.schemaVersion !== 1) {
+    throw new Error("Invalid study approval: schemaVersion must be 1");
+  }
+  if (approval.noveltyDecision !== "accepted_novel") {
+    throw new Error("Study source acquisition blocked: noveltyDecision must be accepted_novel");
+  }
+  if (approval.sourceAcquisitionAuthorized !== true) {
+    throw new Error("Study source acquisition blocked: sourceAcquisitionAuthorized must be true");
+  }
+
+  requireNonEmptyString(approval.auditor, "auditor");
+  const auditedAt = requireNonEmptyString(approval.auditedAt, "auditedAt");
+  if (Number.isNaN(Date.parse(auditedAt))) {
+    throw new Error("Invalid study approval: auditedAt must be a valid timestamp");
+  }
+  const evidenceSha256 = requireNonEmptyString(approval.evidenceSha256, "evidenceSha256");
+  if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) {
+    throw new Error("Invalid study approval: evidenceSha256 must be a lowercase SHA-256 digest");
+  }
+
+  const cohortSha256 = requireNonEmptyString(approval.cohortSha256, "cohortSha256");
+  const actualCohortSha256 = crypto.createHash("sha256").update(fs.readFileSync(manifestPath)).digest("hex");
+  if (cohortSha256 !== actualCohortSha256) {
+    throw new Error("Study source acquisition blocked: cohortSha256 does not match cohort.json");
+  }
+
+  if (!Array.isArray(approval.repositories)) {
+    throw new Error("Invalid study approval: repositories must be an array");
+  }
+  const approvedRepositories = approval.repositories.map((entry, index): StudyApprovalRepository => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`Invalid study approval repository at index ${index}: expected object`);
+    }
+    const repository = entry as Record<string, unknown>;
+    return {
+      name: requireNonEmptyString(repository.name, `repositories[${index}].name`),
+      url: requireNonEmptyString(repository.url, `repositories[${index}].url`),
+      revision: requireNonEmptyString(repository.revision, `repositories[${index}].revision`),
+    };
+  });
+
+  const approvedKeys = approvedRepositories.map(repositoryKey);
+  if (new Set(approvedKeys).size !== approvedKeys.length) {
+    throw new Error("Invalid study approval: repositories must not contain duplicates");
+  }
+  const cohortKeys = cohort.repositories.map(repositoryKey);
+  if (
+    approvedKeys.length !== cohortKeys.length
+    || approvedKeys.slice().sort().some((key, index) => key !== cohortKeys.slice().sort()[index])
+  ) {
+    throw new Error("Study source acquisition blocked: approved repositories do not match cohort.json pins");
+  }
 }
 
 function getErrorMessage(error: unknown): string {
@@ -281,6 +371,9 @@ export async function validateCrossRepoCohortSources(
   const resolvedCohortDir = path.resolve(options.cohortDir);
   const manifestPath = path.join(resolvedCohortDir, "cohort.json");
   const cohort = parseCohortManifest(manifestPath);
+  if (options.studyApproval) {
+    validateStudyApproval(path.resolve(options.studyApproval), manifestPath, cohort);
+  }
 
   const baseWorkRoot = options.workDir
     ? path.resolve(options.workDir)
@@ -324,6 +417,7 @@ export async function validateCrossRepoCohortSources(
 export function parseCliArgs(argv: string[]): CrossRepoCohortValidationOptions {
   let cohortDir = DEFAULT_COHORT_DIR;
   let workDir: string | undefined;
+  let studyApproval: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -347,13 +441,27 @@ export function parseCliArgs(argv: string[]): CrossRepoCohortValidationOptions {
       continue;
     }
 
+    if (arg === "--study-approval") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--study-approval requires a path");
+      }
+      studyApproval = path.resolve(expandHome(value));
+      i += 1;
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       console.log(`Usage:
-npx tsx scripts/validate-cross-repo-cohort.ts [--cohort-dir PATH] [--work-dir PATH]
+npx tsx scripts/validate-cross-repo-cohort.ts [--cohort-dir PATH] [--work-dir PATH] [--study-approval PATH]
 
 Defaults:
   --cohort-dir: ${DEFAULT_COHORT_DIR}
   --work-dir: a temporary directory created under os.tmpdir()
+
+Fresh study gate:
+  --study-approval validates an accepted novelty audit bound to the exact cohort
+  before creating a workspace or fetching repository sources
 
 Aliases:
   --cache-dir can be used as a CI-friendly work directory alias for --work-dir
@@ -364,7 +472,7 @@ Aliases:
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { cohortDir, workDir };
+  return { cohortDir, workDir, studyApproval };
 }
 
 function printFailureReport(summary: CrossRepoCohortValidationSummary): void {
