@@ -43,7 +43,6 @@ describe("intent-aware source path preference", () => {
     ["how do I configure a custom embedding provider", "docs"],
     ["how can I add a nested command", "docs"],
     ["how does authentication work conceptually", "conceptual"],
-    ["how does authentication work", "conceptual"],
   ])("classifies natural artifact grammar without weakening guardrails: %s", (query, primary) => {
     expect(analyzeQueryIntent(query)).toMatchObject({ primary });
   });

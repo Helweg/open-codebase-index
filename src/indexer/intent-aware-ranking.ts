@@ -187,7 +187,7 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   const naturalUsageIntent = /^\s*how\s+to\b/u.test(normalized) ||
     /\bhow\s+(?:do|can|should)\s+i\b/u.test(normalized);
   const naturalImplementationIntent = !broadConceptualIntent &&
-    /\b(?:where|how)\s+does\b.*\b(?:apply|build|combine|compute|convert|create|dispatch|fetch|generate|handle|load|merge|parse|rank|read|resolve|route|select|store|translate|validate|write)\b/u.test(normalized);
+    /\b(?:where|how)\s+does\s+(?:the\s+)?[\p{L}_$][\p{L}\p{N}_$-]*/u.test(normalized);
 
   // Queries like "conceptual overview of FooBar" should stay conceptual for broader retrieval,
   // while bare or explain-only identifier queries remain identifier-driven neutral.
