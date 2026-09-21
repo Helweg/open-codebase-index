@@ -183,7 +183,11 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   const definitionIntent = /\b(?:defined|definition|declaration|symbol)\b/u.test(normalized) ||
     /\bwhere\s+is\b/u.test(normalized);
   const implementationIntent = /\b(?:implement|implementation|implemented|implements|source|logic|body)\b/u.test(normalized);
-  const broadConceptualIntent = /\b(?:conceptual|overview)\b/u.test(normalized);
+  const broadConceptualIntent = /\b(?:conceptual(?:ly)?|overview)\b/u.test(normalized);
+  const naturalUsageIntent = /^\s*how\s+to\b/u.test(normalized) ||
+    /\bhow\s+(?:do|can|should)\s+i\b/u.test(normalized);
+  const naturalImplementationIntent = !broadConceptualIntent &&
+    /\b(?:where|how)\s+does\s+(?:the\s+)?[\p{L}_$][\p{L}\p{N}_$-]*/u.test(normalized);
 
   // Queries like "conceptual overview of FooBar" should stay conceptual for broader retrieval,
   // while bare or explain-only identifier queries remain identifier-driven neutral.
@@ -198,7 +202,8 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
   else if (configIntent) primary = "config";
   else if (callFlowIntent) primary = "call-flow";
   else if (definitionIntent) primary = "definition";
-  else if (implementationIntent) primary = "implementation";
+  else if (naturalUsageIntent) primary = "docs";
+  else if (implementationIntent || naturalImplementationIntent) primary = "implementation";
   else if (conceptual) primary = "conceptual";
   else primary = "neutral";
 
