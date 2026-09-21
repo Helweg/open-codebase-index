@@ -28,7 +28,7 @@ For OpenCode 2.x:
 }
 ```
 
-For OpenCode 1.x:
+For OpenCode 1.x (1.3.4 or newer):
 
 ```json
 {

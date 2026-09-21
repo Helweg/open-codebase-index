@@ -58,7 +58,7 @@ Requires Node.js 22.13 or newer. Node.js 24 LTS is recommended.
    }
    ```
 
-   For OpenCode 1.x:
+   For OpenCode 1.x (1.3.4 or newer):
 
    ```json
    {
