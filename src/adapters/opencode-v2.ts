@@ -271,14 +271,14 @@ export const v2Definition = {
           console.error("[codebase-index] Failed to stop OpenCode background worker on cleanup:", error);
         });
       };
-    } catch (error: unknown) {
+    } catch {
       await disposeRegistrations(registrations);
       if (workerConfigured && configuredProjectRoot) {
         await stopBackgroundWorker(configuredProjectRoot, "opencode", true).catch((error: unknown) => {
           console.error("[codebase-index] Failed to stop OpenCode background worker after failed setup:", error);
         });
       }
-      console.error("[codebase-index] Failed to initialize plugin (check config and network):", error);
+      console.error("[codebase-index] Failed to initialize plugin (check config and network). Details omitted to protect sensitive configuration values.");
       return;
     }
   },
