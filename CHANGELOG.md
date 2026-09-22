@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-09-22
+
 ### Added
 
 - **OpenCode 2.x native plugin support**: Added OpenCode 2.x native plugin API support via combined default export (`id`, `setup`, and `server`), allowing the same entrypoint to load across OpenCode 2.x and OpenCode 1.x (≥ 1.3.4).
