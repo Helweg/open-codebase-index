@@ -14,7 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **OpenCode peer dependency range**: Narrowed `peerDependencies["@opencode-ai/plugin"]` from `^1.0.0` to `^1.3.4` to reflect object entrypoint compatibility, while keeping the runtime dependency pin at `1.3.13`. Verified against the OpenCode loader source at tag v1.3.4 (object entrypoints accepted from that release); the upstream migration guide states 1.18.29 or newer — see the pull request discussion for the maintainer's decision on the published floor.
+- **OpenCode peer dependency range**: Narrowed `peerDependencies["@opencode-ai/plugin"]` from `^1.0.0` to `^1.3.4` to reflect object entrypoint compatibility, while keeping the runtime dependency pin at `1.3.13`. Verified against the OpenCode loader source at tag v1.3.4 (object entrypoints accepted from that release), verified live against OpenCode 1.3.4 and 1.18.32 (plugin loads, 10 commands registered) and 2.0.12; the upstream migration guide states 1.18.29 or newer — see the pull request discussion for the maintainer's decision on the published floor.
 - **OpenCode routing hints on v2**: The `developer` routing hint role folds into `system` prompts on OpenCode 2.x because OpenCode 2.x no longer exposes a separate developer message channel.
 - **Built CLI smoke tests**: Smoke tests now assert the combined plugin object export (`server` and `setup`).
 
