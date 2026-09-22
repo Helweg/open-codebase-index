@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.1] - 2026-09-22
+
+### Fixed
+
+- Prevented OpenCode v2 initialization failures from logging raw error details that could contain resolved API keys or other sensitive configuration values.
+
 ## [0.32.0] - 2026-09-22
 
 ### Added
