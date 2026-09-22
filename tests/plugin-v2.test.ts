@@ -564,9 +564,9 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
   });
 
   // Case 10: Failure degrades, never throws
-  it("10. degrades safely without throwing when configuration parsing fails", async () => {
+  it("10. degrades safely without throwing or logging secrets when configuration parsing fails", async () => {
     vi.mocked(parseConfig).mockImplementationOnce(() => {
-      throw new Error("Simulated config parse failure");
+      throw new Error("Simulated config parse failure: apiKey=top-secret-value");
     });
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -577,9 +577,9 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
       expect(setupResult).toBeUndefined();
       expect(addedTools.length).toBe(0);
       expect(errorSpy).toHaveBeenCalledWith(
-        "[codebase-index] Failed to initialize plugin (check config and network):",
-        expect.any(Error),
+        "[codebase-index] Failed to initialize plugin (check config and network). Details omitted to protect sensitive configuration values.",
       );
+      expect(errorSpy.mock.calls.flat().join(" ")).not.toContain("top-secret-value");
     } finally {
       errorSpy.mockRestore();
     }
@@ -621,8 +621,7 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
         expect(dispose).toHaveBeenCalled();
       }
       expect(errorSpy).toHaveBeenCalledWith(
-        "[codebase-index] Failed to initialize plugin (check config and network):",
-        expect.any(Error),
+        "[codebase-index] Failed to initialize plugin (check config and network). Details omitted to protect sensitive configuration values.",
       );
     } finally {
       errorSpy.mockRestore();
