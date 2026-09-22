@@ -151,7 +151,8 @@ try {
   }
 
   const cjsModule = require("../dist/index.cjs");
-  if (typeof cjsModule.default !== "function") {
+  const pluginExport = cjsModule.default;
+  if (!pluginExport || typeof pluginExport !== "object" || typeof pluginExport.server !== "function" || typeof pluginExport.setup !== "function") {
     throw new Error("Built CommonJS entry point is missing its default plugin export");
   }
 
