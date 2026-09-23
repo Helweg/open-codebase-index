@@ -78,6 +78,20 @@ function invoke(fixture: ReturnType<typeof writeFixture>, artifacts: string, ext
   ], { cwd: path.resolve("."), encoding: "utf8", timeout: 20_000 });
 }
 
+function writeArmAudit(mismatch = false): string {
+  const file = path.join(tempDir, "arm-audit.json");
+  const sharedAgent = { argv: ["reviewed-agent", "--model", "fixed-test-model"], model: "fixed-test-model" };
+  const commonServer = { name: "other-tool", argv: ["other-mcp", "--stdio"] };
+  fs.writeFileSync(file, JSON.stringify({
+    control: { agent: sharedAgent, mcpServers: [commonServer] },
+    treatment: {
+      agent: mismatch ? { ...sharedAgent, model: "different-model" } : sharedAgent,
+      mcpServers: [commonServer, { name: "codebase-index", argv: ["ocbi-mcp", "--host", "jcode"] }],
+    },
+  }));
+  return file;
+}
+
 beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-task-ab-cli-")); });
 afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
 
@@ -90,6 +104,17 @@ describe("agent-task A/B executable", () => {
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("Usage: ocbi-agent-task-ab");
     }
+  });
+
+  it("prints help when invoked through a symlinked entrypoint", () => {
+    const target = path.resolve("src/eval/agent-task-ab-cli.ts");
+    const symlink = path.join(tempDir, "agent-task-ab-link.ts");
+    fs.symlinkSync(target, symlink);
+    const result = spawnSync(process.execPath, ["--import", "tsx", symlink, "--help"], {
+      cwd: path.resolve("."), encoding: "utf8", timeout: 10_000,
+    });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain("Usage: ocbi-agent-task-ab");
   });
 
   it("runs end to end against pinned local Git repositories and writes protected metadata only", () => {
@@ -111,6 +136,30 @@ describe("agent-task A/B executable", () => {
     expect(fs.statSync(artifacts).mode & 0o777).toBe(0o700);
     expect(fs.statSync(resultPath).mode & 0o777).toBe(0o600);
     expect(fs.existsSync(path.join(artifacts, "workspaces", "task-one--no-ocbi"))).toBe(false);
+  });
+
+  it("accepts an explicit matching arm-audit file and persists only its safe summary", () => {
+    const fixture = writeFixture();
+    const auditFile = writeArmAudit();
+    const artifacts = path.join(tempDir, "audited-artifacts");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--arm-audit", auditFile]);
+    expect(result.status, result.stderr).toBe(0);
+    const raw = fs.readFileSync(path.join(artifacts, "result.json"), "utf8");
+    const parsed = JSON.parse(raw) as { armAudit: { equivalentExceptOcbi: boolean; mismatchCategories: string[]; structuralDigest: string } };
+    expect(parsed.armAudit).toEqual({ equivalentExceptOcbi: true, mismatchCategories: [], structuralDigest: expect.stringMatching(/^[0-9a-f]{64}$/) });
+    expect(raw).not.toContain("reviewed-agent");
+    expect(raw).not.toContain("other-mcp");
+    expect(raw).not.toContain("ocbi-mcp");
+  });
+
+  it("rejects mismatched arm-audit descriptors before creating artifacts", () => {
+    const fixture = writeFixture();
+    const auditFile = writeArmAudit(true);
+    const artifacts = path.join(tempDir, "rejected-artifacts");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--arm-audit", auditFile]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Arm audit rejected: agent_settings_mismatch");
+    expect(fs.existsSync(artifacts)).toBe(false);
   });
 
   it("requires explicit verifier opt-in and refuses existing output", () => {

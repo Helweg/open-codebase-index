@@ -15,6 +15,7 @@ import {
   type AgentTaskRepository,
   type AgentTaskTrialResult,
 } from "./agent-task-ab.js";
+import { auditAgentTaskArms, type AgentTaskArmAuditResult } from "./agent-task-arm-audit.js";
 
 interface CliOptions {
   manifest: string;
@@ -30,11 +31,12 @@ interface CliOptions {
   maxOutputBytes: number;
   allowVerifiers: boolean;
   captureAuditEvidence: boolean;
+  armAudit?: string;
 }
 
 const USAGE = `Usage: ocbi-agent-task-ab --manifest FILE --no-ocbi-argv FILE --ocbi-argv FILE \\
   --artifacts NEW_DIR --seed SEED --agent NAME --model MODEL --allow-verifiers \\
-  [--capture-audit-evidence] [--max-tokens N] [--max-tool-calls N] \\
+  [--capture-audit-evidence] [--arm-audit FILE] [--max-tokens N] [--max-tool-calls N] \\
   [--max-duration-ms N] [--max-output-bytes N]`;
 
 interface CapturedText {
@@ -66,7 +68,7 @@ function parseOptions(argv: string[]): CliOptions {
   const values = new Map<string, string>();
   const valuedOptions = new Set([
     "--manifest", "--no-ocbi-argv", "--ocbi-argv", "--artifacts", "--seed", "--agent", "--model",
-    "--max-tokens", "--max-tool-calls", "--max-duration-ms", "--max-output-bytes",
+    "--max-tokens", "--max-tool-calls", "--max-duration-ms", "--max-output-bytes", "--arm-audit",
   ]);
   let allowVerifiers = false;
   let captureAuditEvidence = false;
@@ -104,6 +106,7 @@ function parseOptions(argv: string[]): CliOptions {
     maxOutputBytes: parsePositive(values.get("--max-output-bytes"), "--max-output-bytes", 65_536),
     allowVerifiers,
     captureAuditEvidence,
+    ...(values.has("--arm-audit") ? { armAudit: values.get("--arm-audit")! } : {}),
   };
 }
 
@@ -117,6 +120,31 @@ function readArgv(file: string): [string, ...string[]] {
     throw new Error(`${file} must contain a non-empty JSON array of argv strings`);
   }
   return value as [string, ...string[]];
+}
+
+function readArmAudit(file: string): AgentTaskArmAuditResult {
+  const value = readJson(file);
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Arm audit file must be a JSON object with control, treatment, and optional ocbiServerName");
+  }
+  const descriptor = value as Record<string, unknown>;
+  const keys = Object.keys(descriptor).sort();
+  const allowed = ["control", "ocbiServerName", "treatment"];
+  if (!keys.includes("control") || !keys.includes("treatment") || keys.some((key) => !allowed.includes(key))) {
+    throw new Error("Arm audit file must contain exactly control, treatment, and optional ocbiServerName");
+  }
+  if ("ocbiServerName" in descriptor && typeof descriptor.ocbiServerName !== "string") {
+    throw new Error("Arm audit ocbiServerName must be a string");
+  }
+  const result = auditAgentTaskArms(
+    descriptor.control,
+    descriptor.treatment,
+    typeof descriptor.ocbiServerName === "string" ? descriptor.ocbiServerName : "codebase-index",
+  );
+  if (!result.equivalentExceptOcbi) {
+    throw new Error(`Arm audit rejected: ${result.mismatchCategories.join(", ") || "invalid_descriptor"}`);
+  }
+  return result;
 }
 
 function argvDigest(argv: string[]): string {
@@ -314,6 +342,7 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
   const noOcbi = readArgv(options.noOcbiArgv);
   const ocbi = readArgv(options.ocbiArgv);
   if (JSON.stringify(noOcbi) === JSON.stringify(ocbi)) throw new Error("A/B argv definitions must differ so treatment availability is not merely a label");
+  const armAuditResult = options.armAudit ? readArmAudit(options.armAudit) : undefined;
 
   const manifestDirectory = path.dirname(manifestPath);
   const sources = new Map(dataset.repositories.map((repository) => [repository.id, localRepositoryPath(repository, manifestDirectory)]));
@@ -392,6 +421,13 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
     armConfigDigests: { "no-ocbi": argvDigest(noOcbi), ocbi: argvDigest(ocbi) },
     trials: trials.map(metadataTrial),
     comparison: compareAgentTaskTrials(dataset, trials),
+    ...(armAuditResult ? {
+      armAudit: {
+        equivalentExceptOcbi: armAuditResult.equivalentExceptOcbi,
+        mismatchCategories: armAuditResult.mismatchCategories,
+        ...(armAuditResult.structuralDigest ? { structuralDigest: armAuditResult.structuralDigest } : {}),
+      },
+    } : {}),
     ...(auditEvidenceFiles ? { auditEvidenceFiles } : {}),
   };
   const resultPath = path.join(artifactPath, "result.json");
@@ -401,7 +437,8 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
 }
 
 const moduleUrl = import.meta.url ?? pathToFileURL(__filename).href;
-if (process.argv[1] && moduleUrl === pathToFileURL(path.resolve(process.argv[1])).href) {
+if (process.argv[1] && fs.existsSync(process.argv[1])
+  && moduleUrl === pathToFileURL(fs.realpathSync(process.argv[1])).href) {
   runAgentTaskAbCli(process.argv.slice(2)).catch((error: unknown) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;

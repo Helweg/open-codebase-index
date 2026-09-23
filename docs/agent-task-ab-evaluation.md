@@ -55,6 +55,22 @@ SHA-256 digests of the two argv arrays are retained for auditability without
 serializing their potentially sensitive contents. Record exact agent, model,
 and OCBI versions in the external preregistration/run ledger.
 
+Optionally pass `--arm-audit ./arm-audit.json` to run a static parity check
+before the output directory is created or any verifier is started. The JSON
+file must contain exactly `control`, `treatment`, and optional
+`ocbiServerName`. Each arm descriptor has only `agent: { "argv": [...],
+"model": "..." }` and `mcpServers: [{ "name": "...", "argv": [...] }]`.
+The descriptors are caller-supplied, self-reported claims: this check does not
+load agent configuration, confirm the process actually uses these settings,
+prove runtime equivalence, or establish that both arms have equal tools apart
+from OCBI. It verifies that the described agent/model and non-OCBI MCP entries
+match, with one named OCBI MCP entry only in treatment. Include public,
+non-secret values only; do not put credentials, tokens, environment values, or
+other secrets in this file. The result metadata stores only the pass boolean,
+mismatch categories, and a structural digest of counts/comparison outcomes,
+not descriptor values. Without `--arm-audit`, the runner's default path and
+result metadata are unchanged.
+
 The default remains metadata-only. To explicitly consent to retaining bounded
 audit evidence, add `--capture-audit-evidence`. This creates an
 `audit-evidence/` directory with mode `0700` and one JSON file per trial with
