@@ -85,6 +85,15 @@ function smokeIdentity(identity, expectedBinaries) {
       ].join("\n"));
     }
   }
+
+  const evalBinary = binaryPath(installRoot, "ocbi-agent-task-ab");
+  if (!existsSync(evalBinary)) {
+    throw new Error(`Packed package ${identity.packageName} is missing binary ocbi-agent-task-ab`);
+  }
+  const evalHelp = spawnSync(evalBinary, ["--help"], { cwd: projectRoot, encoding: "utf8" });
+  if (evalHelp.status !== 0 || !evalHelp.stdout.includes("Usage: ocbi-agent-task-ab")) {
+    throw new Error(`Packed A/B runner help failed for ${identity.packageName}: ${evalHelp.stderr}`);
+  }
 }
 
 try {
