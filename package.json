@@ -15,7 +15,8 @@
   "bin": {
     "opencode-codebase-index-mcp": "dist/cli.js",
     "ocbi": "dist/cbi.js",
-    "cbi": "dist/cbi.js"
+    "cbi": "dist/cbi.js",
+    "ocbi-agent-task-ab": "dist/eval/agent-task-ab-cli.js"
   },
   "license": "MIT",
   "author": "Kenneth",
@@ -58,6 +59,7 @@
     "eval:ci": "npx tsx src/cli.ts eval run --reindex --ci --budget benchmarks/budgets/default.json --against benchmarks/baselines/eval-baseline-summary.json",
     "eval:ci:ollama": "npx tsx src/cli.ts eval run --config .github/eval-ollama-config.json --reindex --ci --budget benchmarks/budgets/ollama.json",
     "eval:compare": "npx tsx src/cli.ts eval compare",
+    "eval:agent-task-ab": "tsx src/eval/agent-task-ab-cli.ts",
     "eval:effectiveness": "npx tsx scripts/effectiveness-report.ts",
     "benchmark:indexing-memory": "npx tsx benchmarks/indexing-memory.ts",
     "benchmark:watcher": "npx tsx benchmarks/watcher.ts",

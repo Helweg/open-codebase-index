@@ -11,8 +11,54 @@ either document.
 
 ## Current boundary
 
-`src/eval/agent-task-ab.ts` is a library scaffold, not a registered CLI. It
-provides:
+`src/eval/agent-task-ab.ts` provides the reusable contract. The public
+`ocbi-agent-task-ab` executable, also available from a source checkout as
+`npm run eval:agent-task-ab --`, runs that contract against reviewed local Git
+repositories.
+
+## Executable path
+
+Create two JSON files containing argv arrays. They must be materially distinct
+and must configure the same agent/model with OCBI unavailable in the control
+arm and available in the treatment arm. For example, the treatment argv may
+name an explicitly reviewed agent configuration that registers the OCBI MCP
+server, while the control argv names the matching configuration without it.
+The runner uses a fresh `HOME` for every trial, so ambient user agent/plugin
+configuration is not loaded.
+
+```sh
+ocbi-agent-task-ab \
+  --manifest ./reviewed-tasks.json \
+  --no-ocbi-argv ./agent-control-argv.json \
+  --ocbi-argv ./agent-treatment-argv.json \
+  --artifacts ./private-results/run-001 \
+  --seed published-seed \
+  --agent reviewed-agent-name \
+  --model pinned-model-id \
+  --max-duration-ms 600000 \
+  --max-output-bytes 65536 \
+  --allow-verifiers
+```
+
+Each argv file is a JSON string array, not a shell command. The executable is
+spawned directly without shell expansion. Repository `url` fields must be local
+paths and every revision must be a full pinned commit. The output directory
+must not exist. It is created mode `0700`; `result.json` is mode `0600` and
+contains status/duration/comparison metadata only. Raw stdout, stderr, argv,
+environment, patches, workspace paths, and repository contents are omitted.
+SHA-256 digests of the two argv arrays are retained for auditability without
+serializing their potentially sensitive contents. Record exact agent, model,
+and OCBI versions in the external preregistration/run ledger.
+
+`--allow-verifiers` is mandatory because verifier entries are trusted code.
+Agent/verifier processes are time-bounded and captured output is byte-bounded.
+`maxTokens` and `maxToolCalls` are declared controls passed to the agent, not
+enforced by the runner unless the chosen agent honors them. Operators must
+audit both argv configurations before the run and verify that OCBI availability
+is the only intended difference. Distinct argv is a guard against identical
+arms, not proof of experimental isolation.
+
+The implementation provides:
 
 - strict runtime validation for datasets
 - deterministic, seed-controlled, balanced arm ordering
@@ -22,11 +68,9 @@ provides:
   transcripts, optional token/tool usage, and optional repository patches
 - paired comparison with complete-pair checks and an exact two-sided sign test
 
-The included tests exercise the contract with fake adapters. They do not run a
-real agent, clone repositories, establish index readiness, execute third-party
-verifiers, or constitute end-to-end acceptance evidence. A public executable
-adapter remains a follow-up. This is intentionally stated rather than implying
-that a real A/B experiment has run.
+The included acceptance test invokes the executable with temporary pinned Git
+repositories and a safe fake agent/verifier. This validates the runner, not a
+real agent experiment, benchmark task, or product claim.
 
 ## Dataset contract
 
@@ -116,8 +160,8 @@ with agent/verifier status.
 ## Security and evidence handling
 
 A dataset verifier is trusted executable code. Do not execute an unreviewed
-third-party manifest. A future CLI must require explicit opt-in, invoke commands
-without a shell, verify pinned local checkouts, bound output, and isolate each
+third-party manifest. The CLI requires explicit opt-in, invokes commands without
+a shell, verifies pinned local checkouts, bounds output/time, and isolates each
 trial.
 
 Transcripts and patches can contain credentials or private source. Execution

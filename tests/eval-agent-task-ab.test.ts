@@ -79,6 +79,13 @@ describe("multi-repository agent-task A/B evaluation", () => {
         expectedOutcome: "pass",
       }],
     })).toThrow(/unknown field.*expectedOutcome/);
+    expect(() => parseAgentTaskDataset({
+      ...dataset(),
+      repositories: [
+        { id: "../escape", url: "/tmp/a", revision: "a".repeat(40) },
+        { id: "server", url: "/tmp/b", revision: "b".repeat(40) },
+      ],
+    })).toThrow(/safe path-independent identifier/);
   });
 
   it("creates reproducible, balanced variant order", () => {

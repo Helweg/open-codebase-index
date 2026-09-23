@@ -132,6 +132,14 @@ function requireString(value: unknown, path: string): string {
   return value;
 }
 
+function requireSafeId(value: unknown, path: string): string {
+  const id = requireString(value, path);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) || id === "." || id === "..") {
+    throw new Error(`${path} must be a safe path-independent identifier`);
+  }
+  return id;
+}
+
 function rejectUnknownKeys(value: Record<string, unknown>, allowed: string[], path: string): void {
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) throw new Error(`${path} contains unknown field(s): ${unknown.join(", ")}`);
@@ -179,7 +187,7 @@ export function parseAgentTaskDataset(value: unknown, source = "dataset"): Agent
     const path = `${source}.repositories[${index}]`;
     if (!isRecord(entry)) throw new Error(`${path} must be an object`);
     rejectUnknownKeys(entry, ["id", "url", "revision"], path);
-    const id = requireString(entry.id, `${path}.id`);
+    const id = requireSafeId(entry.id, `${path}.id`);
     if (repositoryIds.has(id)) throw new Error(`${path}.id is duplicated: ${id}`);
     repositoryIds.add(id);
     const revision = requireString(entry.revision, `${path}.revision`);
@@ -193,7 +201,7 @@ export function parseAgentTaskDataset(value: unknown, source = "dataset"): Agent
     const path = `${source}.tasks[${index}]`;
     if (!isRecord(entry)) throw new Error(`${path} must be an object`);
     rejectUnknownKeys(entry, ["id", "repositoryIds", "prompt", "verifier", "tags"], path);
-    const id = requireString(entry.id, `${path}.id`);
+    const id = requireSafeId(entry.id, `${path}.id`);
     if (taskIds.has(id)) throw new Error(`${path}.id is duplicated: ${id}`);
     taskIds.add(id);
     const referenced = parseStringArray(entry.repositoryIds, `${path}.repositoryIds`);
