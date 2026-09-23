@@ -1,23 +1,23 @@
-# Proposed real-agent, cross-repository pilot
+# Exploratory real-agent, cross-repository pilot
 
-Status: **candidate protocol, not preregistered and not run**. This document records a connected public repository pair and the remaining gates. It is not a benchmark result.
+Status: **protocol in preparation, no paired task outcome yet**. The task and independent verifier are frozen in private scratch, but a default-agent versus default-plus-OCBI run has not completed. This is not evidence of state-of-the-art performance.
 
-## Candidate repositories
+## Candidate repositories and task
 
-- Provider: `Helweg/open-codebase-index`, local commit `c786280772aedfb58af875c290cd73cc87fb0c8e` (package version 0.31.1). This checkout is ahead of its public remote; publish the exact source revision before a reproducible external run.
-- Consumer: `Helweg/github-reviewer`, commit `6a9604e63509a03efa62b38a0135a5bf5d8633f6`. Its `src/pr-impact.js` invokes the provider's MCP CLI and its manifest currently pins `open-codebase-index@0.25.0`. Confirm which provider version the task actually uses and whether the proposed change is compatible before preregistration.
+- Provider task repository: `Helweg/open-codebase-index`, pinned at `fb09d8f5c76e75aec11f1940875c5383b99aa3aa` (source package 0.31.1). The experimental retrieval tool is separately pinned to the published **`open-codebase-index@0.32.1` OpenCode plugin**, not this checkout's MCP server.
+- Consumer task repository: `Helweg/github-reviewer`, pinned at `6a9604e63509a03efa62b38a0135a5bf5d8633f6`. Its manifest pins the provider package at 0.25.0. The task's baseline remains pinned while only treatment receives the current plugin.
 
-A possible cross-repository task is to make a specific `pr_impact` unavailable/malformed-result failure contract explicit in the provider and ensure the consumer fails closed under that exact condition. This is **not yet a task statement**: check novelty against existing tests and behavior, write a precise observable failure case, and create an independent verifier that exercises both pinned repositories before exposing it to either arm. Do not reuse any existing golden/holdout task as fresh evidence.
+The frozen exploratory task asks for structured `pr_impact` risk in the provider and bounded risk preservation in `collectPrImpactEvidence` in the consumer, retaining legacy MCP compatibility. An offline independent verifier exercises the provider MCP boundary with a controlled Indexer result and the consumer's public evidence method against a disposable Git fixture. Its pinned baseline fails eight intended checks for LOW/MEDIUM/HIGH and adversarial structured-vs-text conflicts, while legacy text compatibility passes. This verifies the failure mode, not actual graph-risk accuracy. The task and verifier are stored outside the source repositories to avoid leaking grader details to solving agents.
 
-## Gates before running
+## Gates before reporting a result
 
-1. Independently review and freeze at least two genuine cross-repository tasks, each with a deterministic verifier that checks both repositories. Pin full commit IDs, prompts, seed, exclusions and analysis before observing outputs.
-2. Resolve the 0.25.0 versus 0.31.1 compatibility difference. Make the chosen latest source build available only through the treatment tool configuration, not as an accidental change to the consumer baseline.
-3. Verify a disposable agent home truly isolates sessions, MCP registrations and credentials. The existing runner starts each trial with a fresh `HOME` and an allowlisted environment, so normal user authentication does not automatically work. Use an explicitly reviewed credential mechanism equally in both arms. Never embed credentials in argv, manifests or result files.
-4. Audit actual configurations and tool exposure, not just differing argv digests. Match agent, model, prompts, time/token/tool budgets and non-OCBI tools. Verify treatment index readiness outside the measured agent run, and confirm the control cannot reach that index.
-5. Enable protected evidence capture only with explicit authorization for potentially sensitive transcripts and patches. Use a separate protected ledger for raw agent/verifier output, configuration hashes, usage, task-level diffs and grade decisions; inspect for secrets before sharing.
-6. Run a small pilot first and report every result, timeout and exclusion. Compare paired task success but do not make a state-of-the-art or general causal claim from a tiny exploratory sample.
+1. Run the frozen task in two disposable pinned clones using the same **default OpenCode agent**, updated OpenCode Go DeepSeek V4.1 Flash model, prompt and budgets. The sole treatment difference must be the installed OCBI 0.32.1 native OpenCode plugin and its prebuilt index. Do not use an MCP-only integration for this comparison.
+2. Audit the resolved agents, plugins, permissions and tools in fresh isolated homes. The ambient Orca `OPENCODE_CONFIG_DIR` loads Oh My OpenAgent, so inherited configuration is not a valid control. Require an empty/default control and a treatment whose only additional plugin is OCBI before proceeding.
+3. Use the same explicitly selected working OpenCode Go credential profile in both isolated arms without copying or logging its contents. A separate default-agent response-only smoke succeeded, but the original default auth profile returned HTTP 401. Do not embed credentials in argv, manifests or artifacts.
+4. Confirm a native plugin tool call and index readiness outside the measured agent task. The published 0.32.1 CLI built a compatible OpenCode-hosted index with 7,235 chunks in disposable trial storage; importing its plugin and resolving plugin config alone does not prove tool invocation.
+5. Capture protected transcripts and patches with explicit opt-in. Inspect for sensitive data before sharing. Grade trial clones independently, record all errors/timeouts/exclusions and review code beyond the controlled-Indexer verifier.
+6. Report the single paired result as exploratory. A one-task sign test cannot establish statistical superiority, multi-repository generality or state-of-the-art status.
 
 ## Observed feasibility so far
 
-`jcode run --json --provider openai --model gpt-6-luna --tool-profile none` returned `READY` and token usage under the normal user home. A read-only `jcode auth status --json` with a fresh private `HOME`, `JCODE_HOME`, XDG config home and empty inherited environment reported no configured providers. This confirms the public agent interface works here but the isolated runner cannot authenticate using the existing login. No credentials were copied and no real paired trial has run. The status probe emitted an anonymous-telemetry notice, so a telemetry side effect cannot be excluded.
+OpenCode was updated to 1.18.32. The primary model's isolated default-agent response-only smoke succeeded through an existing OpenCode Go profile. Homebrew Pi was updated to its latest formula version, 0.86.1, as an unused fallback. The published OCBI plugin version 0.32.1 imported successfully and its CLI produced a ready index over the disposable pinned provider clone and consumer knowledge base. No paired coding task has run. An initial control configuration unexpectedly inherited Oh My OpenAgent from the machine's ambient Orca configuration, so isolation must be proven before any comparison. Config discovery of the treatment plugin does not establish that its tools are callable.
