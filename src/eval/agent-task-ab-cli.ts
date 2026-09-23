@@ -16,6 +16,7 @@ import {
   type AgentTaskTrialResult,
 } from "./agent-task-ab.js";
 import { auditAgentTaskArms, type AgentTaskArmAuditResult } from "./agent-task-arm-audit.js";
+import { TOOL_NAME } from "../tools/tool-names.js";
 
 interface CliOptions {
   manifest: string;
@@ -50,6 +51,57 @@ interface CapturedText {
 
 interface AuditProcessResult extends AgentTaskProcessResult {
   auditOutput?: { stdout: CapturedText; stderr: CapturedText };
+  toolUseCounts?: Record<string, number>;
+}
+
+const TOOL_EVENT_LINE_LIMIT = 65_536;
+const AUDITED_TOOLS: ReadonlySet<string> = new Set(Object.values(TOOL_NAME));
+
+function toolEventCounter(): { consume(chunk: Buffer): void; finish(): void; counts: Record<string, number> } {
+  const counts: Record<string, number> = {};
+  let pending = Buffer.alloc(0);
+  let skipping = false;
+  const record = (line: Buffer): void => {
+    try {
+      const event: unknown = JSON.parse(line.toString("utf8"));
+      if (typeof event !== "object" || event === null || Array.isArray(event)) return;
+      const fields = event as Record<string, unknown>;
+      if (fields.type !== "tool_use") return;
+      const part = fields.part;
+      const tool = typeof part === "object" && part !== null && !Array.isArray(part)
+        ? (part as Record<string, unknown>).tool : fields.tool;
+      const name = typeof tool === "string" && AUDITED_TOOLS.has(tool) ? tool : "other";
+      counts[name] = Math.min(Number.MAX_SAFE_INTEGER, (counts[name] ?? 0) + 1);
+    } catch {
+      // Arbitrary stdout and malformed JSON are not tool events.
+    }
+  };
+  return {
+    counts,
+    finish(): void {
+      if (!skipping && pending.length) record(pending);
+      pending = Buffer.alloc(0);
+    },
+    consume(chunk: Buffer): void {
+      let start = 0;
+      for (let index = 0; index < chunk.length; index += 1) {
+        if (chunk[index] !== 10) continue;
+        if (!skipping && pending.length + index - start <= TOOL_EVENT_LINE_LIMIT) {
+          record(Buffer.concat([pending, chunk.subarray(start, index)]));
+        }
+        pending = Buffer.alloc(0);
+        skipping = false;
+        start = index + 1;
+      }
+      if (start < chunk.length && !skipping) {
+        const remaining = chunk.subarray(start);
+        if (pending.length + remaining.length > TOOL_EVENT_LINE_LIMIT) {
+          pending = Buffer.alloc(0);
+          skipping = true;
+        } else pending = Buffer.concat([pending, remaining]);
+      }
+    },
+  };
 }
 
 interface RepositoryAuditEvidence {
@@ -269,7 +321,9 @@ function execute(request: AgentTaskExecutionRequest): Promise<AuditProcessResult
     let stdoutBytes = 0;
     let stderrBytes = 0;
     let timedOut = false;
+    const toolEvents = toolEventCounter();
     child.stdout?.on("data", (chunk: Buffer) => {
+      toolEvents.consume(chunk);
       stdoutBytes += chunk.length;
       stdout = boundedAppend(stdout, chunk, request.maxTranscriptBytes);
     });
@@ -291,6 +345,7 @@ function execute(request: AgentTaskExecutionRequest): Promise<AuditProcessResult
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      toolEvents.finish();
       resolve({
         exitCode: code ?? 1,
         durationMs: Date.now() - started,
@@ -300,6 +355,7 @@ function execute(request: AgentTaskExecutionRequest): Promise<AuditProcessResult
           stdout: { text: stdout.toString("utf8"), truncated: stdoutBytes > request.maxTranscriptBytes },
           stderr: { text: stderr.toString("utf8"), truncated: stderrBytes > request.maxTranscriptBytes },
         },
+        toolUseCounts: toolEvents.counts,
         ...(timedOut ? { timedOut: true } : {}),
       });
     });
@@ -319,6 +375,7 @@ function metadataTrial(trial: AgentTaskTrialResult): object {
     durationMs: result.durationMs,
     ...(result.timedOut ? { timedOut: true } : {}),
     ...(result.usage ? { usage: result.usage } : {}),
+    ...((result as AuditProcessResult).toolUseCounts ? { toolUseCounts: (result as AuditProcessResult).toolUseCounts } : {}),
   });
   return {
     datasetFingerprint: trial.datasetFingerprint,

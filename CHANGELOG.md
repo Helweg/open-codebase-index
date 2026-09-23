@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Streaming A/B tool-use summary**: Agent trial metadata now counts OpenCode-style JSON tool-use events beyond bounded transcript capture, retaining only fixed allowlisted OCBI names and an `other` bucket. Arbitrary stdout remains supported with empty counts.
+
 - **Optional A/B trial preparation**: `ocbi-agent-task-ab --prepare-argv FILE` runs a trusted direct-argv command after pinned clones and before timed agent execution, with isolated trial environment, bounded execution, discarded output, and fail-closed cleanup.
 
 - **Static agent-arm audit**: `ocbi-agent-task-ab --arm-audit FILE` optionally validates explicitly supplied control/treatment descriptors before creating artifacts or executing verifiers. Results store only comparison status, mismatch categories and a structural shape/outcome digest. The check is self-reported and does not prove actual runtime configuration or tool parity.

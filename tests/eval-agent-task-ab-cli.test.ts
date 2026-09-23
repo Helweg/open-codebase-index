@@ -125,9 +125,10 @@ describe("agent-task A/B executable", () => {
     expect(fs.existsSync(fixture.marker)).toBe(false);
     const resultPath = path.join(artifacts, "result.json");
     const raw = fs.readFileSync(resultPath, "utf8");
-    const parsed = JSON.parse(raw) as { armConfigDigests: Record<string, string>; trials: Array<{ success: boolean }>; comparison: { taskCount: number } };
+    const parsed = JSON.parse(raw) as { armConfigDigests: Record<string, string>; trials: Array<{ success: boolean; agent: { toolUseCounts: Record<string, number> } }>; comparison: { taskCount: number } };
     expect(parsed.trials).toHaveLength(2);
     expect(parsed.trials.every((trial) => trial.success)).toBe(true);
+    expect(parsed.trials.every((trial) => Object.keys(trial.agent.toolUseCounts).length === 0)).toBe(true);
     expect(parsed.comparison.taskCount).toBe(1);
     expect(parsed.armConfigDigests["no-ocbi"]).toMatch(/^[0-9a-f]{64}$/);
     expect(parsed.armConfigDigests.ocbi).not.toBe(parsed.armConfigDigests["no-ocbi"]);
@@ -136,6 +137,30 @@ describe("agent-task A/B executable", () => {
     expect(fs.statSync(artifacts).mode & 0o777).toBe(0o700);
     expect(fs.statSync(resultPath).mode & 0o777).toBe(0o600);
     expect(fs.existsSync(path.join(artifacts, "workspaces", "task-one--no-ocbi"))).toBe(false);
+  });
+
+  it("counts OpenCode tool events beyond transcript truncation without retaining names or values", () => {
+    const fixture = writeFixture();
+    const agent = path.join(tempDir, "events.mjs");
+    fs.writeFileSync(agent, `
+      process.stdout.write("PRIVATE_PREFIX:" + "x".repeat(10000) + "\\n");
+      const emit = (tool) => process.stdout.write(JSON.stringify({type:"tool_use",part:{tool,state:{input:"PRIVATE_SECRET"}}}) + "\\n");
+      emit("codebase_context"); emit("codebase_context"); emit("codebase_edit_context"); emit("PRIVATE_TOOL_NAME");
+      process.stdout.write(JSON.stringify({type:"text",part:{tool:"codebase_search"}}) + "\\n");
+      process.stdout.write("{malformed\\n");
+      process.stdout.write(JSON.stringify({type:"tool_use",part:{tool:"index_status"}}));
+    `);
+    fs.writeFileSync(fixture.noOcbiArgv, JSON.stringify([process.execPath, agent]));
+    fs.writeFileSync(fixture.ocbiArgv, JSON.stringify([process.execPath, agent, "treatment"]));
+    const artifacts = path.join(tempDir, "events-out");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers"]);
+    expect(result.status, result.stderr).toBe(0);
+    const raw = fs.readFileSync(path.join(artifacts, "result.json"), "utf8");
+    const parsed = JSON.parse(raw) as { trials: Array<{ agent: { toolUseCounts: Record<string, number> } }> };
+    for (const trial of parsed.trials) {
+      expect(trial.agent.toolUseCounts).toEqual({ codebase_context: 2, codebase_edit_context: 1, other: 1, index_status: 1 });
+    }
+    expect(raw).not.toMatch(/PRIVATE_SECRET|PRIVATE_TOOL_NAME|PRIVATE_PREFIX/);
   });
 
   it("runs optional preparation after clones with isolated trial metadata and does not persist output", () => {

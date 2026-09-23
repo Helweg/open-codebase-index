@@ -118,6 +118,15 @@ argv arrays or process environment into either `result.json` or evidence files.
 If requested repository evidence cannot be collected, the run fails instead of
 writing a result that implies complete evidence capture.
 
+Agent trial metadata includes `toolUseCounts`, a count of OpenCode-style JSON
+stdout events with `type: "tool_use"` and a tool name in `part.tool` (or `tool`).
+Recognized OCBI tool names are recorded verbatim from a fixed allowlist; all
+other tool names are grouped as `other`. Non-JSON output yields `{}`. Counts are
+collected while streaming even after transcript truncation, with at most 64 KiB
+held per event line; oversized or malformed lines are ignored. No event input,
+output, arbitrary tool name, or extra transcript is saved in result metadata.
+These counts describe emitted events, not independently verified invocations.
+
 `--allow-verifiers` is mandatory because verifier entries are trusted code.
 Preparation, agent, and verifier processes are time-bounded and captured output
 is byte-bounded.
