@@ -1,0 +1,28 @@
+# Exploratory fresh codebase-understanding cohort, 2026-09-23
+
+This is a **two-task exploratory evaluation**, not evidence that OCBI is state of the art. The tasks ask for source-cited explanations of password-protected share downloads in pingvin-share and coverage merging in kcov. The published `open-codebase-index@0.32.1` is the treatment; the control is default OpenCode without OCBI. Both use OpenCode 1.18.32's default `build` agent and OpenCode Go `deepseek-v4.1-flash`.
+
+## Preregistration and isolation
+
+The two prompts and independently reviewed private 10-point grading rubric were frozen before solver exposure (rubric SHA-256 `7e00bbf565b376982fab269f30864b0fb50b6ae53ea0a76150c45e146e55f87a`; public task manifest SHA-256 `31aa5fdc7ba20792d8c2b7c09a4df73e8093c838a816c3549f018904b6257e97`). Seed `20260923-fresh-v2` balanced arm order. Repositories were pinned at pingvin-share `955af04e32fb897563a9c563b29a62f549ba68e7` and kcov `f2425c2026d5a0ad0d2a2a79c14d0d655e957866`. Each trial cloned both into its own private workspace. Preparation built the same local Ollama `nomic-embed-text` indexes in both arms, outside measured agent time. Only the treatment registered the published OCBI OpenCode plugin.
+
+OpenCode's ancestor config discovery can load unrelated plugins beneath the user's home, so trial workspaces were under private `/Users/Shared` directories, with fresh HOME/XDG/config and only the selected OpenCode Go authentication profile. The same authenticated, loopback-only OpenCode server process enumerated its callable tools before running the agent. Control preflight showed 14 tool IDs and 13 model tools, with no OCBI. Treatment showed 34 and 33, including OCBI search/status. Both arms also completed matched real response-only model sessions before task exposure.
+
+The first fresh-cohort attempt was interrupted at the outer execution tool's 600-second limit while the second task was preparing, before any paired result could be serialized. Its orphaned preparation process was terminated. The unchanged frozen inputs were relaunched detached in a new private artifact directory. This exclusion is an execution-envelope failure, not an outcome or an OCBI failure.
+
+## Observed paired run
+
+All four agent and answer-presence verifier processes exited successfully. **Answer presence is not answer quality**: the executable runner's 2/2 success per arm and exact sign-test p=1 merely reflect the minimal presence verifier. Two independent graders then scored anonymized answers against the frozen source-citation rubric before the arm mapping was unsealed. They agreed on **10/10 for each of the four answers**, with no cap-triggering errors, so the separately graded outcome is also 2/2 in each arm (zero discordant pairs). This is a ceiling result on two tasks, not a demonstration of benefit.
+
+| Task | Control grade (two blind graders) | OCBI grade (two blind graders) | Control agent duration | OCBI agent duration | Emitted OCBI tool-use events |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| kcov merge-flow explanation | 10/10, 10/10 | 10/10, 10/10 | 88.0 s | 88.3 s | 0 |
+| pingvin-share download-auth explanation | 10/10, 10/10 | 10/10, 10/10 | 42.7 s | 70.6 s | 0 |
+
+The frozen rubric awarded 2+2+1.5+1.5+3 points for five criteria per task. Both graders verified source citations and causal traces and found no material invention or contradiction. One noted a peripheral reference to a normal-path output handler in a kcov answer, but the answer correctly identified merge-path registration and received no penalty. Protected raw evidence and the private answer mapping remain local, not in this repository.
+
+Both treatment sessions had OCBI tools exposed by the **same process** that later ran the agent, but neither emitted an OCBI tool-use event. Emitted built-in/other event counts were 21/20 for kcov (control/treatment) and 18/23 for pingvin-share. No transcript was truncated. This is a valid *availability and nonuse* observation, not evidence of tool-mediated improvement. The two observed duration differences are not speed estimates.
+
+## Outcome boundary
+
+Both tasks are read-only explanations with one target repository each, while both repositories were available for context; this does not test a truly cross-repository question. The perfect grades in both arms expose a ceiling effect: these tasks cannot distinguish an OCBI benefit even if one exists. The visible benchmark corpus showed no overlap, but private holdout novelty cannot be proven. Two tasks, one model and no treatment tool invocation cannot establish a general or causal SOTA advantage. Future work should investigate default-agent tool selection without changing the treatment prompt, then expand to harder, diverse, genuinely multi-repository tasks and independently graded outcomes.
