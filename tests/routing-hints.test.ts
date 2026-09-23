@@ -24,6 +24,7 @@ describe("routing hints", () => {
     it.each([
       "Where is authentication implemented?",
       "How does the retry queue work?",
+      "Trace the authorization path for a recipient of a password-protected share. Do not edit files or run services.",
       "Fix the bug where expired sessions remain active",
       "Add support for cancelling in-flight indexing",
       "Refactor the cache invalidation to avoid duplicate work",
@@ -50,10 +51,18 @@ describe("routing hints", () => {
     it.each([
       ["Find all references to `validateToken`", "exact_identifier"],
       ["Run the tests and fix the failing build", "other"],
+      ["Prepare the PR for release", "other"],
+      ["trace the courier shipment", "other"],
       ["Update CHANGELOG.md for the release", "other"],
       ["Read src/index.ts", "direct_path"],
     ])("classifies %s as %s", (query, intent) => {
       expect(assessRoutingIntent(query).intent).toBe(intent);
+    });
+
+    it("does not mistake protected code paths for PR chores", () => {
+      const assessment = assessRoutingIntent("In the pinned pingvin-share checkout, trace the authorization path for a recipient who knows the password of an existing password-protected, unexpired share and wants to download an individual file. Explain the token endpoint and its checks, how the token reaches later requests, which guards protect share detail and file download endpoints, and how the file guard behaves differently when the cookie is absent versus present. Identify where expiration, maximum views, and the view increment are enforced. Cite relevant source paths and line ranges. Do not edit files, run services, or assume behavior not supported by this revision.");
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
     });
 
     it("does not alternate exact-identifier detection for repeated backticked queries", () => {
@@ -197,6 +206,12 @@ describe("routing hints", () => {
   });
 
   describe("RoutingHintController", () => {
+    it("queues a context hint for a protected-share authorization trace", async () => {
+      const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
+      controller.observeUserMessage("share-trace", [{ type: "text", text: "Trace the authorization path for a password-protected share. Do not edit files." }]);
+      expect((await controller.getSystemHints("share-trace"))[0]).toContain("prefer `codebase_context`");
+    });
+
     it("stores conceptual discovery state and emits one hint", async () => {
       const controller = new RoutingHintController(async () => ({
         indexed: true,

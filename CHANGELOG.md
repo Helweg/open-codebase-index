@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Repository trace routing**: Treat a standalone `PR` as a non-discovery cue without mistaking words such as `protected` for PR chores, and recognize requests to trace a code path as conceptual discovery. This restores a `codebase_context` hint for source-tracing questions previously suppressed by substring matching.
+
 - **A/B questions in codebase context**: Treat uppercase slash-separated letters such as `A/B` as terminology rather than inferring the trailing letter as an exact symbol. Natural questions about A/B evaluation now retain conceptual retrieval while explicit single-letter symbol lookup remains available.
 
 ### Added
