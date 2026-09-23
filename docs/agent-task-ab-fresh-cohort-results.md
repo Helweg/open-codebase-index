@@ -21,7 +21,7 @@ All four agent and answer-presence verifier processes exited successfully. **Ans
 
 The frozen rubric awarded 2+2+1.5+1.5+3 points for five criteria per task. Both graders verified source citations and causal traces and found no material invention or contradiction. One noted a peripheral reference to a normal-path output handler in a kcov answer, but the answer correctly identified merge-path registration and received no penalty. Protected raw evidence and the private answer mapping remain local, not in this repository.
 
-Both treatment sessions had OCBI tools exposed by the **same process** that later ran the agent, but neither emitted an OCBI tool-use event. Emitted built-in/other event counts were 21/20 for kcov (control/treatment) and 18/23 for pingvin-share. No transcript was truncated. This is a valid *availability and nonuse* observation, not evidence of tool-mediated improvement. The two observed duration differences are not speed estimates.
+Both treatment sessions had OCBI tools exposed by the **same process** that later ran the agent, but neither emitted an OCBI tool-use event. The emitted calls were instead built-in `read`, `grep`, `glob`, and `bash`: kcov control 15/1/1/4 and treatment 14/4/0/2; pingvin-share control 12/3/1/2 and treatment 13/0/2/8, respectively. No transcript was truncated. This is a valid *availability and nonuse* observation, not evidence of tool-mediated improvement. The two observed duration differences are not speed estimates.
 
 ## Outcome boundary
 
