@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **A/B questions in codebase context**: Treat uppercase slash-separated letters such as `A/B` as terminology rather than inferring the trailing letter as an exact symbol. Natural questions about A/B evaluation now retain conceptual retrieval while explicit single-letter symbol lookup remains available.
+
 ### Added
 
 - Add the opt-in `ocbi-agent-task-ab` evaluation runner for paired trials from reviewed manifests and pinned local Git repositories, with isolated workspaces, direct argv execution, bounded process evidence, protected metadata-only artifacts, and exact paired comparison.

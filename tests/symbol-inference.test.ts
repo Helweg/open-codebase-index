@@ -3,6 +3,12 @@ import { describe, it, expect } from "vitest";
 import { inferExactSymbolFromQuery } from "../src/tools/symbol-inference.js";
 
 describe("inferExactSymbolFromQuery", () => {
+  it("does not mistake A/B terminology for an exact symbol", () => {
+    expect(inferExactSymbolFromQuery("Where is the executable multi-repository agent task A/B runner implemented and how are repositories pinned?"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("Where is B defined?"))
+      .toBe("B");
+  });
   it("infers a backticked identifier", () => {
     expect(inferExactSymbolFromQuery("Where is `getStatus` defined?"))
       .toBe("getStatus");
