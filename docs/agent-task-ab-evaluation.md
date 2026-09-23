@@ -26,6 +26,11 @@ server, while the control argv names the matching configuration without it.
 The runner uses a fresh `HOME` for every trial, so ambient user agent/plugin
 configuration is not loaded.
 
+An agent that relies on credentials in the normal home directory will not
+authenticate in this environment. Configure credentials through a separately
+reviewed, non-serialized mechanism for both arms before attempting a real run;
+do not put secrets in argv JSON or the task manifest.
+
 ```sh
 ocbi-agent-task-ab \
   --manifest ./reviewed-tasks.json \
@@ -102,12 +107,12 @@ Example shape, with placeholders rather than invented benchmark tasks:
   "repositories": [
     {
       "id": "repo-a",
-      "url": "REVIEWED_LOCAL_OR_REMOTE_URL",
+      "url": "REVIEWED_LOCAL_REPOSITORY_PATH",
       "revision": "FULL_40_CHARACTER_COMMIT_HASH"
     },
     {
       "id": "repo-b",
-      "url": "REVIEWED_LOCAL_OR_REMOTE_URL",
+      "url": "REVIEWED_LOCAL_REPOSITORY_PATH",
       "revision": "FULL_40_CHARACTER_COMMIT_HASH"
     }
   ],
@@ -148,9 +153,12 @@ Before observing either arm:
    by at most one task when the task count is odd.
 8. Grade with the preregistered verifier. Where human judgment is necessary,
    blind graders to the arm and use a written rubric plus disagreement process.
-9. Retain enough evidence for audit: verifier output, exit status, duration,
-   token/tool counts when the agent exposes them, and reviewed patches. Report
-   missing metadata as missing rather than estimating it.
+9. Retain enough evidence for audit outside the runner's metadata-only report:
+   protected agent/verifier transcripts, exit status, duration, token/tool counts
+   when the agent exposes them, and reviewed patches. The runner deliberately
+   does not preserve transcripts or patches. Without a separate access-controlled
+   evidence ledger, results are exploratory and cannot support publication.
+   Report missing metadata as missing rather than estimating it.
 10. Report all preregistered tasks, failures, exclusions, and protocol changes.
 
 The comparator rejects missing/duplicate arms, dataset fingerprint mismatches,
