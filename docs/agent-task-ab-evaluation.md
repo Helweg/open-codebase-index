@@ -55,6 +55,34 @@ SHA-256 digests of the two argv arrays are retained for auditability without
 serializing their potentially sensitive contents. Record exact agent, model,
 and OCBI versions in the external preregistration/run ledger.
 
+For an explicitly reviewed setup step, optionally pass
+`--prepare-argv ./trusted-prepare-argv.json`. For example, that file could contain:
+
+```json
+["node", "/path/to/trusted-prepare.mjs"]
+```
+
+This must be a nonempty JSON string array whose first entry is the executable,
+not a shell command. The runner spawns it directly without a shell exactly once
+for each control and treatment trial, after validating all pinned clones and
+immediately before the timed agent execution. It runs in that trial's isolated
+workspace with a minimal `PATH`, fresh workspace `HOME` and `TMPDIR`, and
+`AGENT_EVAL_TASK_ID`, `AGENT_EVAL_VARIANT`, and
+`AGENT_EVAL_REPOSITORIES_JSON` in its environment. The trusted command can use
+the declared variant to prebuild a treatment index outside agent timing while
+leaving the control without OCBI. Do not leak one arm's files or results to the
+other. Preparation has a 10-minute default timeout, configurable with
+`--prepare-timeout-ms N`. Stdout and stderr are drained and discarded without
+retaining their contents. Neither its output nor its
+environment is retained in result metadata or opt-in audit evidence. Spawn
+failure, nonzero exit, or timeout fails the run closed and cleans up the
+workspace rather than running the agent. Without this flag, no preparation
+command runs and the default behavior is unchanged. This is a **trusted
+executable-code boundary**: review
+the argv file and script before running, do not accept untrusted task-provided
+commands, and do not put credentials in the argv JSON. This mechanism does not
+prove runtime arm parity.
+
 Optionally pass `--arm-audit ./arm-audit.json` to run a static parity check
 before the output directory is created or any verifier is started. The JSON
 file must contain exactly `control`, `treatment`, and optional
@@ -91,7 +119,8 @@ If requested repository evidence cannot be collected, the run fails instead of
 writing a result that implies complete evidence capture.
 
 `--allow-verifiers` is mandatory because verifier entries are trusted code.
-Agent/verifier processes are time-bounded and captured output is byte-bounded.
+Preparation, agent, and verifier processes are time-bounded and captured output
+is byte-bounded.
 `maxTokens` and `maxToolCalls` are declared controls passed to the agent, not
 enforced by the runner unless the chosen agent honors them. Operators must
 audit both argv configurations before the run and verify that OCBI availability
@@ -204,10 +233,10 @@ with agent/verifier status.
 
 ## Security and evidence handling
 
-A dataset verifier is trusted executable code. Do not execute an unreviewed
-third-party manifest. The CLI requires explicit opt-in, invokes commands without
-a shell, verifies pinned local checkouts, bounds output/time, and isolates each
-trial.
+A dataset verifier and any optional preparation command are trusted executable
+code. Do not execute an unreviewed third-party manifest or preparation argv.
+The CLI requires explicit verifier opt-in, invokes commands without a shell,
+verifies pinned local checkouts, bounds output/time, and isolates each trial.
 
 Transcripts and patches can contain credentials or private source. The CLI omits
 them by default. Its explicit audit-evidence mode caps captured fields and uses

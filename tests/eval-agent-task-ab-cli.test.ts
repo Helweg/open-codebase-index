@@ -138,6 +138,54 @@ describe("agent-task A/B executable", () => {
     expect(fs.existsSync(path.join(artifacts, "workspaces", "task-one--no-ocbi"))).toBe(false);
   });
 
+  it("runs optional preparation after clones with isolated trial metadata and does not persist output", () => {
+    const fixture = writeFixture();
+    const prepare = path.join(tempDir, "prepare.mjs");
+    const log = path.join(tempDir, "prepare-log.jsonl");
+    fs.writeFileSync(prepare, `import * as fs from "node:fs"; const repos=JSON.parse(process.env.AGENT_EVAL_REPOSITORIES_JSON); if (!process.env.HOME.startsWith(process.cwd()) || !process.env.TMPDIR.startsWith(process.cwd()) || Object.keys(repos).length!==2) process.exit(9); fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({task:process.env.AGENT_EVAL_TASK_ID,variant:process.env.AGENT_EVAL_VARIANT,repo:Object.values(repos).every(p=>fs.existsSync(p+"/.git"))})+"\\n"); console.log("PRIVATE_PREP_OUTPUT");`);
+    const argvFile = path.join(tempDir, "prepare-argv.json");
+    fs.writeFileSync(argvFile, JSON.stringify([process.execPath, prepare]));
+    const artifacts = path.join(tempDir, "prepare-artifacts");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--prepare-argv", argvFile]);
+    expect(result.status, result.stderr).toBe(0);
+    const lines = fs.readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { task: string; variant: string; repo: boolean });
+    expect(lines).toHaveLength(2);
+    expect(lines.every((line) => line.task === "task-one" && line.repo)).toBe(true);
+    expect(new Set(lines.map((line) => line.variant))).toEqual(new Set(["no-ocbi", "ocbi"]));
+    const raw = fs.readFileSync(path.join(artifacts, "result.json"), "utf8");
+    expect(raw).not.toContain("PRIVATE_PREP_OUTPUT");
+    expect(raw).not.toContain("AGENT_EVAL_REPOSITORIES_JSON");
+  });
+
+  it("fails closed and cleans the workspace when preparation exits nonzero", () => {
+    const fixture = writeFixture();
+    const prepare = path.join(tempDir, "prepare-fail.mjs");
+    fs.writeFileSync(prepare, `console.log("PRIVATE_PREP_OUTPUT"); process.exit(17);`);
+    const argvFile = path.join(tempDir, "prepare-fail-argv.json");
+    fs.writeFileSync(argvFile, JSON.stringify([process.execPath, prepare]));
+    const artifacts = path.join(tempDir, "prepare-failure-artifacts");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--prepare-argv", argvFile]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Preparation command exited with status 17");
+    expect(fs.existsSync(path.join(artifacts, "workspaces", "task-one--no-ocbi"))).toBe(false);
+    expect(fs.existsSync(path.join(artifacts, "result.json"))).toBe(false);
+    expect(result.stdout + result.stderr).not.toContain("PRIVATE_PREP_OUTPUT");
+  });
+
+  it("fails closed and cleans the workspace when preparation times out", () => {
+    const fixture = writeFixture();
+    const prepare = path.join(tempDir, "prepare-timeout.mjs");
+    fs.writeFileSync(prepare, `await new Promise(r => setTimeout(r, 3000));`);
+    const argvFile = path.join(tempDir, "prepare-timeout-argv.json");
+    fs.writeFileSync(argvFile, JSON.stringify([process.execPath, prepare]));
+    const artifacts = path.join(tempDir, "prepare-timeout-artifacts");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--prepare-argv", argvFile, "--prepare-timeout-ms", "1000"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Preparation command timed out");
+    expect(fs.existsSync(path.join(artifacts, "workspaces", "task-one--no-ocbi"))).toBe(false);
+    expect(fs.existsSync(path.join(artifacts, "result.json"))).toBe(false);
+  });
+
   it("accepts an explicit matching arm-audit file and persists only its safe summary", () => {
     const fixture = writeFixture();
     const auditFile = writeArmAudit();

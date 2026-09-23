@@ -32,12 +32,16 @@ interface CliOptions {
   allowVerifiers: boolean;
   captureAuditEvidence: boolean;
   armAudit?: string;
+  prepareArgv?: [string, ...string[]];
+  prepareTimeoutMs: number;
 }
+
+const PREPARATION_TIMEOUT_MS = 600_000;
 
 const USAGE = `Usage: ocbi-agent-task-ab --manifest FILE --no-ocbi-argv FILE --ocbi-argv FILE \\
   --artifacts NEW_DIR --seed SEED --agent NAME --model MODEL --allow-verifiers \\
   [--capture-audit-evidence] [--arm-audit FILE] [--max-tokens N] [--max-tool-calls N] \\
-  [--max-duration-ms N] [--max-output-bytes N]`;
+  [--max-duration-ms N] [--max-output-bytes N] [--prepare-argv FILE] [--prepare-timeout-ms N]`;
 
 interface CapturedText {
   text: string;
@@ -68,7 +72,7 @@ function parseOptions(argv: string[]): CliOptions {
   const values = new Map<string, string>();
   const valuedOptions = new Set([
     "--manifest", "--no-ocbi-argv", "--ocbi-argv", "--artifacts", "--seed", "--agent", "--model",
-    "--max-tokens", "--max-tool-calls", "--max-duration-ms", "--max-output-bytes", "--arm-audit",
+    "--max-tokens", "--max-tool-calls", "--max-duration-ms", "--max-output-bytes", "--arm-audit", "--prepare-argv", "--prepare-timeout-ms",
   ]);
   let allowVerifiers = false;
   let captureAuditEvidence = false;
@@ -106,7 +110,9 @@ function parseOptions(argv: string[]): CliOptions {
     maxOutputBytes: parsePositive(values.get("--max-output-bytes"), "--max-output-bytes", 65_536),
     allowVerifiers,
     captureAuditEvidence,
+    prepareTimeoutMs: parsePositive(values.get("--prepare-timeout-ms"), "--prepare-timeout-ms", PREPARATION_TIMEOUT_MS),
     ...(values.has("--arm-audit") ? { armAudit: values.get("--arm-audit")! } : {}),
+    ...(values.has("--prepare-argv") ? { prepareArgv: readArgv(values.get("--prepare-argv")!) } : {}),
   };
 }
 
@@ -182,6 +188,45 @@ function boundedAppend(current: Buffer, chunk: Buffer, limit: number): Buffer {
   return Buffer.concat([current, chunk.subarray(0, limit - current.length)]);
 }
 
+function runPreparation(argv: [string, ...string[]], cwd: string, env: NodeJS.ProcessEnv, timeoutMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(argv[0], argv.slice(1), { cwd, env, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"] });
+    child.stdout?.on("data", () => {});
+    child.stderr?.on("data", () => {});
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      if (process.platform !== "win32" && child.pid) {
+        try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
+      } else child.kill("SIGKILL");
+    }, timeoutMs);
+    child.on("error", (_error) => { clearTimeout(timer); reject(new Error("Preparation command failed to start")); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) reject(new Error(`Preparation command timed out after ${timeoutMs}ms`));
+      else if (code !== 0) reject(new Error(`Preparation command exited with status ${code ?? "unknown"}`));
+      else resolve();
+    });
+  });
+}
+
+function isolatedEnv(cwd: string, repositories?: Record<string, string>, taskId?: string, variantId?: string): NodeJS.ProcessEnv {
+  const home = path.join(cwd, ".agent-home");
+  const tmp = path.join(cwd, ".tmp");
+  fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(tmp, { recursive: true, mode: 0o700 });
+  return {
+    ...(process.env.PATH ? { PATH: process.env.PATH } : {}),
+    HOME: home,
+    TMPDIR: tmp,
+    ...(repositories ? {
+      AGENT_EVAL_REPOSITORIES_JSON: JSON.stringify(repositories),
+      AGENT_EVAL_TASK_ID: taskId,
+      AGENT_EVAL_VARIANT: variantId,
+    } : {}),
+  };
+}
+
 function runGitEvidence(args: string[], cwd: string, limit: number): Promise<CapturedText> {
   return new Promise((resolve, reject) => {
     const child = spawn("git", args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
@@ -205,16 +250,7 @@ function runGitEvidence(args: string[], cwd: string, limit: number): Promise<Cap
 function execute(request: AgentTaskExecutionRequest): Promise<AuditProcessResult> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
-    const home = path.join(request.cwd, ".agent-home");
-    fs.mkdirSync(home, { recursive: true, mode: 0o700 });
-    const inheritedPath = process.env.PATH;
-    const env: NodeJS.ProcessEnv = {
-      ...(inheritedPath ? { PATH: inheritedPath } : {}),
-      HOME: home,
-      TMPDIR: path.join(request.cwd, ".tmp"),
-      ...request.env,
-    };
-    fs.mkdirSync(env.TMPDIR!, { recursive: true, mode: 0o700 });
+    const env: NodeJS.ProcessEnv = { ...isolatedEnv(request.cwd), ...request.env };
     let child: ReturnType<typeof spawn>;
     try {
       child = spawn(request.command, request.args, {
@@ -384,6 +420,11 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
             if (head.toLowerCase() !== repository.revision.toLowerCase()) throw new Error(`Repository ${repository.id} did not resolve to pinned revision`);
             if (await runGit(["status", "--porcelain", "--untracked-files=all"], destination)) throw new Error(`Repository ${repository.id} checkout is not clean`);
             repositoryDirectories[repository.id] = destination;
+          }
+          if (options.prepareArgv) {
+            const [taskId, variantId] = trialId.split(":");
+            if (!taskId || !variantId) throw new Error(`Invalid trial identifier: ${trialId}`);
+            await runPreparation(options.prepareArgv, cwd, isolatedEnv(cwd, repositoryDirectories, taskId, variantId), options.prepareTimeoutMs);
           }
           return {
             cwd,

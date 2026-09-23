@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Optional A/B trial preparation**: `ocbi-agent-task-ab --prepare-argv FILE` runs a trusted direct-argv command after pinned clones and before timed agent execution, with isolated trial environment, bounded execution, discarded output, and fail-closed cleanup.
+
 - **Static agent-arm audit**: `ocbi-agent-task-ab --arm-audit FILE` optionally validates explicitly supplied control/treatment descriptors before creating artifacts or executing verifiers. Results store only comparison status, mismatch categories and a structural shape/outcome digest. The check is self-reported and does not prove actual runtime configuration or tool parity.
 
 - **Opt-in A/B audit evidence**: `ocbi-agent-task-ab` can explicitly retain bounded agent/verifier stdout and stderr plus per-repository Git status/diff evidence in `0700`/`0600` storage. Metadata-only output remains the default, argv and environment values are never serialized, and documentation warns that retained evidence may contain secrets because automatic redaction is not provided.
