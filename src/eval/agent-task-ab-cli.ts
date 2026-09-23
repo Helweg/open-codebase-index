@@ -29,11 +29,27 @@ interface CliOptions {
   maxDurationMs: number;
   maxOutputBytes: number;
   allowVerifiers: boolean;
+  captureAuditEvidence: boolean;
 }
 
 const USAGE = `Usage: ocbi-agent-task-ab --manifest FILE --no-ocbi-argv FILE --ocbi-argv FILE \\
   --artifacts NEW_DIR --seed SEED --agent NAME --model MODEL --allow-verifiers \\
-  [--max-tokens N] [--max-tool-calls N] [--max-duration-ms N] [--max-output-bytes N]`;
+  [--capture-audit-evidence] [--max-tokens N] [--max-tool-calls N] \\
+  [--max-duration-ms N] [--max-output-bytes N]`;
+
+interface CapturedText {
+  text: string;
+  truncated: boolean;
+}
+
+interface AuditProcessResult extends AgentTaskProcessResult {
+  auditOutput?: { stdout: CapturedText; stderr: CapturedText };
+}
+
+interface RepositoryAuditEvidence {
+  status: CapturedText;
+  diff: CapturedText;
+}
 
 function fail(message: string): never {
   throw new Error(`${message}\n${USAGE}`);
@@ -53,10 +69,15 @@ function parseOptions(argv: string[]): CliOptions {
     "--max-tokens", "--max-tool-calls", "--max-duration-ms", "--max-output-bytes",
   ]);
   let allowVerifiers = false;
+  let captureAuditEvidence = false;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index]!;
     if (flag === "--allow-verifiers") {
       allowVerifiers = true;
+      continue;
+    }
+    if (flag === "--capture-audit-evidence") {
+      captureAuditEvidence = true;
       continue;
     }
     if (!flag.startsWith("--")) fail(`Unexpected argument: ${flag}`);
@@ -82,6 +103,7 @@ function parseOptions(argv: string[]): CliOptions {
     maxDurationMs: parsePositive(values.get("--max-duration-ms"), "--max-duration-ms", 600_000),
     maxOutputBytes: parsePositive(values.get("--max-output-bytes"), "--max-output-bytes", 65_536),
     allowVerifiers,
+    captureAuditEvidence,
   };
 }
 
@@ -132,7 +154,27 @@ function boundedAppend(current: Buffer, chunk: Buffer, limit: number): Buffer {
   return Buffer.concat([current, chunk.subarray(0, limit - current.length)]);
 }
 
-function execute(request: AgentTaskExecutionRequest): Promise<AgentTaskProcessResult> {
+function runGitEvidence(args: string[], cwd: string, limit: number): Promise<CapturedText> {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", args, { cwd, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let stdoutBytes = 0;
+    const timer = setTimeout(() => child.kill("SIGKILL"), 60_000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      stdout = boundedAppend(stdout, chunk, limit);
+    });
+    child.stderr.resume();
+    child.on("error", (error) => { clearTimeout(timer); reject(error); });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve({ text: stdout.toString("utf8"), truncated: stdoutBytes > limit });
+      else reject(new Error(`git ${args[0]} failed while collecting audit evidence`));
+    });
+  });
+}
+
+function execute(request: AgentTaskExecutionRequest): Promise<AuditProcessResult> {
   return new Promise((resolve, reject) => {
     const started = Date.now();
     const home = path.join(request.cwd, ".agent-home");
@@ -160,9 +202,17 @@ function execute(request: AgentTaskExecutionRequest): Promise<AgentTaskProcessRe
     }
     let stdout: Buffer<ArrayBufferLike> = Buffer.alloc(0);
     let stderr: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
     let timedOut = false;
-    child.stdout?.on("data", (chunk: Buffer) => { stdout = boundedAppend(stdout, chunk, request.maxTranscriptBytes); });
-    child.stderr?.on("data", (chunk: Buffer) => { stderr = boundedAppend(stderr, chunk, request.maxTranscriptBytes); });
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutBytes += chunk.length;
+      stdout = boundedAppend(stdout, chunk, request.maxTranscriptBytes);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderrBytes += chunk.length;
+      stderr = boundedAppend(stderr, chunk, request.maxTranscriptBytes);
+    });
     const timer = setTimeout(() => {
       timedOut = true;
       if (process.platform !== "win32" && child.pid) {
@@ -182,6 +232,10 @@ function execute(request: AgentTaskExecutionRequest): Promise<AgentTaskProcessRe
         durationMs: Date.now() - started,
         stdout: stdout.toString("utf8"),
         stderr: stderr.toString("utf8"),
+        auditOutput: {
+          stdout: { text: stdout.toString("utf8"), truncated: stdoutBytes > request.maxTranscriptBytes },
+          stderr: { text: stderr.toString("utf8"), truncated: stderrBytes > request.maxTranscriptBytes },
+        },
         ...(timedOut ? { timedOut: true } : {}),
       });
     });
@@ -214,6 +268,39 @@ function metadataTrial(trial: AgentTaskTrialResult): object {
     verifier: processMetadata(trial.verifier),
     success: trial.success,
   };
+}
+
+function writeAuditEvidence(root: string, trials: AgentTaskTrialResult[]): Record<string, string> {
+  const directory = path.join(root, "audit-evidence");
+  fs.mkdirSync(directory, { mode: 0o700 });
+  fs.chmodSync(directory, 0o700);
+  const files: Record<string, string> = {};
+  for (const trial of trials) {
+    const fileName = `${trial.trialId.replace(":", "--")}.json`;
+    const filePath = path.join(directory, fileName);
+    const repositories = Object.fromEntries(Object.entries(trial.patches).map(([id, value]) => [
+      id,
+      JSON.parse(value) as RepositoryAuditEvidence,
+    ]));
+    const processEvidence = (result: AgentTaskProcessResult | undefined): object | undefined => {
+      if (!result) return undefined;
+      const output = (result as AuditProcessResult).auditOutput;
+      if (!output) throw new Error(`Missing captured process evidence for ${trial.trialId}`);
+      return { stdout: output.stdout, stderr: output.stderr };
+    };
+    const evidence = {
+      formatVersion: "1.0.0",
+      warning: "Explicitly captured audit evidence. It may contain secrets or private source and is not automatically redacted.",
+      trialId: trial.trialId,
+      agent: processEvidence(trial.agent),
+      ...(trial.verifier ? { verifier: processEvidence(trial.verifier) } : {}),
+      repositories,
+    };
+    fs.writeFileSync(filePath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600, flag: "wx" });
+    fs.chmodSync(filePath, 0o600);
+    files[trial.trialId] = path.posix.join("audit-evidence", fileName);
+  }
+  return files;
 }
 
 export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
@@ -272,6 +359,21 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
           return {
             cwd,
             repositoryDirectories,
+            ...(options.captureAuditEvidence ? {
+              async collectArtifacts(): Promise<Record<string, string>> {
+                const evidence: Record<string, string> = {};
+                for (const [repositoryId, directory] of Object.entries(repositoryDirectories)) {
+                  const status = await runGitEvidence(
+                    ["status", "--porcelain=v1", "--untracked-files=all"], directory, options.maxOutputBytes,
+                  );
+                  const diff = await runGitEvidence(
+                    ["diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--"], directory, options.maxOutputBytes,
+                  );
+                  evidence[repositoryId] = JSON.stringify({ status, diff } satisfies RepositoryAuditEvidence);
+                }
+                return evidence;
+              },
+            } : {}),
             async cleanup() { fs.rmSync(cwd, { recursive: true, force: true }); },
           };
         } catch (error) {
@@ -281,12 +383,16 @@ export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
       },
     },
   });
+  const auditEvidenceFiles = options.captureAuditEvidence ? writeAuditEvidence(artifactPath, trials) : undefined;
   const result = {
     formatVersion: "1.0.0",
-    note: "Metadata only. Agent/verifier output, argv, environment, patches, and workspace paths are intentionally omitted.",
+    note: options.captureAuditEvidence
+      ? "Metadata report. Protected audit evidence was explicitly requested; argv, environment, and workspace paths remain omitted."
+      : "Metadata only. Agent/verifier output, argv, environment, patches, and workspace paths are intentionally omitted.",
     armConfigDigests: { "no-ocbi": argvDigest(noOcbi), ocbi: argvDigest(ocbi) },
     trials: trials.map(metadataTrial),
     comparison: compareAgentTaskTrials(dataset, trials),
+    ...(auditEvidenceFiles ? { auditEvidenceFiles } : {}),
   };
   const resultPath = path.join(artifactPath, "result.json");
   fs.writeFileSync(resultPath, `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600, flag: "wx" });

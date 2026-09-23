@@ -55,6 +55,25 @@ SHA-256 digests of the two argv arrays are retained for auditability without
 serializing their potentially sensitive contents. Record exact agent, model,
 and OCBI versions in the external preregistration/run ledger.
 
+The default remains metadata-only. To explicitly consent to retaining bounded
+audit evidence, add `--capture-audit-evidence`. This creates an
+`audit-evidence/` directory with mode `0700` and one JSON file per trial with
+mode `0600`. Each file contains bounded agent/verifier stdout and stderr, plus
+bounded `git status --porcelain` and `git diff HEAD` output for every referenced
+repository. Every captured field records whether it was truncated at
+`--max-output-bytes`. `result.json` remains metadata-only and lists only the
+relative evidence-file paths. Status records untracked paths, but Git diff does
+not include untracked file contents. Diff collection disables external diff and
+text-conversion helpers.
+
+Audit evidence can contain credentials, tokens, private source, prompts, or
+other sensitive material. The runner does not automatically redact it. Use the
+flag only after reviewing the agent, verifier, repositories, output location,
+retention policy, and who can access the files. The runner never serializes the
+argv arrays or process environment into either `result.json` or evidence files.
+If requested repository evidence cannot be collected, the run fails instead of
+writing a result that implies complete evidence capture.
+
 `--allow-verifiers` is mandatory because verifier entries are trusted code.
 Agent/verifier processes are time-bounded and captured output is byte-bounded.
 `maxTokens` and `maxToolCalls` are declared controls passed to the agent, not
@@ -155,9 +174,11 @@ Before observing either arm:
    blind graders to the arm and use a written rubric plus disagreement process.
 9. Retain enough evidence for audit outside the runner's metadata-only report:
    protected agent/verifier transcripts, exit status, duration, token/tool counts
-   when the agent exposes them, and reviewed patches. The runner deliberately
-   does not preserve transcripts or patches. Without a separate access-controlled
-   evidence ledger, results are exploratory and cannot support publication.
+   when the agent exposes them, and reviewed patches. The opt-in
+   `--capture-audit-evidence` mode can retain bounded process output and Git
+   status/diff evidence, but it is not automatically redacted and does not
+   capture token/tool usage that the agent does not report. Without suitable
+   access controls and a reviewed evidence ledger, results remain exploratory.
    Report missing metadata as missing rather than estimating it.
 10. Report all preregistered tasks, failures, exclusions, and protocol changes.
 
@@ -172,12 +193,13 @@ third-party manifest. The CLI requires explicit opt-in, invokes commands without
 a shell, verifies pinned local checkouts, bounds output/time, and isolates each
 trial.
 
-Transcripts and patches can contain credentials or private source. Execution
-adapters should omit them by default unless required, cap them with
-`maxTranscriptBytes`, redact secrets before persistence, and store artifacts in
-an access-controlled location. Never serialize environment variables or auth
-material into trial records. The library passes only declared evaluation
-metadata to the adapter and does not itself persist results.
+Transcripts and patches can contain credentials or private source. The CLI omits
+them by default. Its explicit audit-evidence mode caps captured fields and uses
+protected filesystem modes, but it does not detect or redact secrets. Operators
+must apply any required review or redaction before sharing retained evidence.
+Never serialize environment variables or auth material into trial records. The
+library passes only declared evaluation metadata to the adapter and does not
+itself persist results.
 
 ## Interpretation
 

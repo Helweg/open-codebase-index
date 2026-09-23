@@ -22,17 +22,23 @@ function createRepository(name: string): { directory: string; revision: string }
   return { directory, revision: git(directory, ["rev-parse", "HEAD"]) };
 }
 
-function writeFixture(overrides: { remote?: boolean; badPin?: boolean; sleep?: boolean } = {}) {
+function writeFixture(overrides: { remote?: boolean; badPin?: boolean; sleep?: boolean; breakGit?: boolean } = {}) {
   const first = createRepository("repo-one");
   const second = createRepository("repo-two");
   const fakeAgent = path.join(tempDir, "fake-agent.mjs");
   const verifier = path.join(tempDir, "verifier.mjs");
   const marker = path.join(tempDir, "shell-marker");
   fs.writeFileSync(fakeAgent, `
+    import * as fs from "node:fs";
     const repos = JSON.parse(process.env.AGENT_EVAL_REPOSITORIES_JSON);
     if (!process.env.HOME.startsWith(process.cwd()) || Object.keys(repos).length !== 2) process.exit(7);
     if (process.argv[2].startsWith("sleep")) await new Promise(r => setTimeout(r, 5000));
+    const first = Object.values(repos)[0];
+    fs.writeFileSync(first + "/README.md", "PRIVATE_DIFF:" + "d".repeat(10000));
+    fs.writeFileSync(first + "/untracked.txt", "PRIVATE_UNTRACKED");
+    if (process.argv[2].startsWith("break-git")) fs.rmSync(first + "/.git", { recursive: true, force: true });
     process.stdout.write("PRIVATE_TRANSCRIPT:" + "x".repeat(10000));
+    process.stderr.write("PRIVATE_STDERR:" + "y".repeat(10000));
   `);
   fs.writeFileSync(verifier, `
     import * as fs from "node:fs";
@@ -52,7 +58,8 @@ function writeFixture(overrides: { remote?: boolean; badPin?: boolean; sleep?: b
   }));
   const noOcbiArgv = path.join(tempDir, "no-ocbi.json");
   const ocbiArgv = path.join(tempDir, "ocbi.json");
-  fs.writeFileSync(noOcbiArgv, JSON.stringify([process.execPath, fakeAgent, overrides.sleep ? "sleep" : `;touch ${marker}`]));
+  const controlArg = overrides.sleep ? "sleep" : overrides.breakGit ? "break-git" : `;touch ${marker}`;
+  fs.writeFileSync(noOcbiArgv, JSON.stringify([process.execPath, fakeAgent, controlArg]));
   fs.writeFileSync(ocbiArgv, JSON.stringify([process.execPath, fakeAgent, overrides.sleep ? "sleep-treatment" : "treatment"]));
   return { manifest, noOcbiArgv, ocbiArgv, marker };
 }
@@ -141,6 +148,51 @@ describe("agent-task A/B executable", () => {
     expect(parsed.trials.every((trial) => trial.agent.timedOut && !trial.success)).toBe(true);
     expect(raw).not.toContain("stdout");
     expect(raw).not.toContain("stderr");
+  });
+
+  it("captures bounded protected audit evidence only with explicit consent", () => {
+    const fixture = writeFixture();
+    const artifacts = path.join(tempDir, "evidence-out");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--capture-audit-evidence"]);
+    expect(result.status, result.stderr).toBe(0);
+
+    const resultRaw = fs.readFileSync(path.join(artifacts, "result.json"), "utf8");
+    const parsed = JSON.parse(resultRaw) as { auditEvidenceFiles: Record<string, string> };
+    expect(Object.keys(parsed.auditEvidenceFiles)).toHaveLength(2);
+    expect(resultRaw).not.toContain("PRIVATE_TRANSCRIPT");
+    expect(resultRaw).not.toContain(process.execPath);
+    expect(resultRaw).not.toContain("AGENT_EVAL_");
+
+    const evidenceDirectory = path.join(artifacts, "audit-evidence");
+    expect(fs.statSync(evidenceDirectory).mode & 0o777).toBe(0o700);
+    for (const relative of Object.values(parsed.auditEvidenceFiles)) {
+      const evidencePath = path.join(artifacts, relative);
+      const evidenceRaw = fs.readFileSync(evidencePath, "utf8");
+      const evidence = JSON.parse(evidenceRaw) as {
+        agent: { stdout: { text: string; truncated: boolean }; stderr: { text: string; truncated: boolean } };
+        repositories: Record<string, { status: { text: string }; diff: { text: string; truncated: boolean } }>;
+      };
+      expect(fs.statSync(evidencePath).mode & 0o777).toBe(0o600);
+      expect(Buffer.byteLength(evidence.agent.stdout.text)).toBeLessThanOrEqual(64);
+      expect(Buffer.byteLength(evidence.agent.stderr.text)).toBeLessThanOrEqual(64);
+      expect(evidence.agent.stdout.truncated).toBe(true);
+      expect(evidence.agent.stderr.truncated).toBe(true);
+      expect(Object.values(evidence.repositories).some((repo) => repo.status.text.includes("README.md"))).toBe(true);
+      expect(Object.values(evidence.repositories).some((repo) => repo.diff.text.includes("diff --git"))).toBe(true);
+      expect(Object.values(evidence.repositories).some((repo) => repo.diff.truncated)).toBe(true);
+      expect(evidenceRaw).not.toContain(process.execPath);
+      expect(evidenceRaw).not.toContain("AGENT_EVAL_");
+    }
+  });
+
+  it("fails closed when requested repository evidence cannot be collected", () => {
+    const fixture = writeFixture({ breakGit: true });
+    const artifacts = path.join(tempDir, "broken-evidence-out");
+    const result = invoke(fixture, artifacts, ["--allow-verifiers", "--capture-audit-evidence"]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/failed while collecting audit evidence/);
+    expect(fs.existsSync(path.join(artifacts, "result.json"))).toBe(false);
+    expect(fs.existsSync(path.join(artifacts, "audit-evidence"))).toBe(false);
   });
 });
 
