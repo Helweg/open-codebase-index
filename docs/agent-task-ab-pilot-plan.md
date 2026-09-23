@@ -1,6 +1,6 @@
 # Exploratory real-agent, cross-repository pilot
 
-Status: **protocol in preparation, no paired task outcome yet**. The task and independent verifier are frozen in private scratch, but a default-agent versus default-plus-OCBI run has not completed. This is not evidence of state-of-the-art performance.
+Status: **one exploratory paired task completed**. See [pilot results](agent-task-ab-pilot-results.md) for the measured tie, verifier failure and limitations. This is not evidence of state-of-the-art performance.
 
 ## Candidate repositories and task
 
@@ -20,4 +20,4 @@ The frozen exploratory task asks for structured `pr_impact` risk in the provider
 
 ## Observed feasibility so far
 
-OpenCode was updated to 1.18.32. The primary model's isolated default-agent response-only smoke succeeded through an existing OpenCode Go profile. Homebrew Pi was updated to its latest formula version, 0.86.1, as an unused fallback. The published OCBI plugin version 0.32.1 imported successfully and its CLI produced a ready index over the disposable pinned provider clone and consumer knowledge base. A treatment native `index_status` call reported that index ready with 7,235 chunks. No paired coding task has run. An initial control configuration inherited Oh My OpenAgent from the ambient Orca configuration and from a home-ancestor project config. Independent non-pure OpenCode config probes in a private `/Users/Shared` root resolved no control plugin and only OCBI in treatment. The trial must use that non-home root, and a status call does not yet prove retrieval or a completed task.
+OpenCode was updated to 1.18.32. The primary model's isolated default-agent response-only smoke succeeded through an existing OpenCode Go profile. Homebrew Pi was updated to its latest formula version, 0.86.1, as an unused fallback. The published OCBI plugin version 0.32.1 imported successfully and its CLI produced a ready index over the disposable pinned provider clone and consumer knowledge base. A treatment native `index_status` call reported that index ready with 7,235 chunks. An initial control configuration inherited Oh My OpenAgent from the ambient Orca configuration and from a home-ancestor project config. Independent non-pure OpenCode config probes in a private `/Users/Shared` root resolved no control plugin and only OCBI in treatment. The completed non-home paired run scored 0/1 task successes in each arm. Both failed the same structured-risk conflict case, so no improvement is established.
