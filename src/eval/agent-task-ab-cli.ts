@@ -217,6 +217,10 @@ function metadataTrial(trial: AgentTaskTrialResult): object {
 }
 
 export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
+  if (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h")) {
+    process.stdout.write(`${USAGE}\n`);
+    return;
+  }
   const options = parseOptions(argv);
   const manifestPath = fs.realpathSync(options.manifest);
   const dataset = parseAgentTaskDataset(readJson(manifestPath), manifestPath);

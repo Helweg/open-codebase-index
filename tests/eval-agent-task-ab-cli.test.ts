@@ -75,6 +75,16 @@ beforeEach(() => { tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-task-a
 afterEach(() => { fs.rmSync(tempDir, { recursive: true, force: true }); });
 
 describe("agent-task A/B executable", () => {
+  it("prints help without requiring a manifest or verifier opt-in", () => {
+    for (const flag of ["--help", "-h"]) {
+      const result = spawnSync(process.execPath, ["--import", "tsx", "src/eval/agent-task-ab-cli.ts", flag], {
+        cwd: path.resolve("."), encoding: "utf8", timeout: 10_000,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("Usage: ocbi-agent-task-ab");
+    }
+  });
+
   it("runs end to end against pinned local Git repositories and writes protected metadata only", () => {
     const fixture = writeFixture();
     const artifacts = path.join(tempDir, "artifacts");
