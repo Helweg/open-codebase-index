@@ -121,7 +121,8 @@ function copyProject() {
       const segments = relative.split(path.sep);
       const firstSegment = segments[0];
       if (
-        firstSegment === ".git"
+        firstSegment.startsWith("tmp-")
+        || firstSegment === ".git"
         || firstSegment === "node_modules"
         || firstSegment === ".opencode"
         || firstSegment === ".claude"

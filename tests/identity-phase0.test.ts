@@ -272,6 +272,19 @@ describe("Phase 1 product identity compatibility", () => {
     }
   });
 
+  it("does not copy transient test directories from the repository root", () => {
+    const transientDir = mkdtempSync(path.join(process.cwd(), "tmp-stage-race-"));
+    const outputDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-stage-race-"));
+    try {
+      writeFileSync(path.join(transientDir, "fixture.txt"), "temporary fixture");
+      prepareMetadata(IDENTITY_CATALOG.product.future.packageName, outputDir);
+      expect(existsSync(path.join(outputDir, path.basename(transientDir)))).toBe(false);
+    } finally {
+      rmSync(transientDir, { recursive: true, force: true });
+      rmSync(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it("stages metadata with an explicit repository override", () => {
     const tempDir = mkdtempSync(path.join(os.tmpdir(), "codebase-index-repo-override-metadata-"));
     const repositoryUrl = "https://github.com/Helweg/open-codebase-index";
