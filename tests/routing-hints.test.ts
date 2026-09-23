@@ -244,7 +244,7 @@ describe("routing hints", () => {
       expect(hints[0]).toContain("`codebase_search`");
     });
 
-    it("emits at most one hint for each user message", async () => {
+    it("retains a hint across title and main transforms until a relevant tool is used", async () => {
       const controller = new RoutingHintController(async () => ({
         indexed: true,
         compatibility: { compatible: true },
@@ -252,11 +252,26 @@ describe("routing hints", () => {
 
       controller.observeUserMessage("session-once", [{ type: "text", text: "Investigate why startup hangs" }]);
 
-      expect(await controller.getSystemHints("session-once")).toHaveLength(1);
+      const titleHints = await controller.getSystemHints("session-once");
+      const mainHints = await controller.getSystemHints("session-once");
+      expect(titleHints).toHaveLength(1);
+      expect(mainHints).toEqual(titleHints);
+      expect(controller.getSessionState("session-once")?.pendingHint).toBe(true);
+
+      controller.markToolUsed("session-once", "codebase_context");
       expect(await controller.getSystemHints("session-once")).toEqual([]);
 
       controller.observeUserMessage("session-once", [{ type: "text", text: "Fix the bug in startup recovery" }]);
       expect(await controller.getSystemHints("session-once")).toHaveLength(1);
+    });
+
+    it("replaces a pending hint when the next user message has no discovery intent", async () => {
+      const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
+      controller.observeUserMessage("session-next", [{ type: "text", text: "Trace the authorization path for a protected share" }]);
+      expect(await controller.getSystemHints("session-next")).toHaveLength(1);
+
+      controller.observeUserMessage("session-next", [{ type: "text", text: "Run the tests" }]);
+      expect(await controller.getSystemHints("session-next")).toEqual([]);
     });
 
     it("stops nudging after a codebase tool is used", async () => {

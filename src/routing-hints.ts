@@ -204,10 +204,6 @@ export class RoutingHintController {
     const status = await this.safeGetStatus();
     const hint = buildRoutingHint(state.assessment, status, this.includeGraphHandoff);
 
-    state.pendingHint = false;
-    state.updatedAt = Date.now();
-    this.sessionState.set(sessionID, state);
-
     return hint ? [hint] : [];
   }
 
