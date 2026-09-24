@@ -1,20 +1,8 @@
 const EXTERNAL_HINTS = [
-  "docs",
-  "documentation",
   "official docs",
-  "github example",
-  "github examples",
-  "github repo",
-  "github repository",
+  "official documentation",
   "web search",
   "website",
-  "url",
-  "npm",
-  "pypi",
-  "crate",
-  "library",
-  "package",
-  "framework",
   "context7",
   "stackoverflow",
 ];
@@ -128,12 +116,15 @@ export function countWords(text: string): number {
 }
 
 export function isExternalLookup(text: string): boolean {
-  return URL_PATTERN.test(text) || includesHint(text, EXTERNAL_HINTS);
+  return URL_PATTERN.test(text) || includesHint(text, EXTERNAL_HINTS)
+    || /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online docs|npm registry|pypi|crates\.io|github (?:repo|repository|examples?))\b/.test(text);
 }
 
 export function hasConceptualDiscoveryHint(text: string): boolean {
   return includesHint(text, CONCEPTUAL_DISCOVERY_HINTS)
-    || /\btrace (?:the |how )?.{0,80}\b(?:authorization|execution|request|call|data|dependency|control)\b/.test(text);
+    || /\btrace (?:the |how )?.{0,80}\b(?:authorization|execution|request|call|data|dependency|control)\b/.test(text)
+    || (/\b(?:source|code|repository|repo|checkout)\b/.test(text)
+      && /\b(?:explain|trace|compare|analy[sz]e|identify|cite|describe)\b/.test(text));
 }
 
 export function hasBroadLocalTaskHint(text: string): boolean {

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Source explanation routing**: Do not treat incidental `npm`, package, crate, or framework terminology as a web lookup. Source-grounded explanations spanning files or repositories now remain eligible for the OpenCode `codebase_context` hint even when the request also names paths, builds, or tests. Explicit external lookups and simple known-path reads retain their prior routing.
+
 - **OpenCode retrieval guidance**: Keep `codebase_context` first for conceptual questions in the current configured repository index. Describe `codebase_peek` as metadata-only semantic navigation, use Read for known paths and grep for literal identifiers, and use `codebase_search` when implementation content is needed.
 
 - **OpenCode routing hint delivery**: Keep a discovery hint available across multiple system transforms for the same user turn. OpenCode can generate a session title before the main agent request, which previously consumed the one-shot hint before the agent received it. A relevant codebase tool call or the next user message still clears or replaces the hint.
