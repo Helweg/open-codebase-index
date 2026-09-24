@@ -65,6 +65,12 @@ describe("routing hints", () => {
       expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
     });
 
+    it("routes a broad source investigation mentioning paths to discovery", () => {
+      const assessment = assessRoutingIntent("Investigate why the search integration fails across src/search.ts and src/provider.ts, then cite the cause.");
+      expect(assessment.intent).toBe("local_broad_task");
+      expect(assessRoutingIntent("Read src/search.ts").intent).toBe("direct_path");
+    });
+
     it("does not alternate exact-identifier detection for repeated backticked queries", () => {
       const first = assessRoutingIntent("Find all references to `validateToken`");
       const second = assessRoutingIntent("Find all references to `otherSymbol`");
@@ -115,7 +121,9 @@ describe("routing hints", () => {
         true,
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
+      expect(hint).toContain("Verify the returned paths and claims with Read");
+      expect(hint).toContain("If the exact path or identifier is already known, use Read or `grep` directly instead");
       expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
@@ -129,7 +137,7 @@ describe("routing hints", () => {
         true,
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
     });
@@ -155,7 +163,7 @@ describe("routing hints", () => {
       expect(hint).toContain("consider optional `codebase_edit_context`");
       expect(hint).toContain("bounded source");
       expect(hint).toContain("callers and callees");
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
     });
 
     it("does not add codebase_edit_context guidance for conceptual discovery even with identifier cues", () => {
@@ -164,7 +172,7 @@ describe("routing hints", () => {
         { indexed: true, compatibility: { compatible: true } },
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("consider optional `codebase_edit_context`");
     });
 
@@ -197,7 +205,7 @@ describe("routing hints", () => {
         { indexed: true, compatibility: { compatible: true } },
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("OMO CodeGraph");
       expect(hint).not.toContain("Use graph tools after semantic discovery");
     });
@@ -235,7 +243,7 @@ describe("routing hints", () => {
     it("queues a context hint for a protected-share authorization trace", async () => {
       const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
       controller.observeUserMessage("share-trace", [{ type: "text", text: "Trace the authorization path for a password-protected share. Do not edit files." }]);
-      expect((await controller.getSystemHints("share-trace"))[0]).toContain("prefer `codebase_context`");
+      expect((await controller.getSystemHints("share-trace"))[0]).toContain("one bounded `codebase_context` query before exploratory shell");
     });
 
     it("stores conceptual discovery state and emits one hint", async () => {
@@ -252,7 +260,7 @@ describe("routing hints", () => {
 
       const hints = await controller.getSystemHints("session-1");
       expect(hints).toHaveLength(1);
-      expect(hints[0]).toContain("prefer `codebase_context`");
+      expect(hints[0]).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hints[0]).toContain("OMO CodeGraph");
     });
 
@@ -266,7 +274,7 @@ describe("routing hints", () => {
 
       const hints = await controller.getSystemHints("session-1b");
       expect(hints).toHaveLength(1);
-      expect(hints[0]).toContain("prefer `codebase_context`");
+      expect(hints[0]).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hints[0]).toContain("`codebase_search`");
     });
 

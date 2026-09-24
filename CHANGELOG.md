@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- For source-grounded discovery with a ready index and an unknown location, OpenCode now suggests one bounded `codebase_context` query before exploratory shell or file searches, followed by source verification. Known paths and identifiers still route directly to Read or grep, and broad investigations are not suppressed merely because they mention a file path.
+
 ## [0.32.2] - 2026-09-24
 
 ### Fixed

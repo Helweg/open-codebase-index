@@ -85,7 +85,7 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
     };
   }
 
-  if (looksLikeDirectPath(normalizedText) && !matchedConceptualHint) {
+  if (looksLikeDirectPath(normalizedText) && !matchedConceptualHint && !matchedBroadLocalTask) {
     return {
       intent: "direct_path",
       text: normalizedText,
@@ -163,7 +163,7 @@ export function buildRoutingHint(
   const graphHandoff = includeGraphHandoff
     ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
     : "";
-  return `For this turn, prefer \`codebase_context\` for local code discovery, then use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. Use \`grep\` for exact identifiers or exhaustive matches.${preEditHint}`;
+  return `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. Verify the returned paths and claims with Read; use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. If the exact path or identifier is already known, use Read or \`grep\` directly instead.${preEditHint}`;
 }
 
 export class RoutingHintController {
