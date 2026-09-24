@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenCode retrieval guidance**: Keep `codebase_context` first for conceptual questions in the current configured repository index. Describe `codebase_peek` as metadata-only semantic navigation, use Read for known paths and grep for literal identifiers, and use `codebase_search` when implementation content is needed.
+
+- **OpenCode routing hint delivery**: Keep a discovery hint available across multiple system transforms for the same user turn. OpenCode can generate a session title before the main agent request, which previously consumed the one-shot hint before the agent received it. A relevant codebase tool call or the next user message still clears or replaces the hint.
+
+- **Repository trace routing**: Treat a standalone `PR` as a non-discovery cue without mistaking words such as `protected` for PR chores, and recognize requests to trace a code path as conceptual discovery. This restores a `codebase_context` hint for source-tracing questions previously suppressed by substring matching.
+
 ## [0.32.1] - 2026-09-22
 
 ### Fixed

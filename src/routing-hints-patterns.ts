@@ -24,7 +24,6 @@ const NON_DISCOVERY_HINTS = [
   "rebase",
   "push",
   "pull request",
-  "pr",
   "lint",
   "typecheck",
   "build",
@@ -133,7 +132,8 @@ export function isExternalLookup(text: string): boolean {
 }
 
 export function hasConceptualDiscoveryHint(text: string): boolean {
-  return includesHint(text, CONCEPTUAL_DISCOVERY_HINTS);
+  return includesHint(text, CONCEPTUAL_DISCOVERY_HINTS)
+    || /\btrace (?:the |how )?.{0,80}\b(?:authorization|execution|request|call|data|dependency|control)\b/.test(text);
 }
 
 export function hasBroadLocalTaskHint(text: string): boolean {
@@ -149,7 +149,7 @@ export function hasExactMatchHint(text: string): boolean {
 }
 
 export function hasNonDiscoveryHint(text: string): boolean {
-  return includesHint(text, NON_DISCOVERY_HINTS);
+  return /\bpr\b/.test(text) || includesHint(text, NON_DISCOVERY_HINTS);
 }
 
 export function hasIdentifierShape(text: string): boolean {

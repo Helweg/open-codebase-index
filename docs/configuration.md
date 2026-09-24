@@ -397,7 +397,7 @@ Index additional directories alongside the project:
 }
 ```
 
-Paths can be absolute or relative to the project root. OpenCode and Pi also expose host-native tools for adding, listing, and removing knowledge bases.
+Paths can be absolute or relative to the project root. OpenCode and Pi also expose host-native tools for adding, listing, and removing knowledge bases. When multiple repositories are configured, repository retrieval tools search the current configured repository index by default rather than automatically fanning out across every configured repository.
 
 ### Opt-in PDF text indexing
 

@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SearchTrace } from "../src/indexer/index.js";
 
-import { codebase_context as opencodeCodebaseContext } from "../src/adapters/opencode/tools.js";
+import {
+  codebase_context as opencodeCodebaseContext,
+  codebase_peek as opencodeCodebasePeek,
+  codebase_search as opencodeCodebaseSearch,
+} from "../src/adapters/opencode/tools.js";
 import { countContextTokens } from "../src/tools/utils.js";
 import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
 
@@ -47,6 +51,18 @@ const commonArgs = {
   directory: undefined,
   tokenBudget: 128,
 };
+
+describe("OpenCode retrieval tool descriptions", () => {
+  it("distinguishes context, metadata navigation, and implementation search", () => {
+    expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
+    expect(opencodeCodebaseContext.description).toContain("Read for known paths");
+    expect(opencodeCodebaseContext.description).toContain("grep for literal identifiers");
+    expect(opencodeCodebasePeek.description).toContain("Metadata-only semantic navigation");
+    expect(opencodeCodebasePeek.description).toContain("codebase_context first");
+    expect(opencodeCodebaseSearch.description).toContain("codebase_context first");
+    expect(opencodeCodebaseSearch.description).toContain("implementation content is needed");
+  });
+});
 
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {

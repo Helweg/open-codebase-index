@@ -108,7 +108,7 @@ export function getIndexerForProject(directory: string): Indexer {
 
 export const codebase_context: ToolDefinition = tool({
   description:
-    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for definitions; or provide only query for conceptual discovery.",
+    "Preferred for conceptual questions within the current configured repository index. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use from and to for dependency paths, symbol for definitions, Read for known paths, grep for literal identifiers, and codebase_peek for metadata-only semantic navigation; this tool does not automatically fan out across repositories.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
@@ -159,7 +159,7 @@ export const codebase_edit_context: ToolDefinition = tool({
 
 export const codebase_peek: ToolDefinition = tool({
   description:
-    "Quick lookup of code locations by meaning. Returns only metadata (file, line, name, type) WITHOUT code content. Use this first to find WHERE code is, then use Read tool to examine specific files. Saves tokens by not returning full code blocks. Best for: discovery, navigation, finding multiple related locations.",
+    "Metadata-only semantic navigation. Returns file, line, name, and type WITHOUT code content. Use to locate related code before Read; use Read for known paths and grep for literal identifiers. For conceptual questions within the current configured repository index, use codebase_context first. This tool does not automatically fan out across repositories.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for."),
     limit: z.number().optional().default(10).describe("Maximum number of results to return"),
@@ -281,7 +281,7 @@ export const find_similar: ToolDefinition = tool({
 
 export const codebase_search: ToolDefinition = tool({
   description:
-    "Search codebase by MEANING, not keywords. Returns full code content. Use when you need to see actual implementation. For just finding WHERE code is (saves ~90% tokens), use codebase_peek instead. For known identifiers like 'validateToken', use grep - it's faster.",
+    "Search codebase by MEANING, not keywords. Returns full code content. Use codebase_context first for conceptual questions within the current configured repository index, then use this when implementation content is needed. For known paths use Read; for literal identifiers use grep. This tool does not automatically fan out across repositories.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
     limit: z.number().optional().default(5).describe("Maximum number of results to return"),
