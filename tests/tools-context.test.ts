@@ -48,6 +48,20 @@ const commonArgs = {
   tokenBudget: 128,
 };
 
+describe("native OpenCode tool descriptions", () => {
+  it("prefers context for conceptual and cross-repository questions while reserving peek for exact lookups", () => {
+    expect(opencodeCodebaseContext.description).toContain("conceptual repository questions");
+    expect(opencodeCodebaseContext.description).toContain("cross-repository behavior discovery");
+    expect(opencodeCodebaseContext.description).toContain("exact path or identifier lookup");
+
+    expect(codebase_peek.description).toContain("exact path or identifier lookups");
+    expect(codebase_peek.description).toContain("codebase_context first");
+
+    expect(codebase_search.description).toContain("conceptual repository questions");
+    expect(codebase_search.description).toContain("exact paths or known identifiers");
+  });
+});
+
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {
     vi.clearAllMocks();

@@ -108,7 +108,7 @@ export function getIndexerForProject(directory: string): Indexer {
 
 export const codebase_context: ToolDefinition = tool({
   description:
-    "PREFERRED FIRST TOOL for repository questions. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for definitions; or provide only query for conceptual discovery.",
+    "Preferred for conceptual repository questions and cross-repository behavior discovery. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Provide from and to for dependency paths, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for definitions; or provide only query for conceptual discovery. For an exact path or identifier lookup, use peek, Read, or grep instead.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
@@ -159,7 +159,7 @@ export const codebase_edit_context: ToolDefinition = tool({
 
 export const codebase_peek: ToolDefinition = tool({
   description:
-    "Quick lookup of code locations by meaning. Returns only metadata (file, line, name, type) WITHOUT code content. Use this first to find WHERE code is, then use Read tool to examine specific files. Saves tokens by not returning full code blocks. Best for: discovery, navigation, finding multiple related locations.",
+    "Quick lookup of code locations by meaning. Returns only metadata (file, line, name, type) WITHOUT code content. Use for exact path or identifier lookups, or to locate code before using Read to examine specific files. For conceptual repository questions or cross-repository behavior discovery, use codebase_context first. Saves tokens by not returning full code blocks. Best for navigation and finding multiple related locations.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for."),
     limit: z.number().optional().default(10).describe("Maximum number of results to return"),
@@ -281,7 +281,7 @@ export const find_similar: ToolDefinition = tool({
 
 export const codebase_search: ToolDefinition = tool({
   description:
-    "Search codebase by MEANING, not keywords. Returns full code content. Use when you need to see actual implementation. For just finding WHERE code is (saves ~90% tokens), use codebase_peek instead. For known identifiers like 'validateToken', use grep - it's faster.",
+    "Search codebase by MEANING, not keywords. Returns full code content. Use for conceptual repository questions or cross-repository behavior discovery when you need actual implementation. For exact paths or known identifiers, use peek, Read, or grep instead.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
     limit: z.number().optional().default(5).describe("Maximum number of results to return"),
