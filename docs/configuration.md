@@ -399,6 +399,8 @@ Index additional directories alongside the project:
 
 Paths can be absolute or relative to the project root. OpenCode and Pi also expose host-native tools for adding, listing, and removing knowledge bases.
 
+A neighboring repository is **not** searched automatically just because it is named in the question. Add its directory here (or with a knowledge-base tool), index the project, and verify that the resulting evidence includes files from both roots. `codebase_context` and `codebase_search` search the configured index rather than independently querying every repository. Results identify their origin through file paths, not a separate repository label.
+
 ### Opt-in PDF text indexing
 
 PDF discovery is disabled by default. To index text-based PDFs in the project or
