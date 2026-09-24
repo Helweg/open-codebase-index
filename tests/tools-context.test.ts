@@ -49,15 +49,18 @@ const commonArgs = {
 };
 
 describe("native OpenCode tool descriptions", () => {
-  it("prefers context for conceptual and cross-repository questions while reserving peek for exact lookups", () => {
-    expect(opencodeCodebaseContext.description).toContain("conceptual repository questions");
-    expect(opencodeCodebaseContext.description).toContain("cross-repository behavior discovery");
+  it("prefers context for current-index conceptual questions while reserving peek for exact lookups", () => {
+    expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
+    expect(opencodeCodebaseContext.description).toContain("does not automatically fan out across repositories");
     expect(opencodeCodebaseContext.description).toContain("exact path or identifier lookup");
 
     expect(codebase_peek.description).toContain("exact path or identifier lookups");
     expect(codebase_peek.description).toContain("codebase_context first");
+    expect(codebase_peek.description).toContain("current configured repository index");
+    expect(codebase_peek.description).toContain("Neither tool automatically fans out across repositories");
 
-    expect(codebase_search.description).toContain("conceptual repository questions");
+    expect(codebase_search.description).toContain("conceptual questions within the current configured repository index");
+    expect(codebase_search.description).toContain("does not automatically fan out across repositories");
     expect(codebase_search.description).toContain("exact paths or known identifiers");
   });
 });
