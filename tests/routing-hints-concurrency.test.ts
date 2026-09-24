@@ -29,7 +29,7 @@ describe("RoutingHintController concurrency", () => {
 
     expect(first).toHaveLength(1);
     expect(second).toEqual(first);
-    expect(first[0]).toContain("prefer `codebase_context`");
+    expect(first[0]).toContain("one bounded `codebase_context` query before exploratory shell");
 
     const third = await controller.getSystemHints("s1");
     expect(third).toEqual(first);
