@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-09-24
+
 ### Fixed
 
 - **OpenCode retrieval guidance**: Keep `codebase_context` first for conceptual questions in the current configured repository index. Describe `codebase_peek` as metadata-only semantic navigation, use Read for known paths and grep for literal identifiers, and use `codebase_search` when implementation content is needed.
