@@ -1,5 +1,7 @@
 import type { HostMode } from "../config/host.js";
 import type { OperationControl } from "../utils/operation-control.js";
+import * as path from "node:path";
+import { loadRuntimeConfig } from "./config-state.js";
 import {
   getCallGraphData,
   getCallGraphPath,
@@ -160,7 +162,20 @@ async function resolveCodebaseContextUnmeasured(
         ? searchCodebase(projectRoot, host, queryText, options, control)
         : searchCodebase(projectRoot, host, queryText, options);
     },
-  });
+  }, projectRoot ? configuredOrigins(projectRoot, host) : undefined);
+}
+
+function configuredOrigins(projectRoot: string, host: HostMode): Array<{ root: string; label: string }> {
+  const config = loadRuntimeConfig(projectRoot, host);
+  const roots = [projectRoot, ...(Array.isArray(config.knowledgeBases) ? config.knowledgeBases as string[] : [])]
+    .map((root) => path.resolve(root));
+  const unique = [...new Set(roots)];
+  const basenames = unique.map((root) => path.basename(root));
+  return unique.map((root, index) => ({
+    root,
+    label: index === 0 ? `project: ${basenames[index]}`
+      : `knowledge base: ${basenames.filter((name) => name === basenames[index]).length > 1 ? root : basenames[index]}`,
+  }));
 }
 
 function contextRoute(

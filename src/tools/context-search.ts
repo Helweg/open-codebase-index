@@ -313,6 +313,7 @@ function relaxedHintFields(fileType?: string, directory?: string): Array<"direct
 export async function resolveSearchContext(
   input: Pick<CodebaseContextInput, "query" | "symbol" | "limit" | "tokenBudget" | "fileType" | "directory" | "diagnostic">,
   operations: SearchContextOperations,
+  origins?: Array<{ root: string; label: string }>,
 ): Promise<CodebaseContextResult> {
   const query = trimOrUndefined(input.query);
   const tokenBudget = input.tokenBudget ?? undefined;
@@ -585,6 +586,7 @@ export async function resolveSearchContext(
         "conceptual",
         attempt.queryText,
         buildContextPack(results, {
+          origins,
           tokenBudget,
           maxResults: limit,
           heading,

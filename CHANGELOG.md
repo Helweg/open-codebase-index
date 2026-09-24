@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.
+
 - For source-grounded discovery with a ready index and an unknown location, OpenCode now suggests one bounded `codebase_context` query before exploratory shell or file searches, followed by source verification. Known paths and identifiers still route directly to Read or grep, and broad investigations are not suppressed merely because they mention a file path.
 
 ## [0.32.2] - 2026-09-24
