@@ -85,7 +85,7 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
     };
   }
 
-  if (looksLikeDirectPath(normalizedText)) {
+  if (looksLikeDirectPath(normalizedText) && !matchedConceptualHint) {
     return {
       intent: "direct_path",
       text: normalizedText,

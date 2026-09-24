@@ -87,6 +87,24 @@ describe("routing hints", () => {
 
       expect(assessment.intent).toBe("external");
     });
+
+    it.each([
+      "Explain how source code in two repositories integrates an npm package and cite relevant files.",
+      "Compare the build path in repo-a/src/build.ts with the package implementation in repo-b/src/index.ts and cite source.",
+      "Describe the framework hydration flow using source files in the repository, including tests.",
+    ])("treats source-grounded explanations as local discovery despite package and path terms: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
+    });
+
+    it.each([
+      "Search the npm registry for the latest package version",
+      "Browse the GitHub repository for an external example",
+      "Read the official documentation for the web API",
+    ])("retains genuinely external lookup routing: %s", (query) => {
+      expect(assessRoutingIntent(query).intent).toBe("external");
+    });
   });
 
   describe("buildRoutingHint", () => {
