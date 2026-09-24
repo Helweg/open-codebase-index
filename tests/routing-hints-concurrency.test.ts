@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RoutingHintController } from "../src/routing-hints.js";
 
 describe("RoutingHintController concurrency", () => {
-  it("claims pending hints atomically across concurrent getSystemHints calls", async () => {
+  it("returns the same pending hint across concurrent title and main transforms", async () => {
     const controller = new RoutingHintController(
       () =>
         new Promise((resolve) => {
@@ -27,14 +27,11 @@ describe("RoutingHintController concurrency", () => {
       controller.getSystemHints("s1"),
     ]);
 
-    const totalHints = first.length + second.length;
-    expect(totalHints).toBe(1);
-
-    const nonEmpties = [first, second].filter((hints) => hints.length > 0);
-    expect(nonEmpties).toHaveLength(1);
-    expect(nonEmpties[0][0]).toContain("prefer `codebase_context`");
+    expect(first).toHaveLength(1);
+    expect(second).toEqual(first);
+    expect(first[0]).toContain("prefer `codebase_context`");
 
     const third = await controller.getSystemHints("s1");
-    expect(third).toEqual([]);
+    expect(third).toEqual(first);
   });
 });
