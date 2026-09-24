@@ -32,6 +32,7 @@ export interface RoutingSessionState {
   assessment: RoutingAssessment;
   pendingHint: boolean;
   updatedAt: number;
+  generation: number;
 }
 
 interface TextPartLike {
@@ -168,6 +169,7 @@ export function buildRoutingHint(
 
 export class RoutingHintController {
   private readonly sessionState = new Map<string, RoutingSessionState>();
+  private readonly sessionGenerations = new Map<string, number>();
 
   constructor(
     private readonly getStatus: () => Promise<Pick<StatusResult, "indexed" | "compatibility">>,
@@ -179,6 +181,8 @@ export class RoutingHintController {
     const assessment = assessRoutingIntent(extractUserText(parts));
 
     this.compactSessions();
+    const generation = (this.sessionGenerations.get(sessionID) ?? 0) + 1;
+    this.sessionGenerations.set(sessionID, generation);
     this.sessionState.set(sessionID, {
       assessment,
       pendingHint:
@@ -186,6 +190,7 @@ export class RoutingHintController {
         || assessment.intent === "local_broad_task"
         || assessment.intent === "definition_lookup",
       updatedAt: Date.now(),
+      generation,
     });
 
     return assessment;
@@ -201,8 +206,14 @@ export class RoutingHintController {
       return [];
     }
 
+    const generation = state.generation;
     const status = await this.safeGetStatus();
-    const hint = buildRoutingHint(state.assessment, status, this.includeGraphHandoff);
+    const currentState = this.sessionState.get(sessionID);
+    if (!currentState || !currentState.pendingHint || currentState.generation !== generation) {
+      return [];
+    }
+
+    const hint = buildRoutingHint(currentState.assessment, status, this.includeGraphHandoff);
 
     return hint ? [hint] : [];
   }
@@ -224,6 +235,8 @@ export class RoutingHintController {
     ) {
       state.pendingHint = false;
       state.updatedAt = Date.now();
+      state.generation += 1;
+      this.sessionGenerations.set(sessionID, state.generation);
       this.sessionState.set(sessionID, state);
     }
   }

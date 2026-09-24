@@ -206,6 +206,14 @@ describe("routing hints", () => {
   });
 
   describe("RoutingHintController", () => {
+    function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      return { promise, resolve };
+    }
+
     it("queues a context hint for a protected-share authorization trace", async () => {
       const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
       controller.observeUserMessage("share-trace", [{ type: "text", text: "Trace the authorization path for a password-protected share. Do not edit files." }]);
@@ -272,6 +280,30 @@ describe("routing hints", () => {
 
       controller.observeUserMessage("session-next", [{ type: "text", text: "Run the tests" }]);
       expect(await controller.getSystemHints("session-next")).toEqual([]);
+    });
+
+    it("does not return a stale hint after the next user message arrives during status lookup", async () => {
+      const status = deferred<{ indexed: boolean; compatibility: { compatible: boolean } }>();
+      const controller = new RoutingHintController(() => status.promise);
+      controller.observeUserMessage("session-next-deferred", [{ type: "text", text: "Trace the authorization path for a protected share" }]);
+
+      const pendingHints = controller.getSystemHints("session-next-deferred");
+      controller.observeUserMessage("session-next-deferred", [{ type: "text", text: "Run the tests" }]);
+      status.resolve({ indexed: true, compatibility: { compatible: true } });
+
+      expect(await pendingHints).toEqual([]);
+    });
+
+    it("does not return a stale hint after a relevant tool call during status lookup", async () => {
+      const status = deferred<{ indexed: boolean; compatibility: { compatible: boolean } }>();
+      const controller = new RoutingHintController(() => status.promise);
+      controller.observeUserMessage("session-tool-deferred", [{ type: "text", text: "Investigate why startup hangs" }]);
+
+      const pendingHints = controller.getSystemHints("session-tool-deferred");
+      controller.markToolUsed("session-tool-deferred", "codebase_context");
+      status.resolve({ indexed: true, compatibility: { compatible: true } });
+
+      expect(await pendingHints).toEqual([]);
     });
 
     it("keeps concurrent title and main transforms consistent", async () => {
