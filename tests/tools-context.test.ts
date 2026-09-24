@@ -49,19 +49,22 @@ const commonArgs = {
 };
 
 describe("native OpenCode tool descriptions", () => {
-  it("prefers context for current-index conceptual questions while reserving peek for exact lookups", () => {
+  it("prefers context for current-index conceptual questions and distinguishes semantic navigation from exact lookup", () => {
     expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
-    expect(opencodeCodebaseContext.description).toContain("does not automatically fan out across repositories");
-    expect(opencodeCodebaseContext.description).toContain("exact path or identifier lookup");
+    expect(opencodeCodebaseContext.description).toContain("from and to for dependency paths");
+    expect(opencodeCodebaseContext.description).toContain("symbol for definitions");
+    expect(opencodeCodebaseContext.description).toContain("Read for known paths");
+    expect(opencodeCodebaseContext.description).toContain("grep for literal identifiers");
 
-    expect(codebase_peek.description).toContain("exact path or identifier lookups");
+    expect(codebase_peek.description).toContain("Metadata-only semantic navigation");
+    expect(codebase_peek.description).toContain("Read for known paths");
+    expect(codebase_peek.description).toContain("grep for literal identifiers");
     expect(codebase_peek.description).toContain("codebase_context first");
-    expect(codebase_peek.description).toContain("current configured repository index");
-    expect(codebase_peek.description).toContain("Neither tool automatically fans out across repositories");
 
-    expect(codebase_search.description).toContain("conceptual questions within the current configured repository index");
-    expect(codebase_search.description).toContain("does not automatically fan out across repositories");
-    expect(codebase_search.description).toContain("exact paths or known identifiers");
+    expect(codebase_search.description).toContain("codebase_context first");
+    expect(codebase_search.description).toContain("implementation content is needed");
+    expect(codebase_search.description).toContain("known paths use Read");
+    expect(codebase_search.description).toContain("literal identifiers use grep");
   });
 });
 
