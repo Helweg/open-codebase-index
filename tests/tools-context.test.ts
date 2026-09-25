@@ -57,6 +57,8 @@ describe("OpenCode retrieval tool descriptions", () => {
     expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
     expect(opencodeCodebaseContext.description).toContain("Read for known paths");
     expect(opencodeCodebaseContext.description).toContain("grep for literal identifiers");
+    expect(opencodeCodebaseContext.description).toContain("Cite only exact file paths verified with Read");
+    expect(opencodeCodebaseContext.description).toContain("do not infer a path or runtime outcome");
     expect(opencodeCodebasePeek.description).toContain("Metadata-only semantic navigation");
     expect(opencodeCodebasePeek.description).toContain("codebase_context first");
     expect(opencodeCodebaseSearch.description).toContain("codebase_context first");

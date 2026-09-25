@@ -122,7 +122,7 @@ describe("routing hints", () => {
       );
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
-      expect(hint).toContain("Verify the returned paths and claims with Read");
+      expect(hint).toContain("Verify each cited path and claim with Read");
       expect(hint).toContain("If the exact path or identifier is already known, use Read or `grep` directly instead");
       expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
@@ -174,6 +174,8 @@ describe("routing hints", () => {
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("consider optional `codebase_edit_context`");
+      expect(hint).toContain("Verify each cited path and claim with Read");
+      expect(hint).toContain("qualify runtime outcomes the source leaves conditional");
     });
 
     it("returns null for non-conceptual intents", () => {
