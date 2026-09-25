@@ -124,6 +124,9 @@ describe("routing hints", () => {
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
       expect(hint).toContain("Verify each cited path and claim with Read");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
+      expect(hint).toContain("`src/git/branch-materialization.ts:190-195`");
+      expect(hint).toContain("never just the filename");
       expect(hint).toContain("If the exact path or identifier is already known, use Read or `grep` directly instead");
       expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
@@ -139,6 +142,7 @@ describe("routing hints", () => {
       );
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
     });
@@ -177,6 +181,9 @@ describe("routing hints", () => {
       expect(hint).not.toContain("consider optional `codebase_edit_context`");
       expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
       expect(hint).toContain("Verify each cited path and claim with Read");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
+      expect(hint).toContain("`src/git/branch-materialization.ts:190-195`");
+      expect(hint).toContain("never just the filename");
       expect(hint).toContain("qualify runtime outcomes the source leaves conditional");
     });
 
