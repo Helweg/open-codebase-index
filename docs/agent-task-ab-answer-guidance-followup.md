@@ -1,4 +1,4 @@
-# Fresh conceptual-answer follow-up: operational stop
+# Fresh conceptual-answer follow-up: operational stop and exploratory result
 
 On 2026-09-25, the follow-up to [the two-prompt guidance study](agent-task-ab-answer-guidance-study.md) prepared four previously unseen source-backed conceptual questions to compare guidance commit `7b73ab5` against parent `fcc54de`. Prompts and a separate private rubric were frozen before inference and independently reviewed. The same 510-file source corpus, two ready compatible 6,768-chunk indexes, isolated OpenCode 1.18.32 profiles, exact model, and identical 33 exposed tool contracts passed preflight. The executable runner and safety controls were independently reviewed, with zero automatic retries.
 
@@ -9,3 +9,23 @@ The runner reported this cell as `missing-final`; that label alone did not ident
 This fixes the **diagnosed setup error**, not the unmeasured answer-quality result. Keep the original follow-up incomplete rather than scoring the parent as a failure. Any comparison must be a distinct, separately frozen study with both arm profiles checking the effective XDG authentication path and passing a non-task authorization smoke. Do not restart the failed cell under this study's zero-retry protocol.
 
 Frozen prompt SHA-256: `56df2fd9f845a780fa61dfe6822380564d5683f4b06a901a5abcd6ca0d73cc0e`; prospective zero-retry protocol SHA-256: `6410d855a89e85b92591b635319bd07420523f47af2d9ce2e15638b3cd852d1d`; reviewed runner SHA-256: `7806d48744c27f3cd9e0b21a797459dfbc53756cbdbc9f2eb6ca3a8ef009e1d2`. Private artifacts remain owner-only in the local scratch trial root; no credentials or answer bodies are stored in this report.
+
+## Corrected, separately frozen exploratory comparison
+
+A corrected isolated study confirmed the effective XDG credential path and returned `AUTH_OK` on a neutral request. Its first separately approved zero-retry run stopped on the frozen, polled 100,000-token cap during parent question 1: 114,357 observed tokens, 10 tools, $0.005132142, and no final answer. A secondary checksum-packaging error occurred because the failure handler tried to hash a preflight directory. That attempt remains invalid and ungraded.
+
+A **new, explicitly post-exposure exploratory** study was independently approved with a disclosed 300,000-token polled cap, a file-safe recursive checksum writer, and fresh symmetric work/index copies and HOME/XDG profiles. It retained the four frozen prompts, rubric, model, agent, counterbalanced eight-cell order, all other limits, and zero-retry rule. The earlier failed attempts were neither pooled nor relabeled. All eight real OpenCode cells completed, their artifact checksums passed, and byte-exact final answers were anonymized before independent source-backed blind grading. A neutral adjudication was frozen before the coordinator opened the arm mapping.
+
+| Question | Parent `fcc54de` atomic facts | Guard-tracing `7b73ab5` atomic facts | Difference |
+|---|---:|---:|---:|
+| Temporary branch checkout | 7/9 | 7/9 | 0 |
+| Exclusive index mutation lease | 9/10 | 10/10 | +1 |
+| Bounded PDF extraction | 8/9 | 8/9 | 0 |
+| Failed-work persistence | 8/10 | 7/10 | -1 |
+| **Total, descriptive only** | **32/38** | **32/38** | **0** |
+
+Both arms named the required source on all four tasks. Under the frozen strict rule requiring a repository-relative path *and* a claim-containing line range, neither arm supplied an exact citation for any of the 38 atomic facts; most inline references abbreviated the path to a basename. No material conditional contradiction was found in blind review, but each arm omitted some conjunctive guard or cleanup detail. Independent graders disagreed on a few strict fact and citation calls; the neutral adjudication applied the rubric's full-conjunction and exact-path requirements before unblinding. The rubric defined no composite winner.
+
+Observed measured costs were $0.021343686 for parent and $0.024517836 for candidate, plus $0.007155228 total infrastructure smokes; 34 versus 38 tool calls and 562,236 versus 696,785 reported tokens. Costs and token counts are descriptive, not efficiency proof. Four correlated questions, one model, a post-exposure token-cap amendment, and strict citation scoring do **not** establish a general quality improvement. This run found no net factual gain and exposes a concrete remaining issue: answer-level citation paths are often shortened despite guidance. Do not claim the new hint improves answer quality from this evidence.
+
+Exploratory preregistration: `OCI-EXPLORATORY-POSTEXPOSURE-20260925-01`, ledger SHA-256 `12044dde88897b46cb1c0e5c673fd9b3863fb92b3675b249dafe8530ad9774b9`, runner SHA-256 `d9a3f55e9cadb502f6ed97df870b87c2eeb6c09a42885e7abd7114e9b2ab385b`, rubric SHA-256 `fb5b84a18e8d90673bdb9087479f8095627683b6a38e8e7160860edc6a4aefe7`. Neutral adjudication was frozen at SHA-256 `a2d54390c90861cc480b8e511c2a450f5e74972f1bace8a995aa6860f56273c6` before arm mapping. Detailed, owner-only run evidence remains under the local scratch amendment root.
