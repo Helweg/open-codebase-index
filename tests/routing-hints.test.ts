@@ -122,6 +122,7 @@ describe("routing hints", () => {
       );
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
+      expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
       expect(hint).toContain("Verify each cited path and claim with Read");
       expect(hint).toContain("If the exact path or identifier is already known, use Read or `grep` directly instead");
       expect(hint).toContain("`codebase_peek`");
@@ -174,6 +175,7 @@ describe("routing hints", () => {
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("consider optional `codebase_edit_context`");
+      expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
       expect(hint).toContain("Verify each cited path and claim with Read");
       expect(hint).toContain("qualify runtime outcomes the source leaves conditional");
     });

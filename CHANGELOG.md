@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- OpenCode conceptual retrieval guidance now asks agents to verify exact citation paths with Read and qualify runtime outcomes not established by source, addressing nonexistent-file citations and unsupported categorical claims seen in blind answer evaluation. This is guidance, not an enforced citation validator or a measured accuracy gain.
+- OpenCode conceptual retrieval guidance now asks agents to read authoritative implementations and trace lifecycle guards and failure branches before summarizing, while verifying exact citation paths with Read and qualifying runtime outcomes not established by source. A two-prompt exploratory evaluation found better citation validity but mixed factual coverage before this additional guidance; its effect on answer quality is not yet measured.
 
 - Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.
 
