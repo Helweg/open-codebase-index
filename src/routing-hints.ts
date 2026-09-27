@@ -133,7 +133,7 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
   };
 }
 
-const ANSWER_HINT = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional.";
+const ANSWER_HINT = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional. Answer the question concisely while preserving requested detail and relevant guards, failure branches, and boundary conditions. Do not present unverified examples, guarantees, or extrapolations as established facts, and reconcile summary labels with the control flow and evidence you cite.";
 
 export function buildRoutingHint(
   assessment: RoutingAssessment,

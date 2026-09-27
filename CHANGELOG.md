@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- OpenCode ready-index conceptual and broad-task answer guidance now instructs agents to answer concisely while preserving requested detail, guards, failure branches, and boundary conditions, avoid presenting unverified examples, guarantees, or extrapolations as facts, and reconcile summary labels with cited control flow and evidence.
+
 - OpenCode conceptual retrieval guidance now asks agents to read authoritative implementations, trace lifecycle guards and failure branches, and cite a verified full repository-relative path with a claim-supporting line range instead of only a filename. A blinded exploratory comparison of the prior guard-tracing hint found no net factual gain (32/38 in both arms) and no exact citations under its strict rubric. A later real-host citation-format comparison stopped before any matched pair completed, so this clarification's answer-quality effect remains unproven; see `docs/agent-task-ab-answer-guidance-followup.md`.
 
 - Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.

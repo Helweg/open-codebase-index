@@ -7,6 +7,8 @@ import {
   extractUserText,
 } from "../src/routing-hints.js";
 
+const factualSafetyAddition = " Answer the question concisely while preserving requested detail and relevant guards, failure branches, and boundary conditions. Do not present unverified examples, guarantees, or extrapolations as established facts, and reconcile summary labels with the control flow and evidence you cite.";
+
 describe("routing hints", () => {
   describe("extractUserText", () => {
     it("combines text parts and ignores non-text parts", () => {
@@ -34,7 +36,9 @@ describe("routing hints", () => {
     ])("emits a local-code routing hint for %s", (query) => {
       const assessment = assessRoutingIntent(query);
 
-      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } }, true)).toContain("codebase_context");
+      const hint = buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } }, true);
+      expect(hint).toContain("codebase_context");
+      expect(hint).toContain(factualSafetyAddition);
     });
 
     it.each([
@@ -229,6 +233,7 @@ describe("routing hints", () => {
 
       expect(hint).toContain("prefer `implementation_lookup`");
       expect(hint).toContain("`codebase_search`");
+      expect(hint).not.toContain(factualSafetyAddition);
     });
 
     it("returns an index bootstrap hint for definition lookups when the index is missing", () => {
@@ -239,21 +244,25 @@ describe("routing hints", () => {
 
       expect(hint).toContain("check `index_status` first");
       expect(hint).toContain("`implementation_lookup`");
+      expect(hint).not.toContain(factualSafetyAddition);
     });
   });
 
   describe("RoutingHintController", () => {
     const ready = { indexed: true, compatibility: { compatible: true } };
     const conceptual = [{ type: "text", text: "How does the retry queue work?" }];
-    const answer = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional.";
+    const answer = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional." + factualSafetyAddition;
 
-    it.each(["codebase_context", "codebase_search", "index_status"])("retains only existing answer guidance after %s and subsequent reads", async (tool) => {
+    it.each(["codebase_context", "codebase_search", "index_status"].flatMap((tool) => [
+      "How does the retry queue work?",
+      "fix the bug where expired sessions remain active",
+    ].map((text) => ({ tool, text }))))("retains only answer guidance after $tool and subsequent reads: $text", async ({ tool, text }) => {
       let statusCalls = 0;
       const controller = new RoutingHintController(async () => {
         statusCalls++;
         return ready;
       });
-      controller.observeUserMessage("s", conceptual);
+      controller.observeUserMessage("s", [{ type: "text", text }]);
       expect(await controller.getSystemHints("s")).toEqual([
         `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. ${answer} Use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content. If the exact path or identifier is already known, use Read or \`grep\` directly instead.`,
       ]);
@@ -277,10 +286,12 @@ describe("routing hints", () => {
         expect(hints[0]).toContain(answer);
       } else if (text.startsWith("Where")) {
         expect(hints[0]).toContain("prefer `implementation_lookup`");
+        expect(hints[0]).not.toContain(factualSafetyAddition);
         controller.markToolUsed("s", "implementation_lookup");
         expect(await controller.getSystemHints("s")).toEqual([]);
       } else {
         expect(hints).toEqual([]);
+        expect(hints.join(" ")).not.toContain(factualSafetyAddition);
       }
     });
 
@@ -299,7 +310,9 @@ describe("routing hints", () => {
       controller.markToolUsed("s", "codebase_context");
       status = notReady;
       controller.observeUserMessage("s", conceptual);
-      expect((await controller.getSystemHints("s"))[0]).toContain("check `index_status` first");
+      const hints = await controller.getSystemHints("s");
+      expect(hints[0]).toContain("check `index_status` first");
+      expect(hints[0]).not.toContain(factualSafetyAddition);
       expect(controller.getSessionState("s")?.answerHint).toBeUndefined();
       controller.markToolUsed("s", "index_status");
       expect(await controller.getSystemHints("s")).toEqual([]);
