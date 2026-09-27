@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **OpenCode answer-guidance lifetime**: After a ready-index conceptual or broad-task hint is delivered, keep its source-verification, full-path citation, and conditional-reasoning guidance available for the rest of that user turn. Discovery tools still clear the one-shot routing instruction, and the next user message clears or replaces the retained guidance. Previously, successful discovery removed the answer instructions before later answer-generation steps.
+- **OpenCode answer-guidance lifetime**: After a ready-index conceptual or broad-task hint is delivered, keep its source-verification, full-path citation, and conditional-reasoning guidance available for the rest of that user turn. Discovery tools still clear the one-shot routing instruction, and the next user message clears or replaces the retained guidance. Previously, successful discovery removed the answer instructions before later answer-generation steps. The [installed-host study](docs/answer-guidance-lifetime-study.md) found substantially better exact supporting citations but a slight factual-coverage decline and more wrong claims, so it does not establish an overall accuracy improvement.
 
 ### Changed
 
