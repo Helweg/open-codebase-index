@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits instead of absolute machine paths shortened to 120 characters. Keep origin labels for multi-repository results and preserve exact-symbol ordering; a location that fits the context token budget is now directly usable for source verification without reconstructing a clipped path.
+- **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits instead of machine-specific absolute paths clipped to 120 characters. Keep origin labels for multi-repository results and preserve exact-symbol ordering.
 
-- **OpenCode answer-guidance lifetime**: After a ready-index conceptual or broad-task hint is delivered, keep its source-verification, full-path citation, and conditional-reasoning guidance available for the rest of that user turn. Discovery tools still clear the one-shot routing instruction, and the next user message clears or replaces the retained guidance. Previously, successful discovery removed the answer instructions before later answer-generation steps. The [installed-host study](docs/answer-guidance-lifetime-study.md) found substantially better exact supporting citations but a slight factual-coverage decline and more wrong claims, so it does not establish an overall accuracy improvement.
+- **OpenCode answer-guidance lifetime**: Retain source-verification guidance for the current turn after a discovery tool consumes the one-shot routing hint. A new user message clears or replaces it. Small exploratory studies found better supporting citations but did not establish improved factual accuracy.
 
 - **A/B questions in codebase context**: Treat uppercase slash-separated letters such as `A/B` as terminology rather than inferring the trailing letter as an exact symbol. Natural questions about A/B evaluation now retain conceptual retrieval while explicit single-letter symbol lookup remains available.
 
@@ -26,9 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Rejected factual-safety guidance addition**: Removed the candidate's added answer wording after a fixed prospective comparison failed all six quality directions in both primary and complete-pair analyses. All 32 answers completed, but factual and exactly supported coverage fell while wrong and unsupported claims increased. Retain the prior guidance-lifetime fix and full-path guidance, with no claim of overall factual improvement. See the [negative study and safety decision](docs/factual-safety-guidance-study.md).
-
-- OpenCode conceptual retrieval guidance now asks agents to read authoritative implementations, trace lifecycle guards and failure branches, and cite a verified full repository-relative path with a claim-supporting line range instead of only a filename. A blinded exploratory comparison of the prior guard-tracing hint found no net factual gain (32/38 in both arms) and no exact citations under its strict rubric. A later real-host citation-format comparison stopped before any matched pair completed, so this clarification's answer-quality effect remains unproven; see `docs/agent-task-ab-answer-guidance-followup.md`.
+- OpenCode conceptual retrieval guidance now requests verification of implementation guards and failure branches and full repository-relative paths with supporting line ranges. Its overall answer-quality effect remains unproven.
 
 - Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.
 
