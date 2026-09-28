@@ -30,7 +30,8 @@ describe("conceptual origin evidence packing", () => {
     expect(pack.results.map((result) => result.filePath)).toEqual([
       "/repo/src/a.ts", "/repo/docs/guide.ts", "/external/axios/index.ts", "/other/axios/index.ts",
     ]);
-    expect(pack.text).toContain("/repo/docs/guide.ts:1-3 [origin: knowledge base: docs]");
+    expect(pack.text).toContain("guide.ts:1-3 [origin: knowledge base: docs]");
+    expect(pack.text).not.toContain("/repo/docs/guide.ts:1-3");
     expect(pack.text).toContain("[origin: knowledge base: /external/axios]");
     expect(pack.text).toContain("[origin: knowledge base: /other/axios]");
     expect(pack.text).not.toContain("/repoish/stray.ts [origin:");
@@ -82,6 +83,37 @@ describe("conceptual origin evidence packing", () => {
     expect(weak.text).not.toContain("/external/axios/index.ts");
   });
 
+  it("preserves the complete repository-relative path even when the absolute root exceeds 120 characters", () => {
+    const longRoot = `/private/${"nested/".repeat(25)}project`;
+    const filePath = `${longRoot}/src/important-file.ts`;
+    const pack = buildContextPack([
+      hit(filePath, 1),
+      hit("/external/axios/index.ts", 0.95),
+    ], {
+      origins: [{ root: longRoot, label: "project" }, roots[2]],
+      tokenBudget: 2000,
+    });
+    expect(pack.text).toContain("src/important-file.ts:1-3 [origin: project]");
+    expect(pack.text).not.toContain(longRoot);
+    expect(pack.text).not.toContain("…important-file.ts");
+    expect(pack.results).toHaveLength(2);
+  });
+
+  it("keeps unconfigured paths and single-origin output unchanged", () => {
+    const unknown = hit("/unknown/file.ts", 1);
+    const pack = buildContextPack([unknown, hit("/repo/src/a.ts", 0.9)], {
+      origins: roots,
+      tokenBudget: 2000,
+    });
+    expect(pack.text).toContain("/unknown/file.ts:1-3");
+    const single = buildContextPack([hit("/repo/src/a.ts", 1)], {
+      origins: roots.slice(0, 1),
+      tokenBudget: 2000,
+    });
+    expect(single.text).toContain("src/a.ts:1-3");
+    expect(single.text).not.toContain("/repo/src/a.ts:1-3");
+  });
+
   it("does not promote unconfigured paths or change single-origin and definition ordering", () => {
     const unconfigured = hit("/unknown/first.ts", 1);
     const candidates = [unconfigured, ...results];
@@ -89,7 +121,9 @@ describe("conceptual origin evidence packing", () => {
     expect(multi.results.map((result) => result.filePath)).toEqual(["/unknown/first.ts", "/repo/src/a.ts"]);
     const single = buildContextPack(results, { origins: roots.slice(0, 1), tokenBudget: 2000 });
     const baseline = buildContextPack(results, { tokenBudget: 2000 });
-    expect(single.text).toBe(baseline.text);
+    expect(single.results).toEqual(baseline.results);
+    expect(single.text).toContain("src/a.ts:1-3");
+    expect(single.text).not.toContain("/repo/src/a.ts:1-3");
     const definition = buildContextPack(results, { origins: roots, preserveInputOrder: true, maxResults: 2 });
     expect(definition.results).toEqual(results.slice(0, 2));
   });

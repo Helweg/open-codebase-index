@@ -287,11 +287,13 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
 
 function formatContextEvidence(result: SearchResult, index: number, origins?: ContextPackOptions["origins"]): string {
   const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
-  const path = compactEvidenceValue(result.filePath, 120);
-  const location = result.documentLocation?.kind === "pdf"
-    ? `${path}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
-    : `${path}:${result.startLine}-${result.endLine}`;
   const origin = origins ? resultOrigin(result, origins) : -1;
+  const sourcePath = origin >= 0 && origins
+    ? path.relative(origins[origin].root, result.filePath)
+    : compactEvidenceValue(result.filePath, 120);
+  const location = result.documentLocation?.kind === "pdf"
+    ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
+    : `${sourcePath}:${result.startLine}-${result.endLine}`;
   const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${origins?.[origin].label}]`;
   return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})`;
 }
@@ -334,7 +336,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
   const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, options.origins ?? [])));
   observedOrigins.delete(-1);
-  const origins = !preserveInputOrder && (options.origins?.length ?? 0) > 1 ? options.origins : undefined;
+  const origins = !preserveInputOrder && (options.origins?.length ?? 0) > 0 ? options.origins : undefined;
   const diversified = preserveInputOrder ? deduplicated : origins && observedOrigins.size > 1
     ? diversifyByOrigin(deduplicated, origins)
     : diversifyContextCandidates(deduplicated);
