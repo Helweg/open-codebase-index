@@ -4,6 +4,7 @@ import { get_encoding } from "tiktoken";
 import * as path from "node:path";
 
 import { isLikelyImplementationPath } from "../indexer/intent-aware-ranking.js";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 
 export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
 export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
@@ -24,6 +25,11 @@ export interface ContextPackOptions {
   preferImplementationPaths?: boolean;
   preserveInputOrder?: boolean;
   trace?: (trace: ContextPackTrace) => void;
+}
+
+interface CanonicalContextOrigin {
+  root: string;
+  label: string;
 }
 
 export interface ContextPackTrace {
@@ -200,20 +206,33 @@ function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
   return diversified;
 }
 
-function resultOrigin(result: SearchResult, origins: NonNullable<ContextPackOptions["origins"]>): number {
+function canonicalContextPath(targetPath: string): string {
+  try {
+    return canonicalizePathForComparison(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
+}
+
+function canonicalOrigins(origins: NonNullable<ContextPackOptions["origins"]>): CanonicalContextOrigin[] {
+  return origins.map((origin) => ({ ...origin, root: canonicalContextPath(origin.root) }));
+}
+
+function resultOrigin(result: SearchResult, origins: CanonicalContextOrigin[]): number {
   if (!path.isAbsolute(result.filePath)) return -1;
+  const filePath = canonicalContextPath(result.filePath);
   let matched = -1;
   for (let index = 0; index < origins.length; index += 1) {
     const root = origins[index].root;
     if (!path.isAbsolute(root)) continue;
-    const relative = path.relative(root, result.filePath);
+    const relative = path.relative(root, filePath);
     if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
     if (matched < 0 || root.length > origins[matched].root.length) matched = index;
   }
   return matched;
 }
 
-function diversifyByOrigin(results: SearchResult[], origins: NonNullable<ContextPackOptions["origins"]>): SearchResult[] {
+function diversifyByOrigin(results: SearchResult[], origins: CanonicalContextOrigin[]): SearchResult[] {
   const fileDiversified = diversifyContextCandidates(results);
   if (origins.length < 2 || fileDiversified.length === 0) return fileDiversified;
   const seen = new Set<number>();
@@ -285,11 +304,11 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
   return `Exact-search handoff: use exact grep/search for ${quotedNames} to find usages or exhaustive matches.`;
 }
 
-function formatContextEvidence(result: SearchResult, index: number, origins?: ContextPackOptions["origins"]): string {
+function formatContextEvidence(result: SearchResult, index: number, origins?: CanonicalContextOrigin[]): string {
   const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
   const origin = origins ? resultOrigin(result, origins) : -1;
   const sourcePath = origin >= 0 && origins
-    ? path.relative(origins[origin].root, result.filePath)
+    ? path.relative(origins[origin].root, canonicalContextPath(result.filePath))
     : compactEvidenceValue(result.filePath, 120);
   const location = result.documentLocation?.kind === "pdf"
     ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
@@ -306,7 +325,7 @@ function formatContextPack(
   limitOmittedCount: number,
   budgetOmittedCount: number,
   includeExactSearchHandoff: boolean,
-  origins?: ContextPackOptions["origins"],
+  origins?: CanonicalContextOrigin[],
 ): string {
   const lines = selected.map((result, index) => formatContextEvidence(result, index + 1, origins));
   const notes: string[] = [];
@@ -334,9 +353,10 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
   const deduplicated = deduplicateContextCandidates(ranked);
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
-  const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, options.origins ?? [])));
+  const configuredOrigins = options.origins ? canonicalOrigins(options.origins) : [];
+  const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, configuredOrigins)));
   observedOrigins.delete(-1);
-  const origins = !preserveInputOrder && (options.origins?.length ?? 0) > 0 ? options.origins : undefined;
+  const origins = !preserveInputOrder && configuredOrigins.length > 0 ? configuredOrigins : undefined;
   const diversified = preserveInputOrder ? deduplicated : origins && observedOrigins.size > 1
     ? diversifyByOrigin(deduplicated, origins)
     : diversifyContextCandidates(deduplicated);

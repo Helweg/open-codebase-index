@@ -1,6 +1,7 @@
 import type { HostMode } from "../config/host.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import * as path from "node:path";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { loadRuntimeConfig } from "./config-state.js";
 import {
   getCallGraphData,
@@ -167,15 +168,24 @@ async function resolveCodebaseContextUnmeasured(
 
 function configuredOrigins(projectRoot: string, host: HostMode): Array<{ root: string; label: string }> {
   const config = loadRuntimeConfig(projectRoot, host);
-  const roots = [projectRoot, ...(Array.isArray(config.knowledgeBases) ? config.knowledgeBases as string[] : [])]
-    .map((root) => path.resolve(root));
-  const unique = [...new Set(roots)];
-  const basenames = unique.map((root) => path.basename(root));
-  return unique.map((root, index) => ({
-    root,
+  const configuredRoots = [projectRoot, ...(Array.isArray(config.knowledgeBases) ? config.knowledgeBases as string[] : [])]
+    .map((root) => path.isAbsolute(root) ? root : path.resolve(projectRoot, root))
+    .map((root) => ({ configured: path.resolve(root), canonical: canonicalContextPath(root) }));
+  const unique = [...new Map(configuredRoots.map((root) => [root.canonical, root])).values()];
+  const basenames = unique.map(({ configured }) => path.basename(configured));
+  return unique.map(({ configured, canonical }, index) => ({
+    root: canonical,
     label: index === 0 ? `project: ${basenames[index]}`
-      : `knowledge base: ${basenames.filter((name) => name === basenames[index]).length > 1 ? root : basenames[index]}`,
+      : `knowledge base: ${basenames.filter((name) => name === basenames[index]).length > 1 ? configured : basenames[index]}`,
   }));
+}
+
+function canonicalContextPath(targetPath: string): string {
+  try {
+    return canonicalizePathForComparison(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
 }
 
 function contextRoute(

@@ -1,3 +1,6 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { SearchResult } from "../src/indexer/index.js";
 import { buildContextPack, countContextTokens } from "../src/tools/context-pack.js";
@@ -39,6 +42,50 @@ describe("conceptual origin evidence packing", () => {
     expect(buildContextPack(results, options).text).toBe(pack.text);
     expect(pack.tokenEstimate).toBe(countContextTokens(pack.text));
     expect(pack.tokenEstimate).toBeLessThanOrEqual(pack.tokenBudget);
+  });
+
+  it("matches resolved indexed paths to configured symlink roots", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-origin-symlink-"));
+    try {
+      const realRoot = path.join(tempDir, "real-kb");
+      const linkedRoot = path.join(tempDir, "configured-kb");
+      fs.mkdirSync(path.join(realRoot, "guides"), { recursive: true });
+      fs.symlinkSync(realRoot, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+
+      const result = hit(path.join(fs.realpathSync.native(realRoot), "guides", "setup.ts"), 1);
+      const pack = buildContextPack([result], {
+        origins: [{ root: linkedRoot, label: "knowledge base: configured-kb" }],
+        tokenBudget: 2000,
+      });
+
+      expect(pack.text).toContain(`guides${path.sep}setup.ts:1-3`);
+      expect(pack.text).not.toContain(result.filePath);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses path boundaries and the most specific nested origin for nonexistent paths", () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "context-origin-boundary-"));
+    try {
+      const projectRoot = path.join(tempDir, "repo");
+      const nestedRoot = path.join(projectRoot, "docs");
+      const prefixSibling = path.join(tempDir, "repo-copy", "stray.ts");
+      const nestedFile = path.join(nestedRoot, "api", "guide.ts");
+      const pack = buildContextPack([hit(nestedFile, 1), hit(prefixSibling, 0.9)], {
+        origins: [
+          { root: projectRoot, label: "project" },
+          { root: nestedRoot, label: "nested docs" },
+        ],
+        tokenBudget: 2000,
+      });
+
+      expect(pack.text).toContain(`api${path.sep}guide.ts:1-3 [origin: nested docs]`);
+      expect(pack.text).toContain(prefixSibling);
+      expect(pack.text).not.toContain(`${prefixSibling} [origin:`);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("respects tight limits and budgets without selecting outside retrieved candidates", () => {
