@@ -85,7 +85,6 @@ function smokeIdentity(identity, expectedBinaries) {
       ].join("\n"));
     }
   }
-
 }
 
 try {

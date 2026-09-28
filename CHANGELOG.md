@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits instead of machine-specific absolute paths clipped to 120 characters. Keep origin labels for multi-repository results and preserve exact-symbol ordering.
+- **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits, including knowledge bases configured through symlinks, instead of machine-specific absolute paths clipped to 120 characters. Keep origin labels for multi-repository results and preserve exact-symbol ordering.
 
 - **OpenCode answer-guidance lifetime**: Retain source-verification guidance for the current turn after a discovery tool consumes the one-shot routing hint. A new user message clears or replaces it. Small exploratory studies found better supporting citations but did not establish improved factual accuracy.
 
@@ -19,7 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Package staging**: Exclude transient top-level test directories from staged release packages.
 
-- **Source explanation routing**: Do not treat incidental `npm`, package, crate, or framework terminology as a web lookup. Source-grounded explanations spanning files or repositories now remain eligible for the OpenCode `codebase_context` hint even when the request also names paths, builds, or tests. Explicit external lookups and simple known-path reads retain their prior routing.
+- **Source explanation routing**: Do not treat incidental `npm`, package, crate, or framework terminology as a web lookup. Source-grounded explanations spanning files or repositories now remain eligible for the OpenCode `codebase_context` hint even when the request also names paths, builds, or tests. Explicit external lookups, workflow analyses such as test coverage reports, and simple known-path reads retain their prior routing.
 
 - **OpenCode retrieval guidance**: Keep `codebase_context` first for conceptual questions in the current configured repository index. Describe `codebase_peek` as metadata-only semantic navigation, use Read for known paths and grep for literal identifiers, and use `codebase_search` when implementation content is needed.
 
