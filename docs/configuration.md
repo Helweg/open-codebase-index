@@ -399,7 +399,7 @@ Index additional directories alongside the project:
 
 Paths can be absolute or relative to the project root. OpenCode and Pi also expose host-native tools for adding, listing, and removing knowledge bases. When multiple repositories are configured, repository retrieval tools search the current configured repository index by default rather than automatically fanning out across every configured repository.
 
-A neighboring repository is **not** searched automatically just because it is named in the question. Add its directory here (or with a knowledge-base tool), index the project, and verify that the resulting evidence includes files from both roots. `codebase_context` and `codebase_search` search the configured index rather than independently querying every repository. Results identify their origin through file paths, not a separate repository label.
+A neighboring repository is **not** searched automatically just because it is named in the question. Add its directory here (or with a knowledge-base tool), index the project, and verify that the resulting evidence includes files from both roots. `codebase_context` and `codebase_search` search the configured index rather than independently querying every repository. Results from multiple configured roots include an origin label and a repository-relative source path in conceptual context evidence.
 
 ### Opt-in PDF text indexing
 

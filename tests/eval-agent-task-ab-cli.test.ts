@@ -103,6 +103,9 @@ describe("agent-task A/B executable", () => {
       });
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("Usage: ocbi-agent-task-ab");
+      expect(result.stdout).toContain("[--prepare-argv FILE]");
+      expect(result.stdout).toContain("non-empty JSON array of non-empty argv strings");
+      expect(result.stdout).toContain("Preparation output is not persisted");
     }
   });
 

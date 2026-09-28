@@ -44,6 +44,13 @@ const USAGE = `Usage: ocbi-agent-task-ab --manifest FILE --no-ocbi-argv FILE --o
   [--capture-audit-evidence] [--arm-audit FILE] [--max-tokens N] [--max-tool-calls N] \\
   [--max-duration-ms N] [--max-output-bytes N] [--prepare-argv FILE] [--prepare-timeout-ms N]`;
 
+const HELP = `${USAGE}
+
+Options:
+  --prepare-argv FILE  Read a non-empty JSON array of non-empty argv strings from FILE and run it
+                       after repository clones are ready in each isolated prompt-arm trial.
+                       Preparation output is not persisted.`;
+
 interface CapturedText {
   text: string;
   truncated: boolean;
@@ -426,7 +433,7 @@ function writeAuditEvidence(root: string, trials: AgentTaskTrialResult[]): Recor
 
 export async function runAgentTaskAbCli(argv: string[]): Promise<void> {
   if (argv.length === 1 && (argv[0] === "--help" || argv[0] === "-h")) {
-    process.stdout.write(`${USAGE}\n`);
+    process.stdout.write(`${HELP}\n`);
     return;
   }
   const options = parseOptions(argv);
