@@ -54,7 +54,7 @@ Each topic had two slots per arm. Counts below are descriptive; use the answer-l
 
 Q5 includes the empty, externally interrupted baseline slot. The one factual loss on a complete pair is Q5 repetition 1. It must not be hidden by that unrelated administrative failure.
 
-**Product conclusion:** the lifetime bug is fixed and the installed-host mechanism is directly verified. The measured product comparison supports a bounded **auditability improvement**, with a factual/error trade-off that remains unresolved. This is enough to document the specific benefit, not to advertise universally better or more accurate answers. No post-unblinding guidance tuning, regrading, retries or additional answer sampling was used to seek a more favorable result.
+**Product conclusion:** the lifetime bug is fixed and the installed-host mechanism is directly verified. The measured product comparison supports a bounded **auditability improvement**, with a factual/error trade-off that remains unresolved. This is enough to document the specific benefit, not to advertise universally better or more accurate answers. Within that study, no post-unblinding guidance tuning, regrading, retries or additional answer sampling was used to seek a more favorable result. A [separate prospective factual-safety follow-up](factual-safety-guidance-study.md) tested additional wording and returned a negative result. That addition was removed while the prior lifetime mechanism and full-path guidance remain. The follow-up does not revise or pool this study's results.
 
 ## What was actually broken
 

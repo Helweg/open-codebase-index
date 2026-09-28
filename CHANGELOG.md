@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- OpenCode ready-index conceptual and broad-task answer guidance now instructs agents to answer concisely while preserving requested detail, guards, failure branches, and boundary conditions, avoid presenting unverified examples, guarantees, or extrapolations as facts, and reconcile summary labels with cited control flow and evidence.
+- **Rejected factual-safety guidance addition**: Removed the candidate's added answer wording after a fixed prospective comparison failed all six quality directions in both primary and complete-pair analyses. All 32 answers completed, but factual and exactly supported coverage fell while wrong and unsupported claims increased. Retain the prior guidance-lifetime fix and full-path guidance, with no claim of overall factual improvement. See the [negative study and safety decision](docs/factual-safety-guidance-study.md).
 
 - OpenCode conceptual retrieval guidance now asks agents to read authoritative implementations, trace lifecycle guards and failure branches, and cite a verified full repository-relative path with a claim-supporting line range instead of only a filename. A blinded exploratory comparison of the prior guard-tracing hint found no net factual gain (32/38 in both arms) and no exact citations under its strict rubric. A later real-host citation-format comparison stopped before any matched pair completed, so this clarification's answer-quality effect remains unproven; see `docs/agent-task-ab-answer-guidance-followup.md`.
 
