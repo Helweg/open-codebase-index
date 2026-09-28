@@ -50,13 +50,31 @@ Requires Node.js 22.13 or newer. Node.js 24 LTS is recommended.
 
 2. Add it to `opencode.json`:
 
+   For OpenCode 2.x:
+
+   ```json
+   {
+     "plugins": ["open-codebase-index"]
+   }
+   ```
+
+   For OpenCode 1.x (1.3.4 or newer):
+
    ```json
    {
      "plugin": ["open-codebase-index"]
    }
    ```
 
-   Legacy alias:
+   Legacy alias (OpenCode 2.x):
+
+   ```json
+   {
+     "plugins": ["opencode-codebase-index"]
+   }
+   ```
+
+   Legacy alias (OpenCode 1.x):
 
    ```json
    {

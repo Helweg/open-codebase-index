@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.31.1",
+  "version": "0.32.2",
   "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
@@ -143,7 +143,7 @@
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
-    "@opencode-ai/plugin": "^1.0.0"
+    "@opencode-ai/plugin": "^1.3.4"
   },
   "peerDependenciesMeta": {
     "@opencode-ai/plugin": {

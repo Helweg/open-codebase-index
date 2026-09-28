@@ -31,6 +31,7 @@ export interface RoutingAssessment {
 export interface RoutingSessionState {
   assessment: RoutingAssessment;
   pendingHint: boolean;
+  answerHint?: string;
   updatedAt: number;
 }
 
@@ -85,7 +86,7 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
     };
   }
 
-  if (looksLikeDirectPath(normalizedText) && !matchedConceptualHint) {
+  if (looksLikeDirectPath(normalizedText) && !matchedConceptualHint && !matchedBroadLocalTask) {
     return {
       intent: "direct_path",
       text: normalizedText,
@@ -132,6 +133,8 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
   };
 }
 
+const ANSWER_HINT = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional.";
+
 export function buildRoutingHint(
   assessment: RoutingAssessment,
   status: Pick<StatusResult, "indexed" | "compatibility"> | null,
@@ -163,7 +166,7 @@ export function buildRoutingHint(
   const graphHandoff = includeGraphHandoff
     ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
     : "";
-  return `For this turn, prefer \`codebase_context\` for local code discovery, then use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. Use \`grep\` for exact identifiers or exhaustive matches.${preEditHint}`;
+  return `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. ${ANSWER_HINT} Use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. If the exact path or identifier is already known, use Read or \`grep\` directly instead.${preEditHint}`;
 }
 
 export class RoutingHintController {
@@ -197,12 +200,28 @@ export class RoutingHintController {
     }
 
     const state = this.sessionState.get(sessionID);
-    if (!state || !state.pendingHint) {
+    if (!state) {
       return [];
+    }
+    if (!state.pendingHint) {
+      return state.answerHint ? [state.answerHint] : [];
     }
 
     const status = await this.safeGetStatus();
+    const currentState = this.sessionState.get(sessionID);
+    if (currentState !== state) {
+      return [];
+    }
+    if (!state.pendingHint) {
+      return state.answerHint ? [state.answerHint] : [];
+    }
+
     const hint = buildRoutingHint(state.assessment, status, this.includeGraphHandoff);
+
+    if (hint && status?.indexed && status.compatibility?.compatible !== false
+      && (state.assessment.intent === "local_conceptual" || state.assessment.intent === "local_broad_task")) {
+      state.answerHint = ANSWER_HINT;
+    }
 
     return hint ? [hint] : [];
   }

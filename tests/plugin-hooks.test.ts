@@ -28,6 +28,7 @@ const mockState = vi.hoisted(() => ({
     index: vi.fn().mockResolvedValue({}),
   },
   initializeTools: vi.fn(),
+  realRouting: false,
   hints: ["runtime-routing-hint"],
   routingControllers: [] as Array<{
     getSystemHints: ReturnType<typeof vi.fn>;
@@ -107,7 +108,8 @@ vi.mock("../src/tools/index.js", () => {
   };
 });
 
-vi.mock("../src/routing-hints.js", () => {
+vi.mock("../src/routing-hints.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/routing-hints.js")>();
   class MockRoutingHintController {
     observeUserMessage = vi.fn();
     getSystemHints = vi.fn(async () => mockState.hints);
@@ -123,11 +125,16 @@ vi.mock("../src/routing-hints.js", () => {
   }
 
   return {
-    RoutingHintController: MockRoutingHintController,
+    RoutingHintController: function (...args: ConstructorParameters<typeof actual.RoutingHintController>) {
+      return mockState.realRouting
+        ? new actual.RoutingHintController(...args)
+        : new MockRoutingHintController();
+    },
   };
 });
 
-import plugin from "../src/index.js";
+import mod from "../src/index.js";
+const plugin = mod.server;
 import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";
@@ -151,6 +158,7 @@ describe("plugin routing hint hook selection", () => {
         requireProjectMarker: true,
       },
     };
+    mockState.realRouting = false;
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
     mockState.createWatcherWithIndexer.mockClear();
@@ -291,6 +299,32 @@ describe("plugin routing hint hook selection", () => {
       }),
       { restartAutoIndex: true },
     );
+  });
+
+  it.each(["system", "developer"] as const)("retains real answer guidance after discovery through the %s hook", async (role) => {
+    mockState.realRouting = true;
+    mockState.config.search.routingHintRole = role;
+    const runtime = await plugin({ directory: "/tmp/project" } as Parameters<typeof plugin>[0]);
+    const message = runtime["chat.message"]!;
+    const after = runtime["tool.execute.after"]!;
+    const transform = runtime[`experimental.chat.${role}.transform`] as
+      (input: { sessionID: string }, output: { system: string[]; developer: string[] }) => Promise<void>;
+    await message({ sessionID: "real" }, {
+      parts: [{ type: "text", text: "How does the retry queue work?" }],
+    } as Parameters<typeof message>[1]);
+    const first = { system: [] as string[], developer: [] as string[] };
+    await transform({ sessionID: "real" }, first);
+    expect(first[role][0]).toContain("one bounded `codebase_context` query");
+    expect(first[role][0]).toContain("Verify each cited path and claim with Read");
+    for (const tool of ["codebase_context", "codebase_search", "read"]) {
+      await after({ sessionID: "real", tool, callID: tool, args: {} }, { title: "", output: "", metadata: {} });
+      const final = { system: [] as string[], developer: [] as string[] };
+      await transform({ sessionID: "real" }, final);
+      expect(final[role]).toHaveLength(1);
+      expect(final[role][0]).toContain("Verify each cited path and claim with Read");
+      expect(final[role][0]).toContain("qualify runtime outcomes the source leaves conditional");
+      expect(final[role][0]).not.toContain("codebase_context");
+    }
   });
 
   it("injects hints through system transform when role is system", async () => {

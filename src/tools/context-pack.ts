@@ -1,6 +1,7 @@
 import type { SearchResult } from "../indexer/index.js";
 
 import { get_encoding } from "tiktoken";
+import * as path from "node:path";
 
 import { isLikelyImplementationPath } from "../indexer/intent-aware-ranking.js";
 
@@ -15,6 +16,7 @@ interface RankedSearchResult {
 }
 
 export interface ContextPackOptions {
+  origins?: Array<{ root: string; label: string }>;
   tokenBudget?: number;
   heading?: string;
   maxResults?: number;
@@ -198,6 +200,37 @@ function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
   return diversified;
 }
 
+function resultOrigin(result: SearchResult, origins: NonNullable<ContextPackOptions["origins"]>): number {
+  if (!path.isAbsolute(result.filePath)) return -1;
+  let matched = -1;
+  for (let index = 0; index < origins.length; index += 1) {
+    const root = origins[index].root;
+    if (!path.isAbsolute(root)) continue;
+    const relative = path.relative(root, result.filePath);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
+    if (matched < 0 || root.length > origins[matched].root.length) matched = index;
+  }
+  return matched;
+}
+
+function diversifyByOrigin(results: SearchResult[], origins: NonNullable<ContextPackOptions["origins"]>): SearchResult[] {
+  const fileDiversified = diversifyContextCandidates(results);
+  if (origins.length < 2 || fileDiversified.length === 0) return fileDiversified;
+  const seen = new Set<number>();
+  const first: SearchResult[] = [fileDiversified[0]];
+  const topScore = fileDiversified[0].score;
+  seen.add(resultOrigin(fileDiversified[0], origins));
+  for (const result of fileDiversified.slice(1)) {
+    const origin = resultOrigin(result, origins);
+    if (origin >= 0 && !seen.has(origin) && topScore > 0 && result.score > 0 && result.score >= topScore * 0.8) {
+      seen.add(origin);
+      first.push(result);
+    }
+  }
+  const promoted = new Set(first);
+  return [...first, ...fileDiversified.filter((result) => !promoted.has(result))];
+}
+
 function compactEvidenceValue(value: string, maxChars: number): string {
   const characters = [...value];
   if (characters.length <= maxChars) return value;
@@ -252,13 +285,17 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
   return `Exact-search handoff: use exact grep/search for ${quotedNames} to find usages or exhaustive matches.`;
 }
 
-function formatContextEvidence(result: SearchResult, index: number): string {
+function formatContextEvidence(result: SearchResult, index: number, origins?: ContextPackOptions["origins"]): string {
   const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
-  const path = compactEvidenceValue(result.filePath, 120);
+  const origin = origins ? resultOrigin(result, origins) : -1;
+  const sourcePath = origin >= 0 && origins
+    ? path.relative(origins[origin].root, result.filePath)
+    : compactEvidenceValue(result.filePath, 120);
   const location = result.documentLocation?.kind === "pdf"
-    ? `${path}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
-    : `${path}:${result.startLine}-${result.endLine}`;
-  return `[${index}] ${result.chunkType}${symbol} in ${location} (score ${result.score.toFixed(2)})`;
+    ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
+    : `${sourcePath}:${result.startLine}-${result.endLine}`;
+  const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${origins?.[origin].label}]`;
+  return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})`;
 }
 
 function formatContextPack(
@@ -269,8 +306,9 @@ function formatContextPack(
   limitOmittedCount: number,
   budgetOmittedCount: number,
   includeExactSearchHandoff: boolean,
+  origins?: ContextPackOptions["origins"],
 ): string {
-  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1));
+  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1, origins));
   const notes: string[] = [];
   if (duplicateCount > 0) notes.push(`${duplicateCount} overlapping duplicate${duplicateCount === 1 ? "" : "s"} removed`);
   if (limitOmittedCount > 0) notes.push(`${limitOmittedCount} additional result${limitOmittedCount === 1 ? "" : "s"} excluded by result limit`);
@@ -296,7 +334,12 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
   const deduplicated = deduplicateContextCandidates(ranked);
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
-  const diversified = preserveInputOrder ? deduplicated : diversifyContextCandidates(deduplicated);
+  const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, options.origins ?? [])));
+  observedOrigins.delete(-1);
+  const origins = !preserveInputOrder && (options.origins?.length ?? 0) > 0 ? options.origins : undefined;
+  const diversified = preserveInputOrder ? deduplicated : origins && observedOrigins.size > 1
+    ? diversifyByOrigin(deduplicated, origins)
+    : diversifyContextCandidates(deduplicated);
   const diversifiedCandidates = diversified.map((result) => toContextPackTraceCandidate(result));
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
@@ -310,6 +353,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     limitOmittedCount,
     selectable.length,
     includeExactSearchHandoff,
+    origins,
   );
 
   for (let count = 1; count <= selectable.length; count += 1) {
@@ -323,6 +367,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       limitOmittedCount,
       budgetOmittedCount,
       includeExactSearchHandoff,
+      origins,
     );
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;

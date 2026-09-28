@@ -108,7 +108,7 @@ export function getIndexerForProject(directory: string): Indexer {
 
 export const codebase_context: ToolDefinition = tool({
   description:
-    "Preferred for conceptual questions within the current configured repository index. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use from and to for dependency paths, symbol for definitions, Read for known paths, grep for literal identifiers, and codebase_peek for metadata-only semantic navigation; this tool does not automatically fan out across repositories.",
+    "Preferred for conceptual questions within the current configured repository index. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Cite only exact file paths verified with Read; do not infer a path or runtime outcome from a retrieved snippet. Use from and to for dependency paths, symbol for definitions, Read for known paths, grep for literal identifiers, and codebase_peek for metadata-only semantic navigation; this tool does not automatically fan out across repositories.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
