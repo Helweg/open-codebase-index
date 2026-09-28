@@ -114,6 +114,8 @@ describe("routing hints", () => {
       "Explain how source code in two repositories integrates an npm package and cite relevant files.",
       "Compare the build path in repo-a/src/build.ts with the package implementation in repo-b/src/index.ts and cite source.",
       "Describe the framework hydration flow using source files in the repository, including tests.",
+      "Explain how code coverage is calculated in src/coverage.ts",
+      "trace build code size implementation",
     ])("treats source-grounded explanations as local discovery despite package and path terms: %s", (query) => {
       const assessment = assessRoutingIntent(query);
       expect(assessment.intent).toBe("local_conceptual");

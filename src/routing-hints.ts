@@ -76,11 +76,13 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
   const matchedExplicitWorkflowTask = hasExplicitWorkflowTaskHint(lowered);
   const matchedNonDiscoveryHint = hasNonDiscoveryHint(lowered);
   const matchedBroadLocalTask = hasBroadLocalTaskHint(lowered);
+  const matchedSourceGrounding = looksLikeDirectPath(normalizedText)
+    || /\b(?:implementation|source files?|source paths?|repository|repo|checkout)\b/.test(lowered);
   const hasIdentifier = hasIdentifierShape(normalizedText);
   const hasQuotedIdentifier = containsQuotedIdentifier(normalizedText);
   const shortQuery = countWords(lowered) <= 10;
 
-  if ((matchedExplicitWorkflowTask || (matchedNonDiscoveryHint && !matchedConceptualHint)) && !matchedBroadLocalTask) {
+  if (((matchedExplicitWorkflowTask && !matchedSourceGrounding) || (matchedNonDiscoveryHint && !matchedConceptualHint)) && !matchedBroadLocalTask) {
     return {
       intent: "other",
       text: normalizedText,
