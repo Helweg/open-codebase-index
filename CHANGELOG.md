@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.32.2] - 2026-09-28
+
 ### Fixed
 
 - **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits instead of machine-specific absolute paths clipped to 120 characters. Keep origin labels for multi-repository results and preserve exact-symbol ordering.
@@ -15,26 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **A/B questions in codebase context**: Treat uppercase slash-separated letters such as `A/B` as terminology rather than inferring the trailing letter as an exact symbol. Natural questions about A/B evaluation now retain conceptual retrieval while explicit single-letter symbol lookup remains available.
 
-### Added
-
-- **Streaming A/B tool-use summary**: Agent trial metadata now counts OpenCode-style JSON tool-use events beyond bounded transcript capture, retaining only fixed allowlisted OCBI names and an `other` bucket. Arbitrary stdout remains supported with empty counts.
-- **Optional A/B trial preparation**: `ocbi-agent-task-ab --prepare-argv FILE` runs a trusted direct-argv command after pinned clones and before timed agent execution, with isolated trial environment, bounded execution, discarded output, and fail-closed cleanup.
-- **Static agent-arm audit**: `ocbi-agent-task-ab --arm-audit FILE` optionally validates explicitly supplied control/treatment descriptors before creating artifacts or executing verifiers. Results store only comparison status, mismatch categories and a structural shape/outcome digest. The check is self-reported and does not prove actual runtime configuration or tool parity.
-- **Opt-in A/B audit evidence**: `ocbi-agent-task-ab` can explicitly retain bounded agent/verifier stdout and stderr plus per-repository Git status/diff evidence in `0700`/`0600` storage. Metadata-only output remains the default, argv and environment values are never serialized, and documentation warns that retained evidence may contain secrets because automatic redaction is not provided.
-- Add the opt-in `ocbi-agent-task-ab` evaluation runner for paired trials from reviewed manifests and pinned local Git repositories, with isolated workspaces, direct argv execution, bounded process evidence, protected metadata-only artifacts, and exact paired comparison.
-- **Fresh-study novelty gate**: Cross-repository source validation can require an independently reviewed approval bound to the exact cohort manifest and repository pins. Invalid or rejected approvals fail before a workspace is created or Git fetches sources, preventing protocol-invalid cohorts from being presented as fresh holdout evidence.
-
-### Changed
-
-- OpenCode conceptual retrieval guidance now requests verification of implementation guards and failure branches and full repository-relative paths with supporting line ranges. Its overall answer-quality effect remains unproven.
-
-- Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.
-
-- For source-grounded discovery with a ready index and an unknown location, OpenCode now suggests one bounded `codebase_context` query before exploratory shell or file searches, followed by source verification. Known paths and identifiers still route directly to Read or grep, and broad investigations are not suppressed merely because they mention a file path.
-
-## [0.32.2] - 2026-09-24
-
-### Fixed
+- **Package staging**: Exclude transient top-level test directories from staged release packages.
 
 - **Source explanation routing**: Do not treat incidental `npm`, package, crate, or framework terminology as a web lookup. Source-grounded explanations spanning files or repositories now remain eligible for the OpenCode `codebase_context` hint even when the request also names paths, builds, or tests. Explicit external lookups and simple known-path reads retain their prior routing.
 
@@ -43,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenCode routing hint delivery**: Keep a discovery hint available across multiple system transforms for the same user turn. OpenCode can generate a session title before the main agent request, which previously consumed the one-shot hint before the agent received it. A relevant codebase tool call or the next user message still clears or replaces the hint.
 
 - **Repository trace routing**: Treat a standalone `PR` as a non-discovery cue without mistaking words such as `protected` for PR chores, and recognize requests to trace a code path as conceptual discovery. This restores a `codebase_context` hint for source-tracing questions previously suppressed by substring matching.
+
+### Changed
+
+- OpenCode conceptual retrieval guidance now requests verification of implementation guards and failure branches and full repository-relative paths with supporting line ranges. Its overall answer-quality effect remains unproven.
+
+- Conceptual `codebase_context` evidence now keeps the top-ranked hit and promotes the first retrieved hit from each other configured repository or knowledge-base origin before ordinary file diversity when the result limit and token budget permit, with explicit origin labels and unchanged exact-symbol ordering.
+
+- For source-grounded discovery with a ready index and an unknown location, OpenCode now suggests one bounded `codebase_context` query before exploratory shell or file searches, followed by source verification. Known paths and identifiers still route directly to Read or grep, and broad investigations are not suppressed merely because they mention a file path.
 
 ## [0.32.1] - 2026-09-22
 
@@ -55,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **OpenCode 2.x native plugin support**: Added OpenCode 2.x native plugin API support via combined default export (`id`, `setup`, and `server`), allowing the same entrypoint to load across OpenCode 2.x and OpenCode 1.x (≥ 1.3.4).
+- **Fresh-study novelty gate**: Cross-repository source validation can require an independently reviewed approval bound to the exact cohort manifest and repository pins. Invalid or rejected approvals fail before a workspace is created or Git fetches sources, preventing protocol-invalid cohorts from being presented as fresh holdout evidence.
 
 ### Changed
 

@@ -234,13 +234,12 @@ function prepareClaudeMarketplace(manifestPath) {
 }
 
 const preparedBins = isCurrentIdentity()
-  ? { [catalog.product.current.mcpBinary]: cliTarget, ocbi: cbiTarget, cbi: cbiTarget, "ocbi-agent-task-ab": "dist/eval/agent-task-ab-cli.js" }
+  ? { [catalog.product.current.mcpBinary]: cliTarget, ocbi: cbiTarget, cbi: cbiTarget }
   : {
       [catalog.product.future.mcpBinary]: cliTarget,
       [catalog.product.current.mcpBinary]: cliTarget,
       ocbi: cbiTarget,
       cbi: cbiTarget,
-      "ocbi-agent-task-ab": "dist/eval/agent-task-ab-cli.js",
     };
 
 const targetPackageJsonPath = path.join(outputDir, "package.json");
