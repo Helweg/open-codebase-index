@@ -104,7 +104,9 @@ describe("agent-task A/B executable", () => {
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain("Usage: ocbi-agent-task-ab");
       expect(result.stdout).toContain("[--prepare-argv FILE]");
+      expect(result.stdout).toContain("[--prepare-timeout-ms N]");
       expect(result.stdout).toContain("non-empty JSON array of non-empty argv strings");
+      expect(result.stdout).toContain("each isolated prompt-arm trial");
       expect(result.stdout).toContain("Preparation output is not persisted");
     }
   });
@@ -183,6 +185,32 @@ describe("agent-task A/B executable", () => {
     const raw = fs.readFileSync(path.join(artifacts, "result.json"), "utf8");
     expect(raw).not.toContain("PRIVATE_PREP_OUTPUT");
     expect(raw).not.toContain("AGENT_EVAL_REPOSITORIES_JSON");
+  });
+
+  it("validates --prepare-argv syntax and JSON contents before creating artifacts", () => {
+    const fixture = writeFixture();
+    const missingValue = invoke(fixture, path.join(tempDir, "missing-value-out"), ["--allow-verifiers", "--prepare-argv"]);
+    expect(missingValue.status).toBe(1);
+    expect(missingValue.stderr).toContain("Missing value for --prepare-argv");
+
+    const validArgv = path.join(tempDir, "valid-prepare-argv.json");
+    fs.writeFileSync(validArgv, JSON.stringify([process.execPath, "prepare.mjs"]));
+    const duplicate = invoke(fixture, path.join(tempDir, "duplicate-out"), [
+      "--allow-verifiers", "--prepare-argv", validArgv, "--prepare-argv", validArgv,
+    ]);
+    expect(duplicate.status).toBe(1);
+    expect(duplicate.stderr).toContain("Duplicate option: --prepare-argv");
+
+    const invalidValues: unknown[] = [null, {}, [], [process.execPath, ""], [process.execPath, 7]];
+    for (const [index, value] of invalidValues.entries()) {
+      const argvFile = path.join(tempDir, `invalid-prepare-argv-${index}.json`);
+      const artifacts = path.join(tempDir, `invalid-prepare-out-${index}`);
+      fs.writeFileSync(argvFile, JSON.stringify(value));
+      const result = invoke(fixture, artifacts, ["--allow-verifiers", "--prepare-argv", argvFile]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`${argvFile} must contain a non-empty JSON array of argv strings`);
+      expect(fs.existsSync(artifacts)).toBe(false);
+    }
   });
 
   it("fails closed and cleans the workspace when preparation exits nonzero", () => {
