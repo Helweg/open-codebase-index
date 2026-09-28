@@ -139,6 +139,10 @@ export function hasExactMatchHint(text: string): boolean {
   return includesHint(text, EXACT_MATCH_HINTS);
 }
 
+export function hasExplicitWorkflowTaskHint(text: string): boolean {
+  return /\b(?:code coverage|coverage report|build code size|(?:build|test|release) workflow)\b/.test(text);
+}
+
 export function hasNonDiscoveryHint(text: string): boolean {
   return /\bpr\b/.test(text) || includesHint(text, NON_DISCOVERY_HINTS);
 }

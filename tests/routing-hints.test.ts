@@ -59,6 +59,22 @@ describe("routing hints", () => {
       expect(assessRoutingIntent(query).intent).toBe(intent);
     });
 
+    it.each([
+      "compare test code coverage before release",
+      "analyze build code size",
+      "describe browser code coverage report",
+    ])("keeps explicit workflow analysis out of conceptual discovery: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+
+      expect(assessment.intent).toBe("other");
+      expect(assessment.reason).toBe("non_discovery_task");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toBeNull();
+    });
+
+    it("preserves broad repository task routing when workflow language is present", () => {
+      expect(assessRoutingIntent("Investigate build code size regression across the repository").intent).toBe("local_broad_task");
+    });
+
     it("does not mistake protected code paths for PR chores", () => {
       const assessment = assessRoutingIntent("In the pinned pingvin-share checkout, trace the authorization path for a recipient who knows the password of an existing password-protected, unexpired share and wants to download an individual file. Explain the token endpoint and its checks, how the token reaches later requests, which guards protect share detail and file download endpoints, and how the file guard behaves differently when the cookie is absent versus present. Identify where expiration, maximum views, and the view increment are enforced. Cite relevant source paths and line ranges. Do not edit files, run services, or assume behavior not supported by this revision.");
       expect(assessment.intent).toBe("local_conceptual");

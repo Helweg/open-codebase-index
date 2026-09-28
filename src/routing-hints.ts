@@ -6,6 +6,7 @@ import {
   hasBroadLocalTaskHint,
   hasDefinitionHint,
   hasExactMatchHint,
+  hasExplicitWorkflowTaskHint,
   hasIdentifierShape,
   hasNonDiscoveryHint,
   isExternalLookup,
@@ -72,13 +73,14 @@ export function assessRoutingIntent(text: string): RoutingAssessment {
   const matchedConceptualHint = hasConceptualDiscoveryHint(lowered);
   const matchedDefinitionHint = hasDefinitionHint(lowered);
   const matchedExactMatchHint = hasExactMatchHint(lowered);
+  const matchedExplicitWorkflowTask = hasExplicitWorkflowTaskHint(lowered);
   const matchedNonDiscoveryHint = hasNonDiscoveryHint(lowered);
   const matchedBroadLocalTask = hasBroadLocalTaskHint(lowered);
   const hasIdentifier = hasIdentifierShape(normalizedText);
   const hasQuotedIdentifier = containsQuotedIdentifier(normalizedText);
   const shortQuery = countWords(lowered) <= 10;
 
-  if (matchedNonDiscoveryHint && !matchedConceptualHint && !matchedBroadLocalTask) {
+  if ((matchedExplicitWorkflowTask || (matchedNonDiscoveryHint && !matchedConceptualHint)) && !matchedBroadLocalTask) {
     return {
       intent: "other",
       text: normalizedText,
