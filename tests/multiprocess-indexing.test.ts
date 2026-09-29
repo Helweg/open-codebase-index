@@ -1791,11 +1791,14 @@ describe("multiprocess indexing", () => {
     const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
     const follower = first.transport.pid === owner.pid ? second : first;
 
+    embeddingServer.block();
     fs.writeFileSync(sourcePath, "export function alpha() { return 'follower-refresh'; }\nexport function gamma() { return alpha(); }\n");
-    const search = await follower.client.callTool({
+    const pendingSearch = follower.client.callTool({
       name: "codebase_search",
       arguments: { query: "beta" },
     });
+    await embeddingServer.waitForRequestCount(1, 12_000);
+    const search = await pendingSearch;
     const searchText = (search.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
     expect(search.isError).toBe(true);
     expect(searchText).toContain("INDEX_UNAVAILABLE");
@@ -1807,6 +1810,7 @@ describe("multiprocess indexing", () => {
       },
     });
     expect(searchText).not.toContain("INDEX_BUSY");
+    embeddingServer.release();
     await waitForCondition(
       () => embeddingServer.inputs.some((input) => input.includes("follower-refresh")),
       "leader refresh requested by follower",
