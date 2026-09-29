@@ -96,7 +96,8 @@ function matchesAnyGlob(filePath: string, patterns: string[]): boolean {
 }
 
 export function matchesIncludeIgnored(relativePath: string, includeIgnored: string[]): boolean {
-  return matchesAnyGlob(relativePath, includeIgnored);
+  const normalized = toPosixRelativePath(relativePath);
+  return includeIgnored.some((pattern) => matchGlob(normalized, pattern.replace(/^\.\//, "")));
 }
 
 export function canContainIncludeIgnored(relativePath: string, includeIgnored: string[]): boolean {

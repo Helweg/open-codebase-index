@@ -456,6 +456,14 @@ describe("files utilities", () => {
       expect(wildcardResult.files.map((file) => path.relative(tempDir, file.path))).toEqual([
         path.join("generated", "nested", "keep.ts"),
       ]);
+
+      const dotPrefixedResult = await collectFiles(
+        tempDir, ["**/*.ts"], ["**/excluded.ts"], 1048576,
+        undefined, undefined, ["./generated/nested/*.ts"],
+      );
+      expect(dotPrefixedResult.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("generated", "nested", "keep.ts"),
+      ]);
     });
 
     it("retains ordinary project sources under a private directory", async () => {
