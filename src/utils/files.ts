@@ -100,8 +100,14 @@ export function matchesIncludeIgnored(relativePath: string, includeIgnored: stri
   return includeIgnored.some((pattern) => matchGlob(normalized, pattern.replace(/^\.\//, "")));
 }
 
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  return value.slice(0, end);
+}
+
 export function canContainIncludeIgnored(relativePath: string, includeIgnored: string[]): boolean {
-  const normalizedDirectory = toPosixRelativePath(relativePath).replace(/\/+$/, "");
+  const normalizedDirectory = trimTrailingSlashes(toPosixRelativePath(relativePath));
   if (!normalizedDirectory) return includeIgnored.length > 0;
   if (matchesIncludeIgnored(normalizedDirectory, includeIgnored)) return true;
 
@@ -109,8 +115,9 @@ export function canContainIncludeIgnored(relativePath: string, includeIgnored: s
   return includeIgnored.some((pattern) => {
     const normalizedPattern = toPosixRelativePath(pattern).replace(/^\.\//, "");
     const wildcardIndex = normalizedPattern.search(/[?*{]/);
-    const literalPrefix = (wildcardIndex === -1 ? normalizedPattern : normalizedPattern.slice(0, wildcardIndex))
-      .replace(/\/+$/, "");
+    const literalPrefix = trimTrailingSlashes(
+      wildcardIndex === -1 ? normalizedPattern : normalizedPattern.slice(0, wildcardIndex),
+    );
     return !literalPrefix
       || literalPrefix === normalizedDirectory
       || literalPrefix.startsWith(`${normalizedDirectory}/`)
