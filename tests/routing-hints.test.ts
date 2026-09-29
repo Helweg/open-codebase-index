@@ -114,6 +114,8 @@ describe("routing hints", () => {
       "Where is the official documentation for this repository generated?",
       "Explain how the official docs are built from source in this codebase.",
       "How is the official docs renderer implemented in this project?",
+      "Find official docs in this repository and explain how they are generated.",
+      "Read official documentation in this repo to trace its source.",
     ])("keeps repository-grounded official docs questions local: %s", (query) => {
       const assessment = assessRoutingIntent(query);
 

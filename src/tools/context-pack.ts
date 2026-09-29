@@ -265,9 +265,7 @@ function sanitizeEvidenceDisplayValue(value: string): string {
     .replace(controlPattern, (character) => {
       const code = character.codePointAt(0)?.toString(16).padStart(2, "0") ?? "00";
       return `\\x${code}`;
-    })
-    .replaceAll("[", "\\[")
-    .replaceAll("]", "\\]");
+    });
 }
 
 const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;

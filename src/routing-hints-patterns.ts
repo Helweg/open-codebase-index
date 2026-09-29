@@ -89,7 +89,8 @@ const EXACT_MATCH_HINTS = [
 
 const FILE_PATH_PATTERN = /(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
 const URL_PATTERN = /https?:\/\//;
-const EXPLICIT_WEB_LOOKUP_PATTERN = /\b(?:web|online|internet|external)\b.{0,80}\b(?:search|lookup|docs?|documentation|reference|sources?)\b|\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online|the web|website|official docs?|official documentation)\b/;
+const EXPLICIT_WEB_LOOKUP_PATTERN = /\b(?:web|online|internet|external)\b.{0,80}\b(?:search|lookup|docs?|documentation|reference|sources?)\b|\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online|the web|website)\b/;
+const OFFICIAL_DOC_LOOKUP_PATTERN = /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\bofficial (?:docs?|documentation)\b/;
 const LOCAL_GROUNDING_PATTERN = /\b(?:source|code|repository|repo|codebase|checkout|project|working tree|implementation)\b|(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
 const CAMEL_OR_PASCAL_PATTERN = /\b[A-Za-z_$][A-Za-z0-9_$]*\b/g;
 const SNAKE_PATTERN = /\b[a-z0-9]+_[a-z0-9_]+\b/g;
@@ -125,7 +126,7 @@ export function isExternalLookup(text: string): boolean {
     return false;
   }
 
-  return includesHint(text, EXTERNAL_HINTS)
+  return OFFICIAL_DOC_LOOKUP_PATTERN.test(text) || includesHint(text, EXTERNAL_HINTS)
     || /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online docs|npm registry|pypi|crates\.io|github (?:repo|repository|examples?))\b/.test(text);
 }
 
