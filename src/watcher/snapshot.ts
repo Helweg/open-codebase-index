@@ -5,7 +5,13 @@ import type { FileChange, FileChangeType } from "./file-watcher.js";
 import * as fsPromises from "node:fs/promises";
 import * as path from "node:path";
 
-import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
+import {
+  canContainIncludeIgnored,
+  createGitIgnoreFilter,
+  createIgnoreFilter,
+  isAlwaysFilteredPath,
+  shouldIncludeFile,
+} from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 import { shouldTrackLocalModuleConfigPath } from "./local-module-config.js";
 
@@ -16,7 +22,7 @@ export interface FileSnapshotEntry {
 
 export type FileSnapshotMap = ReadonlyMap<string, FileSnapshotEntry>;
 export type SnapshotFilterConfig = Pick<CodebaseIndexConfig, "include" | "additionalInclude" | "exclude"> & {
-  indexing?: { maxDepth?: number };
+  indexing?: { maxDepth?: number; includeIgnored?: string[] };
 };
 
 export interface FileSnapshotScan {
@@ -39,7 +45,9 @@ export async function buildFileSnapshotScan(
 ): Promise<FileSnapshotScan> {
   const normalizedProjectRoot = path.resolve(projectRoot);
   const ignoreFilter = createIgnoreFilter(normalizedProjectRoot);
+  const gitIgnoreFilter = createGitIgnoreFilter(normalizedProjectRoot);
   const includePatterns = [...config.include, ...(config.additionalInclude ?? [])];
+  const includeIgnored = config.indexing?.includeIgnored ?? [];
   const maxDepth = config.indexing?.maxDepth ?? -1;
   const snapshot = new Map<string, FileSnapshotEntry>();
   const unreadablePrefixes = new Set<string>();
@@ -47,7 +55,7 @@ export async function buildFileSnapshotScan(
   const includeFile = async (filePath: string): Promise<void> => {
     const normalizedPath = path.resolve(filePath);
     if (
-      !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter)
+      !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter)
       && !shouldTrackLocalModuleConfigPath(normalizedPath, normalizedProjectRoot, ignoreFilter)
     ) return;
 
@@ -73,7 +81,11 @@ export async function buildFileSnapshotScan(
       const relativePath = path.relative(normalizedProjectRoot, fullPath);
       if (entry.isDirectory()) {
         if (hasFilteredPathSegment(relativePath, path.sep) || isRestrictedDirectory(relativePath, path.sep)) continue;
-        if (ignoreFilter.ignores(relativePath)) continue;
+        if (ignoreFilter.ignores(relativePath) && (
+          isAlwaysFilteredPath(relativePath)
+          || !gitIgnoreFilter.ignores(relativePath)
+          || !canContainIncludeIgnored(relativePath, includeIgnored)
+        )) continue;
         if (maxDepth === -1 || depth < maxDepth) await walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
         await includeFile(fullPath);
@@ -108,7 +120,9 @@ export async function buildFileSnapshotForPathScan(
   }
 
   const ignoreFilter = createIgnoreFilter(normalizedProjectRoot);
+  const gitIgnoreFilter = createGitIgnoreFilter(normalizedProjectRoot);
   const includePatterns = [...config.include, ...(config.additionalInclude ?? [])];
+  const includeIgnored = config.indexing?.includeIgnored ?? [];
   const maxDepth = config.indexing?.maxDepth ?? -1;
   const explicitConfigPaths = new Set(configPaths.map((configPath) => path.resolve(configPath)));
   const snapshot = new Map<string, FileSnapshotEntry>();
@@ -118,7 +132,7 @@ export async function buildFileSnapshotForPathScan(
     const normalizedPath = path.resolve(filePath);
     if (
       !explicitConfigPaths.has(normalizedPath)
-      && !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter)
+      && !shouldIncludeFile(normalizedPath, normalizedProjectRoot, includePatterns, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter)
       && !shouldTrackLocalModuleConfigPath(normalizedPath, normalizedProjectRoot, ignoreFilter)
     ) return;
     const stat = await readStatIfFile(normalizedPath, unreadablePrefixes);
@@ -142,7 +156,11 @@ export async function buildFileSnapshotForPathScan(
       const relativePath = path.relative(normalizedProjectRoot, fullPath);
       if (entry.isDirectory()) {
         if (hasFilteredPathSegment(relativePath, path.sep) || isRestrictedDirectory(relativePath, path.sep)) continue;
-        if (ignoreFilter.ignores(relativePath)) continue;
+        if (ignoreFilter.ignores(relativePath) && (
+          isAlwaysFilteredPath(relativePath)
+          || !gitIgnoreFilter.ignores(relativePath)
+          || !canContainIncludeIgnored(relativePath, includeIgnored)
+        )) continue;
         if (maxDepth === -1 || depth < maxDepth) await walk(fullPath, depth + 1);
       } else if (entry.isFile()) {
         await includeFile(fullPath);

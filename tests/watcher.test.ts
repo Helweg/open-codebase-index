@@ -163,6 +163,35 @@ describe("FileWatcher", () => {
   });
 
   describe("file filtering", () => {
+    it("watches selected files below ignored parents without emitting unrelated ignored paths", async () => {
+      const selectedPath = path.join(tempDir, "generated", "nested", "selected.ts");
+      const unrelatedPath = path.join(tempDir, "other-generated", "unrelated.ts");
+      fs.mkdirSync(path.dirname(selectedPath), { recursive: true });
+      fs.mkdirSync(path.dirname(unrelatedPath), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "generated/\nother-generated/\n");
+      const config = createTestConfig();
+      config.indexing.includeIgnored = ["generated/nested/**"];
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(tempDir, config, "opencode", { backend: "chokidar" });
+      watcher.start(async (batch) => { changes.push(...batch); });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => {
+          fs.writeFileSync(selectedPath, `export const selected = ${attempt};`);
+          fs.writeFileSync(unrelatedPath, `export const unrelated = ${attempt};`);
+        },
+        () => expect(changes.some((change) => change.path === selectedPath)).toBe(true),
+      );
+
+      expect(changes.some((change) => change.path === unrelatedPath)).toBe(false);
+      changes.length = 0;
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(selectedPath, `export const updated = ${attempt};`),
+        () => expect(changes).toContainEqual({ path: selectedPath, type: "change" }),
+      );
+    });
+
     it("captures only matching include-pattern changes after watcher ready", async () => {
       const changes: FileChange[] = [];
       watcher = new FileWatcher(tempDir, createTestConfig({ include: ["**/*.ts"] }), "opencode");

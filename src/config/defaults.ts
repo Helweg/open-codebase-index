@@ -32,6 +32,7 @@ export function getDefaultIndexingConfig(): IndexingConfig {
     requireProjectMarker: true,
     maxDepth: -1,
     maxFilesPerDirectory: 100,
+    includeIgnored: [],
     fallbackToTextOnMaxChunks: true,
     // Must stay in sync with DEFAULT_LINES_PER_CHUNK in native/src/lib.rs (the napi
     // fallback used when a native caller omits the argument).
