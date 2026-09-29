@@ -111,6 +111,25 @@ describe("routing hints", () => {
     });
 
     it.each([
+      "Where is the official documentation for this repository generated?",
+      "Explain how the official docs are built from source in this codebase.",
+      "How is the official docs renderer implemented in this project?",
+    ])("keeps repository-grounded official docs questions local: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
+    });
+
+    it.each([
+      "Search online for the official documentation for Next.js app router",
+      "Look up the official docs on the web for the package API",
+      "Browse online documentation for the latest framework behavior",
+    ])("retains explicit web lookup routing: %s", (query) => {
+      expect(assessRoutingIntent(query).intent).toBe("external");
+    });
+
+    it.each([
       "Explain how source code in two repositories integrates an npm package and cite relevant files.",
       "Compare the build path in repo-a/src/build.ts with the package implementation in repo-b/src/index.ts and cite source.",
       "Describe the framework hydration flow using source files in the repository, including tests.",

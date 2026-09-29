@@ -1,6 +1,4 @@
 const EXTERNAL_HINTS = [
-  "official docs",
-  "official documentation",
   "web search",
   "website",
   "context7",
@@ -91,6 +89,8 @@ const EXACT_MATCH_HINTS = [
 
 const FILE_PATH_PATTERN = /(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
 const URL_PATTERN = /https?:\/\//;
+const EXPLICIT_WEB_LOOKUP_PATTERN = /\b(?:web|online|internet|external)\b.{0,80}\b(?:search|lookup|docs?|documentation|reference|sources?)\b|\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online|the web|website|official docs?|official documentation)\b/;
+const LOCAL_GROUNDING_PATTERN = /\b(?:source|code|repository|repo|codebase|checkout|project|working tree|implementation)\b|(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
 const CAMEL_OR_PASCAL_PATTERN = /\b[A-Za-z_$][A-Za-z0-9_$]*\b/g;
 const SNAKE_PATTERN = /\b[a-z0-9]+_[a-z0-9_]+\b/g;
 const KEBAB_PATTERN = /\b[a-z0-9]+-[a-z0-9-]+\b/g;
@@ -116,7 +116,16 @@ export function countWords(text: string): number {
 }
 
 export function isExternalLookup(text: string): boolean {
-  return URL_PATTERN.test(text) || includesHint(text, EXTERNAL_HINTS)
+  if (URL_PATTERN.test(text) || EXPLICIT_WEB_LOOKUP_PATTERN.test(text)) {
+    return true;
+  }
+
+  const mentionsOfficialDocs = /\bofficial (?:docs?|documentation)\b/.test(text);
+  if (mentionsOfficialDocs && LOCAL_GROUNDING_PATTERN.test(text)) {
+    return false;
+  }
+
+  return includesHint(text, EXTERNAL_HINTS)
     || /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online docs|npm registry|pypi|crates\.io|github (?:repo|repository|examples?))\b/.test(text);
 }
 
