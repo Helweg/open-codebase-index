@@ -418,6 +418,63 @@ describe("files utilities", () => {
         ])
       );
     });
+
+    it("selectively includes matching files below ignored parents without weakening other filters", async () => {
+      for (const directory of ["generated/nested", "ignored-other", "node_modules/pkg", ".hidden", "app-build"]) {
+        fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
+      }
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "generated/\nignored-other/\n");
+      fs.writeFileSync(path.join(tempDir, "generated/nested/keep.ts"), "export const keep = true;");
+      fs.writeFileSync(path.join(tempDir, "generated/nested/skip.js"), "export const skip = true;");
+      fs.writeFileSync(path.join(tempDir, "generated/nested/excluded.ts"), "export const excluded = true;");
+      fs.writeFileSync(path.join(tempDir, "ignored-other/unrelated.ts"), "export const unrelated = true;");
+      fs.writeFileSync(path.join(tempDir, "node_modules/pkg/index.ts"), "export const dependency = true;");
+      fs.writeFileSync(path.join(tempDir, ".hidden/index.ts"), "export const hidden = true;");
+      fs.writeFileSync(path.join(tempDir, "app-build/index.ts"), "export const build = true;");
+
+      const defaultResult = await collectFiles(tempDir, ["**/*.ts"], [], 1048576);
+      expect(defaultResult.files).toHaveLength(0);
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        ["**/excluded.ts"],
+        1048576,
+        undefined,
+        undefined,
+        ["generated/nested/**", "ignored-other/not-this.ts", "node_modules/**", ".hidden/**", "app-build/**"],
+      );
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("generated", "nested", "keep.ts"),
+      ]);
+
+      const wildcardResult = await collectFiles(
+        tempDir, ["**/*.ts"], ["**/excluded.ts"], 1048576,
+        undefined, undefined, ["**/nested/**"],
+      );
+      expect(wildcardResult.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("generated", "nested", "keep.ts"),
+      ]);
+
+      const dotPrefixedResult = await collectFiles(
+        tempDir, ["**/*.ts"], ["**/excluded.ts"], 1048576,
+        undefined, undefined, ["./generated/nested/*.ts"],
+      );
+      expect(dotPrefixedResult.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("generated", "nested", "keep.ts"),
+      ]);
+    });
+
+    it("retains ordinary project sources under a private directory", async () => {
+      fs.mkdirSync(path.join(tempDir, "private", "scope"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "private", "scope", "allowed.ts"), "export const allowed = true;");
+
+      const result = await collectFiles(tempDir, ["**/*.ts"], [], 1048576);
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("private", "scope", "allowed.ts"),
+      ]);
+    });
   });
 
   describe("hasProjectMarker", () => {

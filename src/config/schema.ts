@@ -77,6 +77,8 @@ export interface IndexingConfig {
    * Default: 100
    */
   maxFilesPerDirectory: number;
+  /** Git-ignored project paths eligible for indexing when they also match normal include rules. */
+  includeIgnored?: string[];
   /**
    * When a file hits maxChunksPerFile, fallback to text-based (chunk_by_lines) parsing
    * instead of skipping the rest of the file. XML and SVG retain their sanitized
@@ -244,7 +246,7 @@ export interface CodebaseIndexConfig {
 }
 
 export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
-  indexing: IndexingConfig;
+  indexing: IndexingConfig & { includeIgnored: string[] };
   search: SearchConfig;
   debug: DebugConfig;
   effectivenessMetrics: EffectivenessMetricsConfig;
@@ -278,7 +280,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     && Number.isFinite(rawIndexing.maxChunksPerFile)
     ? Math.min(0xffff_ffff, Math.max(1, Math.floor(rawIndexing.maxChunksPerFile)))
     : defaultIndexing.maxChunksPerFile;
-  const indexing: IndexingConfig = {
+  const indexing: IndexingConfig & { includeIgnored: string[] } = {
     mode: rawIndexing.mode === "structural" || rawIndexing.mode === "hybrid"
       ? rawIndexing.mode
       : defaultIndexing.mode,
@@ -307,6 +309,9 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     requireProjectMarker: typeof rawIndexing.requireProjectMarker === "boolean" ? rawIndexing.requireProjectMarker : defaultIndexing.requireProjectMarker,
     maxDepth: typeof rawIndexing.maxDepth === "number" ? (rawIndexing.maxDepth < -1 ? -1 : rawIndexing.maxDepth) : defaultIndexing.maxDepth,
     maxFilesPerDirectory: typeof rawIndexing.maxFilesPerDirectory === "number" ? Math.max(1, rawIndexing.maxFilesPerDirectory) : defaultIndexing.maxFilesPerDirectory,
+    includeIgnored: isStringArray(rawIndexing.includeIgnored)
+      ? rawIndexing.includeIgnored.filter((value) => value.trim().length > 0).map((value) => value.trim())
+      : defaultIndexing.includeIgnored ?? [],
     fallbackToTextOnMaxChunks: typeof rawIndexing.fallbackToTextOnMaxChunks === "boolean" ? rawIndexing.fallbackToTextOnMaxChunks : defaultIndexing.fallbackToTextOnMaxChunks,
     linesPerChunk: typeof rawIndexing.linesPerChunk === "number" && Number.isFinite(rawIndexing.linesPerChunk) ? Math.min(Math.max(1, Math.floor(rawIndexing.linesPerChunk)), 4294967295) : defaultIndexing.linesPerChunk,
     gitBlame: {

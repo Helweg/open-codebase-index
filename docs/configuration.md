@@ -373,7 +373,10 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 {
   "include": ["**/*.ts", "**/*.tsx"],
   "additionalInclude": ["scripts/**/*.mjs"],
-  "exclude": ["**/generated/**"]
+  "exclude": ["**/vendor/**"],
+  "indexing": {
+    "includeIgnored": ["generated/api/**/*.ts"]
+  }
 }
 ```
 
@@ -383,6 +386,8 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 - Matching files are omitted from the index, including paths that also match `include`. Directory globs such as `**/generated/**` skip the whole tree.
 - Incremental `/index` and `retryFailedBatches` drop stale failed-batch retries for paths that are now excluded, so previously failed chunks are not re-embedded.
 - `.gitignore` is also respected. Tracked Git files can still be excluded from the index with `exclude`; `.git/info/exclude` is not read.
+- `indexing.includeIgnored` defaults to `[]` and selectively permits matching project files that are ignored by `.gitignore`. It only bypasses the Git-ignore check: files must still match `include` or `additionalInclude`, and `exclude`, hidden paths, build paths, dependency/output directories, and restricted OS paths still take precedence. Patterns may target files below an ignored parent directory, such as `generated/api/**/*.ts`. This option does not apply to knowledge bases.
+- Use narrow patterns: opting in broad ignored trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
 
 ## Knowledge bases
 

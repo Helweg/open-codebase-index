@@ -4630,7 +4630,8 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
         signal: options.signal,
         heartbeat: options.heartbeat,
-      }
+      },
+      this.config.indexing.includeIgnored ?? [],
     );
 
     return createCostEstimate(files, requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
@@ -4661,6 +4662,7 @@ export class Indexer {
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
+      this.config.indexing.includeIgnored ?? [],
     );
 
     let filesCount = 0;
@@ -4955,6 +4957,7 @@ export class Indexer {
         signal,
         heartbeat,
       },
+      this.config.indexing.includeIgnored ?? [],
     );
     throwIfOperationAborted(signal);
 
@@ -6792,6 +6795,7 @@ export class Indexer {
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
+      this.config.indexing.includeIgnored ?? [],
     );
     throwIfOperationAborted(options.signal);
     const localModuleResolutionState = this.getLocalModuleResolutionState(files);

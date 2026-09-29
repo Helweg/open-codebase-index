@@ -5,7 +5,13 @@ import * as path from "path";
 import type { HostMode } from "../config/host.js";
 import type { CodebaseIndexConfig } from "../config/schema.js";
 import { getProjectConfigCandidatePaths } from "../config/paths.js";
-import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
+import {
+  canContainIncludeIgnored,
+  createGitIgnoreFilter,
+  createIgnoreFilter,
+  isAlwaysFilteredPath,
+  shouldIncludeFile,
+} from "../utils/files.js";
 import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 import {
   LocalModuleConfigTracker,
@@ -135,6 +141,8 @@ export class FileWatcher {
     this.localModuleConfigTracker.refresh();
     this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
+    const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
+    const includeIgnored = this.config.indexing?.includeIgnored ?? [];
     const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
 
     const watcherOptions = {
@@ -158,7 +166,11 @@ export class FileWatcher {
           return true;
         }
 
-        if (ignoreFilter.ignores(relativePath)) {
+        if (ignoreFilter.ignores(relativePath) && (
+          isAlwaysFilteredPath(relativePath)
+          || !gitIgnoreFilter.ignores(relativePath)
+          || !canContainIncludeIgnored(relativePath, includeIgnored)
+        )) {
           return true;
         }
 
@@ -483,7 +495,9 @@ export class FileWatcher {
         this.projectRoot,
         includePatterns,
         this.config.exclude,
-        createIgnoreFilter(this.projectRoot)
+        createIgnoreFilter(this.projectRoot),
+        this.config.indexing?.includeIgnored ?? [],
+        createGitIgnoreFilter(this.projectRoot),
       )
     ) {
       return;

@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { buildFileSnapshot } from "../src/watcher/snapshot.js";
+import { buildFileSnapshot, buildFileSnapshotForPath } from "../src/watcher/snapshot.js";
 import { LocalModuleConfigTracker } from "../src/watcher/local-module-config.js";
 
 describe("watcher snapshot builder", () => {
@@ -225,5 +225,28 @@ describe("watcher snapshot builder", () => {
     );
 
     expect(Array.from(unlimitedDepth.keys()).sort()).toEqual([rootFile, nestedLevelOne, nestedLevelTwo].sort());
+  });
+
+  it("applies includeIgnored identically to full and path snapshots", async () => {
+    const selected = path.join(projectRoot, "generated", "nested", "selected.ts");
+    const wrongExtension = path.join(projectRoot, "generated", "nested", "selected.js");
+    const excluded = path.join(projectRoot, "generated", "nested", "excluded.ts");
+    const unrelated = path.join(projectRoot, "other-generated", "unrelated.ts");
+    fs.mkdirSync(path.dirname(selected), { recursive: true });
+    fs.mkdirSync(path.dirname(unrelated), { recursive: true });
+    fs.writeFileSync(path.join(projectRoot, ".gitignore"), "generated/\nother-generated/\n");
+    for (const filePath of [selected, wrongExtension, excluded, unrelated]) fs.writeFileSync(filePath, "source");
+
+    const config = {
+      include: ["**/*.ts"],
+      additionalInclude: [],
+      exclude: ["**/excluded.ts"],
+      indexing: { includeIgnored: ["generated/nested/**"] },
+    };
+    const full = await buildFileSnapshot(projectRoot, config, []);
+    const partial = await buildFileSnapshotForPath(projectRoot, config, [], path.join(projectRoot, "generated"));
+
+    expect(Array.from(full.keys())).toEqual([selected]);
+    expect(Array.from(partial.keys())).toEqual([selected]);
   });
 });

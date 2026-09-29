@@ -2,7 +2,7 @@ import ignore, { Ignore } from "ignore";
 import { existsSync, readFileSync, promises as fsPromises } from "fs";
 import * as path from "path";
 
-import { hasFilteredPathSegment, isBuildPathSegment, isHiddenPathSegment } from "./paths.js";
+import { hasFilteredPathSegment, isBuildPathSegment, isHiddenPathSegment, isRestrictedDirectory } from "./paths.js";
 import {
   isOperationInterruption,
   throwIfOperationAborted,
@@ -43,10 +43,7 @@ export interface CollectFilesResult {
   skipped: SkippedFile[];
 }
 
-export function createIgnoreFilter(projectRoot: string): Ignore {
-  const ig = ignore();
-
-  const defaultIgnores = [
+const DEFAULT_IGNORES = [
     "node_modules",
     ".git",
     "dist",
@@ -63,16 +60,29 @@ export function createIgnoreFilter(projectRoot: string): Ignore {
     "**/.*",
     "**/.*/**",
     "**/*build*/**",
-  ];
+];
 
-  ig.add(defaultIgnores);
+const DEFAULT_IGNORE_FILTER = ignore().add(DEFAULT_IGNORES);
 
+function createDefaultIgnoreFilter(): Ignore {
+  return ignore().add(DEFAULT_IGNORES);
+}
+
+export function createGitIgnoreFilter(projectRoot: string): Ignore {
+  const ig = ignore();
   const gitignorePath = path.join(projectRoot, ".gitignore");
   if (existsSync(gitignorePath)) {
-    const gitignoreContent = readFileSync(gitignorePath, "utf-8");
-    ig.add(gitignoreContent);
+    ig.add(readFileSync(gitignorePath, "utf-8"));
   }
+  return ig;
+}
 
+export function createIgnoreFilter(projectRoot: string): Ignore {
+  const ig = createDefaultIgnoreFilter();
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  if (existsSync(gitignorePath)) {
+    ig.add(readFileSync(gitignorePath, "utf-8"));
+  }
   return ig;
 }
 
@@ -83,6 +93,58 @@ function toPosixRelativePath(relativePath: string): string {
 function matchesAnyGlob(filePath: string, patterns: string[]): boolean {
   const normalized = toPosixRelativePath(filePath);
   return patterns.some((pattern) => matchGlob(normalized, pattern));
+}
+
+export function matchesIncludeIgnored(relativePath: string, includeIgnored: string[]): boolean {
+  const normalized = toPosixRelativePath(relativePath);
+  return includeIgnored.some((pattern) => matchGlob(normalized, pattern.replace(/^\.\//, "")));
+}
+
+function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end--;
+  return value.slice(0, end);
+}
+
+export function canContainIncludeIgnored(relativePath: string, includeIgnored: string[]): boolean {
+  const normalizedDirectory = trimTrailingSlashes(toPosixRelativePath(relativePath));
+  if (!normalizedDirectory) return includeIgnored.length > 0;
+  if (matchesIncludeIgnored(normalizedDirectory, includeIgnored)) return true;
+
+  const probe = `${normalizedDirectory}/__include_ignored_probe__`;
+  return includeIgnored.some((pattern) => {
+    const normalizedPattern = toPosixRelativePath(pattern).replace(/^\.\//, "");
+    const wildcardIndex = normalizedPattern.search(/[?*{]/);
+    const literalPrefix = trimTrailingSlashes(
+      wildcardIndex === -1 ? normalizedPattern : normalizedPattern.slice(0, wildcardIndex),
+    );
+    return !literalPrefix
+      || literalPrefix === normalizedDirectory
+      || literalPrefix.startsWith(`${normalizedDirectory}/`)
+      || normalizedDirectory.startsWith(`${literalPrefix}/`)
+      || matchGlob(probe, normalizedPattern);
+  });
+}
+
+export function isAlwaysFilteredPath(relativePath: string): boolean {
+  const normalized = toPosixRelativePath(relativePath);
+  return hasFilteredPathSegment(normalized, "/")
+    || DEFAULT_IGNORE_FILTER.ignores(normalized);
+}
+
+export function isIgnoredPathIncluded(
+  relativePath: string,
+  includeIgnored: string[],
+  ignoreFilter: Ignore,
+  gitIgnoreFilter: Ignore,
+): boolean {
+  const normalized = toPosixRelativePath(relativePath);
+  return includeIgnored.length > 0
+    && !isAlwaysFilteredPath(normalized)
+    && !isRestrictedDirectory(normalized, "/")
+    && ignoreFilter.ignores(normalized)
+    && gitIgnoreFilter.ignores(normalized)
+    && matchesIncludeIgnored(normalized, includeIgnored);
 }
 
 export function isExcludedByPatterns(relativePath: string, excludePatterns: string[]): boolean {
@@ -114,15 +176,17 @@ export function shouldIncludeFile(
   projectRoot: string,
   includePatterns: string[],
   excludePatterns: string[],
-  ignoreFilter: Ignore
+  ignoreFilter: Ignore,
+  includeIgnored: string[] = [],
+  gitIgnoreFilter: Ignore = ignore(),
 ): boolean {
   const relativePath = toPosixRelativePath(path.relative(projectRoot, filePath));
 
-  if (hasFilteredPathSegment(relativePath, "/")) {
+  if (isAlwaysFilteredPath(relativePath)) {
     return false;
   }
 
-  if (ignoreFilter.ignores(relativePath)) {
+  if (ignoreFilter.ignores(relativePath) && !isIgnoredPathIncluded(relativePath, includeIgnored, ignoreFilter, gitIgnoreFilter)) {
     return false;
   }
 
@@ -172,6 +236,8 @@ export async function* walkDirectory(
   includePatterns: string[],
   excludePatterns: string[],
   ignoreFilter: Ignore,
+  gitIgnoreFilter: Ignore,
+  includeIgnored: string[],
   maxFileSize: number,
   skipped: SkippedFile[],
   options: WalkOptions,
@@ -202,7 +268,15 @@ export async function* walkDirectory(
       continue;
     }
 
-    if (ignoreFilter.ignores(relativePath)) {
+    const ignored = ignoreFilter.ignores(relativePath);
+    const includedIgnoredFile = entry.isFile()
+      && isIgnoredPathIncluded(relativePath, includeIgnored, ignoreFilter, gitIgnoreFilter);
+    const traversableIgnoredDirectory = entry.isDirectory()
+      && !isAlwaysFilteredPath(relativePath)
+      && !isRestrictedDirectory(relativePath, "/")
+      && gitIgnoreFilter.ignores(relativePath)
+      && canContainIncludeIgnored(relativePath, includeIgnored);
+    if (ignored && !includedIgnoredFile && !traversableIgnoredDirectory) {
       if (entry.isFile()) {
         skipped.push({ path: relativePath, reason: "gitignore" });
       }
@@ -255,6 +329,8 @@ export async function* walkDirectory(
         includePatterns,
         excludePatterns,
         ignoreFilter,
+        gitIgnoreFilter,
+        includeIgnored,
         maxFileSize,
         skipped,
         options,
@@ -270,10 +346,12 @@ export async function collectFiles(
   excludePatterns: string[],
   maxFileSize: number,
   additionalRoots?: string[],
-  walkOptions?: WalkOptions
+  walkOptions?: WalkOptions,
+  includeIgnored: string[] = [],
 ): Promise<CollectFilesResult> {
   const opts: WalkOptions = walkOptions ?? { maxDepth: -1, maxFilesPerDirectory: 100 };
   const ignoreFilter = createIgnoreFilter(projectRoot);
+  const gitIgnoreFilter = createGitIgnoreFilter(projectRoot);
   const files: Array<{ path: string; size: number }> = [];
   const skipped: SkippedFile[] = [];
 
@@ -283,6 +361,8 @@ export async function collectFiles(
     includePatterns,
     excludePatterns,
     ignoreFilter,
+    gitIgnoreFilter,
+    includeIgnored,
     maxFileSize,
     skipped,
     opts,
@@ -312,12 +392,15 @@ export async function collectFiles(
           continue;
         }
         const kbIgnoreFilter = createIgnoreFilter(resolvedKbRoot);
+        const kbGitIgnoreFilter = createGitIgnoreFilter(resolvedKbRoot);
         for await (const file of walkDirectory(
           resolvedKbRoot,
           resolvedKbRoot,
           includePatterns,
           excludePatterns,
           kbIgnoreFilter,
+          kbGitIgnoreFilter,
+          [],
           maxFileSize,
           skipped,
           opts,
