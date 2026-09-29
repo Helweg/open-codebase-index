@@ -87,7 +87,7 @@ function extractBareIdentifiers(query: string): string[] {
     .replace(QUOTED_BACKTICK_RE, " ")
     .replace(QUOTED_SINGLE_RE, " ")
     .replace(QUOTED_DOUBLE_RE, " ")
-    .replace(/\b[A-Z]\/+[A-Z]\b/g, " ");
+    .replace(/[A-Za-z_$][A-Za-z0-9_$]*(?:\/[A-Za-z_$][A-Za-z0-9_$]*)+/g, " ");
 
   const identifiers = new Set<string>();
   for (const match of unquoted.matchAll(IDENTIFIER_RE)) {
