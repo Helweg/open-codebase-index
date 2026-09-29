@@ -256,6 +256,20 @@ function compactEvidenceValue(value: string, maxChars: number): string {
   return `…${characters.slice(-(maxChars - 1)).join("")}`;
 }
 
+function sanitizeEvidenceDisplayValue(value: string): string {
+  const escapeCharacter = String.fromCharCode(0x1b);
+  const ansiPattern = new RegExp(`${escapeCharacter}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${String.fromCharCode(0x07)}]*(?:${String.fromCharCode(0x07)}|${escapeCharacter}\\\\))`, "g");
+  const controlPattern = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}-${String.fromCharCode(0x9f)}]`, "g");
+  return value
+    .replace(ansiPattern, "")
+    .replace(controlPattern, (character) => {
+      const code = character.codePointAt(0)?.toString(16).padStart(2, "0") ?? "00";
+      return `\\x${code}`;
+    })
+    .replaceAll("[", "\\[")
+    .replaceAll("]", "\\]");
+}
+
 const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;
 const MAX_EXACT_SEARCH_HANDOFF_NAME_CHARS = 64;
 
@@ -305,15 +319,15 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
 }
 
 function formatContextEvidence(result: SearchResult, index: number, origins?: CanonicalContextOrigin[]): string {
-  const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
+  const symbol = result.name ? ` ${JSON.stringify(sanitizeEvidenceDisplayValue(compactEvidenceValue(result.name, 80)))}` : "";
   const origin = origins ? resultOrigin(result, origins) : -1;
-  const sourcePath = origin >= 0 && origins
+  const sourcePath = sanitizeEvidenceDisplayValue(origin >= 0 && origins
     ? path.relative(origins[origin].root, canonicalContextPath(result.filePath))
-    : compactEvidenceValue(result.filePath, 120);
+    : compactEvidenceValue(result.filePath, 120));
   const location = result.documentLocation?.kind === "pdf"
     ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
     : `${sourcePath}:${result.startLine}-${result.endLine}`;
-  const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${origins?.[origin].label}]`;
+  const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${sanitizeEvidenceDisplayValue(origins?.[origin].label ?? "")}]`;
   return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})`;
 }
 
