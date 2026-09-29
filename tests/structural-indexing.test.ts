@@ -53,6 +53,34 @@ describe("provider-free structural indexing", () => {
     expect(() => parseConfig({ indexing: { mode: "structral" } })).toThrow("indexing.mode");
   });
 
+  it("indexes only selected Git-ignored sources and picks up their updates", async () => {
+    const selectedDir = path.join(projectDir, "CLI", "tests");
+    const unrelatedDir = path.join(projectDir, "Server", "tests");
+    fs.mkdirSync(selectedDir, { recursive: true });
+    fs.mkdirSync(unrelatedDir, { recursive: true });
+    fs.writeFileSync(path.join(projectDir, ".gitignore"), "CLI/tests/\nServer/tests/\n");
+    const selected = path.join(selectedDir, "selected.ts");
+    fs.writeFileSync(selected, "export function selectedIgnoredSource() { return 'selected'; }\n");
+    fs.writeFileSync(path.join(unrelatedDir, "unrelated.ts"), "export function unrelatedIgnoredSource() { return 'other'; }\n");
+
+    const config = parseConfig({
+      indexing: { mode: "structural", watchFiles: false, requireProjectMarker: false, includeIgnored: ["CLI/tests/**"] },
+      include: ["**/*.ts"],
+      exclude: [],
+      search: { minScore: 0 },
+    });
+    const indexer = createIndexer({ indexPath: indexRoot }, config);
+    expect((await indexer.index()).indexedChunks).toBeGreaterThan(0);
+    expect((await indexer.search("selectedIgnoredSource", 10, { definitionIntent: true }))
+      .some((result) => result.filePath === selected)).toBe(true);
+    expect(await indexer.search("unrelatedIgnoredSource", 10, { definitionIntent: true })).toEqual([]);
+
+    fs.writeFileSync(selected, "export function updatedIgnoredSource() { return 'updated'; }\n");
+    await indexer.index();
+    expect((await indexer.search("updatedIgnoredSource", 10, { definitionIntent: true }))
+      .some((result) => result.filePath === selected)).toBe(true);
+  });
+
   it("indexes, searches, resolves definitions and graph edges across restart without vectors", async () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     fs.writeFileSync(path.join(projectDir, "service.ts"), [
