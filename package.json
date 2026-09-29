@@ -111,7 +111,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "^0.84.0",
+    "@earendil-works/pi-coding-agent": "^0.99.1",
     "@eslint/js": "^9.39.4",
     "@napi-rs/cli": "^3.6.0",
     "@types/node": "^22.19.19",
