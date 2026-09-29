@@ -28,6 +28,7 @@ const mockState = vi.hoisted(() => ({
     index: vi.fn().mockResolvedValue({}),
   },
   initializeTools: vi.fn(),
+  realRouting: false,
   hints: ["runtime-routing-hint"],
   routingControllers: [] as Array<{
     getSystemHints: ReturnType<typeof vi.fn>;
@@ -120,7 +121,8 @@ vi.mock("../src/tools/index.js", () => {
   };
 });
 
-vi.mock("../src/routing-hints.js", () => {
+vi.mock("../src/routing-hints.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/routing-hints.js")>();
   class MockRoutingHintController {
     observeUserMessage = vi.fn();
     getSystemHints = vi.fn(async () => mockState.hints);
@@ -136,7 +138,11 @@ vi.mock("../src/routing-hints.js", () => {
   }
 
   return {
-    RoutingHintController: MockRoutingHintController,
+    RoutingHintController: function (...args: ConstructorParameters<typeof actual.RoutingHintController>) {
+      return mockState.realRouting
+        ? new actual.RoutingHintController(...args)
+        : new MockRoutingHintController();
+    },
   };
 });
 
@@ -255,6 +261,7 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
         requireProjectMarker: true,
       },
     };
+    mockState.realRouting = false;
     mockState.hints = ["runtime-routing-hint"];
     mockState.routingControllers.length = 0;
     mockState.commands = new Map();
@@ -434,6 +441,26 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
         delivery: "queue",
       }),
     );
+  });
+
+  it("retains real answer guidance through public v2 hooks after discovery", async () => {
+    mockState.realRouting = true;
+    const { ctx, sessionHooks, toolHooks } = createFakeContext();
+    await mod.setup!(ctx);
+    await sessionHooks.get("prompt")!({ sessionID: "real", prompt: { text: "How does the retry queue work?" } });
+    const first = { sessionID: "real", system: [] as Array<{ type: string; text: string }> };
+    await sessionHooks.get("context")!(first);
+    expect(first.system[0].text).toContain("one bounded `codebase_context` query");
+    expect(first.system[0].text).toContain("Verify each cited path and claim with Read");
+    for (const tool of ["codebase_context", "codebase_search", "read"]) {
+      await toolHooks.get("execute.after")!({ sessionID: "real", tool });
+      const final = { sessionID: "real", system: [] as Array<{ type: string; text: string }> };
+      await sessionHooks.get("context")!(final);
+      expect(final.system).toHaveLength(1);
+      expect(final.system[0].text).toContain("Verify each cited path and claim with Read");
+      expect(final.system[0].text).toContain("qualify runtime outcomes the source leaves conditional");
+      expect(final.system[0].text).not.toContain("codebase_context");
+    }
   });
 
   // Case 6: Hooks fire

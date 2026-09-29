@@ -24,6 +24,7 @@ describe("routing hints", () => {
     it.each([
       "Where is authentication implemented?",
       "How does the retry queue work?",
+      "Trace the authorization path for a recipient of a password-protected share. Do not edit files or run services.",
       "Fix the bug where expired sessions remain active",
       "Add support for cancelling in-flight indexing",
       "Refactor the cache invalidation to avoid duplicate work",
@@ -50,10 +51,42 @@ describe("routing hints", () => {
     it.each([
       ["Find all references to `validateToken`", "exact_identifier"],
       ["Run the tests and fix the failing build", "other"],
+      ["Prepare the PR for release", "other"],
+      ["trace the courier shipment", "other"],
       ["Update CHANGELOG.md for the release", "other"],
       ["Read src/index.ts", "direct_path"],
+      ["Read src/[id].ts", "direct_path"],
+      ["Read docs/", "direct_path"],
     ])("classifies %s as %s", (query, intent) => {
       expect(assessRoutingIntent(query).intent).toBe(intent);
+    });
+
+    it.each([
+      "compare test code coverage before release",
+      "analyze build code size",
+      "describe browser code coverage report",
+    ])("keeps explicit workflow analysis out of conceptual discovery: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+
+      expect(assessment.intent).toBe("other");
+      expect(assessment.reason).toBe("non_discovery_task");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toBeNull();
+    });
+
+    it("preserves broad repository task routing when workflow language is present", () => {
+      expect(assessRoutingIntent("Investigate build code size regression across the repository").intent).toBe("local_broad_task");
+    });
+
+    it("does not mistake protected code paths for PR chores", () => {
+      const assessment = assessRoutingIntent("In the pinned pingvin-share checkout, trace the authorization path for a recipient who knows the password of an existing password-protected, unexpired share and wants to download an individual file. Explain the token endpoint and its checks, how the token reaches later requests, which guards protect share detail and file download endpoints, and how the file guard behaves differently when the cookie is absent versus present. Identify where expiration, maximum views, and the view increment are enforced. Cite relevant source paths and line ranges. Do not edit files, run services, or assume behavior not supported by this revision.");
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
+    });
+
+    it("routes a broad source investigation mentioning paths to discovery", () => {
+      const assessment = assessRoutingIntent("Investigate why the search integration fails across src/search.ts and src/provider.ts, then cite the cause.");
+      expect(assessment.intent).toBe("local_broad_task");
+      expect(assessRoutingIntent("Read src/search.ts").intent).toBe("direct_path");
     });
 
     it("does not alternate exact-identifier detection for repeated backticked queries", () => {
@@ -78,6 +111,51 @@ describe("routing hints", () => {
 
       expect(assessment.intent).toBe("external");
     });
+
+    it.each([
+      "Where is the official documentation for this repository generated?",
+      "Explain how the official docs are built from source in this codebase.",
+      "How is the official docs renderer implemented in this project?",
+      "Find official docs in this repository and explain how they are generated.",
+      "Read official documentation in this repo to trace its source.",
+      "Explain how the official docs in docs/ are built.",
+    ])("keeps repository-grounded official docs questions local: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
+    });
+
+    it.each([
+      "Search online for the official documentation for Next.js app router",
+      "Look up the official docs on the web for the package API",
+      "Browse online documentation for the latest framework behavior",
+      "Check the official docs for input/output behavior",
+      "Look up official documentation for client/server APIs",
+      "Where are the official docs for Next.js?",
+    ])("retains explicit web lookup routing: %s", (query) => {
+      expect(assessRoutingIntent(query).intent).toBe("external");
+    });
+
+    it.each([
+      "Explain how source code in two repositories integrates an npm package and cite relevant files.",
+      "Compare the build path in repo-a/src/build.ts with the package implementation in repo-b/src/index.ts and cite source.",
+      "Describe the framework hydration flow using source files in the repository, including tests.",
+      "Explain how code coverage is calculated in src/coverage.ts",
+      "trace build code size implementation",
+    ])("treats source-grounded explanations as local discovery despite package and path terms: %s", (query) => {
+      const assessment = assessRoutingIntent(query);
+      expect(assessment.intent).toBe("local_conceptual");
+      expect(buildRoutingHint(assessment, { indexed: true, compatibility: { compatible: true } })).toContain("codebase_context");
+    });
+
+    it.each([
+      "Search the npm registry for the latest package version",
+      "Browse the GitHub repository for an external example",
+      "Read the official documentation for the web API",
+    ])("retains genuinely external lookup routing: %s", (query) => {
+      expect(assessRoutingIntent(query).intent).toBe("external");
+    });
   });
 
   describe("buildRoutingHint", () => {
@@ -88,7 +166,13 @@ describe("routing hints", () => {
         true,
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
+      expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
+      expect(hint).toContain("Verify each cited path and claim with Read");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
+      expect(hint).toContain("`src/git/branch-materialization.ts:190-195`");
+      expect(hint).toContain("never just the filename");
+      expect(hint).toContain("If the exact path or identifier is already known, use Read or `grep` directly instead");
       expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
@@ -102,7 +186,8 @@ describe("routing hints", () => {
         true,
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
     });
@@ -128,7 +213,7 @@ describe("routing hints", () => {
       expect(hint).toContain("consider optional `codebase_edit_context`");
       expect(hint).toContain("bounded source");
       expect(hint).toContain("callers and callees");
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
     });
 
     it("does not add codebase_edit_context guidance for conceptual discovery even with identifier cues", () => {
@@ -137,8 +222,14 @@ describe("routing hints", () => {
         { indexed: true, compatibility: { compatible: true } },
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("consider optional `codebase_edit_context`");
+      expect(hint).toContain("trace its guards and failure branches before summarizing the lifecycle");
+      expect(hint).toContain("Verify each cited path and claim with Read");
+      expect(hint).toContain("full repository-relative path and a line range that supports the claim");
+      expect(hint).toContain("`src/git/branch-materialization.ts:190-195`");
+      expect(hint).toContain("never just the filename");
+      expect(hint).toContain("qualify runtime outcomes the source leaves conditional");
     });
 
     it("returns null for non-conceptual intents", () => {
@@ -170,7 +261,7 @@ describe("routing hints", () => {
         { indexed: true, compatibility: { compatible: true } },
       );
 
-      expect(hint).toContain("prefer `codebase_context`");
+      expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hint).not.toContain("OMO CodeGraph");
       expect(hint).not.toContain("Use graph tools after semantic discovery");
     });
@@ -197,6 +288,123 @@ describe("routing hints", () => {
   });
 
   describe("RoutingHintController", () => {
+    const ready = { indexed: true, compatibility: { compatible: true } };
+    const conceptual = [{ type: "text", text: "How does the retry queue work?" }];
+    const answer = "Read the authoritative implementation and trace its guards and failure branches before summarizing the lifecycle. Verify each cited path and claim with Read; cite the full repository-relative path and a line range that supports the claim (for example, `src/git/branch-materialization.ts:190-195`), never just the filename, and qualify runtime outcomes the source leaves conditional.";
+
+    it.each(["codebase_context", "codebase_search", "index_status"])("retains only existing answer guidance after %s and subsequent reads", async (tool) => {
+      let statusCalls = 0;
+      const controller = new RoutingHintController(async () => {
+        statusCalls++;
+        return ready;
+      });
+      controller.observeUserMessage("s", conceptual);
+      expect(await controller.getSystemHints("s")).toEqual([
+        `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. ${answer} Use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content. If the exact path or identifier is already known, use Read or \`grep\` directly instead.`,
+      ]);
+      controller.markToolUsed("s", tool);
+      expect(await controller.getSystemHints("s")).toEqual([answer]);
+      controller.markToolUsed("s", "read");
+      expect(await controller.getSystemHints("s")).toEqual([answer]);
+      expect(statusCalls).toBe(1);
+    });
+
+    it.each(["Run the tests", "How does authentication work?", "Where is the payment handler defined?"])("clears retained guidance on a new turn: %s", async (text) => {
+      const controller = new RoutingHintController(async () => ready);
+      controller.observeUserMessage("s", conceptual);
+      await controller.getSystemHints("s");
+      controller.markToolUsed("s", "codebase_context");
+      controller.observeUserMessage("s", [{ type: "text", text }]);
+      expect(controller.getSessionState("s")?.answerHint).toBeUndefined();
+      const hints = await controller.getSystemHints("s");
+      if (text.startsWith("How")) {
+        expect(hints[0]).toContain("one bounded `codebase_context` query");
+        expect(hints[0]).toContain(answer);
+      } else if (text.startsWith("Where")) {
+        expect(hints[0]).toContain("prefer `implementation_lookup`");
+        controller.markToolUsed("s", "implementation_lookup");
+        expect(await controller.getSystemHints("s")).toEqual([]);
+      } else {
+        expect(hints).toEqual([]);
+      }
+    });
+
+    it.each([
+      { indexed: false, compatibility: null },
+      { indexed: true, compatibility: { compatible: false } },
+      null,
+    ])("does not retain stale answers for a new bootstrap turn (%j)", async (notReady) => {
+      let status: typeof ready | typeof notReady = ready;
+      const controller = new RoutingHintController(async () => {
+        if (!status) throw new Error("unavailable");
+        return status;
+      });
+      controller.observeUserMessage("s", conceptual);
+      await controller.getSystemHints("s");
+      controller.markToolUsed("s", "codebase_context");
+      status = notReady;
+      controller.observeUserMessage("s", conceptual);
+      expect((await controller.getSystemHints("s"))[0]).toContain("check `index_status` first");
+      expect(controller.getSessionState("s")?.answerHint).toBeUndefined();
+      controller.markToolUsed("s", "index_status");
+      expect(await controller.getSystemHints("s")).toEqual([]);
+    });
+
+    it("returns answer-only for a late parallel status result after a delivered hint and tool completion", async () => {
+      const late = deferred<typeof ready>();
+      let calls = 0;
+      const controller = new RoutingHintController(() => ++calls === 1 ? Promise.resolve(ready) : late.promise);
+      controller.observeUserMessage("s", conceptual);
+      const first = controller.getSystemHints("s");
+      const second = controller.getSystemHints("s");
+      expect((await first)[0]).toContain(answer);
+      controller.markToolUsed("s", "codebase_context");
+      late.resolve(ready);
+      expect(await second).toEqual([answer]);
+    });
+
+    it("does not attach superseded status results to a new conceptual turn", async () => {
+      const late = deferred<typeof ready>();
+      const controller = new RoutingHintController(() => late.promise);
+      controller.observeUserMessage("s", conceptual);
+      const pending = controller.getSystemHints("s");
+      controller.observeUserMessage("s", conceptual);
+      late.resolve(ready);
+      expect(await pending).toEqual([]);
+      expect(controller.getSessionState("s")?.answerHint).toBeUndefined();
+      expect((await controller.getSystemHints("s"))[0]).toContain(answer);
+    });
+
+    it("evicts retained answers and rejects in-flight results for evicted sessions", async () => {
+      const late = deferred<typeof ready>();
+      let calls = 0;
+      const controller = new RoutingHintController(() => ++calls === 1 ? Promise.resolve(ready) : late.promise, 1);
+      controller.observeUserMessage("old", conceptual);
+      await controller.getSystemHints("old");
+      const pending = controller.getSystemHints("old");
+      controller.markToolUsed("old", "codebase_context");
+      controller.observeUserMessage("new", conceptual);
+      late.resolve(ready);
+      expect(await pending).toEqual([]);
+      expect(controller.getSessionState("old")).toBeUndefined();
+      expect(await controller.getSystemHints("old")).toEqual([]);
+      expect(controller.getSessionState("new")?.answerHint).toBeUndefined();
+    });
+
+    function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+      let resolve!: (value: T) => void;
+      const promise = new Promise<T>((resolvePromise) => {
+        resolve = resolvePromise;
+      });
+      return { promise, resolve };
+    }
+
+    it("queues a context hint for a protected-share authorization trace", async () => {
+      const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
+      controller.observeUserMessage("share-trace", [{ type: "text", text: "Trace the authorization path for a password-protected share. Do not edit files." }]);
+      expect((await controller.getSystemHints("share-trace"))[0]).toContain("one bounded `codebase_context` query before exploratory shell");
+    });
+
     it("stores conceptual discovery state and emits one hint", async () => {
       const controller = new RoutingHintController(async () => ({
         indexed: true,
@@ -211,7 +419,7 @@ describe("routing hints", () => {
 
       const hints = await controller.getSystemHints("session-1");
       expect(hints).toHaveLength(1);
-      expect(hints[0]).toContain("prefer `codebase_context`");
+      expect(hints[0]).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hints[0]).toContain("OMO CodeGraph");
     });
 
@@ -225,11 +433,11 @@ describe("routing hints", () => {
 
       const hints = await controller.getSystemHints("session-1b");
       expect(hints).toHaveLength(1);
-      expect(hints[0]).toContain("prefer `codebase_context`");
+      expect(hints[0]).toContain("one bounded `codebase_context` query before exploratory shell");
       expect(hints[0]).toContain("`codebase_search`");
     });
 
-    it("emits at most one hint for each user message", async () => {
+    it("retains a hint across title and main transforms until a relevant tool is used", async () => {
       const controller = new RoutingHintController(async () => ({
         indexed: true,
         compatibility: { compatible: true },
@@ -237,11 +445,64 @@ describe("routing hints", () => {
 
       controller.observeUserMessage("session-once", [{ type: "text", text: "Investigate why startup hangs" }]);
 
-      expect(await controller.getSystemHints("session-once")).toHaveLength(1);
-      expect(await controller.getSystemHints("session-once")).toEqual([]);
+      const titleHints = await controller.getSystemHints("session-once");
+      const mainHints = await controller.getSystemHints("session-once");
+      expect(titleHints).toHaveLength(1);
+      expect(mainHints).toEqual(titleHints);
+      expect(controller.getSessionState("session-once")?.pendingHint).toBe(true);
+
+      controller.markToolUsed("session-once", "codebase_context");
+      expect(await controller.getSystemHints("session-once")).toEqual([answer]);
 
       controller.observeUserMessage("session-once", [{ type: "text", text: "Fix the bug in startup recovery" }]);
       expect(await controller.getSystemHints("session-once")).toHaveLength(1);
+    });
+
+    it("replaces a pending hint when the next user message has no discovery intent", async () => {
+      const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
+      controller.observeUserMessage("session-next", [{ type: "text", text: "Trace the authorization path for a protected share" }]);
+      expect(await controller.getSystemHints("session-next")).toHaveLength(1);
+
+      controller.observeUserMessage("session-next", [{ type: "text", text: "Run the tests" }]);
+      expect(await controller.getSystemHints("session-next")).toEqual([]);
+    });
+
+    it("does not return a stale hint after the next user message arrives during status lookup", async () => {
+      const status = deferred<{ indexed: boolean; compatibility: { compatible: boolean } }>();
+      const controller = new RoutingHintController(() => status.promise);
+      controller.observeUserMessage("session-next-deferred", [{ type: "text", text: "Trace the authorization path for a protected share" }]);
+
+      const pendingHints = controller.getSystemHints("session-next-deferred");
+      controller.observeUserMessage("session-next-deferred", [{ type: "text", text: "Run the tests" }]);
+      status.resolve({ indexed: true, compatibility: { compatible: true } });
+
+      expect(await pendingHints).toEqual([]);
+    });
+
+    it("does not return a stale hint after a relevant tool call during status lookup", async () => {
+      const status = deferred<{ indexed: boolean; compatibility: { compatible: boolean } }>();
+      const controller = new RoutingHintController(() => status.promise);
+      controller.observeUserMessage("session-tool-deferred", [{ type: "text", text: "Investigate why startup hangs" }]);
+
+      const pendingHints = controller.getSystemHints("session-tool-deferred");
+      controller.markToolUsed("session-tool-deferred", "codebase_context");
+      status.resolve({ indexed: true, compatibility: { compatible: true } });
+
+      expect(await pendingHints).toEqual([]);
+    });
+
+    it("keeps concurrent title and main transforms consistent", async () => {
+      const controller = new RoutingHintController(async () => ({ indexed: true, compatibility: { compatible: true } }));
+      controller.observeUserMessage("session-concurrent", [{ type: "text", text: "Investigate why startup hangs" }]);
+
+      const hints = await Promise.all([
+        controller.getSystemHints("session-concurrent"),
+        controller.getSystemHints("session-concurrent"),
+      ]);
+
+      expect(hints[0]).toHaveLength(1);
+      expect(hints[1]).toEqual(hints[0]);
+      expect(controller.getSessionState("session-concurrent")?.pendingHint).toBe(true);
     });
 
     it("stops nudging after a codebase tool is used", async () => {

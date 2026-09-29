@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SearchTrace } from "../src/indexer/index.js";
 
-import { codebase_context as opencodeCodebaseContext } from "../src/adapters/opencode/tools.js";
+import {
+  codebase_context as opencodeCodebaseContext,
+  codebase_peek as opencodeCodebasePeek,
+  codebase_search as opencodeCodebaseSearch,
+} from "../src/adapters/opencode/tools.js";
 import { countContextTokens } from "../src/tools/utils.js";
 import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
 
@@ -47,6 +51,32 @@ const commonArgs = {
   directory: undefined,
   tokenBudget: 128,
 };
+
+describe("native OpenCode tool descriptions", () => {
+  it("prefers context for current-index conceptual questions and distinguishes semantic navigation from exact lookup", () => {
+    expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
+    expect(opencodeCodebaseContext.description).toContain("from and to for dependency paths");
+    expect(opencodeCodebaseContext.description).toContain("symbol for definitions");
+    expect(opencodeCodebaseContext.description).toContain("Read for known paths");
+    expect(opencodeCodebaseContext.description).toContain("grep for literal identifiers");
+    expect(opencodeCodebaseContext.description).toContain("Cite only exact file paths verified with Read");
+    expect(opencodeCodebaseContext.description).toContain("do not infer a path or runtime outcome");
+
+    expect(codebase_peek.description).toContain("Metadata-only semantic navigation");
+    expect(codebase_peek.description).toContain("Read for known paths");
+    expect(codebase_peek.description).toContain("grep for literal identifiers");
+    expect(codebase_peek.description).toContain("codebase_context first");
+
+    expect(codebase_search.description).toContain("codebase_context first");
+    expect(codebase_search.description).toContain("implementation content is needed");
+    expect(codebase_search.description).toContain("known paths use Read");
+    expect(codebase_search.description).toContain("literal identifiers use grep");
+    expect(opencodeCodebasePeek.description).toContain("Metadata-only semantic navigation");
+    expect(opencodeCodebasePeek.description).toContain("codebase_context first");
+    expect(opencodeCodebaseSearch.description).toContain("codebase_context first");
+    expect(opencodeCodebaseSearch.description).toContain("implementation content is needed");
+  });
+});
 
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {

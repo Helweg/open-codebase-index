@@ -3,6 +3,30 @@ import { describe, it, expect } from "vitest";
 import { inferExactSymbolFromQuery } from "../src/tools/symbol-inference.js";
 
 describe("inferExactSymbolFromQuery", () => {
+  it("does not mistake A/B terminology for an exact symbol", () => {
+    expect(inferExactSymbolFromQuery("Where is the executable multi-repository agent task A/B runner implemented and how are repositories pinned?"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("Where is B defined?"))
+      .toBe("B");
+  });
+  it("does not infer symbols from slash-delimited compound terms", () => {
+    expect(inferExactSymbolFromQuery("Where is A/BRunner defined?"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("Where is A/B/C defined?"))
+      .toBeUndefined();
+    expect(inferExactSymbolFromQuery("Where is A/B defined?"))
+      .toBeUndefined();
+  });
+
+  it("preserves exact and quoted single-symbol inference around slash terms", () => {
+    expect(inferExactSymbolFromQuery("Where is B defined?"))
+      .toBe("B");
+    expect(inferExactSymbolFromQuery("Where is `BRunner` defined?"))
+      .toBe("BRunner");
+    expect(inferExactSymbolFromQuery("Where is 'BRunner' defined?"))
+      .toBe("BRunner");
+  });
+
   it("infers a backticked identifier", () => {
     expect(inferExactSymbolFromQuery("Where is `getStatus` defined?"))
       .toBe("getStatus");

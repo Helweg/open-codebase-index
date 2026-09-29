@@ -1,8 +1,10 @@
 import type { SearchResult } from "../indexer/index.js";
 
 import { get_encoding } from "tiktoken";
+import * as path from "node:path";
 
 import { isLikelyImplementationPath } from "../indexer/intent-aware-ranking.js";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 
 export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
 export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
@@ -15,6 +17,7 @@ interface RankedSearchResult {
 }
 
 export interface ContextPackOptions {
+  origins?: Array<{ root: string; label: string }>;
   tokenBudget?: number;
   heading?: string;
   maxResults?: number;
@@ -22,6 +25,11 @@ export interface ContextPackOptions {
   preferImplementationPaths?: boolean;
   preserveInputOrder?: boolean;
   trace?: (trace: ContextPackTrace) => void;
+}
+
+interface CanonicalContextOrigin {
+  root: string;
+  label: string;
 }
 
 export interface ContextPackTrace {
@@ -198,10 +206,66 @@ function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
   return diversified;
 }
 
+function canonicalContextPath(targetPath: string): string {
+  try {
+    return canonicalizePathForComparison(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
+}
+
+function canonicalOrigins(origins: NonNullable<ContextPackOptions["origins"]>): CanonicalContextOrigin[] {
+  return origins.map((origin) => ({ ...origin, root: canonicalContextPath(origin.root) }));
+}
+
+function resultOrigin(result: SearchResult, origins: CanonicalContextOrigin[]): number {
+  if (!path.isAbsolute(result.filePath)) return -1;
+  const filePath = canonicalContextPath(result.filePath);
+  let matched = -1;
+  for (let index = 0; index < origins.length; index += 1) {
+    const root = origins[index].root;
+    if (!path.isAbsolute(root)) continue;
+    const relative = path.relative(root, filePath);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) continue;
+    if (matched < 0 || root.length > origins[matched].root.length) matched = index;
+  }
+  return matched;
+}
+
+function diversifyByOrigin(results: SearchResult[], origins: CanonicalContextOrigin[]): SearchResult[] {
+  const fileDiversified = diversifyContextCandidates(results);
+  if (origins.length < 2 || fileDiversified.length === 0) return fileDiversified;
+  const seen = new Set<number>();
+  const first: SearchResult[] = [fileDiversified[0]];
+  const topScore = fileDiversified[0].score;
+  seen.add(resultOrigin(fileDiversified[0], origins));
+  for (const result of fileDiversified.slice(1)) {
+    const origin = resultOrigin(result, origins);
+    if (origin >= 0 && !seen.has(origin) && topScore > 0 && result.score > 0 && result.score >= topScore * 0.8) {
+      seen.add(origin);
+      first.push(result);
+    }
+  }
+  const promoted = new Set(first);
+  return [...first, ...fileDiversified.filter((result) => !promoted.has(result))];
+}
+
 function compactEvidenceValue(value: string, maxChars: number): string {
   const characters = [...value];
   if (characters.length <= maxChars) return value;
   return `…${characters.slice(-(maxChars - 1)).join("")}`;
+}
+
+function sanitizeEvidenceDisplayValue(value: string): string {
+  const escapeCharacter = String.fromCharCode(0x1b);
+  const ansiPattern = new RegExp(`${escapeCharacter}(?:\\[[0-?]*[ -/]*[@-~]|\\][^${String.fromCharCode(0x07)}]*(?:${String.fromCharCode(0x07)}|${escapeCharacter}\\\\))`, "g");
+  const controlPattern = new RegExp(`[${String.fromCharCode(0)}-${String.fromCharCode(0x1f)}${String.fromCharCode(0x7f)}-${String.fromCharCode(0x9f)}]`, "g");
+  return value
+    .replace(ansiPattern, "")
+    .replace(controlPattern, (character) => {
+      const code = character.codePointAt(0)?.toString(16).padStart(2, "0") ?? "00";
+      return `\\x${code}`;
+    });
 }
 
 const MAX_EXACT_SEARCH_HANDOFF_NAMES = 3;
@@ -252,13 +316,17 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
   return `Exact-search handoff: use exact grep/search for ${quotedNames} to find usages or exhaustive matches.`;
 }
 
-function formatContextEvidence(result: SearchResult, index: number): string {
-  const symbol = result.name ? ` ${JSON.stringify(compactEvidenceValue(result.name, 80))}` : "";
-  const path = compactEvidenceValue(result.filePath, 120);
+function formatContextEvidence(result: SearchResult, index: number, origins?: CanonicalContextOrigin[]): string {
+  const symbol = result.name ? ` ${JSON.stringify(sanitizeEvidenceDisplayValue(compactEvidenceValue(result.name, 80)))}` : "";
+  const origin = origins ? resultOrigin(result, origins) : -1;
+  const sourcePath = sanitizeEvidenceDisplayValue(origin >= 0 && origins
+    ? path.relative(origins[origin].root, canonicalContextPath(result.filePath))
+    : compactEvidenceValue(result.filePath, 120));
   const location = result.documentLocation?.kind === "pdf"
-    ? `${path}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
-    : `${path}:${result.startLine}-${result.endLine}`;
-  return `[${index}] ${result.chunkType}${symbol} in ${location} (score ${result.score.toFixed(2)})`;
+    ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
+    : `${sourcePath}:${result.startLine}-${result.endLine}`;
+  const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${sanitizeEvidenceDisplayValue(origins?.[origin].label ?? "")}]`;
+  return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})`;
 }
 
 function formatContextPack(
@@ -269,8 +337,9 @@ function formatContextPack(
   limitOmittedCount: number,
   budgetOmittedCount: number,
   includeExactSearchHandoff: boolean,
+  origins?: CanonicalContextOrigin[],
 ): string {
-  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1));
+  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1, origins));
   const notes: string[] = [];
   if (duplicateCount > 0) notes.push(`${duplicateCount} overlapping duplicate${duplicateCount === 1 ? "" : "s"} removed`);
   if (limitOmittedCount > 0) notes.push(`${limitOmittedCount} additional result${limitOmittedCount === 1 ? "" : "s"} excluded by result limit`);
@@ -296,7 +365,13 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
   const deduplicated = deduplicateContextCandidates(ranked);
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
-  const diversified = preserveInputOrder ? deduplicated : diversifyContextCandidates(deduplicated);
+  const configuredOrigins = options.origins ? canonicalOrigins(options.origins) : [];
+  const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, configuredOrigins)));
+  observedOrigins.delete(-1);
+  const origins = !preserveInputOrder && configuredOrigins.length > 0 ? configuredOrigins : undefined;
+  const diversified = preserveInputOrder ? deduplicated : origins && observedOrigins.size > 1
+    ? diversifyByOrigin(deduplicated, origins)
+    : diversifyContextCandidates(deduplicated);
   const diversifiedCandidates = diversified.map((result) => toContextPackTraceCandidate(result));
   const duplicateCount = candidateCount - deduplicated.length;
   const selectable = diversified.slice(0, maxResults);
@@ -310,6 +385,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     limitOmittedCount,
     selectable.length,
     includeExactSearchHandoff,
+    origins,
   );
 
   for (let count = 1; count <= selectable.length; count += 1) {
@@ -323,6 +399,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       limitOmittedCount,
       budgetOmittedCount,
       includeExactSearchHandoff,
+      origins,
     );
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;

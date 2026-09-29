@@ -1,5 +1,8 @@
 import type { HostMode } from "../config/host.js";
 import type { OperationControl } from "../utils/operation-control.js";
+import * as path from "node:path";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+import { loadRuntimeConfig } from "./config-state.js";
 import {
   getCallGraphData,
   getCallGraphPath,
@@ -160,7 +163,29 @@ async function resolveCodebaseContextUnmeasured(
         ? searchCodebase(projectRoot, host, queryText, options, control)
         : searchCodebase(projectRoot, host, queryText, options);
     },
-  });
+  }, projectRoot ? configuredOrigins(projectRoot, host) : undefined);
+}
+
+function configuredOrigins(projectRoot: string, host: HostMode): Array<{ root: string; label: string }> {
+  const config = loadRuntimeConfig(projectRoot, host);
+  const configuredRoots = [projectRoot, ...(Array.isArray(config.knowledgeBases) ? config.knowledgeBases as string[] : [])]
+    .map((root) => path.isAbsolute(root) ? root : path.resolve(projectRoot, root))
+    .map((root) => ({ configured: path.resolve(root), canonical: canonicalContextPath(root) }));
+  const unique = [...new Map(configuredRoots.map((root) => [root.canonical, root])).values()];
+  const basenames = unique.map(({ configured }) => path.basename(configured));
+  return unique.map(({ configured, canonical }, index) => ({
+    root: canonical,
+    label: index === 0 ? `project: ${basenames[index]}`
+      : `knowledge base: ${basenames.filter((name) => name === basenames[index]).length > 1 ? configured : basenames[index]}`,
+  }));
+}
+
+function canonicalContextPath(targetPath: string): string {
+  try {
+    return canonicalizePathForComparison(targetPath);
+  } catch {
+    return path.resolve(targetPath);
+  }
 }
 
 function contextRoute(
