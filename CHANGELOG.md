@@ -7,13 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.33.0] - 2026-09-29
+
 ### Added
 
 - **Selective ignored-path indexing**: Added `indexing.includeIgnored` to opt specific `.gitignore`-ignored project source paths into initial indexing and file watching while retaining normal include rules, explicit excludes, and built-in hidden, build, dependency, output, and restricted-path safety filters.
 
-## [0.32.2] - 2026-09-28
-
 ### Fixed
+
+- **Dependency security**: Updated transitive `fast-uri` to 3.1.7 and `ip-address` to 10.5.1 to resolve four GitHub Dependabot advisories affecting the runtime dependency tree.
 
 - **Conceptual evidence locations**: Render complete repository-relative source paths for configured project and knowledge-base hits, including knowledge bases configured through symlinks, instead of machine-specific absolute paths clipped to 120 characters. Keep origin labels for multi-repository results, escape control characters in evidence paths and labels without altering normal bracketed paths, and preserve exact-symbol ordering.
 
