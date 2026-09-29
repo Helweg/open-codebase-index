@@ -87,11 +87,10 @@ const EXACT_MATCH_HINTS = [
   "definition of",
 ];
 
-const FILE_PATH_PATTERN = /(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
+const FILE_PATH_PATTERN = /(?:^|\s)(?:(?:\.{1,2}\/)?(?:[\w.[\]-]+\/)+[\w.[\]-]+\.(?:ts|tsx|js|jsx|rs|py|go|java|json|md|yaml|yml)|\.{1,2}\/[\w.[\]/-]+|(?:src|lib|app|docs|test|tests)\/[\w.[\]/-]*\/?)/i;
 const URL_PATTERN = /https?:\/\//;
 const EXPLICIT_WEB_LOOKUP_PATTERN = /\b(?:web|online|internet|external)\b.{0,80}\b(?:search|lookup|docs?|documentation|reference|sources?)\b|\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online|the web|website)\b/;
-const OFFICIAL_DOC_LOOKUP_PATTERN = /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\bofficial (?:docs?|documentation)\b/;
-const LOCAL_GROUNDING_PATTERN = /\b(?:source|code|repository|repo|codebase|checkout|project|working tree|implementation)\b|(?:^|\s)(?:\.?\.?\/)?[\w.-]+(?:\/[\w.-]+)+/;
+const LOCAL_GROUNDING_PATTERN = /\b(?:source|code|repository|repo|codebase|checkout|project|working tree|implementation)\b/;
 const CAMEL_OR_PASCAL_PATTERN = /\b[A-Za-z_$][A-Za-z0-9_$]*\b/g;
 const SNAKE_PATTERN = /\b[a-z0-9]+_[a-z0-9_]+\b/g;
 const KEBAB_PATTERN = /\b[a-z0-9]+-[a-z0-9-]+\b/g;
@@ -122,16 +121,20 @@ export function isExternalLookup(text: string): boolean {
   }
 
   const mentionsOfficialDocs = /\bofficial (?:docs?|documentation)\b/.test(text);
-  if (mentionsOfficialDocs && LOCAL_GROUNDING_PATTERN.test(text)) {
+  if (mentionsOfficialDocs && (LOCAL_GROUNDING_PATTERN.test(text) || FILE_PATH_PATTERN.test(text))) {
     return false;
   }
+  if (mentionsOfficialDocs) {
+    return true;
+  }
 
-  return OFFICIAL_DOC_LOOKUP_PATTERN.test(text) || includesHint(text, EXTERNAL_HINTS)
+  return includesHint(text, EXTERNAL_HINTS)
     || /\b(?:search|look up|browse|check|consult|fetch|read|find)\b.{0,80}\b(?:online docs|npm registry|pypi|crates\.io|github (?:repo|repository|examples?))\b/.test(text);
 }
 
 export function hasConceptualDiscoveryHint(text: string): boolean {
   return includesHint(text, CONCEPTUAL_DISCOVERY_HINTS)
+    || /\b(?:explain|describe)\b.{0,80}\bofficial (?:docs?|documentation)\b/.test(text)
     || /\btrace (?:the |how )?.{0,80}\b(?:authorization|execution|request|call|data|dependency|control)\b/.test(text)
     || (/\b(?:source|code|repository|repo|checkout)\b/.test(text)
       && /\b(?:explain|trace|compare|analy[sz]e|identify|cite|describe)\b/.test(text));

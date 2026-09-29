@@ -55,6 +55,8 @@ describe("routing hints", () => {
       ["trace the courier shipment", "other"],
       ["Update CHANGELOG.md for the release", "other"],
       ["Read src/index.ts", "direct_path"],
+      ["Read src/[id].ts", "direct_path"],
+      ["Read docs/", "direct_path"],
     ])("classifies %s as %s", (query, intent) => {
       expect(assessRoutingIntent(query).intent).toBe(intent);
     });
@@ -116,6 +118,7 @@ describe("routing hints", () => {
       "How is the official docs renderer implemented in this project?",
       "Find official docs in this repository and explain how they are generated.",
       "Read official documentation in this repo to trace its source.",
+      "Explain how the official docs in docs/ are built.",
     ])("keeps repository-grounded official docs questions local: %s", (query) => {
       const assessment = assessRoutingIntent(query);
 
@@ -127,6 +130,9 @@ describe("routing hints", () => {
       "Search online for the official documentation for Next.js app router",
       "Look up the official docs on the web for the package API",
       "Browse online documentation for the latest framework behavior",
+      "Check the official docs for input/output behavior",
+      "Look up official documentation for client/server APIs",
+      "Where are the official docs for Next.js?",
     ])("retains explicit web lookup routing: %s", (query) => {
       expect(assessRoutingIntent(query).intent).toBe("external");
     });
