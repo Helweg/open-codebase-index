@@ -1406,7 +1406,9 @@ export class Indexer {
       }
       matchPath = relativePath;
     }
-    return isExcludedByPatterns(matchPath, this.config.exclude);
+    return isExcludedByPatterns(matchPath, this.config.exclude, {
+      includeExcluded: this.config.indexing.includeExcluded,
+    });
   }
 
   private resolveStoredFilePath(filePath: string, rootPath = this.projectRoot): string {
@@ -4628,7 +4630,11 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        excludeBuildPaths: this.config.excludeBuildPaths,
+        includeExcluded: this.config.indexing.includeExcluded,
+        protectedPaths: [
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPath,
+        ],
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
@@ -4660,7 +4666,11 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        excludeBuildPaths: this.config.excludeBuildPaths,
+        includeExcluded: this.config.indexing.includeExcluded,
+        protectedPaths: [
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPath,
+        ],
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
@@ -4956,7 +4966,11 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        excludeBuildPaths: this.config.excludeBuildPaths,
+        includeExcluded: this.config.indexing.includeExcluded,
+        protectedPaths: [
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPath,
+        ],
         signal,
         heartbeat,
       },
@@ -6795,7 +6809,11 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        excludeBuildPaths: this.config.excludeBuildPaths,
+        includeExcluded: this.config.indexing.includeExcluded,
+        protectedPaths: [
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPath,
+        ],
         signal: options.signal,
         heartbeat: options.heartbeat,
       },

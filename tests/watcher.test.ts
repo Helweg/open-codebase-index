@@ -12,7 +12,6 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
   scope: "project",
   include: ["**/*.ts", "**/*.js"],
   exclude: [],
-  excludeBuildPaths: true,
   indexing: {
     autoIndex: false,
     autoIndexWaitMs: 10_000,
@@ -29,6 +28,8 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
     gcIntervalDays: 7,
     gcOrphanThreshold: 100,
     requireProjectMarker: true,
+    includeIgnored: [],
+    includeExcluded: [],
   },
   search: {
     maxResults: 20,
@@ -164,22 +165,25 @@ describe("FileWatcher", () => {
   });
 
   describe("file filtering", () => {
-    it("watches build-named source paths with Chokidar only when explicitly enabled", async () => {
+    it.each(["chokidar", "native"] as const)("watches only selected build paths with %s", async (backend) => {
       const buildFile = path.join(tempDir, "BUILD-source", "nested", "index.ts");
-      const rootBuildFile = path.join(tempDir, "rebuild.ts");
+      const siblingBuildFile = path.join(tempDir, "BUILD-sibling", "nested", "index.ts");
+      const rootBuildFile = path.join(tempDir, "build-helper.ts");
       const explicitlyExcluded = path.join(tempDir, "BUILD-source", "excluded", "skip.ts");
       fs.mkdirSync(path.dirname(buildFile), { recursive: true });
+      fs.mkdirSync(path.dirname(siblingBuildFile), { recursive: true });
       fs.mkdirSync(path.dirname(explicitlyExcluded), { recursive: true });
       const changes: FileChange[] = [];
+      const config = createTestConfig({
+        exclude: ["**/BUILD-source/excluded/**"],
+        include: ["**/*.ts"],
+      });
+      config.indexing.includeExcluded = ["BUILD-source/**"];
       watcher = new FileWatcher(
         tempDir,
-        createTestConfig({
-          excludeBuildPaths: false,
-          exclude: ["**/BUILD-source/excluded/**"],
-          include: ["**/*.ts"],
-        }),
+        config,
         "opencode",
-        { backend: "chokidar" },
+        { backend },
       );
       watcher.start(async (batch) => { changes.push(...batch); });
       await watcher.waitUntilReady();
@@ -187,16 +191,54 @@ describe("FileWatcher", () => {
       await writeUntilObserved(
         (attempt) => {
           fs.writeFileSync(buildFile, `export const build = ${attempt};`);
+          fs.writeFileSync(siblingBuildFile, `export const sibling = ${attempt};`);
           fs.writeFileSync(rootBuildFile, `export const rebuild = ${attempt};`);
           fs.writeFileSync(explicitlyExcluded, `export const excluded = ${attempt};`);
         },
-        () => {
-          expect(changes.some((change) => change.path === buildFile)).toBe(true);
-          expect(changes.some((change) => change.path === rootBuildFile)).toBe(true);
-        },
+        () => expect(changes.some((change) => change.path === buildFile)).toBe(true),
       );
 
       expect(changes.some((change) => change.path === explicitlyExcluded)).toBe(false);
+      expect(changes.some((change) => change.path === siblingBuildFile)).toBe(false);
+      expect(changes.some((change) => change.path === rootBuildFile)).toBe(false);
+    });
+
+    it.each(["chokidar", "native"] as const)("watches a selected root build file with %s", async (backend) => {
+      const rootBuildFile = path.join(tempDir, "build-helper.ts");
+      const config = createTestConfig({ include: ["**/*.ts"] });
+      config.indexing.includeExcluded = ["build-helper.ts"];
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(tempDir, config, "opencode", { backend });
+      watcher.start(async (batch) => { changes.push(...batch); });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => fs.writeFileSync(rootBuildFile, `export const build = ${attempt};`),
+        () => expect(changes.some((change) => change.path === rootBuildFile)).toBe(true),
+      );
+    });
+
+    it("never watches a protected runtime index path even when explicitly selected", async () => {
+      const protectedRoot = path.join(tempDir, "runtime-cache");
+      const protectedFile = path.join(protectedRoot, "selected.ts");
+      const siblingFile = path.join(tempDir, "src", "selected.ts");
+      fs.mkdirSync(protectedRoot, { recursive: true });
+      const config = createTestConfig({ include: ["**/*.ts"] });
+      config.indexing.includeExcluded = ["runtime-cache/**"];
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(tempDir, config, "codex", { backend: "chokidar", indexPath: protectedRoot });
+      watcher.start(async (batch) => { changes.push(...batch); });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => {
+          fs.writeFileSync(protectedFile, `export const protectedValue = ${attempt};`);
+          fs.writeFileSync(siblingFile, `export const siblingValue = ${attempt};`);
+        },
+        () => expect(changes.some((change) => change.path === siblingFile)).toBe(true),
+      );
+
+      expect(changes.some((change) => change.path === protectedFile)).toBe(false);
     });
 
     it("watches selected files below ignored parents without emitting unrelated ignored paths", async () => {

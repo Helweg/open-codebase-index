@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { createDefaultExcludePatterns } from "../src/config/exclusions.js";
 import { buildFileSnapshot, buildFileSnapshotForPath } from "../src/watcher/snapshot.js";
 import {
   LocalModuleConfigTracker,
@@ -180,7 +181,7 @@ describe("watcher snapshot builder", () => {
     expect(tracker.has(unrelatedManifest)).toBe(false);
   });
 
-  it("tracks configs and workspace manifests under build-named source paths when enabled", () => {
+  it("tracks configs and workspace manifests under selected build source paths", () => {
     const rootManifest = path.join(projectRoot, "package.json");
     const packageRoot = path.join(projectRoot, "packages", "app-build");
     const packageManifest = path.join(packageRoot, "package.json");
@@ -195,19 +196,48 @@ describe("watcher snapshot builder", () => {
     fs.writeFileSync(baseConfig, "{}");
     fs.writeFileSync(sourceFile, "export const value = 1;");
 
-    expect(shouldTrackLocalModuleConfigPath(appConfig, projectRoot, undefined, false)).toBe(true);
-    expect(shouldTrackLocalModulePackagePath(packageManifest, projectRoot, undefined, false)).toBe(true);
+    const options = {
+      exclude: createDefaultExcludePatterns(),
+      indexing: { includeExcluded: ["packages/app-build/**"] },
+    };
+    expect(shouldTrackLocalModuleConfigPath(appConfig, projectRoot, undefined, options)).toBe(true);
+    expect(shouldTrackLocalModulePackagePath(packageManifest, projectRoot, undefined, options)).toBe(true);
 
     const tracker = new LocalModuleConfigTracker(projectRoot, {
       include: ["**/*.ts"],
-      exclude: [],
-      excludeBuildPaths: false,
+      ...options,
     });
     tracker.refresh();
 
     expect(tracker.has(packageManifest)).toBe(true);
     expect(tracker.has(appConfig)).toBe(true);
     expect(tracker.has(baseConfig)).toBe(true);
+  });
+
+  it("keeps the local config helper default argument filtered", () => {
+    const buildConfig = path.join(projectRoot, "app-build", "tsconfig.json");
+    fs.mkdirSync(path.dirname(buildConfig), { recursive: true });
+    fs.writeFileSync(buildConfig, "{}");
+
+    expect(shouldTrackLocalModuleConfigPath(buildConfig, projectRoot, undefined)).toBe(false);
+  });
+
+  it.each([".hidden-app", "vendor/app"])("tracks local configs under a selected %s ancestor", (relativeRoot) => {
+    const configPath = path.join(projectRoot, relativeRoot, "tsconfig.json");
+    const sourcePath = path.join(projectRoot, relativeRoot, "src", "index.ts");
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.writeFileSync(configPath, "{}");
+    fs.writeFileSync(sourcePath, "export const value = 1;");
+    const options = {
+      include: ["**/*.ts"],
+      exclude: createDefaultExcludePatterns(),
+      indexing: { includeExcluded: [`${relativeRoot}/**`] },
+    };
+
+    expect(shouldTrackLocalModuleConfigPath(configPath, projectRoot, undefined, options)).toBe(true);
+    const tracker = new LocalModuleConfigTracker(projectRoot, options);
+    tracker.refresh();
+    expect(tracker.has(configPath)).toBe(true);
   });
 
   it("limits traversal depth using config.indexing.maxDepth", async () => {
@@ -284,14 +314,16 @@ describe("watcher snapshot builder", () => {
     expect(Array.from(partial.keys())).toEqual([selected]);
   });
 
-  it("applies build-path opt-in identically to full and path snapshots", async () => {
+  it("applies narrow automatic-exclusion opt-ins identically to full and scoped snapshots", async () => {
     const buildRoot = path.join(projectRoot, "BUILD-source");
+    const siblingBuildRoot = path.join(projectRoot, "BUILD-sibling");
     const sourceFile = path.join(buildRoot, "nested", "index.ts");
     const additionalFile = path.join(buildRoot, "nested", "schema.custom");
     const excludedFile = path.join(buildRoot, "excluded", "skip.ts");
+    const siblingFile = path.join(siblingBuildRoot, "nested", "index.ts");
     const hiddenFile = path.join(projectRoot, ".hidden-build", "index.ts");
     const dependencyFile = path.join(projectRoot, "node_modules", "build-package", "index.ts");
-    for (const filePath of [sourceFile, additionalFile, excludedFile, hiddenFile, dependencyFile]) {
+    for (const filePath of [sourceFile, additionalFile, excludedFile, siblingFile, hiddenFile, dependencyFile]) {
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, "source");
     }
@@ -300,7 +332,7 @@ describe("watcher snapshot builder", () => {
       include: ["**/*.ts"],
       additionalInclude: ["**/*.custom"],
       exclude: ["**/BUILD-source/excluded/**"],
-      excludeBuildPaths: false,
+      indexing: { includeExcluded: ["BUILD-source/**"] },
     };
     const full = await buildFileSnapshot(projectRoot, config, []);
     const partial = await buildFileSnapshotForPath(projectRoot, config, [], buildRoot);
@@ -308,7 +340,51 @@ describe("watcher snapshot builder", () => {
     expect(Array.from(full.keys()).sort()).toEqual([sourceFile, additionalFile].sort());
     expect(Array.from(partial.keys()).sort()).toEqual([sourceFile, additionalFile].sort());
 
-    const defaultSnapshot = await buildFileSnapshot(projectRoot, { ...config, excludeBuildPaths: true }, []);
+    const defaultSnapshot = await buildFileSnapshot(projectRoot, { ...config, indexing: { includeExcluded: [] } }, []);
     expect(defaultSnapshot.size).toBe(0);
+  });
+
+  it("does not let scoped scans bypass denied ancestors, explicit excludes, or maxDepth", async () => {
+    const deniedRoot = path.join(projectRoot, "vendor", "selected");
+    const deniedFile = path.join(deniedRoot, "nested", "index.ts");
+    fs.mkdirSync(path.dirname(deniedFile), { recursive: true });
+    fs.writeFileSync(deniedFile, "source");
+
+    const explicitlyDenied = {
+      include: ["**/*.ts"],
+      additionalInclude: [],
+      exclude: ["vendor/**"],
+      indexing: { includeExcluded: ["vendor/selected/**"] },
+    };
+    expect((await buildFileSnapshot(projectRoot, explicitlyDenied, [])).size).toBe(0);
+    expect((await buildFileSnapshotForPath(projectRoot, explicitlyDenied, [], deniedRoot)).size).toBe(0);
+
+    const depthLimited = {
+      ...explicitlyDenied,
+      exclude: createDefaultExcludePatterns(),
+      indexing: { includeExcluded: ["vendor/selected/**"], maxDepth: 1 },
+    };
+    expect((await buildFileSnapshot(projectRoot, depthLimited, [])).size).toBe(0);
+    expect((await buildFileSnapshotForPath(projectRoot, depthLimited, [], deniedRoot)).size).toBe(0);
+  });
+
+  it("protects storage paths from full and scoped snapshots despite opt-in", async () => {
+    const protectedRoot = path.join(projectRoot, "custom-index");
+    const protectedFile = path.join(protectedRoot, "nested", "index.ts");
+    const siblingFile = path.join(projectRoot, "src", "index.ts");
+    for (const filePath of [protectedFile, siblingFile]) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, "source");
+    }
+    const config = {
+      include: ["**/*.ts"],
+      additionalInclude: [],
+      exclude: createDefaultExcludePatterns(),
+      indexing: { includeExcluded: ["custom-index/**"] },
+      protectedPaths: [protectedRoot],
+    };
+
+    expect(Array.from((await buildFileSnapshot(projectRoot, config, [])).keys())).toEqual([siblingFile]);
+    expect((await buildFileSnapshotForPath(projectRoot, config, [], protectedRoot)).size).toBe(0);
   });
 });

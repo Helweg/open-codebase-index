@@ -373,24 +373,27 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 {
   "include": ["**/*.ts", "**/*.tsx"],
   "additionalInclude": ["scripts/**/*.mjs"],
-  "exclude": ["**/vendor/**"],
-  "excludeBuildPaths": false,
+  "exclude": ["**/build/**", "vendor/internal/private/**"],
   "indexing": {
-    "includeIgnored": ["generated/api/**/*.ts"]
+    "includeExcluded": ["build-tools/**", "vendor/internal/**", ".github/**"],
+    "includeIgnored": ["build-tools/**"]
   }
 }
 ```
 
 - `include` replaces the default include patterns.
 - `additionalInclude` extends the defaults.
-- `exclude` replaces the default exclude patterns.
-- `excludeBuildPaths` defaults to `true`. Set it to `false` to allow directories and files whose path segments contain `build`, case-insensitively, during initial indexing and both Chokidar and native file watching. Hidden paths, dependency/output directories, restricted OS paths, normal include rules, `.gitignore`, and explicit `exclude` patterns remain enforced.
-- When `excludeBuildPaths` is `false` and `exclude` is omitted, only the built-in `**/build/**` and `**/*build*/**` globs are removed from the derived default excludes. An explicitly supplied `exclude` array is preserved exactly, including either of those globs.
-- Matching files are omitted from the index, including paths that also match `include`. Directory globs such as `**/generated/**` skip the whole tree.
-- Incremental `/index` and `retryFailedBatches` drop stale failed-batch retries for paths that are now excluded, so previously failed chunks are not re-embedded.
+- `exclude` replaces the default exclude patterns. Explicit exclusions always win, even when the same path matches an opt-in pattern. Directory globs such as `**/generated/**` skip the whole tree.
+- `indexing.includeExcluded` defaults to `[]`. It selectively permits paths blocked by automatic exclusions, including build-named paths, dependency/output directories, hidden paths, and default minified/bundled-file patterns. For example, the configuration above permits source under `build-tools/`, `vendor/internal/`, and `.github/`, but still excludes `build/` output and `vendor/internal/private/`.
+- Opt-in patterns are project-relative globs. Use a file pattern for one file or `directory/**` for its descendants. Parent directories are traversed when they could contain a match, but unselected files and sibling trees remain filtered. Files must still match `include` or `additionalInclude`, and indexing size, depth, and per-directory limits still apply.
+- Automatic default excludes are distinguished from explicit `exclude` arrays. You can omit `exclude` and opt in selected paths without disabling the remaining defaults. An explicitly supplied array remains authoritative, even if it repeats a default pattern.
+- Git metadata, index-storage directories, and watcher restricted-path safeguards cannot be opted in. These protections also apply when an opt-in pattern is broad. Dedicated configuration-file notifications remain separate from source indexing.
+- Discovery, indexing, freshness checks, watcher snapshots, and both Chokidar and native watcher filtering use the shared path policy. With no opt-in patterns, existing default behavior is preserved.
+- Incremental `/index` and `retryFailedBatches` drop stale failed-batch retries for paths that are now explicitly excluded, so previously failed chunks are not re-embedded. A selected automatic exclusion does not itself make an otherwise eligible failed batch excluded.
 - `.gitignore` is also respected. Tracked Git files can still be excluded from the index with `exclude`; `.git/info/exclude` is not read.
-- `indexing.includeIgnored` defaults to `[]` and selectively permits matching project files that are ignored by `.gitignore`. It only bypasses the Git-ignore check: files must still match `include` or `additionalInclude`, and `exclude`, hidden paths, dependency/output directories, and restricted OS paths still take precedence. Build paths also take precedence unless `excludeBuildPaths` is `false`. Patterns may target files below an ignored parent directory, such as `generated/api/**/*.ts`. This option does not apply to knowledge bases.
-- Use narrow patterns: opting in broad ignored trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
+- `indexing.includeIgnored` remains a separate, Git-only opt-in for matching project files ignored by `.gitignore`. It does not bypass automatic exclusions or explicit `exclude` patterns. If a source path is blocked by both Git rules and automatic filters, select it in both `includeIgnored` and `includeExcluded`, as shown for `build-tools/**` above.
+- `includeExcluded` patterns are evaluated relative to each additional knowledge-base root too. Project `includeIgnored` patterns do not bypass a knowledge base's Git-ignore rules.
+- Use narrow patterns: opting in broad excluded trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
 
 ## Knowledge bases
 

@@ -8,8 +8,13 @@ import {
   isJavaScriptFamilyFilePath,
   isLocalWorkspacePackageManifestPath,
 } from "../indexer/local-module-resolution.js";
-import { createIgnoreFilter, shouldIncludeFile } from "../utils/files.js";
-import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
+import {
+  createGitIgnoreFilter,
+  createIgnoreFilter,
+  shouldIncludeFile,
+  shouldTraverseDirectory,
+  type PathFilterOptions,
+} from "../utils/files.js";
 
 const LOCAL_MODULE_CONFIG_NAMES = new Set(["tsconfig.json", "jsconfig.json"]);
 const LOCAL_MODULE_PACKAGE_MANIFEST_NAME = "package.json";
@@ -18,9 +23,11 @@ export interface LocalModuleConfigTrackerOptions {
   include?: string[];
   additionalInclude?: string[];
   exclude?: string[];
-  excludeBuildPaths?: boolean;
-  indexing?: { maxDepth?: number };
+  indexing?: { maxDepth?: number; includeIgnored?: string[]; includeExcluded?: string[] };
+  protectedPaths?: string[];
 }
+
+export type LocalModuleConfigFilterOptions = Pick<LocalModuleConfigTrackerOptions, "exclude" | "indexing" | "protectedPaths">;
 
 /**
  * Whether a config file can affect local JavaScript/TypeScript module resolution.
@@ -32,12 +39,12 @@ export function shouldTrackLocalModuleConfigPath(
   filePath: string,
   projectRoot: string,
   ignoreFilter: IgnoreFilter | undefined = undefined,
-  excludeBuildPaths: boolean = true,
+  options: LocalModuleConfigFilterOptions = {},
 ): boolean {
-  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot, excludeBuildPaths);
+  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot);
   return (
     LOCAL_MODULE_CONFIG_NAMES.has(path.basename(filePath).toLowerCase())
-    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, excludeBuildPaths)
+    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, options)
   );
 }
 
@@ -46,12 +53,12 @@ export function shouldTrackLocalModulePackagePath(
   filePath: string,
   projectRoot: string,
   ignoreFilter: IgnoreFilter | undefined = undefined,
-  excludeBuildPaths: boolean = true,
+  options: LocalModuleConfigFilterOptions = {},
 ): boolean {
-  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot, excludeBuildPaths);
+  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot);
   return (
     path.basename(filePath).toLowerCase() === LOCAL_MODULE_PACKAGE_MANIFEST_NAME
-    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, excludeBuildPaths)
+    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, options)
   );
 }
 
@@ -59,7 +66,7 @@ function shouldTrackProjectLocalJsonConfigPath(
   filePath: string,
   projectRoot: string,
   ignoreFilter: IgnoreFilter,
-  excludeBuildPaths: boolean,
+  options: LocalModuleConfigFilterOptions,
 ): boolean {
   const relativePath = path.relative(projectRoot, filePath);
   if (
@@ -71,11 +78,24 @@ function shouldTrackProjectLocalJsonConfigPath(
     return false;
   }
 
-  if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths) || isRestrictedDirectory(relativePath, path.sep)) {
-    return false;
-  }
-
-  return !ignoreFilter.ignores(relativePath);
+  const excludePatterns = options.exclude ?? [];
+  const includeIgnored = options.indexing?.includeIgnored ?? [];
+  const filterOptions: PathFilterOptions = {
+    includeExcluded: options.indexing?.includeExcluded ?? [],
+    protectedPaths: options.protectedPaths ?? [],
+    purpose: "watch",
+  };
+  const gitIgnoreFilter = createGitIgnoreFilter(projectRoot);
+  return shouldIncludeFile(
+    filePath,
+    projectRoot,
+    ["**/*.json"],
+    excludePatterns,
+    ignoreFilter,
+    includeIgnored,
+    gitIgnoreFilter,
+    filterOptions,
+  );
 }
 
 /**
@@ -93,14 +113,20 @@ export class LocalModuleConfigTracker {
 
   refresh(): void {
     const root = path.resolve(this.projectRoot);
-    const excludeBuildPaths = this.options.excludeBuildPaths !== false;
-    const ignoreFilter = createIgnoreFilter(root, excludeBuildPaths);
+    const ignoreFilter = createIgnoreFilter(root);
+    const gitIgnoreFilter = createGitIgnoreFilter(root);
     const roots: string[] = [];
     const importerPaths: string[] = [];
     const nextPaths = new Set<string>();
     const maxDepth = this.options.indexing?.maxDepth ?? -1;
     const includePatterns = [...(this.options.include ?? []), ...(this.options.additionalInclude ?? [])];
     const excludePatterns = this.options.exclude ?? [];
+    const includeIgnored = this.options.indexing?.includeIgnored ?? [];
+    const filterOptions: PathFilterOptions = {
+      includeExcluded: this.options.indexing?.includeExcluded ?? [],
+      protectedPaths: this.options.protectedPaths ?? [],
+      purpose: "watch",
+    };
     const readConfig = (relativePath: string): string | undefined => {
       try {
         return readFileSync(path.join(root, ...relativePath.split("/")), "utf-8");
@@ -122,20 +148,19 @@ export class LocalModuleConfigTracker {
         const filePath = path.join(directoryPath, entry.name);
         const relativePath = path.relative(root, filePath);
         if (entry.isDirectory()) {
-          if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths) || isRestrictedDirectory(relativePath, path.sep)) continue;
-          if (ignoreFilter.ignores(relativePath)) continue;
+          if (!shouldTraverseDirectory(filePath, root, excludePatterns, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions)) continue;
           if (maxDepth === -1 || depth < maxDepth) walk(filePath, depth + 1);
           continue;
         }
 
         if (entry.isFile()) {
-          if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter, excludeBuildPaths)) {
+          if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter, this.options)) {
             roots.push(relativePath.split(path.sep).join("/"));
           }
           if (
             includePatterns.length > 0
             && isJavaScriptFamilyFilePath(relativePath)
-            && shouldIncludeFile(filePath, root, includePatterns, excludePatterns, ignoreFilter, [], undefined, excludeBuildPaths)
+            && shouldIncludeFile(filePath, root, includePatterns, excludePatterns, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions)
           ) {
             importerPaths.push(relativePath.split(path.sep).join("/"));
           }
@@ -152,7 +177,7 @@ export class LocalModuleConfigTracker {
     for (const rootConfig of roots) {
       for (const dependency of getTsConfigModuleResolutionConfigDependencyPaths(rootConfig, readConfig)) {
         const dependencyPath = path.resolve(root, ...dependency.split("/"));
-        if (shouldTrackProjectLocalJsonConfigPath(dependencyPath, root, ignoreFilter, excludeBuildPaths)) {
+        if (shouldTrackProjectLocalJsonConfigPath(dependencyPath, root, ignoreFilter, this.options)) {
           nextPaths.add(dependencyPath);
         }
       }
@@ -163,9 +188,8 @@ export class LocalModuleConfigTracker {
 
   shouldTrackPackagePath(filePath: string): boolean {
     const root = path.resolve(this.projectRoot);
-    const excludeBuildPaths = this.options.excludeBuildPaths !== false;
-    const ignoreFilter = createIgnoreFilter(root, excludeBuildPaths);
-    if (!shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter, excludeBuildPaths)) return false;
+    const ignoreFilter = createIgnoreFilter(root);
+    if (!shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter, this.options)) return false;
 
     const relativePath = path.relative(root, filePath).split(path.sep).join("/");
     return isLocalWorkspacePackageManifestPath(relativePath, this.rootPackageManifestText);

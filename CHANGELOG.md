@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Build-path discovery opt-in**: Added top-level `excludeBuildPaths`, defaulting to `true`, so projects can set it to `false` to index and watch build-named source paths while retaining explicit excludes, `.gitignore`, include rules, hidden/dependency/output filters, and restricted-path safety checks.
+- **Selective automatic-exclusion opt-in**: Added `indexing.includeExcluded` to index and watch selected source paths otherwise blocked by automatic defaults, including build-named, vendor, hidden, and minified/bundled paths. Shared discovery and watcher filtering retains normal include rules, explicit exclusion precedence, separate Git-only `includeIgnored` behavior, and Git/index-storage protections. This replaces the unpublished build-only `excludeBuildPaths` option.
 
 ## [0.33.0] - 2026-09-29
 

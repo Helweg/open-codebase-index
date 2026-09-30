@@ -9,10 +9,10 @@ import {
   EMBEDDING_MODELS,
   AUTO_DETECT_PROVIDER_ORDER,
   DEFAULT_PROVIDER_MODELS,
-  DEFAULT_BUILD_EXCLUDE,
   DEFAULT_INCLUDE,
   DEFAULT_EXCLUDE,
 } from "../src/config/constants.js";
+import { isDefaultExcludePatterns } from "../src/config/exclusions.js";
 
 describe("config schema", () => {
   describe("substituteEnvReferences", () => {
@@ -88,10 +88,11 @@ describe("config schema", () => {
       expect(config.scope).toBe("project");
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
-      expect(config.excludeBuildPaths).toBe(true);
+      expect(isDefaultExcludePatterns(config.exclude)).toBe(true);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
       expect(config.indexing.maxDepth).toBe(-1);
       expect(config.indexing.includeIgnored).toEqual([]);
+      expect(config.indexing.includeExcluded).toEqual([]);
       expect(config.search.communityBoost).toBe(0);
       expect(config.mcp.stallTimeoutMs).toBe(300_000);
     });
@@ -106,26 +107,46 @@ describe("config schema", () => {
       expect(parseConfig({ indexing: { includeIgnored: "generated/**" } }).indexing.includeIgnored).toEqual([]);
     });
 
-    it("parses excludeBuildPaths and ignores invalid values", () => {
-      expect(parseConfig({ excludeBuildPaths: false }).excludeBuildPaths).toBe(false);
-      expect(parseConfig({ excludeBuildPaths: true }).excludeBuildPaths).toBe(true);
-      expect(parseConfig({ excludeBuildPaths: "false" }).excludeBuildPaths).toBe(true);
+    it("normalizes indexing.includeExcluded project-relative patterns", () => {
+      expect(parseConfig({ indexing: { includeExcluded: [" build\\generated.ts ", "", "./dist/file.js"] } }).indexing.includeExcluded)
+        .toEqual(["build/generated.ts", "dist/file.js"]);
     });
 
-    it("removes only built-in build globs from derived defaults when disabled", () => {
-      const config = parseConfig({ excludeBuildPaths: false });
-
-      expect(config.exclude).toEqual(
-        DEFAULT_EXCLUDE.filter((pattern) => !DEFAULT_BUILD_EXCLUDE.includes(pattern)),
-      );
-      expect(config.exclude).toContain("**/node_modules/**");
-      expect(config.exclude).toContain("**/dist/**");
+    it("uses the default for invalid indexing.includeExcluded values", () => {
+      expect(parseConfig({ indexing: { includeExcluded: "build/**" } }).indexing.includeExcluded).toEqual([]);
+      expect(parseConfig({ indexing: { includeExcluded: ["build/**", 42] } }).indexing.includeExcluded).toEqual([]);
     });
 
-    it("preserves explicitly supplied build globs when build-path filtering is disabled", () => {
-      const exclude = [...DEFAULT_BUILD_EXCLUDE, "**/custom/**"];
+    it("distinguishes derived default exclusions from identical explicit exclusions", () => {
+      const derived = parseConfig({});
+      const explicit = parseConfig({ exclude: [...DEFAULT_EXCLUDE] });
 
-      expect(parseConfig({ excludeBuildPaths: false, exclude }).exclude).toEqual(exclude);
+      expect(isDefaultExcludePatterns(derived.exclude)).toBe(true);
+      expect(isDefaultExcludePatterns(explicit.exclude)).toBe(false);
+      expect(explicit.exclude).toEqual(DEFAULT_EXCLUDE);
+    });
+
+    it("preserves derived exclusion provenance through parsed reparses and object spreads", () => {
+      const parsed = parseConfig({});
+
+      expect(isDefaultExcludePatterns(parseConfig(parsed).exclude)).toBe(true);
+      expect(isDefaultExcludePatterns(parseConfig({ ...parsed }).exclude)).toBe(true);
+      expect(isDefaultExcludePatterns(parseConfig({ ...parsed, exclude: [...parsed.exclude] }).exclude)).toBe(false);
+    });
+
+    it("treats serialized parsed exclusions as explicitly specified", () => {
+      const serialized = JSON.parse(JSON.stringify(parseConfig({}))) as unknown;
+
+      expect(isDefaultExcludePatterns(parseConfig(serialized).exclude)).toBe(false);
+    });
+
+    it("treats mutated derived exclusions as explicitly specified", () => {
+      const parsed = parseConfig({});
+      parsed.exclude.push("**/custom/**");
+      const reparsed = parseConfig(parsed);
+
+      expect(isDefaultExcludePatterns(reparsed.exclude)).toBe(false);
+      expect(reparsed.exclude).toEqual([...DEFAULT_EXCLUDE, "**/custom/**"]);
     });
 
     it("normalizes the MCP stall timeout", () => {

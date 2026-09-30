@@ -2,8 +2,16 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { collectFiles, createIgnoreFilter, shouldIncludeFile, hasProjectMarker } from "../src/utils/files.js";
+import {
+  collectFiles,
+  createGitIgnoreFilter,
+  createIgnoreFilter,
+  hasProjectMarker,
+  shouldIncludeFile,
+  shouldTraverseDirectory,
+} from "../src/utils/files.js";
 import { DEFAULT_EXCLUDE, DEFAULT_INCLUDE } from "../src/config/constants.js";
+import { createDefaultExcludePatterns } from "../src/config/exclusions.js";
 
 describe("files utilities", () => {
   let tempDir: string;
@@ -33,15 +41,6 @@ describe("files utilities", () => {
       expect(filter.ignores("src/main.ts")).toBe(false);
     });
 
-    it("can disable built-in build ignores without bypassing .gitignore", () => {
-      const builtInOnly = createIgnoreFilter(tempDir, false);
-      expect(builtInOnly.ignores("AppBuild/output.ts")).toBe(false);
-
-      fs.writeFileSync(path.join(tempDir, ".gitignore"), "AppBuild/\n");
-      const withGitIgnore = createIgnoreFilter(tempDir, false);
-      expect(withGitIgnore.ignores("AppBuild/output.ts")).toBe(true);
-      expect(withGitIgnore.ignores("node_modules/pkg/index.ts")).toBe(true);
-    });
   });
 
   describe("shouldIncludeFile", () => {
@@ -59,6 +58,13 @@ describe("files utilities", () => {
           filter
         )
       ).toBe(true);
+      expect(shouldIncludeFile(
+        path.join(tempDir, "rebuild.ts"),
+        tempDir,
+        includePatterns,
+        excludePatterns,
+        filter,
+      )).toBe(false);
     });
 
     it("should exclude files matching exclude patterns", () => {
@@ -210,50 +216,105 @@ describe("files utilities", () => {
       ).toBe(true);
     });
 
-    it("can include build-named directory and file paths without weakening other filters", () => {
-      const filter = createIgnoreFilter(tempDir, false);
+    it("includes only selected automatic exclusions while explicit equal defaults win", () => {
+      const filter = createIgnoreFilter(tempDir);
       const includePatterns = ["**/*.ts"];
+      const derivedDefaults = createDefaultExcludePatterns();
+      const options = { includeExcluded: ["BUILD-source/index.ts"], purpose: "watch" as const };
 
       expect(shouldIncludeFile(
         path.join(tempDir, "BUILD-source", "index.ts"),
         tempDir,
         includePatterns,
-        [],
+        derivedDefaults,
         filter,
         [],
         undefined,
-        false,
+        options,
       )).toBe(true);
       expect(shouldIncludeFile(
-        path.join(tempDir, "rebuild.ts"),
+        path.join(tempDir, "BUILD-source", "sibling.ts"),
         tempDir,
         includePatterns,
-        [],
+        derivedDefaults,
         filter,
         [],
         undefined,
-        false,
+        options,
+      )).toBe(false);
+      expect(shouldIncludeFile(
+        path.join(tempDir, "vendor", "index.ts"),
+        tempDir,
+        includePatterns,
+        [...DEFAULT_EXCLUDE],
+        filter,
+        [],
+        undefined,
+        { includeExcluded: ["vendor/index.ts"] },
+      )).toBe(false);
+
+      for (const explicitExcludes of [[], ["unrelated/**"]]) {
+        expect(shouldIncludeFile(
+          path.join(tempDir, "BUILD-source", "index.ts"),
+          tempDir,
+          includePatterns,
+          explicitExcludes,
+          filter,
+          [],
+          undefined,
+          options,
+        )).toBe(true);
+      }
+    });
+
+    it("requires the independent Git opt-in when a selected automatic path is gitignored", () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "vendor/\n");
+      const filter = createIgnoreFilter(tempDir);
+      const gitFilter = createGitIgnoreFilter(tempDir);
+      const filePath = path.join(tempDir, "vendor", "selected.ts");
+      const options = { includeExcluded: ["vendor/selected.ts"] };
+
+      expect(shouldIncludeFile(
+        filePath, tempDir, ["**/*.ts"], createDefaultExcludePatterns(), filter, [], gitFilter, options,
+      )).toBe(false);
+      expect(shouldIncludeFile(
+        filePath,
+        tempDir,
+        ["**/*.ts"],
+        createDefaultExcludePatterns(),
+        filter,
+        ["vendor/selected.ts"],
+        gitFilter,
+        options,
       )).toBe(true);
-      expect(shouldIncludeFile(
-        path.join(tempDir, ".hidden-build", "index.ts"),
-        tempDir,
-        includePatterns,
-        [],
-        filter,
-        [],
-        undefined,
-        false,
-      )).toBe(false);
-      expect(shouldIncludeFile(
-        path.join(tempDir, "node_modules", "build-package", "index.ts"),
-        tempDir,
-        includePatterns,
-        [],
-        filter,
-        [],
-        undefined,
-        false,
-      )).toBe(false);
+    });
+
+    it("rejects uppercase and symlink-aliased protected metadata paths", () => {
+      const derivedDefaults = createDefaultExcludePatterns();
+      const options = { includeExcluded: ["**/*.ts"] };
+      const filter = createIgnoreFilter(tempDir);
+      const uppercaseGitFile = path.join(tempDir, ".GIT", "selected.ts");
+      fs.mkdirSync(path.dirname(uppercaseGitFile), { recursive: true });
+      fs.writeFileSync(uppercaseGitFile, "metadata");
+
+      const indexRoot = path.join(tempDir, ".opencode", "index");
+      fs.mkdirSync(indexRoot, { recursive: true });
+      fs.writeFileSync(path.join(indexRoot, "selected.ts"), "index");
+      const aliasRoot = path.join(tempDir, "index-alias");
+      fs.symlinkSync(indexRoot, aliasRoot, "dir");
+
+      for (const filePath of [uppercaseGitFile, path.join(aliasRoot, "selected.ts")]) {
+        expect(shouldIncludeFile(
+          filePath,
+          tempDir,
+          ["**/*.ts"],
+          derivedDefaults,
+          filter,
+          [],
+          undefined,
+          options,
+        )).toBe(false);
+      }
     });
   });
 
@@ -350,6 +411,52 @@ describe("files utilities", () => {
       expect(result.skipped.some((s) => s.reason === "too_large")).toBe(true);
     });
 
+    it("preserves legacy skipped diagnostics and ignore-before-size precedence", async () => {
+      for (const directory of ["ignored-dir", "build-dir", ".hidden-dir", "vendor"]) {
+        fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
+      }
+      fs.writeFileSync(
+        path.join(tempDir, ".gitignore"),
+        "ignored-dir\nignored-large.ts\ngit-opted-excluded.ts\n",
+      );
+      fs.writeFileSync(path.join(tempDir, "notes.md"), "miss");
+      fs.writeFileSync(path.join(tempDir, ".hidden.ts"), "hidden root");
+      fs.writeFileSync(path.join(tempDir, "ignored-dir", "nested.ts"), "ignored directory");
+      fs.writeFileSync(path.join(tempDir, "build-dir", "nested.ts"), "build directory");
+      fs.writeFileSync(path.join(tempDir, ".hidden-dir", "nested.ts"), "hidden directory");
+      fs.writeFileSync(path.join(tempDir, "ignored-large.ts"), "x".repeat(100));
+      fs.writeFileSync(path.join(tempDir, "large.ts"), "x".repeat(100));
+      fs.writeFileSync(path.join(tempDir, "excluded.ts"), "excluded");
+      fs.writeFileSync(path.join(tempDir, "git-opted-excluded.ts"), "excluded");
+      fs.writeFileSync(path.join(tempDir, "vendor", "selected.ts"), "selected");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        ["excluded.ts", "git-opted-excluded.ts"],
+        10,
+        undefined,
+        {
+          maxDepth: -1,
+          maxFilesPerDirectory: 100,
+          includeExcluded: ["vendor/selected.ts"],
+        },
+        ["git-opted-excluded.ts"],
+      );
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("vendor", "selected.ts"),
+      ]);
+      expect(new Map(result.skipped.map((entry) => [entry.path, entry.reason]))).toEqual(new Map([
+        [".hidden-dir", "excluded"],
+        ["build-dir", "excluded"],
+        ["excluded.ts", "excluded"],
+        ["git-opted-excluded.ts", "excluded"],
+        ["ignored-large.ts", "gitignore"],
+        ["large.ts", "too_large"],
+      ]));
+    });
+
     it("should handle empty directory", async () => {
       const result = await collectFiles(
         tempDir,
@@ -382,6 +489,7 @@ describe("files utilities", () => {
     it("should collect root-level files with **/*.ext pattern", async () => {
       fs.mkdirSync(path.join(tempDir, "src"), { recursive: true });
       fs.writeFileSync(path.join(tempDir, "root.js"), "root");
+      fs.writeFileSync(path.join(tempDir, "build-helper.js"), "build helper");
       fs.writeFileSync(path.join(tempDir, "src/nested.js"), "nested");
 
       const result = await collectFiles(
@@ -391,8 +499,9 @@ describe("files utilities", () => {
         1048576
       );
 
-      expect(result.files.length).toBe(2);
+      expect(result.files.length).toBe(3);
       expect(result.files.some((f) => f.path.endsWith("root.js"))).toBe(true);
+      expect(result.files.some((f) => f.path.endsWith("build-helper.js"))).toBe(true);
       expect(result.files.some((f) => f.path.endsWith("nested.js"))).toBe(true);
     });
 
@@ -522,63 +631,161 @@ describe("files utilities", () => {
       ]);
     });
 
-    it("discovers build-named paths only when enabled while preserving explicit and safety filters", async () => {
-      for (const directory of [
-        "AppBuild/src",
-        "BUILD-assets",
-        "BuildExcluded",
-        "git-build",
-        ".hidden-build",
-        "node_modules/build-package",
-      ]) {
+    it("collects selected build, vendor, hidden, and minified paths without their siblings", async () => {
+      for (const directory of ["AppBuild/src", "vendor", ".hidden"]) {
         fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
       }
-      fs.writeFileSync(path.join(tempDir, ".gitignore"), "git-build/\n");
-      fs.writeFileSync(path.join(tempDir, "AppBuild/src/index.ts"), "export const app = true;");
-      fs.writeFileSync(path.join(tempDir, "BUILD-assets/schema.custom"), "schema");
-      fs.writeFileSync(path.join(tempDir, "BuildExcluded/index.ts"), "export const excluded = true;");
-      fs.writeFileSync(path.join(tempDir, "git-build/selected.ts"), "export const selected = true;");
-      fs.writeFileSync(path.join(tempDir, ".hidden-build/index.ts"), "export const hidden = true;");
-      fs.writeFileSync(path.join(tempDir, "node_modules/build-package/index.ts"), "export const dependency = true;");
-      fs.writeFileSync(path.join(tempDir, "rebuild.ts"), "export const root = true;");
+      const selected = [
+        "AppBuild/src/selected.ts",
+        "vendor/selected.ts",
+        ".hidden/selected.ts",
+        "selected.min.js",
+      ];
+      for (const relativePath of selected) {
+        fs.writeFileSync(path.join(tempDir, relativePath), "selected");
+      }
+      for (const relativePath of [
+        "AppBuild/src/sibling.ts",
+        "vendor/sibling.ts",
+        ".hidden/sibling.ts",
+        "sibling.min.js",
+      ]) {
+        fs.writeFileSync(path.join(tempDir, relativePath), "sibling");
+      }
 
-      const disabled = await collectFiles(
+      const result = await collectFiles(
         tempDir,
-        ["**/*.ts", "**/*.custom"],
-        ["**/BuildExcluded/**"],
+        ["**/*.ts", "**/*.js"],
+        createDefaultExcludePatterns(),
         1048576,
         undefined,
-        { maxDepth: -1, maxFilesPerDirectory: 100, excludeBuildPaths: false },
-      );
-      expect(disabled.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual([
-        path.join("AppBuild", "src", "index.ts"),
-        path.join("BUILD-assets", "schema.custom"),
-        "rebuild.ts",
-      ].sort());
-
-      const includedIgnored = await collectFiles(
-        tempDir,
-        ["**/*.ts"],
-        ["**/BuildExcluded/**"],
-        1048576,
-        undefined,
-        { maxDepth: -1, maxFilesPerDirectory: 100, excludeBuildPaths: false },
-        ["git-build/**"],
-      );
-      expect(includedIgnored.files.map((file) => path.relative(tempDir, file.path))).toContain(
-        path.join("git-build", "selected.ts"),
+        { maxDepth: -1, maxFilesPerDirectory: 100, includeExcluded: selected },
       );
 
-      const defaultBehavior = await collectFiles(
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        selected.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+    });
+
+    it("traverses selected ancestors but never protected storage or supplied paths", async () => {
+      for (const directory of [
+        "vendor/nested",
+        ".git/objects",
+        ".codebase-index/index",
+        ".opencode/index",
+        ".claude/index",
+        "protected",
+      ]) {
+        fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, directory, "selected.ts"), "selected");
+      }
+      const includeExcluded = ["**/selected.ts"];
+      const protectedPath = path.join(tempDir, "protected");
+      const options = {
+        maxDepth: -1,
+        maxFilesPerDirectory: 100,
+        includeExcluded,
+        protectedPaths: [protectedPath],
+      };
+
+      expect(shouldTraverseDirectory(
         tempDir,
-        ["**/*.ts"],
+        tempDir,
+        createDefaultExcludePatterns(),
+        createIgnoreFilter(tempDir),
         [],
-        1048576,
         undefined,
-        { maxDepth: -1, maxFilesPerDirectory: 100 },
-        ["git-build/**"],
+        { ...options, purpose: "index" },
+      )).toBe(true);
+
+      expect(shouldTraverseDirectory(
+        path.join(tempDir, "vendor"),
+        tempDir,
+        createDefaultExcludePatterns(),
+        createIgnoreFilter(tempDir),
+        [],
+        undefined,
+        { ...options, purpose: "index" },
+      )).toBe(true);
+
+      const result = await collectFiles(
+        tempDir, ["**/*.ts"], createDefaultExcludePatterns(), 1048576, undefined, options,
       );
-      expect(defaultBehavior.files.map((file) => path.relative(tempDir, file.path))).toEqual(["rebuild.ts"]);
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("vendor", "nested", "selected.ts"),
+      ]);
+    });
+
+    it("protects metadata knowledge-base roots and storage ancestors outside that root", async () => {
+      const gitKnowledgeBase = path.join(tempDir, ".git");
+      fs.mkdirSync(gitKnowledgeBase, { recursive: true });
+      fs.writeFileSync(path.join(gitKnowledgeBase, "canary.ts"), "metadata");
+
+      const metadataResult = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        createDefaultExcludePatterns(),
+        1048576,
+        [gitKnowledgeBase],
+        { maxDepth: -1, maxFilesPerDirectory: 100, includeExcluded: ["**"] },
+      );
+      expect(metadataResult.files).toEqual([]);
+
+      const storageAncestor = fs.mkdtempSync(path.join(os.tmpdir(), "files-protected-storage-"));
+      try {
+        const knowledgeBaseRoot = path.join(storageAncestor, "knowledge-base");
+        const filePath = path.join(knowledgeBaseRoot, "canary.ts");
+        fs.mkdirSync(knowledgeBaseRoot, { recursive: true });
+        fs.writeFileSync(filePath, "storage");
+        expect(shouldIncludeFile(
+          filePath,
+          knowledgeBaseRoot,
+          ["**/*.ts"],
+          createDefaultExcludePatterns(),
+          createIgnoreFilter(knowledgeBaseRoot),
+          [],
+          undefined,
+          { includeExcluded: ["**"], purpose: "index", protectedPaths: [storageAncestor] },
+        )).toBe(false);
+      } finally {
+        fs.rmSync(storageAncestor, { recursive: true, force: true });
+      }
+    });
+
+    it("keeps max depth, size, and per-directory limits for selected exclusions", async () => {
+      fs.mkdirSync(path.join(tempDir, "vendor", "nested"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, "vendor", "a.ts"), "a");
+      fs.writeFileSync(path.join(tempDir, "vendor", "b.ts"), "bb");
+      fs.writeFileSync(path.join(tempDir, "vendor", "large.ts"), "x".repeat(100));
+      fs.writeFileSync(path.join(tempDir, "vendor", "nested", "deep.ts"), "deep");
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        createDefaultExcludePatterns(),
+        10,
+        undefined,
+        {
+          maxDepth: 1,
+          maxFilesPerDirectory: 1,
+          includeExcluded: ["vendor/**"],
+        },
+      );
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("vendor", "a.ts"),
+      ]);
+      expect(result.skipped.some((entry) => entry.reason === "too_large")).toBe(true);
+    });
+
+    it("preserves bare Git negations for default-ignored directories with explicit empty excludes", async () => {
+      fs.mkdirSync(path.join(tempDir, "vendor"), { recursive: true });
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "!vendor\n!vendor/selected.ts\n");
+      fs.writeFileSync(path.join(tempDir, "vendor", "selected.ts"), "selected");
+
+      const result = await collectFiles(tempDir, ["**/*.ts"], [], 1048576);
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("vendor", "selected.ts"),
+      ]);
     });
 
     it("retains ordinary project sources under a private directory", async () => {

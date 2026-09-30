@@ -1,7 +1,7 @@
 // Config schema without zod dependency to avoid version conflicts with OpenCode SDK
 
 import { parseEmbeddingFallback } from "./embedding-fallback.js";
-import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_BUILD_EXCLUDE, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, EMBEDDING_MODELS, DEFAULT_PROVIDER_MODELS } from "./constants.js";
+import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_INCLUDE, EMBEDDING_MODELS, DEFAULT_PROVIDER_MODELS } from "./constants.js";
 import {
   getDefaultDebugConfig,
   getDefaultIndexingConfig,
@@ -9,6 +9,7 @@ import {
   getDefaultRerankerBaseUrl,
   getDefaultSearchConfig,
 } from "./defaults.js";
+import { createDefaultExcludePatterns, isDefaultExcludePatterns } from "./exclusions.js";
 import {
   getResolvedString,
   getResolvedStringArray,
@@ -79,6 +80,8 @@ export interface IndexingConfig {
   maxFilesPerDirectory: number;
   /** Git-ignored project paths eligible for indexing when they also match normal include rules. */
   includeIgnored?: string[];
+  /** Project-relative paths eligible to bypass automatic exclusion filters. */
+  includeExcluded?: string[];
   /**
    * When a file hits maxChunksPerFile, fallback to text-based (chunk_by_lines) parsing
    * instead of skipping the rest of the file. XML and SVG retain their sanitized
@@ -241,15 +244,12 @@ export interface CodebaseIndexConfig {
   include: string[];
   /** Override the default exclude patterns (replaces defaults) */
   exclude: string[];
-  /** Exclude build-named paths using built-in discovery and watcher filters. Defaults to true. */
-  excludeBuildPaths?: boolean;
   /** Additional file patterns to include (extends defaults) */
   additionalInclude?: string[];
 }
 
 export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
-  excludeBuildPaths: boolean;
-  indexing: IndexingConfig & { includeIgnored: string[] };
+  indexing: IndexingConfig & { includeIgnored: string[]; includeExcluded: string[] };
   search: SearchConfig;
   debug: DebugConfig;
   effectivenessMetrics: EffectivenessMetricsConfig;
@@ -265,8 +265,8 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const embeddingProviderValue = getResolvedString(input.embeddingProvider, "$root.embeddingProvider");
   const scopeValue = getResolvedString(input.scope, "$root.scope");
   const includeValue = getResolvedStringArray(input.include, "$root.include");
+  const hasDerivedDefaultExclude = Array.isArray(input.exclude) && isDefaultExcludePatterns(input.exclude);
   const excludeValue = getResolvedStringArray(input.exclude, "$root.exclude");
-  const excludeBuildPaths = typeof input.excludeBuildPaths === "boolean" ? input.excludeBuildPaths : true;
 
   const defaultIndexing = getDefaultIndexingConfig();
   const defaultSearch = getDefaultSearchConfig();
@@ -284,7 +284,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     && Number.isFinite(rawIndexing.maxChunksPerFile)
     ? Math.min(0xffff_ffff, Math.max(1, Math.floor(rawIndexing.maxChunksPerFile)))
     : defaultIndexing.maxChunksPerFile;
-  const indexing: IndexingConfig & { includeIgnored: string[] } = {
+  const indexing: IndexingConfig & { includeIgnored: string[]; includeExcluded: string[] } = {
     mode: rawIndexing.mode === "structural" || rawIndexing.mode === "hybrid"
       ? rawIndexing.mode
       : defaultIndexing.mode,
@@ -316,6 +316,11 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     includeIgnored: isStringArray(rawIndexing.includeIgnored)
       ? rawIndexing.includeIgnored.filter((value) => value.trim().length > 0).map((value) => value.trim())
       : defaultIndexing.includeIgnored ?? [],
+    includeExcluded: isStringArray(rawIndexing.includeExcluded)
+      ? rawIndexing.includeExcluded
+        .map((value) => value.trim().replace(/\\/g, "/").replace(/^\.\/+/, ""))
+        .filter((value) => value.length > 0)
+      : defaultIndexing.includeExcluded ?? [],
     fallbackToTextOnMaxChunks: typeof rawIndexing.fallbackToTextOnMaxChunks === "boolean" ? rawIndexing.fallbackToTextOnMaxChunks : defaultIndexing.fallbackToTextOnMaxChunks,
     linesPerChunk: typeof rawIndexing.linesPerChunk === "number" && Number.isFinite(rawIndexing.linesPerChunk) ? Math.min(Math.max(1, Math.floor(rawIndexing.linesPerChunk)), 4294967295) : defaultIndexing.linesPerChunk,
     gitBlame: {
@@ -541,10 +546,9 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     embedding,
     scope: isValidScope(scopeValue) ? scopeValue : "project",
     include: includeValue ?? DEFAULT_INCLUDE,
-    exclude: excludeValue ?? (excludeBuildPaths
-      ? DEFAULT_EXCLUDE
-      : DEFAULT_EXCLUDE.filter((pattern) => !DEFAULT_BUILD_EXCLUDE.includes(pattern))),
-    excludeBuildPaths,
+    exclude: excludeValue === undefined || hasDerivedDefaultExclude
+      ? createDefaultExcludePatterns()
+      : excludeValue,
     additionalInclude,
     indexing,
     search,

@@ -1,18 +1,17 @@
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync, type Stats } from "fs";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
 
 import type { HostMode } from "../config/host.js";
 import type { CodebaseIndexConfig } from "../config/schema.js";
-import { getProjectConfigCandidatePaths } from "../config/paths.js";
+import { getProjectConfigCandidatePaths, resolveProjectIndexPath } from "../config/paths.js";
 import {
-  canContainIncludeIgnored,
   createGitIgnoreFilter,
   createIgnoreFilter,
-  isAlwaysFilteredPath,
   shouldIncludeFile,
+  shouldTraverseDirectory,
+  type PathFilterOptions,
 } from "../utils/files.js";
-import { hasFilteredPathSegment, isRestrictedDirectory } from "../utils/paths.js";
 import {
   LocalModuleConfigTracker,
   shouldTrackLocalModuleConfigPath,
@@ -33,6 +32,7 @@ export type FileWatcherBackend = "auto" | "chokidar" | "native";
 export interface FileWatcherOptions {
   backend?: FileWatcherBackend;
   configPath?: string;
+  indexPath?: string;
 }
 
 interface ConfigPathState {
@@ -46,6 +46,7 @@ export class FileWatcher {
   private projectRoot: string;
   private config: CodebaseIndexConfig;
   private configPath: string | undefined;
+  private indexPath: string;
   private backend: FileWatcherBackend;
   private projectConfigPaths: string[];
   private pendingChanges: Map<string, FileChangeType> = new Map();
@@ -72,10 +73,11 @@ export class FileWatcher {
     this.config = config;
     this.backend = options.backend ?? "auto";
     this.configPath = options.configPath;
+    this.indexPath = path.resolve(options.indexPath ?? resolveProjectIndexPath(projectRoot, config.scope, host));
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
       : getProjectConfigCandidatePaths(projectRoot, host);
-    this.localModuleConfigTracker = new LocalModuleConfigTracker(projectRoot, config);
+    this.localModuleConfigTracker = new LocalModuleConfigTracker(projectRoot, this.getSnapshotConfig());
   }
 
   start(handler: ChangeHandler): void {
@@ -140,14 +142,14 @@ export class FileWatcher {
     let reportedStartupReady = false;
     this.localModuleConfigTracker.refresh();
     this.configPathStates = this.getConfigPathStates();
-    const excludeBuildPaths = this.config.excludeBuildPaths !== false;
-    const ignoreFilter = createIgnoreFilter(this.projectRoot, excludeBuildPaths);
+    const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
     const includeIgnored = this.config.indexing?.includeIgnored ?? [];
+    const filterOptions = this.getPathFilterOptions();
     const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
 
     const watcherOptions = {
-      ignored: (filePath: string) => {
+      ignored: (filePath: string, stats?: Stats) => {
         const relativePath = path.relative(this.projectRoot, filePath);
         if (!relativePath) return false;
 
@@ -159,23 +161,19 @@ export class FileWatcher {
           return true;
         }
 
-        if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths)) {
-          return true;
+        if (stats?.isFile() || (!stats && this.isExistingFile(filePath))) {
+          return false;
         }
 
-        if (isRestrictedDirectory(relativePath, path.sep)) {
-          return true;
-        }
-
-        if (ignoreFilter.ignores(relativePath) && (
-          isAlwaysFilteredPath(relativePath, excludeBuildPaths)
-          || !gitIgnoreFilter.ignores(relativePath)
-          || !canContainIncludeIgnored(relativePath, includeIgnored)
-        )) {
-          return true;
-        }
-
-        return false;
+        return !shouldTraverseDirectory(
+          filePath,
+          this.projectRoot,
+          this.config.exclude,
+          ignoreFilter,
+          includeIgnored,
+          gitIgnoreFilter,
+          filterOptions,
+        );
       },
       persistent: true,
       ignoreInitial: true,
@@ -306,7 +304,7 @@ export class FileWatcher {
     const generation = ++this.nativeSetupGeneration;
     const reconciler = new FileSnapshotReconciler(
       this.projectRoot,
-      this.config,
+      this.getSnapshotConfig(),
       () => [...this.projectConfigPaths, ...this.localModuleConfigTracker.getPaths()],
     );
     const watcher = new NativeRecursiveWatcher(
@@ -364,10 +362,21 @@ export class FileWatcher {
 
     if (filePath !== null && filePath !== path.join(this.projectRoot, ".gitignore")) {
       const relativePath = path.relative(this.projectRoot, filePath);
+      const traversalPath = this.isExistingDirectory(filePath) ? filePath : path.dirname(filePath);
+      const traversalRelativePath = path.relative(this.projectRoot, traversalPath);
       // Match snapshot filtering before scheduling work: internal lease heartbeats
       // must not count as watcher activity and keep an idle MCP engine alive.
-      if (hasFilteredPathSegment(relativePath, path.sep, this.config.excludeBuildPaths !== false)
-        && !this.isProjectConfigPathOrAncestor(relativePath)
+      if (!this.isProjectConfigPathOrAncestor(relativePath)
+        && traversalRelativePath !== ""
+        && !shouldTraverseDirectory(
+          traversalPath,
+          this.projectRoot,
+          this.config.exclude,
+          createIgnoreFilter(this.projectRoot),
+          this.config.indexing?.includeIgnored ?? [],
+          createGitIgnoreFilter(this.projectRoot),
+          this.getPathFilterOptions(),
+        )
         && !this.localModuleConfigTracker.has(filePath)) return;
     }
 
@@ -378,8 +387,8 @@ export class FileWatcher {
         shouldTrackLocalModuleConfigPath(
           filePath,
           this.projectRoot,
-          createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
-          this.config.excludeBuildPaths !== false,
+          createIgnoreFilter(this.projectRoot),
+          this.getSnapshotConfig(),
         )
         || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
         || this.localModuleConfigTracker.has(filePath)
@@ -487,8 +496,8 @@ export class FileWatcher {
       shouldTrackLocalModuleConfigPath(
         filePath,
         this.projectRoot,
-        createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
-        this.config.excludeBuildPaths !== false,
+        createIgnoreFilter(this.projectRoot),
+        this.getSnapshotConfig(),
       )
       || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
       || this.localModuleConfigTracker.has(filePath)
@@ -506,10 +515,10 @@ export class FileWatcher {
         this.projectRoot,
         includePatterns,
         this.config.exclude,
-        createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
+        createIgnoreFilter(this.projectRoot),
         this.config.indexing?.includeIgnored ?? [],
         createGitIgnoreFilter(this.projectRoot),
-        this.config.excludeBuildPaths !== false,
+        this.getPathFilterOptions(),
       )
     ) {
       return;
@@ -525,6 +534,34 @@ export class FileWatcher {
       this.pendingChanges.set(change.path, change.type);
     }
     this.scheduleFlush();
+  }
+
+  private getPathFilterOptions(): PathFilterOptions {
+    return {
+      includeExcluded: this.config.indexing?.includeExcluded ?? [],
+      protectedPaths: [this.indexPath],
+      purpose: "watch",
+    };
+  }
+
+  private isExistingFile(filePath: string): boolean {
+    try {
+      return statSync(filePath).isFile();
+    } catch {
+      return false;
+    }
+  }
+
+  private isExistingDirectory(filePath: string): boolean {
+    try {
+      return statSync(filePath).isDirectory();
+    } catch {
+      return false;
+    }
+  }
+
+  private getSnapshotConfig(): CodebaseIndexConfig & { protectedPaths: string[] } {
+    return { ...this.config, protectedPaths: [this.indexPath] };
   }
 
   private isProjectConfigPath(filePath: string): boolean {
