@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Build-path discovery opt-in**: Added top-level `excludeBuildPaths`, defaulting to `true`, so projects can set it to `false` to index and watch build-named source paths while retaining explicit excludes, `.gitignore`, include rules, hidden/dependency/output filters, and restricted-path safety checks.
+
 ## [0.33.0] - 2026-09-29
 
 ### Added

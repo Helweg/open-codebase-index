@@ -12,6 +12,7 @@ const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): P
   scope: "project",
   include: ["**/*.ts", "**/*.js"],
   exclude: [],
+  excludeBuildPaths: true,
   indexing: {
     autoIndex: false,
     autoIndexWaitMs: 10_000,
@@ -163,6 +164,41 @@ describe("FileWatcher", () => {
   });
 
   describe("file filtering", () => {
+    it("watches build-named source paths with Chokidar only when explicitly enabled", async () => {
+      const buildFile = path.join(tempDir, "BUILD-source", "nested", "index.ts");
+      const rootBuildFile = path.join(tempDir, "rebuild.ts");
+      const explicitlyExcluded = path.join(tempDir, "BUILD-source", "excluded", "skip.ts");
+      fs.mkdirSync(path.dirname(buildFile), { recursive: true });
+      fs.mkdirSync(path.dirname(explicitlyExcluded), { recursive: true });
+      const changes: FileChange[] = [];
+      watcher = new FileWatcher(
+        tempDir,
+        createTestConfig({
+          excludeBuildPaths: false,
+          exclude: ["**/BUILD-source/excluded/**"],
+          include: ["**/*.ts"],
+        }),
+        "opencode",
+        { backend: "chokidar" },
+      );
+      watcher.start(async (batch) => { changes.push(...batch); });
+      await watcher.waitUntilReady();
+
+      await writeUntilObserved(
+        (attempt) => {
+          fs.writeFileSync(buildFile, `export const build = ${attempt};`);
+          fs.writeFileSync(rootBuildFile, `export const rebuild = ${attempt};`);
+          fs.writeFileSync(explicitlyExcluded, `export const excluded = ${attempt};`);
+        },
+        () => {
+          expect(changes.some((change) => change.path === buildFile)).toBe(true);
+          expect(changes.some((change) => change.path === rootBuildFile)).toBe(true);
+        },
+      );
+
+      expect(changes.some((change) => change.path === explicitlyExcluded)).toBe(false);
+    });
+
     it("watches selected files below ignored parents without emitting unrelated ignored paths", async () => {
       const selectedPath = path.join(tempDir, "generated", "nested", "selected.ts");
       const unrelatedPath = path.join(tempDir, "other-generated", "unrelated.ts");

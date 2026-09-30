@@ -16,12 +16,16 @@ export const DEFAULT_INCLUDE = [
   "**/*.metal",
 ];
 
+export const DEFAULT_BUILD_EXCLUDE = [
+  "**/build/**",
+  "**/*build*/**",
+];
+
 export const DEFAULT_EXCLUDE = [
   "**/node_modules/**",
   "**/.git/**",
   "**/dist/**",
-  "**/build/**",
-  "**/*build*/**",
+  ...DEFAULT_BUILD_EXCLUDE,
   "**/*.min.js",
   "**/*.bundle.js",
   "**/vendor/**",

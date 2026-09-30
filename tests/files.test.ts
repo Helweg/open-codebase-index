@@ -32,6 +32,16 @@ describe("files utilities", () => {
       expect(filter.ignores("build/output.js")).toBe(true);
       expect(filter.ignores("src/main.ts")).toBe(false);
     });
+
+    it("can disable built-in build ignores without bypassing .gitignore", () => {
+      const builtInOnly = createIgnoreFilter(tempDir, false);
+      expect(builtInOnly.ignores("AppBuild/output.ts")).toBe(false);
+
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "AppBuild/\n");
+      const withGitIgnore = createIgnoreFilter(tempDir, false);
+      expect(withGitIgnore.ignores("AppBuild/output.ts")).toBe(true);
+      expect(withGitIgnore.ignores("node_modules/pkg/index.ts")).toBe(true);
+    });
   });
 
   describe("shouldIncludeFile", () => {
@@ -198,6 +208,52 @@ describe("files utilities", () => {
           filter
         )
       ).toBe(true);
+    });
+
+    it("can include build-named directory and file paths without weakening other filters", () => {
+      const filter = createIgnoreFilter(tempDir, false);
+      const includePatterns = ["**/*.ts"];
+
+      expect(shouldIncludeFile(
+        path.join(tempDir, "BUILD-source", "index.ts"),
+        tempDir,
+        includePatterns,
+        [],
+        filter,
+        [],
+        undefined,
+        false,
+      )).toBe(true);
+      expect(shouldIncludeFile(
+        path.join(tempDir, "rebuild.ts"),
+        tempDir,
+        includePatterns,
+        [],
+        filter,
+        [],
+        undefined,
+        false,
+      )).toBe(true);
+      expect(shouldIncludeFile(
+        path.join(tempDir, ".hidden-build", "index.ts"),
+        tempDir,
+        includePatterns,
+        [],
+        filter,
+        [],
+        undefined,
+        false,
+      )).toBe(false);
+      expect(shouldIncludeFile(
+        path.join(tempDir, "node_modules", "build-package", "index.ts"),
+        tempDir,
+        includePatterns,
+        [],
+        filter,
+        [],
+        undefined,
+        false,
+      )).toBe(false);
     });
   });
 
@@ -464,6 +520,65 @@ describe("files utilities", () => {
       expect(dotPrefixedResult.files.map((file) => path.relative(tempDir, file.path))).toEqual([
         path.join("generated", "nested", "keep.ts"),
       ]);
+    });
+
+    it("discovers build-named paths only when enabled while preserving explicit and safety filters", async () => {
+      for (const directory of [
+        "AppBuild/src",
+        "BUILD-assets",
+        "BuildExcluded",
+        "git-build",
+        ".hidden-build",
+        "node_modules/build-package",
+      ]) {
+        fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
+      }
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "git-build/\n");
+      fs.writeFileSync(path.join(tempDir, "AppBuild/src/index.ts"), "export const app = true;");
+      fs.writeFileSync(path.join(tempDir, "BUILD-assets/schema.custom"), "schema");
+      fs.writeFileSync(path.join(tempDir, "BuildExcluded/index.ts"), "export const excluded = true;");
+      fs.writeFileSync(path.join(tempDir, "git-build/selected.ts"), "export const selected = true;");
+      fs.writeFileSync(path.join(tempDir, ".hidden-build/index.ts"), "export const hidden = true;");
+      fs.writeFileSync(path.join(tempDir, "node_modules/build-package/index.ts"), "export const dependency = true;");
+      fs.writeFileSync(path.join(tempDir, "rebuild.ts"), "export const root = true;");
+
+      const disabled = await collectFiles(
+        tempDir,
+        ["**/*.ts", "**/*.custom"],
+        ["**/BuildExcluded/**"],
+        1048576,
+        undefined,
+        { maxDepth: -1, maxFilesPerDirectory: 100, excludeBuildPaths: false },
+      );
+      expect(disabled.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual([
+        path.join("AppBuild", "src", "index.ts"),
+        path.join("BUILD-assets", "schema.custom"),
+        "rebuild.ts",
+      ].sort());
+
+      const includedIgnored = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        ["**/BuildExcluded/**"],
+        1048576,
+        undefined,
+        { maxDepth: -1, maxFilesPerDirectory: 100, excludeBuildPaths: false },
+        ["git-build/**"],
+      );
+      expect(includedIgnored.files.map((file) => path.relative(tempDir, file.path))).toContain(
+        path.join("git-build", "selected.ts"),
+      );
+
+      const defaultBehavior = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        [],
+        1048576,
+        undefined,
+        { maxDepth: -1, maxFilesPerDirectory: 100 },
+        ["git-build/**"],
+      );
+      expect(defaultBehavior.files.map((file) => path.relative(tempDir, file.path))).toEqual(["rebuild.ts"]);
     });
 
     it("retains ordinary project sources under a private directory", async () => {

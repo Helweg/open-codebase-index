@@ -12,9 +12,13 @@ export function isBuildPathSegment(part: string): boolean {
   return part.toLowerCase().includes("build");
 }
 
-export function hasFilteredPathSegment(relativePath: string, separator: string = path.sep): boolean {
+export function hasFilteredPathSegment(
+  relativePath: string,
+  separator: string = path.sep,
+  excludeBuildPaths: boolean = true,
+): boolean {
   return relativePath.split(separator).some(
-    (part) => isHiddenPathSegment(part) || isBuildPathSegment(part)
+    (part) => isHiddenPathSegment(part) || (excludeBuildPaths && isBuildPathSegment(part))
   );
 }
 

@@ -4628,6 +4628,7 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        excludeBuildPaths: this.config.excludeBuildPaths,
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
@@ -4659,6 +4660,7 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        excludeBuildPaths: this.config.excludeBuildPaths,
         signal: options.signal,
         heartbeat: options.heartbeat,
       },
@@ -4954,6 +4956,7 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        excludeBuildPaths: this.config.excludeBuildPaths,
         signal,
         heartbeat,
       },
@@ -6792,6 +6795,7 @@ export class Indexer {
       {
         maxDepth: this.config.indexing.maxDepth,
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
+        excludeBuildPaths: this.config.excludeBuildPaths,
         signal: options.signal,
         heartbeat: options.heartbeat,
       },

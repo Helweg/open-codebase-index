@@ -4,7 +4,11 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { buildFileSnapshot, buildFileSnapshotForPath } from "../src/watcher/snapshot.js";
-import { LocalModuleConfigTracker } from "../src/watcher/local-module-config.js";
+import {
+  LocalModuleConfigTracker,
+  shouldTrackLocalModuleConfigPath,
+  shouldTrackLocalModulePackagePath,
+} from "../src/watcher/local-module-config.js";
 
 describe("watcher snapshot builder", () => {
   let projectRoot: string;
@@ -176,6 +180,36 @@ describe("watcher snapshot builder", () => {
     expect(tracker.has(unrelatedManifest)).toBe(false);
   });
 
+  it("tracks configs and workspace manifests under build-named source paths when enabled", () => {
+    const rootManifest = path.join(projectRoot, "package.json");
+    const packageRoot = path.join(projectRoot, "packages", "app-build");
+    const packageManifest = path.join(packageRoot, "package.json");
+    const appConfig = path.join(packageRoot, "tsconfig.json");
+    const baseConfig = path.join(packageRoot, "config", "base.json");
+    const sourceFile = path.join(packageRoot, "src", "index.ts");
+    fs.mkdirSync(path.dirname(baseConfig), { recursive: true });
+    fs.mkdirSync(path.dirname(sourceFile), { recursive: true });
+    fs.writeFileSync(rootManifest, JSON.stringify({ workspaces: ["packages/*"] }));
+    fs.writeFileSync(packageManifest, JSON.stringify({ name: "app-build" }));
+    fs.writeFileSync(appConfig, JSON.stringify({ extends: "./config/base" }));
+    fs.writeFileSync(baseConfig, "{}");
+    fs.writeFileSync(sourceFile, "export const value = 1;");
+
+    expect(shouldTrackLocalModuleConfigPath(appConfig, projectRoot, undefined, false)).toBe(true);
+    expect(shouldTrackLocalModulePackagePath(packageManifest, projectRoot, undefined, false)).toBe(true);
+
+    const tracker = new LocalModuleConfigTracker(projectRoot, {
+      include: ["**/*.ts"],
+      exclude: [],
+      excludeBuildPaths: false,
+    });
+    tracker.refresh();
+
+    expect(tracker.has(packageManifest)).toBe(true);
+    expect(tracker.has(appConfig)).toBe(true);
+    expect(tracker.has(baseConfig)).toBe(true);
+  });
+
   it("limits traversal depth using config.indexing.maxDepth", async () => {
     const rootFile = path.join(projectRoot, "root.ts");
     const nestedLevelOne = path.join(projectRoot, "level-one", "nested.ts");
@@ -248,5 +282,33 @@ describe("watcher snapshot builder", () => {
 
     expect(Array.from(full.keys())).toEqual([selected]);
     expect(Array.from(partial.keys())).toEqual([selected]);
+  });
+
+  it("applies build-path opt-in identically to full and path snapshots", async () => {
+    const buildRoot = path.join(projectRoot, "BUILD-source");
+    const sourceFile = path.join(buildRoot, "nested", "index.ts");
+    const additionalFile = path.join(buildRoot, "nested", "schema.custom");
+    const excludedFile = path.join(buildRoot, "excluded", "skip.ts");
+    const hiddenFile = path.join(projectRoot, ".hidden-build", "index.ts");
+    const dependencyFile = path.join(projectRoot, "node_modules", "build-package", "index.ts");
+    for (const filePath of [sourceFile, additionalFile, excludedFile, hiddenFile, dependencyFile]) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, "source");
+    }
+
+    const config = {
+      include: ["**/*.ts"],
+      additionalInclude: ["**/*.custom"],
+      exclude: ["**/BUILD-source/excluded/**"],
+      excludeBuildPaths: false,
+    };
+    const full = await buildFileSnapshot(projectRoot, config, []);
+    const partial = await buildFileSnapshotForPath(projectRoot, config, [], buildRoot);
+
+    expect(Array.from(full.keys()).sort()).toEqual([sourceFile, additionalFile].sort());
+    expect(Array.from(partial.keys()).sort()).toEqual([sourceFile, additionalFile].sort());
+
+    const defaultSnapshot = await buildFileSnapshot(projectRoot, { ...config, excludeBuildPaths: true }, []);
+    expect(defaultSnapshot.size).toBe(0);
   });
 });

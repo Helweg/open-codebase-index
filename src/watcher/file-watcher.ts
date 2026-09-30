@@ -140,7 +140,8 @@ export class FileWatcher {
     let reportedStartupReady = false;
     this.localModuleConfigTracker.refresh();
     this.configPathStates = this.getConfigPathStates();
-    const ignoreFilter = createIgnoreFilter(this.projectRoot);
+    const excludeBuildPaths = this.config.excludeBuildPaths !== false;
+    const ignoreFilter = createIgnoreFilter(this.projectRoot, excludeBuildPaths);
     const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
     const includeIgnored = this.config.indexing?.includeIgnored ?? [];
     const resolvedWatchTargets = watchTargets ?? this.getFullChokidarWatchTargets();
@@ -158,7 +159,7 @@ export class FileWatcher {
           return true;
         }
 
-        if (hasFilteredPathSegment(relativePath, path.sep)) {
+        if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths)) {
           return true;
         }
 
@@ -167,7 +168,7 @@ export class FileWatcher {
         }
 
         if (ignoreFilter.ignores(relativePath) && (
-          isAlwaysFilteredPath(relativePath)
+          isAlwaysFilteredPath(relativePath, excludeBuildPaths)
           || !gitIgnoreFilter.ignores(relativePath)
           || !canContainIncludeIgnored(relativePath, includeIgnored)
         )) {
@@ -365,7 +366,7 @@ export class FileWatcher {
       const relativePath = path.relative(this.projectRoot, filePath);
       // Match snapshot filtering before scheduling work: internal lease heartbeats
       // must not count as watcher activity and keep an idle MCP engine alive.
-      if (hasFilteredPathSegment(relativePath)
+      if (hasFilteredPathSegment(relativePath, path.sep, this.config.excludeBuildPaths !== false)
         && !this.isProjectConfigPathOrAncestor(relativePath)
         && !this.localModuleConfigTracker.has(filePath)) return;
     }
@@ -374,7 +375,12 @@ export class FileWatcher {
       filePath === null
       || filePath === path.join(this.projectRoot, ".gitignore")
       || (filePath !== null && (
-        shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+        shouldTrackLocalModuleConfigPath(
+          filePath,
+          this.projectRoot,
+          createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
+          this.config.excludeBuildPaths !== false,
+        )
         || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
         || this.localModuleConfigTracker.has(filePath)
       ))
@@ -478,7 +484,12 @@ export class FileWatcher {
     }
 
     if (
-      shouldTrackLocalModuleConfigPath(filePath, this.projectRoot)
+      shouldTrackLocalModuleConfigPath(
+        filePath,
+        this.projectRoot,
+        createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
+        this.config.excludeBuildPaths !== false,
+      )
       || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
       || this.localModuleConfigTracker.has(filePath)
     ) {
@@ -495,9 +506,10 @@ export class FileWatcher {
         this.projectRoot,
         includePatterns,
         this.config.exclude,
-        createIgnoreFilter(this.projectRoot),
+        createIgnoreFilter(this.projectRoot, this.config.excludeBuildPaths !== false),
         this.config.indexing?.includeIgnored ?? [],
         createGitIgnoreFilter(this.projectRoot),
+        this.config.excludeBuildPaths !== false,
       )
     ) {
       return;

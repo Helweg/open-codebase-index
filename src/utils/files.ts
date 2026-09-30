@@ -43,11 +43,16 @@ export interface CollectFilesResult {
   skipped: SkippedFile[];
 }
 
+const BUILD_PATH_IGNORES = [
+    "build",
+    "**/*build*/**",
+];
+
 const DEFAULT_IGNORES = [
     "node_modules",
     ".git",
     "dist",
-    "build",
+    ...BUILD_PATH_IGNORES,
     ".next",
     ".nuxt",
     "coverage",
@@ -59,13 +64,17 @@ const DEFAULT_IGNORES = [
     ".*",
     "**/.*",
     "**/.*/**",
-    "**/*build*/**",
 ];
 
 const DEFAULT_IGNORE_FILTER = ignore().add(DEFAULT_IGNORES);
+const DEFAULT_IGNORE_FILTER_WITHOUT_BUILD_PATHS = ignore().add(
+  DEFAULT_IGNORES.filter((pattern) => !BUILD_PATH_IGNORES.includes(pattern)),
+);
 
-function createDefaultIgnoreFilter(): Ignore {
-  return ignore().add(DEFAULT_IGNORES);
+function createDefaultIgnoreFilter(excludeBuildPaths: boolean = true): Ignore {
+  return ignore().add(excludeBuildPaths
+    ? DEFAULT_IGNORES
+    : DEFAULT_IGNORES.filter((pattern) => !BUILD_PATH_IGNORES.includes(pattern)));
 }
 
 export function createGitIgnoreFilter(projectRoot: string): Ignore {
@@ -77,8 +86,8 @@ export function createGitIgnoreFilter(projectRoot: string): Ignore {
   return ig;
 }
 
-export function createIgnoreFilter(projectRoot: string): Ignore {
-  const ig = createDefaultIgnoreFilter();
+export function createIgnoreFilter(projectRoot: string, excludeBuildPaths: boolean = true): Ignore {
+  const ig = createDefaultIgnoreFilter(excludeBuildPaths);
   const gitignorePath = path.join(projectRoot, ".gitignore");
   if (existsSync(gitignorePath)) {
     ig.add(readFileSync(gitignorePath, "utf-8"));
@@ -126,10 +135,13 @@ export function canContainIncludeIgnored(relativePath: string, includeIgnored: s
   });
 }
 
-export function isAlwaysFilteredPath(relativePath: string): boolean {
+export function isAlwaysFilteredPath(relativePath: string, excludeBuildPaths: boolean = true): boolean {
   const normalized = toPosixRelativePath(relativePath);
-  return hasFilteredPathSegment(normalized, "/")
-    || DEFAULT_IGNORE_FILTER.ignores(normalized);
+  const defaultIgnoreFilter = excludeBuildPaths
+    ? DEFAULT_IGNORE_FILTER
+    : DEFAULT_IGNORE_FILTER_WITHOUT_BUILD_PATHS;
+  return hasFilteredPathSegment(normalized, "/", excludeBuildPaths)
+    || defaultIgnoreFilter.ignores(normalized);
 }
 
 export function isIgnoredPathIncluded(
@@ -137,10 +149,11 @@ export function isIgnoredPathIncluded(
   includeIgnored: string[],
   ignoreFilter: Ignore,
   gitIgnoreFilter: Ignore,
+  excludeBuildPaths: boolean = true,
 ): boolean {
   const normalized = toPosixRelativePath(relativePath);
   return includeIgnored.length > 0
-    && !isAlwaysFilteredPath(normalized)
+    && !isAlwaysFilteredPath(normalized, excludeBuildPaths)
     && !isRestrictedDirectory(normalized, "/")
     && ignoreFilter.ignores(normalized)
     && gitIgnoreFilter.ignores(normalized)
@@ -179,14 +192,21 @@ export function shouldIncludeFile(
   ignoreFilter: Ignore,
   includeIgnored: string[] = [],
   gitIgnoreFilter: Ignore = ignore(),
+  excludeBuildPaths: boolean = true,
 ): boolean {
   const relativePath = toPosixRelativePath(path.relative(projectRoot, filePath));
 
-  if (isAlwaysFilteredPath(relativePath)) {
+  if (isAlwaysFilteredPath(relativePath, excludeBuildPaths)) {
     return false;
   }
 
-  if (ignoreFilter.ignores(relativePath) && !isIgnoredPathIncluded(relativePath, includeIgnored, ignoreFilter, gitIgnoreFilter)) {
+  if (ignoreFilter.ignores(relativePath) && !isIgnoredPathIncluded(
+    relativePath,
+    includeIgnored,
+    ignoreFilter,
+    gitIgnoreFilter,
+    excludeBuildPaths,
+  )) {
     return false;
   }
 
@@ -226,6 +246,7 @@ function matchGlob(filePath: string, pattern: string): boolean {
 export interface WalkOptions {
   maxDepth: number;
   maxFilesPerDirectory: number;
+  excludeBuildPaths?: boolean;
   signal?: AbortSignal;
   heartbeat?: () => void | Promise<void>;
 }
@@ -263,16 +284,22 @@ export async function* walkDirectory(
       continue;
     }
 
-    if (entry.isDirectory() && isBuildPathSegment(entry.name)) {
+    if (entry.isDirectory() && options.excludeBuildPaths !== false && isBuildPathSegment(entry.name)) {
       skipped.push({ path: relativePath, reason: "excluded" });
       continue;
     }
 
     const ignored = ignoreFilter.ignores(relativePath);
     const includedIgnoredFile = entry.isFile()
-      && isIgnoredPathIncluded(relativePath, includeIgnored, ignoreFilter, gitIgnoreFilter);
+      && isIgnoredPathIncluded(
+        relativePath,
+        includeIgnored,
+        ignoreFilter,
+        gitIgnoreFilter,
+        options.excludeBuildPaths !== false,
+      );
     const traversableIgnoredDirectory = entry.isDirectory()
-      && !isAlwaysFilteredPath(relativePath)
+      && !isAlwaysFilteredPath(relativePath, options.excludeBuildPaths !== false)
       && !isRestrictedDirectory(relativePath, "/")
       && gitIgnoreFilter.ignores(relativePath)
       && canContainIncludeIgnored(relativePath, includeIgnored);
@@ -350,7 +377,8 @@ export async function collectFiles(
   includeIgnored: string[] = [],
 ): Promise<CollectFilesResult> {
   const opts: WalkOptions = walkOptions ?? { maxDepth: -1, maxFilesPerDirectory: 100 };
-  const ignoreFilter = createIgnoreFilter(projectRoot);
+  const excludeBuildPaths = opts.excludeBuildPaths !== false;
+  const ignoreFilter = createIgnoreFilter(projectRoot, excludeBuildPaths);
   const gitIgnoreFilter = createGitIgnoreFilter(projectRoot);
   const files: Array<{ path: string; size: number }> = [];
   const skipped: SkippedFile[] = [];
@@ -391,7 +419,7 @@ export async function collectFiles(
           skipped.push({ path: resolvedKbRoot, reason: "excluded" });
           continue;
         }
-        const kbIgnoreFilter = createIgnoreFilter(resolvedKbRoot);
+        const kbIgnoreFilter = createIgnoreFilter(resolvedKbRoot, excludeBuildPaths);
         const kbGitIgnoreFilter = createGitIgnoreFilter(resolvedKbRoot);
         for await (const file of walkDirectory(
           resolvedKbRoot,

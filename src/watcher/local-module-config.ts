@@ -18,6 +18,7 @@ export interface LocalModuleConfigTrackerOptions {
   include?: string[];
   additionalInclude?: string[];
   exclude?: string[];
+  excludeBuildPaths?: boolean;
   indexing?: { maxDepth?: number };
 }
 
@@ -30,11 +31,13 @@ export interface LocalModuleConfigTrackerOptions {
 export function shouldTrackLocalModuleConfigPath(
   filePath: string,
   projectRoot: string,
-  ignoreFilter: IgnoreFilter = createIgnoreFilter(projectRoot),
+  ignoreFilter: IgnoreFilter | undefined = undefined,
+  excludeBuildPaths: boolean = true,
 ): boolean {
+  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot, excludeBuildPaths);
   return (
     LOCAL_MODULE_CONFIG_NAMES.has(path.basename(filePath).toLowerCase())
-    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, ignoreFilter)
+    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, excludeBuildPaths)
   );
 }
 
@@ -42,11 +45,13 @@ export function shouldTrackLocalModuleConfigPath(
 export function shouldTrackLocalModulePackagePath(
   filePath: string,
   projectRoot: string,
-  ignoreFilter: IgnoreFilter = createIgnoreFilter(projectRoot),
+  ignoreFilter: IgnoreFilter | undefined = undefined,
+  excludeBuildPaths: boolean = true,
 ): boolean {
+  const resolvedIgnoreFilter = ignoreFilter ?? createIgnoreFilter(projectRoot, excludeBuildPaths);
   return (
     path.basename(filePath).toLowerCase() === LOCAL_MODULE_PACKAGE_MANIFEST_NAME
-    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, ignoreFilter)
+    && shouldTrackProjectLocalJsonConfigPath(filePath, projectRoot, resolvedIgnoreFilter, excludeBuildPaths)
   );
 }
 
@@ -54,6 +59,7 @@ function shouldTrackProjectLocalJsonConfigPath(
   filePath: string,
   projectRoot: string,
   ignoreFilter: IgnoreFilter,
+  excludeBuildPaths: boolean,
 ): boolean {
   const relativePath = path.relative(projectRoot, filePath);
   if (
@@ -65,7 +71,7 @@ function shouldTrackProjectLocalJsonConfigPath(
     return false;
   }
 
-  if (hasFilteredPathSegment(relativePath, path.sep) || isRestrictedDirectory(relativePath, path.sep)) {
+  if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths) || isRestrictedDirectory(relativePath, path.sep)) {
     return false;
   }
 
@@ -87,7 +93,8 @@ export class LocalModuleConfigTracker {
 
   refresh(): void {
     const root = path.resolve(this.projectRoot);
-    const ignoreFilter = createIgnoreFilter(root);
+    const excludeBuildPaths = this.options.excludeBuildPaths !== false;
+    const ignoreFilter = createIgnoreFilter(root, excludeBuildPaths);
     const roots: string[] = [];
     const importerPaths: string[] = [];
     const nextPaths = new Set<string>();
@@ -115,20 +122,20 @@ export class LocalModuleConfigTracker {
         const filePath = path.join(directoryPath, entry.name);
         const relativePath = path.relative(root, filePath);
         if (entry.isDirectory()) {
-          if (hasFilteredPathSegment(relativePath, path.sep) || isRestrictedDirectory(relativePath, path.sep)) continue;
+          if (hasFilteredPathSegment(relativePath, path.sep, excludeBuildPaths) || isRestrictedDirectory(relativePath, path.sep)) continue;
           if (ignoreFilter.ignores(relativePath)) continue;
           if (maxDepth === -1 || depth < maxDepth) walk(filePath, depth + 1);
           continue;
         }
 
         if (entry.isFile()) {
-          if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter)) {
+          if (shouldTrackLocalModuleConfigPath(filePath, root, ignoreFilter, excludeBuildPaths)) {
             roots.push(relativePath.split(path.sep).join("/"));
           }
           if (
             includePatterns.length > 0
             && isJavaScriptFamilyFilePath(relativePath)
-            && shouldIncludeFile(filePath, root, includePatterns, excludePatterns, ignoreFilter)
+            && shouldIncludeFile(filePath, root, includePatterns, excludePatterns, ignoreFilter, [], undefined, excludeBuildPaths)
           ) {
             importerPaths.push(relativePath.split(path.sep).join("/"));
           }
@@ -145,7 +152,7 @@ export class LocalModuleConfigTracker {
     for (const rootConfig of roots) {
       for (const dependency of getTsConfigModuleResolutionConfigDependencyPaths(rootConfig, readConfig)) {
         const dependencyPath = path.resolve(root, ...dependency.split("/"));
-        if (shouldTrackProjectLocalJsonConfigPath(dependencyPath, root, ignoreFilter)) {
+        if (shouldTrackProjectLocalJsonConfigPath(dependencyPath, root, ignoreFilter, excludeBuildPaths)) {
           nextPaths.add(dependencyPath);
         }
       }
@@ -156,8 +163,9 @@ export class LocalModuleConfigTracker {
 
   shouldTrackPackagePath(filePath: string): boolean {
     const root = path.resolve(this.projectRoot);
-    const ignoreFilter = createIgnoreFilter(root);
-    if (!shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter)) return false;
+    const excludeBuildPaths = this.options.excludeBuildPaths !== false;
+    const ignoreFilter = createIgnoreFilter(root, excludeBuildPaths);
+    if (!shouldTrackLocalModulePackagePath(filePath, root, ignoreFilter, excludeBuildPaths)) return false;
 
     const relativePath = path.relative(root, filePath).split(path.sep).join("/");
     return isLocalWorkspacePackageManifestPath(relativePath, this.rootPackageManifestText);

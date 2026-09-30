@@ -9,6 +9,7 @@ import {
   EMBEDDING_MODELS,
   AUTO_DETECT_PROVIDER_ORDER,
   DEFAULT_PROVIDER_MODELS,
+  DEFAULT_BUILD_EXCLUDE,
   DEFAULT_INCLUDE,
   DEFAULT_EXCLUDE,
 } from "../src/config/constants.js";
@@ -87,6 +88,7 @@ describe("config schema", () => {
       expect(config.scope).toBe("project");
       expect(config.include).toHaveLength(DEFAULT_INCLUDE.length);
       expect(config.exclude).toHaveLength(DEFAULT_EXCLUDE.length);
+      expect(config.excludeBuildPaths).toBe(true);
       expect(config.indexing.pauseBackgroundIndexingOnBattery).toBe(false);
       expect(config.indexing.maxDepth).toBe(-1);
       expect(config.indexing.includeIgnored).toEqual([]);
@@ -102,6 +104,28 @@ describe("config schema", () => {
       expect(parseConfig({ indexing: { includeIgnored: [" generated/**/*.ts ", "", "docs/*.md"] } }).indexing.includeIgnored)
         .toEqual(["generated/**/*.ts", "docs/*.md"]);
       expect(parseConfig({ indexing: { includeIgnored: "generated/**" } }).indexing.includeIgnored).toEqual([]);
+    });
+
+    it("parses excludeBuildPaths and ignores invalid values", () => {
+      expect(parseConfig({ excludeBuildPaths: false }).excludeBuildPaths).toBe(false);
+      expect(parseConfig({ excludeBuildPaths: true }).excludeBuildPaths).toBe(true);
+      expect(parseConfig({ excludeBuildPaths: "false" }).excludeBuildPaths).toBe(true);
+    });
+
+    it("removes only built-in build globs from derived defaults when disabled", () => {
+      const config = parseConfig({ excludeBuildPaths: false });
+
+      expect(config.exclude).toEqual(
+        DEFAULT_EXCLUDE.filter((pattern) => !DEFAULT_BUILD_EXCLUDE.includes(pattern)),
+      );
+      expect(config.exclude).toContain("**/node_modules/**");
+      expect(config.exclude).toContain("**/dist/**");
+    });
+
+    it("preserves explicitly supplied build globs when build-path filtering is disabled", () => {
+      const exclude = [...DEFAULT_BUILD_EXCLUDE, "**/custom/**"];
+
+      expect(parseConfig({ excludeBuildPaths: false, exclude }).exclude).toEqual(exclude);
     });
 
     it("normalizes the MCP stall timeout", () => {

@@ -374,6 +374,7 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
   "include": ["**/*.ts", "**/*.tsx"],
   "additionalInclude": ["scripts/**/*.mjs"],
   "exclude": ["**/vendor/**"],
+  "excludeBuildPaths": false,
   "indexing": {
     "includeIgnored": ["generated/api/**/*.ts"]
   }
@@ -383,10 +384,12 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 - `include` replaces the default include patterns.
 - `additionalInclude` extends the defaults.
 - `exclude` replaces the default exclude patterns.
+- `excludeBuildPaths` defaults to `true`. Set it to `false` to allow directories and files whose path segments contain `build`, case-insensitively, during initial indexing and both Chokidar and native file watching. Hidden paths, dependency/output directories, restricted OS paths, normal include rules, `.gitignore`, and explicit `exclude` patterns remain enforced.
+- When `excludeBuildPaths` is `false` and `exclude` is omitted, only the built-in `**/build/**` and `**/*build*/**` globs are removed from the derived default excludes. An explicitly supplied `exclude` array is preserved exactly, including either of those globs.
 - Matching files are omitted from the index, including paths that also match `include`. Directory globs such as `**/generated/**` skip the whole tree.
 - Incremental `/index` and `retryFailedBatches` drop stale failed-batch retries for paths that are now excluded, so previously failed chunks are not re-embedded.
 - `.gitignore` is also respected. Tracked Git files can still be excluded from the index with `exclude`; `.git/info/exclude` is not read.
-- `indexing.includeIgnored` defaults to `[]` and selectively permits matching project files that are ignored by `.gitignore`. It only bypasses the Git-ignore check: files must still match `include` or `additionalInclude`, and `exclude`, hidden paths, build paths, dependency/output directories, and restricted OS paths still take precedence. Patterns may target files below an ignored parent directory, such as `generated/api/**/*.ts`. This option does not apply to knowledge bases.
+- `indexing.includeIgnored` defaults to `[]` and selectively permits matching project files that are ignored by `.gitignore`. It only bypasses the Git-ignore check: files must still match `include` or `additionalInclude`, and `exclude`, hidden paths, dependency/output directories, and restricted OS paths still take precedence. Build paths also take precedence unless `excludeBuildPaths` is `false`. Patterns may target files below an ignored parent directory, such as `generated/api/**/*.ts`. This option does not apply to knowledge bases.
 - Use narrow patterns: opting in broad ignored trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
 
 ## Knowledge bases

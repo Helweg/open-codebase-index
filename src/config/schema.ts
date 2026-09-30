@@ -1,7 +1,7 @@
 // Config schema without zod dependency to avoid version conflicts with OpenCode SDK
 
 import { parseEmbeddingFallback } from "./embedding-fallback.js";
-import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, EMBEDDING_MODELS, DEFAULT_PROVIDER_MODELS } from "./constants.js";
+import { AUTO_DETECT_PROVIDER_ORDER, DEFAULT_BUILD_EXCLUDE, DEFAULT_INCLUDE, DEFAULT_EXCLUDE, EMBEDDING_MODELS, DEFAULT_PROVIDER_MODELS } from "./constants.js";
 import {
   getDefaultDebugConfig,
   getDefaultIndexingConfig,
@@ -241,11 +241,14 @@ export interface CodebaseIndexConfig {
   include: string[];
   /** Override the default exclude patterns (replaces defaults) */
   exclude: string[];
+  /** Exclude build-named paths using built-in discovery and watcher filters. Defaults to true. */
+  excludeBuildPaths?: boolean;
   /** Additional file patterns to include (extends defaults) */
   additionalInclude?: string[];
 }
 
 export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
+  excludeBuildPaths: boolean;
   indexing: IndexingConfig & { includeIgnored: string[] };
   search: SearchConfig;
   debug: DebugConfig;
@@ -263,6 +266,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const scopeValue = getResolvedString(input.scope, "$root.scope");
   const includeValue = getResolvedStringArray(input.include, "$root.include");
   const excludeValue = getResolvedStringArray(input.exclude, "$root.exclude");
+  const excludeBuildPaths = typeof input.excludeBuildPaths === "boolean" ? input.excludeBuildPaths : true;
 
   const defaultIndexing = getDefaultIndexingConfig();
   const defaultSearch = getDefaultSearchConfig();
@@ -537,7 +541,10 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     embedding,
     scope: isValidScope(scopeValue) ? scopeValue : "project",
     include: includeValue ?? DEFAULT_INCLUDE,
-    exclude: excludeValue ?? DEFAULT_EXCLUDE,
+    exclude: excludeValue ?? (excludeBuildPaths
+      ? DEFAULT_EXCLUDE
+      : DEFAULT_EXCLUDE.filter((pattern) => !DEFAULT_BUILD_EXCLUDE.includes(pattern))),
+    excludeBuildPaths,
     additionalInclude,
     indexing,
     search,
