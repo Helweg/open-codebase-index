@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Selective automatic-exclusion opt-in**: Added `indexing.includeExcluded` to index and watch selected source paths otherwise blocked by automatic defaults, including build-named, vendor, hidden, and minified/bundled paths. Shared discovery and watcher filtering retains normal include rules, explicit exclusion precedence, separate Git-only `includeIgnored` behavior, and Git/index-storage protections. This replaces the unpublished build-only `excludeBuildPaths` option.
+
+### Fixed
+
+- **Automatic-exclusion wildcard traversal**: Keep matching ancestor directories traversable for selective opt-ins such as `build-*/src/*.ts` and `.g*/scripts/*.ts`, while retaining strict source selection, explicit exclusions, and Git/index-storage protections.
+- **Selected-source module configuration watching**: Watch the nearest TypeScript/JavaScript configuration and safe local `extends` dependencies used by source-only automatic-exclusion opt-ins, so configuration changes refresh module resolution on both watcher backends without separately opting in each JSON file.
+
 ## [0.33.0] - 2026-09-29
 
 ### Added

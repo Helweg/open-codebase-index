@@ -183,6 +183,80 @@ describe("indexer failed batch recovery", () => {
     return _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
   }
 
+  function createIncludeExcludedIndexer(exclude?: string[]): Indexer {
+    const selectedPatterns = ["build-tools/**", "vendor/internal/**", ".github/**"];
+    const rawConfig: Record<string, unknown> = {
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      include: selectedPatterns,
+      indexing: {
+        watchFiles: false,
+        retries: 0,
+        retryDelayMs: 1,
+        includeExcluded: selectedPatterns,
+      },
+    };
+    if (exclude !== undefined) rawConfig.exclude = exclude;
+
+    return _indexers[_indexers.push(new Indexer(tempDir, parseConfig(rawConfig), "opencode")) - 1];
+  }
+
+  function writeIncludeExcludedSources(): string[] {
+    const sources = [
+      {
+        filePath: path.join(tempDir, "build-tools", "generated", "retry.ts"),
+        marker: "includeExcludedBuildRetryMarker",
+      },
+      {
+        filePath: path.join(tempDir, "vendor", "internal", "generated", "retry.ts"),
+        marker: "includeExcludedVendorRetryMarker",
+      },
+      {
+        filePath: path.join(tempDir, ".github", "workflows", "retry.ts"),
+        marker: "includeExcludedHiddenRetryMarker",
+      },
+    ];
+    for (const source of sources) {
+      fs.mkdirSync(path.dirname(source.filePath), { recursive: true });
+      fs.writeFileSync(
+        source.filePath,
+        `export function ${source.marker}() { return "${source.marker}"; }\n`,
+        "utf-8",
+      );
+    }
+    return sources.map((source) => source.marker);
+  }
+
+  function captureSuccessfulEmbeddingTexts(): string[] {
+    const embedTexts: string[] = [];
+    fetchSpy.mockImplementation(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string[]; prompt?: string };
+      const texts = Array.isArray(body.input) ? body.input : (body.prompt ? [body.prompt] : []);
+      embedTexts.push(...texts);
+      return new Response(JSON.stringify({
+        data: texts.map(() => ({ embedding: Array.from({ length: 8 }, () => 0.1) })),
+        usage: { total_tokens: Math.max(1, texts.length * 8) },
+      }), { status: 200 });
+    });
+    return embedTexts;
+  }
+
+  function expectAllMarkersEmbedded(embedTexts: string[], markers: string[]): void {
+    for (const marker of markers) {
+      expect(embedTexts.some((text) => text.includes(marker))).toBe(true);
+    }
+  }
+
+  function expectNoMarkersEmbedded(embedTexts: string[], markers: string[]): void {
+    for (const marker of markers) {
+      expect(embedTexts.some((text) => text.includes(marker))).toBe(false);
+    }
+  }
+
   function createLimitedBatchIndexer(maxBatchSize: number): Indexer {
     const config = parseConfig({
       embeddingProvider: "custom",
@@ -384,6 +458,99 @@ describe("indexer failed batch recovery", () => {
     expect(retry.failed).toBe(0);
     expect(retry.remaining).toBe(0);
     expect(embedTexts.some((text) => text.includes("SELECT 1"))).toBe(false);
+    expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
+  });
+
+  it("keeps includeExcluded failed chunks eligible for incremental recovery with derived default excludes", async () => {
+    const markers = writeIncludeExcludedSources();
+    failEmbeddings = true;
+    const firstIndexer = createIncludeExcludedIndexer();
+    const failedStats = await firstIndexer.index();
+    expect(failedStats.failedChunks).toBeGreaterThan(0);
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    failEmbeddings = false;
+    fetchSpy.mockClear();
+    const embedTexts = captureSuccessfulEmbeddingTexts();
+    const secondIndexer = createIncludeExcludedIndexer();
+    const recoveredStats = await secondIndexer.index();
+
+    expect(recoveredStats.failedChunks).toBe(0);
+    expect(recoveredStats.indexedChunks).toBeGreaterThan(0);
+    expectAllMarkersEmbedded(embedTexts, markers);
+    expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
+  });
+
+  it("keeps includeExcluded failed chunks eligible for retryFailedBatches with derived default excludes", async () => {
+    const markers = writeIncludeExcludedSources();
+    failEmbeddings = true;
+    const firstIndexer = createIncludeExcludedIndexer();
+    await firstIndexer.index();
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    failEmbeddings = false;
+    fetchSpy.mockClear();
+    const embedTexts = captureSuccessfulEmbeddingTexts();
+    const secondIndexer = createIncludeExcludedIndexer();
+    const retry = await secondIndexer.retryFailedBatches();
+
+    expect(retry.succeeded).toBeGreaterThan(0);
+    expect(retry.failed).toBe(0);
+    expect(retry.remaining).toBe(0);
+    expectAllMarkersEmbedded(embedTexts, markers);
+    expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
+  });
+
+  it("incremental recovery discards includeExcluded stale retries when explicit excludes overlap", async () => {
+    const markers = writeIncludeExcludedSources();
+    failEmbeddings = true;
+    const firstIndexer = createIncludeExcludedIndexer();
+    await firstIndexer.index();
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    failEmbeddings = false;
+    fetchSpy.mockClear();
+    const embedTexts = captureSuccessfulEmbeddingTexts();
+    const secondIndexer = createIncludeExcludedIndexer([
+      "build-tools/**",
+      "vendor/internal/**",
+      ".github/**",
+    ]);
+    const recoveredStats = await secondIndexer.index();
+
+    expect(recoveredStats.failedChunks).toBe(0);
+    expect(recoveredStats.indexedChunks).toBe(0);
+    expectNoMarkersEmbedded(embedTexts, markers);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
+  });
+
+  it("retryFailedBatches discards includeExcluded stale retries when explicit excludes overlap", async () => {
+    const markers = writeIncludeExcludedSources();
+    failEmbeddings = true;
+    const firstIndexer = createIncludeExcludedIndexer();
+    await firstIndexer.index();
+    expect((await firstIndexer.getStatus()).failedBatchesCount).toBeGreaterThan(0);
+    await firstIndexer.close();
+
+    failEmbeddings = false;
+    fetchSpy.mockClear();
+    const embedTexts = captureSuccessfulEmbeddingTexts();
+    const secondIndexer = createIncludeExcludedIndexer([
+      "build-tools/**",
+      "vendor/internal/**",
+      ".github/**",
+    ]);
+    const retry = await secondIndexer.retryFailedBatches();
+
+    expect(retry.succeeded).toBe(0);
+    expect(retry.failed).toBe(0);
+    expect(retry.remaining).toBe(0);
+    expectNoMarkersEmbedded(embedTexts, markers);
+    expect(fetchSpy).not.toHaveBeenCalled();
     expect((await secondIndexer.getStatus()).failedBatchesCount).toBe(0);
   });
 
