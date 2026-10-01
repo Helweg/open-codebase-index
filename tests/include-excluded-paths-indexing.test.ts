@@ -329,28 +329,33 @@ describe("include-excluded path indexing acceptance", () => {
     const selectedSources = [
       {
         filePath: path.join(projectDir, "build-tools", "src", "watched.ts"),
+        independentDefinition: `${backend}IndependentBuildDefinition`,
         originalDefinition: `${backend}OriginalBuildDefinition`,
-        updatedDefinition: `${backend}UpdatedBuildDefinition`,
+        burstDefinition: `${backend}BurstBuildDefinition`,
       },
       {
         filePath: path.join(projectDir, "build-helper.ts"),
+        independentDefinition: `${backend}IndependentBuildHelperDefinition`,
         originalDefinition: `${backend}OriginalBuildHelperDefinition`,
-        updatedDefinition: `${backend}UpdatedBuildHelperDefinition`,
+        burstDefinition: `${backend}BurstBuildHelperDefinition`,
       },
       {
         filePath: path.join(projectDir, "vendor", "internal", "watched.ts"),
+        independentDefinition: `${backend}IndependentVendorDefinition`,
         originalDefinition: `${backend}OriginalVendorDefinition`,
-        updatedDefinition: `${backend}UpdatedVendorDefinition`,
+        burstDefinition: `${backend}BurstVendorDefinition`,
       },
       {
         filePath: path.join(projectDir, ".github", "scripts", "watched.ts"),
+        independentDefinition: `${backend}IndependentGithubDefinition`,
         originalDefinition: `${backend}OriginalGithubDefinition`,
-        updatedDefinition: `${backend}UpdatedGithubDefinition`,
+        burstDefinition: `${backend}BurstGithubDefinition`,
       },
       {
         filePath: path.join(projectDir, ".hidden-root.ts"),
+        independentDefinition: `${backend}IndependentHiddenDefinition`,
         originalDefinition: `${backend}OriginalHiddenDefinition`,
-        updatedDefinition: `${backend}UpdatedHiddenDefinition`,
+        burstDefinition: `${backend}BurstHiddenDefinition`,
       },
     ];
     const negativeSources = [
@@ -396,16 +401,32 @@ describe("include-excluded path indexing acceptance", () => {
     });
     await watcher.waitUntilReady();
 
+    // Isolate every selected path so another callback and full reindex cannot mask a traversal or filter miss.
     for (const source of selectedSources) {
-      writeSource(source.filePath, source.updatedDefinition);
+      const observedStart = observedPaths.length;
+      writeSource(source.filePath, source.independentDefinition);
+      await vi.waitFor(async () => {
+        expect(observedPaths.slice(observedStart)).toContain(source.filePath);
+        expect(await hasDefinition(indexer, source.independentDefinition, source.filePath)).toBe(true);
+        expect(await hasDefinition(indexer, source.originalDefinition, source.filePath)).toBe(false);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    }
+
+    // Real hosts request a full index for any batch, so keep simultaneous burst reconciliation as a separate contract.
+    const burstObservedStart = observedPaths.length;
+    for (const source of selectedSources) {
+      writeSource(source.filePath, source.burstDefinition);
     }
     for (const [filePath, definitionName] of negativeSources) {
       writeSource(filePath, `${definitionName}Updated`);
     }
     await vi.waitFor(async () => {
+      expect(observedPaths.slice(burstObservedStart).some(
+        (observedPath) => selectedSources.some((source) => source.filePath === observedPath),
+      )).toBe(true);
       for (const source of selectedSources) {
-        expect(await hasDefinition(indexer, source.updatedDefinition, source.filePath)).toBe(true);
-        expect(await hasDefinition(indexer, source.originalDefinition, source.filePath)).toBe(false);
+        expect(await hasDefinition(indexer, source.burstDefinition, source.filePath)).toBe(true);
+        expect(await hasDefinition(indexer, source.independentDefinition, source.filePath)).toBe(false);
       }
     }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
 
