@@ -7,6 +7,7 @@ import {
   getTsConfigModuleResolutionConfigDependencyPaths,
   isJavaScriptFamilyFilePath,
   isLocalWorkspacePackageManifestPath,
+  TsConfigPathAliasCache,
 } from "../indexer/local-module-resolution.js";
 import {
   createGitIgnoreFilter,
@@ -103,7 +104,9 @@ function shouldTrackProjectLocalJsonConfigPath(
  * manifests derived only from included JavaScript/TypeScript source ancestors.
  */
 export class LocalModuleConfigTracker {
+  private importerPaths = new Set<string>();
   private trackedPaths = new Set<string>();
+  private trackedPathAncestors = new Set<string>();
   private rootPackageManifestText: string | undefined;
 
   constructor(
@@ -135,6 +138,85 @@ export class LocalModuleConfigTracker {
       }
     };
     const rootPackageManifestText = readConfig(LOCAL_MODULE_PACKAGE_MANIFEST_NAME);
+    const resolveTrackableConfigDependency = (candidatePath: string, allowAutomaticExcluded: boolean): {
+      filePath: string;
+      relativePath: string;
+    } | undefined => {
+      const normalizedCandidate = path.posix.normalize(candidatePath.replaceAll("\\", "/"));
+      if (
+        path.posix.isAbsolute(normalizedCandidate)
+        || /^[A-Za-z]:\//u.test(normalizedCandidate)
+        || normalizedCandidate === ".."
+        || normalizedCandidate.startsWith("../")
+        || path.posix.extname(normalizedCandidate).toLowerCase() !== ".json"
+      ) {
+        return undefined;
+      }
+
+      const filePath = path.resolve(root, ...normalizedCandidate.split("/"));
+      const relativePath = path.relative(root, filePath);
+      if (
+        relativePath === ".."
+        || relativePath.startsWith(`..${path.sep}`)
+        || path.isAbsolute(relativePath)
+      ) {
+        return undefined;
+      }
+
+      const normalizedRelativePath = relativePath.split(path.sep).join("/");
+      const parentSegments = path.posix.dirname(normalizedRelativePath).split("/").filter((segment) => segment !== ".");
+      if (maxDepth !== -1 && parentSegments.length > maxDepth) {
+        return undefined;
+      }
+
+      const dependencyFilterOptions: PathFilterOptions = {
+        ...filterOptions,
+        includeExcluded: allowAutomaticExcluded
+          ? [normalizedRelativePath]
+          : filterOptions.includeExcluded,
+      };
+      let ancestorPath = root;
+      for (const segment of parentSegments) {
+        ancestorPath = path.join(ancestorPath, segment);
+        if (!shouldTraverseDirectory(
+          ancestorPath,
+          root,
+          excludePatterns,
+          ignoreFilter,
+          includeIgnored,
+          gitIgnoreFilter,
+          dependencyFilterOptions,
+        )) {
+          return undefined;
+        }
+      }
+
+      if (!shouldIncludeFile(
+        filePath,
+        root,
+        ["**/*.json"],
+        excludePatterns,
+        ignoreFilter,
+        includeIgnored,
+        gitIgnoreFilter,
+        dependencyFilterOptions,
+      )) {
+        return undefined;
+      }
+
+      return { filePath, relativePath: normalizedRelativePath };
+    };
+    const readTrackableConfigDependency = (
+      relativePath: string,
+      allowAutomaticExcluded: boolean,
+    ): string | undefined => {
+      const dependency = resolveTrackableConfigDependency(relativePath, allowAutomaticExcluded);
+      return dependency ? readConfig(dependency.relativePath) : undefined;
+    };
+    const addTrackableConfigDependency = (relativePath: string, allowAutomaticExcluded: boolean): void => {
+      const dependency = resolveTrackableConfigDependency(relativePath, allowAutomaticExcluded);
+      if (dependency) nextPaths.add(dependency.filePath);
+    };
 
     const walk = (directoryPath: string, depth: number): void => {
       let entries: Dirent[];
@@ -171,19 +253,28 @@ export class LocalModuleConfigTracker {
     walk(root, 0);
 
     for (const manifestPath of getLocalWorkspacePackageManifestPaths(importerPaths, readConfig)) {
-      nextPaths.add(path.resolve(root, ...manifestPath.split("/")));
+      addTrackableConfigDependency(manifestPath, true);
+    }
+
+    const pathAliasCache = new TsConfigPathAliasCache((relativePath) =>
+      readTrackableConfigDependency(relativePath, true)
+    );
+    for (const [dependencyPath] of pathAliasCache.getConfigState(importerPaths)) {
+      addTrackableConfigDependency(dependencyPath, true);
     }
 
     for (const rootConfig of roots) {
-      for (const dependency of getTsConfigModuleResolutionConfigDependencyPaths(rootConfig, readConfig)) {
-        const dependencyPath = path.resolve(root, ...dependency.split("/"));
-        if (shouldTrackProjectLocalJsonConfigPath(dependencyPath, root, ignoreFilter, this.options)) {
-          nextPaths.add(dependencyPath);
-        }
+      for (const dependency of getTsConfigModuleResolutionConfigDependencyPaths(
+        rootConfig,
+        (relativePath) => readTrackableConfigDependency(relativePath, false),
+      )) {
+        addTrackableConfigDependency(dependency, false);
       }
     }
     this.rootPackageManifestText = rootPackageManifestText;
+    this.importerPaths = new Set(importerPaths.map((importerPath) => path.resolve(root, ...importerPath.split("/"))));
     this.trackedPaths = nextPaths;
+    this.trackedPathAncestors = this.getTrackedPathAncestors(root, nextPaths);
   }
 
   shouldTrackPackagePath(filePath: string): boolean {
@@ -199,7 +290,43 @@ export class LocalModuleConfigTracker {
     return this.trackedPaths.has(path.resolve(filePath));
   }
 
+  hasImporterPath(filePath: string): boolean {
+    return this.importerPaths.has(path.resolve(filePath));
+  }
+
+  hasPathOrAncestor(filePath: string): boolean {
+    const resolvedPath = path.resolve(filePath);
+    return this.trackedPaths.has(resolvedPath) || this.trackedPathAncestors.has(resolvedPath);
+  }
+
   getPaths(): readonly string[] {
     return [...this.trackedPaths];
+  }
+
+  getWatchPaths(): readonly string[] {
+    return [...this.trackedPathAncestors, ...this.trackedPaths]
+      .sort((left, right) => left.length - right.length || left.localeCompare(right));
+  }
+
+  private getTrackedPathAncestors(root: string, trackedPaths: ReadonlySet<string>): Set<string> {
+    const ancestors = new Set<string>();
+    for (const trackedPath of trackedPaths) {
+      let ancestorPath = path.dirname(trackedPath);
+      while (ancestorPath !== root) {
+        const relativePath = path.relative(root, ancestorPath);
+        if (
+          relativePath === ".."
+          || relativePath.startsWith(`..${path.sep}`)
+          || path.isAbsolute(relativePath)
+        ) {
+          break;
+        }
+        ancestors.add(ancestorPath);
+        const parentPath = path.dirname(ancestorPath);
+        if (parentPath === ancestorPath) break;
+        ancestorPath = parentPath;
+      }
+    }
+    return ancestors;
   }
 }

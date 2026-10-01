@@ -183,6 +183,50 @@ describe("include-excluded path indexing acceptance", () => {
     expect(await hasDefinition(indexer, "includeMissDefinition", includeMissPath)).toBe(false);
   });
 
+  it("indexes partial-wildcard parents without broadening final file selection", async () => {
+    const selectedSources = [
+      [path.join(projectDir, "build-tools", "src", "selected.ts"), "partialBuildDefinition"],
+      [path.join(projectDir, ".github", "scripts", "selected.ts"), "partialGithubDefinition"],
+      [
+        path.join(projectDir, "packages", "release", "build-x", "src", "selected.ts"),
+        "partialNestedDefinition",
+      ],
+      [path.join(projectDir, "vendor", "exact.ts"), "partialExactDefinition"],
+    ] as const;
+    const unselectedSources = [
+      [path.join(projectDir, "build-tools", "lib", "sibling.ts"), "partialBuildSiblingDefinition"],
+      [path.join(projectDir, "build-tools", "src", "blocked.ts"), "partialExplicitExcludeDefinition"],
+      [path.join(projectDir, ".github", "workflows", "sibling.ts"), "partialGithubSiblingDefinition"],
+      [path.join(projectDir, ".git", "scripts", "protected.ts"), "partialGitProtectedDefinition"],
+      [
+        path.join(projectDir, "packages", "release", "build-long", "src", "sibling.ts"),
+        "partialQuestionSiblingDefinition",
+      ],
+      [path.join(projectDir, "vendor", "sibling.ts"), "partialExactSiblingDefinition"],
+    ] as const;
+    for (const [filePath, definitionName] of [...selectedSources, ...unselectedSources]) {
+      writeSource(filePath, definitionName);
+    }
+
+    const indexer = createIndexer(structuralConfig({
+      exclude: ["build-*/src/blocked.ts"],
+      includeExcluded: [
+        "build-*/src/*.ts",
+        ".g*/scripts/*.ts",
+        "packages/release/build-?/src/*.ts",
+        "vendor/exact.ts",
+      ],
+    }));
+    await indexer.index();
+
+    for (const [filePath, definitionName] of selectedSources) {
+      expect(await hasDefinition(indexer, definitionName, filePath)).toBe(true);
+    }
+    for (const [filePath, definitionName] of unselectedSources) {
+      expect(await hasDefinition(indexer, definitionName, filePath)).toBe(false);
+    }
+  });
+
   it("lets explicit exclusions win over overlapping includeExcluded patterns", async () => {
     const selectedPath = path.join(projectDir, "build-tools", "source.ts");
     const overlappingPath = path.join(projectDir, "build-tools", "excluded", "blocked.ts");
@@ -272,18 +316,19 @@ describe("include-excluded path indexing acceptance", () => {
 
   async function exerciseWatcherBackend(backend: Exclude<FileWatcherBackend, "auto">): Promise<void> {
     const config = structuralConfig({
-      exclude: ["build-tools/excluded/**"],
+      exclude: ["build-*/src/blocked.ts"],
       includeExcluded: [
-        "build-tools/**",
+        "build-*/src/*.ts",
         "build-helper.ts",
-        "vendor/internal/**",
+        "vendor/int*/watched.ts",
+        ".g*/scripts/*.ts",
         ".hidden-root.ts",
-        "packages/BUILD-CACHE/added.ts",
+        "packages/BUILD-*/added.ts",
       ],
     });
     const selectedSources = [
       {
-        filePath: path.join(projectDir, "build-tools", "watched.ts"),
+        filePath: path.join(projectDir, "build-tools", "src", "watched.ts"),
         originalDefinition: `${backend}OriginalBuildDefinition`,
         updatedDefinition: `${backend}UpdatedBuildDefinition`,
       },
@@ -298,6 +343,11 @@ describe("include-excluded path indexing acceptance", () => {
         updatedDefinition: `${backend}UpdatedVendorDefinition`,
       },
       {
+        filePath: path.join(projectDir, ".github", "scripts", "watched.ts"),
+        originalDefinition: `${backend}OriginalGithubDefinition`,
+        updatedDefinition: `${backend}UpdatedGithubDefinition`,
+      },
+      {
         filePath: path.join(projectDir, ".hidden-root.ts"),
         originalDefinition: `${backend}OriginalHiddenDefinition`,
         updatedDefinition: `${backend}UpdatedHiddenDefinition`,
@@ -305,14 +355,16 @@ describe("include-excluded path indexing acceptance", () => {
     ];
     const negativeSources = [
       [path.join(projectDir, "vendor", "public", "sibling.ts"), `${backend}VendorSiblingDefinition`],
+      [path.join(projectDir, "vendor", "internal", "sibling.ts"), `${backend}VendorExactSiblingDefinition`],
       [path.join(projectDir, "packages", "BUILD-CACHE", "sibling.ts"), `${backend}UppercaseSiblingDefinition`],
+      [path.join(projectDir, ".github", "workflows", "sibling.ts"), `${backend}GithubSiblingDefinition`],
       [path.join(projectDir, ".hidden-sibling.ts"), `${backend}HiddenSiblingDefinition`],
-      [path.join(projectDir, "build-tools", "excluded", "blocked.ts"), `${backend}ExplicitlyExcludedDefinition`],
-      [path.join(projectDir, "build-tools", "git-ignored.ts"), `${backend}GitIgnoredDefinition`],
+      [path.join(projectDir, "build-tools", "src", "blocked.ts"), `${backend}ExplicitlyExcludedDefinition`],
+      [path.join(projectDir, "build-tools", "src", "git-ignored.ts"), `${backend}GitIgnoredDefinition`],
     ] as const;
     const addedPath = path.join(projectDir, "packages", "BUILD-CACHE", "added.ts");
     const addedDefinition = `${backend}AddedDefinition`;
-    fs.writeFileSync(path.join(projectDir, ".gitignore"), "build-tools/git-ignored.ts\n");
+    fs.writeFileSync(path.join(projectDir, ".gitignore"), "build-tools/src/git-ignored.ts\n");
     for (const source of selectedSources) {
       writeSource(source.filePath, source.originalDefinition);
     }
@@ -439,12 +491,12 @@ describe("include-excluded path indexing acceptance", () => {
     },
   );
 
-  it("propagates opted-in excluded-path changes through the Chokidar FileWatcher", async () => {
+  it("reindexes partial-wildcard parent changes through the Chokidar FileWatcher", async () => {
     await exerciseWatcherBackend("chokidar");
   });
 
   it.runIf(SUPPORTS_NATIVE_RECURSIVE_WATCH)(
-    "propagates opted-in excluded-path changes through the native FileWatcher without fallback",
+    "reindexes partial-wildcard parent changes through the native FileWatcher without fallback",
     async () => {
       await exerciseWatcherBackend("native");
     },

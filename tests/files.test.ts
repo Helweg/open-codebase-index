@@ -667,6 +667,83 @@ describe("files utilities", () => {
       );
     });
 
+    it("traverses partial-wildcard parents while keeping final selection strict", async () => {
+      const selected = [
+        "build-tools/src/selected.ts",
+        ".github/scripts/selected.ts",
+        "packages/release/build-x/src/selected.ts",
+        "build-cache/src/selected.ts",
+        "build-output/src/selected.ts",
+        "vendor/exact.ts",
+      ];
+      const unselected = [
+        "build-tools/lib/unselected.ts",
+        "build-tools/src/nested/unselected.ts",
+        "build-tools/src/blocked.ts",
+        ".github/workflows/unselected.ts",
+        ".git/scripts/protected.ts",
+        "packages/release/build-long/src/unselected.ts",
+        "vendor/sibling.ts",
+      ];
+      for (const relativePath of [...selected, ...unselected]) {
+        fs.mkdirSync(path.dirname(path.join(tempDir, relativePath)), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, relativePath), relativePath);
+      }
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        ["build-*/src/blocked.ts"],
+        1048576,
+        undefined,
+        {
+          maxDepth: -1,
+          maxFilesPerDirectory: 100,
+          includeExcluded: [
+            "build-*/src/*.ts",
+            ".g*/scripts/*.ts",
+            "packages/release/build-?/src/*.ts",
+            "build-{cache,output}/src/*.ts",
+            "vendor/exact.ts",
+          ],
+        },
+      );
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        selected.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+      expect(result.skipped).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: "build-tools/src/blocked.ts", reason: "excluded" }),
+        expect.objectContaining({ path: ".git", reason: "excluded" }),
+      ]));
+    });
+
+    it("traverses gitignored partial-wildcard parents without selecting nonmatching files", async () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "generated-tools/\ngenerated-cache/\n");
+      for (const relativePath of [
+        "generated-tools/src/selected.ts",
+        "generated-tools/src/nested/unselected.ts",
+        "generated-cache/lib/unselected.ts",
+      ]) {
+        fs.mkdirSync(path.dirname(path.join(tempDir, relativePath)), { recursive: true });
+        fs.writeFileSync(path.join(tempDir, relativePath), relativePath);
+      }
+
+      const result = await collectFiles(
+        tempDir,
+        ["**/*.ts"],
+        [],
+        1048576,
+        undefined,
+        undefined,
+        ["generated-*/src/*.ts"],
+      );
+
+      expect(result.files.map((file) => path.relative(tempDir, file.path))).toEqual([
+        path.join("generated-tools", "src", "selected.ts"),
+      ]);
+    });
+
     it("traverses selected ancestors but never protected storage or supplied paths", async () => {
       for (const directory of [
         "vendor/nested",

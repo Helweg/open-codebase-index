@@ -5,6 +5,7 @@ import * as path from "path";
 import type { HostMode } from "../config/host.js";
 import type { CodebaseIndexConfig } from "../config/schema.js";
 import { getProjectConfigCandidatePaths, resolveProjectIndexPath } from "../config/paths.js";
+import { isJavaScriptFamilyFilePath } from "../indexer/local-module-resolution.js";
 import {
   createGitIgnoreFilter,
   createIgnoreFilter,
@@ -86,7 +87,7 @@ export class FileWatcher {
     }
 
     this.onChanges = handler;
-    this.localModuleConfigTracker.refresh();
+    this.refreshLocalModuleConfigTracker();
     this.pollingFallbackAttempted = false;
     this.resetReady();
     if (this.shouldUseNativeWatcher()) {
@@ -140,7 +141,7 @@ export class FileWatcher {
     reportsStartupReady = true,
   ): void {
     let reportedStartupReady = false;
-    this.localModuleConfigTracker.refresh();
+    this.refreshLocalModuleConfigTracker();
     this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
@@ -159,6 +160,10 @@ export class FileWatcher {
 
         if (this.isOutsideProjectPath(relativePath)) {
           return true;
+        }
+
+        if (this.localModuleConfigTracker.hasPathOrAncestor(filePath)) {
+          return false;
         }
 
         if (stats?.isFile() || (!stats && this.isExistingFile(filePath))) {
@@ -377,7 +382,7 @@ export class FileWatcher {
           createGitIgnoreFilter(this.projectRoot),
           this.getPathFilterOptions(),
         )
-        && !this.localModuleConfigTracker.has(filePath)) return;
+        && !this.localModuleConfigTracker.hasPathOrAncestor(filePath)) return;
     }
 
     if (
@@ -394,7 +399,7 @@ export class FileWatcher {
         || this.localModuleConfigTracker.has(filePath)
       ))
     ) {
-      this.localModuleConfigTracker.refresh();
+      this.refreshLocalModuleConfigTracker();
     }
 
     const requiresFullReconciliation = filePath === path.join(this.projectRoot, ".gitignore");
@@ -428,6 +433,28 @@ export class FileWatcher {
       const changes = await reconciler.reconcile(invalidatedPaths);
       if (!this.isCurrentNativeSetup(generation) || this.nativeReconciler !== reconciler) return;
 
+      const ignoreFilter = createIgnoreFilter(this.projectRoot);
+      const hasLocalModuleDependencyChange = changes.some((change) => (
+        shouldTrackLocalModuleConfigPath(
+          change.path,
+          this.projectRoot,
+          ignoreFilter,
+          this.getSnapshotConfig(),
+        )
+        || this.localModuleConfigTracker.shouldTrackPackagePath(change.path)
+        || this.localModuleConfigTracker.has(change.path)
+      ));
+      const hasSelectedImporterSetChange = changes.some((change) => (
+        this.isSelectedJavaScriptPath(change.path)
+        && (
+          change.type === "add"
+          || change.type === "unlink"
+          || !this.localModuleConfigTracker.hasImporterPath(change.path)
+        )
+      ));
+      if (hasLocalModuleDependencyChange || hasSelectedImporterSetChange) {
+        this.refreshLocalModuleConfigTracker();
+      }
       this.recordChanges(changes);
     } catch (error) {
       await this.fallbackFromNativeWatcher(generation, error);
@@ -502,26 +529,21 @@ export class FileWatcher {
       || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
       || this.localModuleConfigTracker.has(filePath)
     ) {
-      this.localModuleConfigTracker.refresh();
+      this.refreshLocalModuleConfigTracker(watcher);
       this.pendingChanges.set(filePath, type);
       this.scheduleFlush();
       return;
     }
 
-    const includePatterns = [...this.config.include, ...(this.config.additionalInclude ?? [])];
-    if (
-      !shouldIncludeFile(
-        filePath,
-        this.projectRoot,
-        includePatterns,
-        this.config.exclude,
-        createIgnoreFilter(this.projectRoot),
-        this.config.indexing?.includeIgnored ?? [],
-        createGitIgnoreFilter(this.projectRoot),
-        this.getPathFilterOptions(),
-      )
-    ) {
+    if (!this.isSelectedSourcePath(filePath)) {
       return;
+    }
+
+    if (
+      isJavaScriptFamilyFilePath(filePath)
+      && (type === "add" || type === "unlink" || !this.localModuleConfigTracker.hasImporterPath(filePath))
+    ) {
+      this.refreshLocalModuleConfigTracker(watcher);
     }
 
     this.recordChanges([{ path: filePath, type }]);
@@ -542,6 +564,36 @@ export class FileWatcher {
       protectedPaths: [this.indexPath],
       purpose: "watch",
     };
+  }
+
+  private isSelectedSourcePath(filePath: string): boolean {
+    const includePatterns = [...this.config.include, ...(this.config.additionalInclude ?? [])];
+    return shouldIncludeFile(
+      filePath,
+      this.projectRoot,
+      includePatterns,
+      this.config.exclude,
+      createIgnoreFilter(this.projectRoot),
+      this.config.indexing?.includeIgnored ?? [],
+      createGitIgnoreFilter(this.projectRoot),
+      this.getPathFilterOptions(),
+    );
+  }
+
+  private isSelectedJavaScriptPath(filePath: string): boolean {
+    return isJavaScriptFamilyFilePath(filePath) && this.isSelectedSourcePath(filePath);
+  }
+
+  private refreshLocalModuleConfigTracker(watcher?: FSWatcher): void {
+    const previousPaths = new Set(this.localModuleConfigTracker.getPaths());
+    this.localModuleConfigTracker.refresh();
+    const nextPaths = this.localModuleConfigTracker.getPaths();
+    const changed = previousPaths.size !== nextPaths.length
+      || nextPaths.some((trackedPath) => !previousPaths.has(trackedPath));
+    if (changed && watcher && this.watcher === watcher) {
+      const watchPaths = this.localModuleConfigTracker.getWatchPaths();
+      if (watchPaths.length > 0) watcher.add([...watchPaths]);
+    }
   }
 
   private isExistingFile(filePath: string): boolean {

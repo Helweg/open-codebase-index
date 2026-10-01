@@ -116,9 +116,11 @@ function canContainPattern(relativePath: string, patterns: readonly string[]): b
   return patterns.some((pattern) => {
     const normalizedPattern = toPosixRelativePath(pattern).replace(/^\.\//, "");
     const wildcardIndex = normalizedPattern.search(/[?*{]/);
-    const literalPrefix = trimTrailingSlashes(
-      wildcardIndex === -1 ? normalizedPattern : normalizedPattern.slice(0, wildcardIndex),
-    );
+    // Text before a wildcard in the same component is not a literal directory prefix.
+    const literalPrefixEnd = wildcardIndex === -1
+      ? normalizedPattern.length
+      : normalizedPattern.lastIndexOf("/", wildcardIndex) + 1;
+    const literalPrefix = trimTrailingSlashes(normalizedPattern.slice(0, literalPrefixEnd));
     return !literalPrefix
       || literalPrefix === normalizedDirectory
       || literalPrefix.startsWith(`${normalizedDirectory}/`)
