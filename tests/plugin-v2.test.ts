@@ -147,6 +147,7 @@ vi.mock("../src/routing-hints.js", async (importOriginal) => {
 });
 
 import mod from "../src/index.js";
+import * as toolsModule from "../src/tools/index.js";
 import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { parseConfig } from "../src/config/schema.js";
@@ -380,6 +381,30 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
     expect(result).toEqual({ content: "OK" });
     expect(progressMock).toHaveBeenCalledTimes(1);
     expect(progressMock).toHaveBeenCalledWith(expect.objectContaining({ title: "t", k: 1 }));
+  });
+
+  it("4b. maps richer v1 tool results onto the v2 content, title, metadata and attachments", async () => {
+    vi.mocked(toolsModule.codebase_search.execute).mockResolvedValueOnce({
+      title: "rich title",
+      output: "rich output",
+      metadata: { k: 2 },
+      attachments: [{ type: "file", mime: "text/plain", url: "file:///artifact" }],
+    });
+
+    const { ctx, addedTools } = createFakeContext();
+    await mod.setup(ctx);
+
+    const result = await addedTools[0].execute(
+      {},
+      { sessionID: "ses-rich", signal: new AbortController().signal, progress: vi.fn() },
+    );
+
+    expect(result).toEqual({
+      content: "rich output",
+      title: "rich title",
+      metadata: { k: 2 },
+      attachments: [{ type: "file", mime: "text/plain", url: "file:///artifact" }],
+    });
   });
 
   // Case 5: Commands

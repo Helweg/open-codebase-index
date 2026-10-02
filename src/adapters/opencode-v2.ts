@@ -198,7 +198,18 @@ export const v2Definition = {
                 },
               };
               const output = await def.execute(input as never, v1Context as never);
-              return { content: output };
+              // OpenCode v1 tools return either a plain string or a richer
+              // { title?, output, metadata?, attachments? } result; the v2 tool
+              // contract carries the text in `content`.
+              if (typeof output === "string") {
+                return { content: output };
+              }
+              return {
+                content: output.output,
+                ...(output.title ? { title: output.title } : {}),
+                ...(output.metadata ? { metadata: output.metadata } : {}),
+                ...(output.attachments ? { attachments: output.attachments } : {}),
+              };
             },
           });
         }

@@ -11,7 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Selective automatic-exclusion opt-in**: Added `indexing.includeExcluded` to index and watch selected source paths otherwise blocked by automatic defaults, including build-named, vendor, hidden, and minified/bundled paths. Shared discovery and watcher filtering retains normal include rules, explicit exclusion precedence, separate Git-only `includeIgnored` behavior, and Git/index-storage protections. This replaces the unpublished build-only `excludeBuildPaths` option.
 
+### Changed
+
+- **OpenCode plugin dependency**: `@opencode-ai/plugin` moves from the exact pin `1.3.13` to `1.18.33`. It is a shipped dependency, and its tool result type widened from `string` to `string | { title?, output, metadata?, attachments? }`, so the v2 bridge adapts accordingly (see Fixed).
+
 ### Fixed
+
+- **OpenCode v2 tool results**: Carry v1 tool text in the v2 `content` field and forward `title`, `metadata`, and `attachments` when a tool returns the richer result shape, instead of forwarding the whole v1 result object as `content`.
 
 - **Dependency security**: Raise the `overrides` pins to the patched releases — `brace-expansion` 5.0.12, `fast-uri` 3.1.8, `hono` 4.13.7, `ip-address` 10.7.1 — resolving GHSA-q2hr-2g5m-vwhr, GHSA-hrr3-gc8f-f4qj, GHSA-hxh3-vqpv-xpqv, GHSA-j6r3-76f7-8jcv, and GHSA-h3mg-xc3c-68pw. The previous pins (5.0.9, 3.1.7, 4.13.5, 10.5.1) sat below every fix version, which kept the resolved tree vulnerable and left the Dependabot update job unable to produce a fix. A dev-only `brace-expansion` 5.0.9 copy remains inside the `@earendil-works/pi-coding-agent` shrinkwrapped tree, where root `overrides` cannot reach it.
 
