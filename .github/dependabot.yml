@@ -39,3 +39,9 @@ updates:
       - dependency-name: "@types/node"
         update-types:
           - version-update:semver-major
+      # 1.18.x pulls effect@4.0.0-beta.83 → ini@7.0.0, whose engines are
+      # "^22.22.2 || ^24.15.0 || >=26.0.0". That silently raises our declared
+      # runtime floor (engines >=22.13.0, enforced by the CI packed-install
+      # smoke test) and ships a beta dependency, so adoption is a deliberate
+      # floor-raising release. See #392.
+      - dependency-name: "@opencode-ai/plugin"
