@@ -467,7 +467,10 @@ describe("MCP server tools and prompts", () => {
   afterEach(async () => {
     resetProcessEffectivenessMetrics();
     await client.close();
-    fs.rmSync(testMainRepo, { recursive: true, force: true });
+    // Server-side work can still be flushing into the repo when teardown runs, so the
+    // removal can lose the race with ENOTEMPTY. Node retries that error class when
+    // maxRetries is set, which keeps this teardown deterministic without masking leaks.
+    fs.rmSync(testMainRepo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   it("should register every MCP tool", async () => {
