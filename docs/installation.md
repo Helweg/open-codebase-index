@@ -105,13 +105,50 @@ pi install ./path/to/open-codebase-index
 
 The package provides native tools and the `codebase-search` skill. Pi uses `.codebase-index/` project storage.
 
+## omp (oh-my-pi)
+
+Install the extension package:
+
+```bash
+omp plugin install npm:open-codebase-index
+```
+
+Or add the bundled marketplace and install from it:
+
+```bash
+omp plugin marketplace add Helweg/open-codebase-index
+omp plugin install codebase-index@helweg-plugins
+```
+
+For local development from this checkout:
+
+```bash
+npm run build:ts
+omp plugin link /path/to/open-codebase-index
+```
+
+The package declares `omp.extensions` and `omp.skills`, so omp loads `dist/omp-extension.js` and the bundled `codebase-search` skill. The extension registers the same 19-tool surface as the Pi package and reuses `.codebase-index/` project storage, preferring the host's TypeBox-compatible schema builder when omp exposes one. omp still accepts the `pi` manifest as a fallback and takes `omp` first when both are declared.
+
+To use the MCP server instead of the native extension, register it in `.omp/mcp.json` (project) or `~/.omp/agent/mcp.json` (user):
+
+```json
+{
+  "mcpServers": {
+    "codebase-index": {
+      "command": "npx",
+      "args": ["-y", "--package", "open-codebase-index", "open-codebase-index-mcp", "--host", "pi"]
+    }
+  }
+}
+```
+
 ## Codex
 
 Add the marketplace and install the plugin:
 
 ```text
 codex plugin marketplace add Helweg/open-codebase-index
-codex plugin add codebase-index@helweg-plugins
+codex plugin install codebase-index@helweg-plugins
 ```
 
 Restart or open a new thread in the target workspace. The plugin bundles MCP configuration, session guidance, and the `codebase-search` skill.
@@ -123,6 +160,8 @@ For local plugin development from this checkout:
 ```bash
 npm run build:ts
 npm run dev:link-mcp
+codex plugin marketplace add Helweg/open-codebase-index
+codex plugin install codebase-index@helweg-plugins
 ```
 
 Codex uses `.codebase-index/` project storage.

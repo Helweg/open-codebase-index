@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **omp (oh-my-pi) package**: The package now declares an `omp` manifest with `dist/omp-extension.js` and the `codebase-search` skill, so omp loads the native tool surface (`omp plugin install npm:open-codebase-index`, or the bundled `helweg-plugins` marketplace) instead of depending on the root MCP fallback. omp exposes its own TypeBox-compatible parameter builder, which the extension prefers when present; the Pi manifest, the Pi tool surface, and `.codebase-index/` storage are unchanged.
+
+### Removed
+
+- **External graph tool name in routing hints**: The discovery hint and `skill/SKILL.md` no longer name a third-party graph tool; they list the shipped `call_graph`, `call_graph_path`, and `pr_impact` tools.
+
 ## [0.34.0] - 2026-10-02
 
 ### Added

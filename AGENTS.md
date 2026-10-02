@@ -2,7 +2,7 @@
 
 **Updated:** 2026-08-02 | **Commit:** 32160f8 | **Branch:** main | **Version:** 0.22.3
 
-Semantic codebase indexing for OpenCode, MCP hosts, Pi, Claude, Codex, and Jcode. repo uses hybrid TypeScript/Rust architecture:
+Semantic codebase indexing for OpenCode, MCP hosts, Pi, omp (oh-my-pi), Claude, Codex, and Jcode. repo uses hybrid TypeScript/Rust architecture:
 
 - **TypeScript** (`src/`): host adapters, tool orchestration, indexing, retrieval, embedding providers, config, evaluation, and watchers
 - **Rust** (`native/`): tree-sitter parsing, semantic chunking, usearch vectors, SQLite persistence, BM25, call graphs, and graph analytics
@@ -54,7 +54,9 @@ src/
 │   ├── opencode.ts             # OpenCode plugin composition and hooks
 │   ├── opencode/               # OpenCode tool and PR-impact adapters
 │   ├── mcp/                    # MCP CLI, server, tools, prompts, and shared schemas
-│   └── pi/                     # Pi extension and call-graph adapters
+│   ├── shared/                 # Shared pi-contract extension core and call-graph registrar
+│   ├── pi/                     # Thin Pi package wrappers over the shared core
+│   └── omp/                    # Thin omp (oh-my-pi) wrapper over the shared core
 ├── tools/
 │   ├── operations.ts           # Shared host-neutral tool operations
 │   ├── operation-runtime.ts    # Shared operation runtime/context
@@ -111,6 +113,8 @@ See `ARCHITECTURE.md` for data flow and design details.
 | Add or change an OpenCode integration | `src/adapters/opencode.ts`, `src/adapters/opencode/` |
 | Add or change an MCP tool/prompt | `src/adapters/mcp/register-tools.ts`, `register-prompts.ts` |
 | Add or change a Pi integration | `src/adapters/pi/` |
+| Add or change an omp integration | `src/adapters/omp/`, `src/omp-extension.ts` |
+| Change the shared pi/omp extension body | `src/adapters/shared/extension-core.ts`, `src/adapters/shared/call-graph.ts` |
 | Change shared tool behavior | `src/tools/operations.ts`, `operation-runtime.ts`, `contracts.ts` |
 | Add or rename a public tool | `src/tools/tool-names.ts`, then update each host adapter |
 | Change context routing/evidence packs | `src/tools/context.ts`, `context-search.ts`, `context-pack.ts` |
@@ -138,7 +142,8 @@ Shared behavior belongs below `src/adapters/`. Host adapters should translate ho
 
 - **OpenCode:** `src/index.ts` re-exports `src/adapters/opencode.ts`.
 - **MCP:** `src/mcp-server.ts` re-exports `src/adapters/mcp/server.ts` `src/adapters/mcp/cli.ts` owns stdio transport.
-- **Pi:** public compatibility facades `src/pi-extension.ts`  `src/pi-call-graph.ts` delegate to `src/adapters/pi/`.
+- **Pi:** public compatibility facades `src/pi-extension.ts`  `src/pi-call-graph.ts` delegate to `src/adapters/pi/`, which re-exports the shared core in `src/adapters/shared/`.
+- **omp:** `src/omp-extension.ts` re-exports `src/adapters/omp/extension.js`, a thin wrapper over the same shared core that injects omp's TypeBox-style builder (`pi.typebox.Type`) when the host exposes one. omp keeps the Pi host mode and `.codebase-index/` storage; only the manifest key (`omp` before `pi`) and the injected builder differ.
 - **Shared tools:** use `src/tools/contracts.ts` `operations.ts` `operation-runtime.ts` `execute-common.ts`.
 
 When adding portable tool, update shared operation and contract first, add its canonical name to `src/tools/tool-names.ts`then wire each supported host adapter. Preserve host-specific schemas, registration order, and output formats.
@@ -152,6 +157,7 @@ Canonical tool names live in `src/tools/tool-names.ts`.
 - Graph analysis: `call_graph` `call_graph_path` `pr_impact` `code_communities`
 - OpenCode-only additions: knowledge-base management `index_visualize`
 - Pi knowledge-base aliases: `knowledge_base_add` `knowledge_base_list` `knowledge_base_remove`
+- omp reuses the Pi surface and knowledge-base aliases unchanged; omp's package manifest key is `omp` with a `pi` fallback.
 
 Do not silently rename tools or change request/result contracts. They are compatibility surfaces across hosts.
 
@@ -292,7 +298,7 @@ Important coverage areas include:
 | Database, batches, GC | `database.test.ts`, `embedding-batches.test.ts`, `auto-gc.test.ts` |
 | Search and ranking | `search-integration.test.ts`, `retrieval-ranking.test.ts`, `definition-ranking.test.ts` |
 | Call graph and PR impact | `call-graph.test.ts`, `pr-impact.test.ts` |
-| MCP and host adapters | `mcp-server.test.ts`, `plugin-hooks.test.ts`, `pi-package.test.ts` |
+| MCP and host adapters | `mcp-server.test.ts`, `plugin-hooks.test.ts`, `pi-package.test.ts`, `omp-package.test.ts` |
 | Identity and package compatibility | `identity-phase0.test.ts`, `host-mode-paths.test.ts`, `claude-plugin.test.ts` |
 | Watchers and branch behavior | `watcher.test.ts`, `watcher-config-refresh.test.ts`, `automatic-branch-index.test.ts` |
 | Multi-process safety | `multiprocess-indexing.test.ts`, `index-lock.test.ts` |
@@ -314,7 +320,7 @@ config and index paths are host-aware:
 |---|---|---|---|
 | OpenCode | `.opencode/codebase-index.json` | `.opencode/index/` | `~/.config/opencode/codebase-index.json` |
 | Claude | `.claude/codebase-index.json` | `.claude/index/` | `~/.claude/codebase-index.json` |
-| Codex, Pi, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` |
+| Codex, Pi, omp, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` |
 
 Non-OpenCode hosts retain fallbacks to existing OpenCode paths for compatibility. Worktrees may resolve config and indexes from main repo. Change path precedence only w/ explicit compatibility tests.
 

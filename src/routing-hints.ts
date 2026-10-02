@@ -168,7 +168,7 @@ export function buildRoutingHint(
   }
 
   const graphHandoff = includeGraphHandoff
-    ? " before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph"
+    ? " before graph tools such as `call_graph`, `call_graph_path`, or `pr_impact`"
     : "";
   return `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. ${ANSWER_HINT} Use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. If the exact path or identifier is already known, use Read or \`grep\` directly instead.${preEditHint}`;
 }
