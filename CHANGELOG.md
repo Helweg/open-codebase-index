@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-10-02
+
 ### Added
 
 - **Selective automatic-exclusion opt-in**: Added `indexing.includeExcluded` to index and watch selected source paths otherwise blocked by automatic defaults, including build-named, vendor, hidden, and minified/bundled paths. Shared discovery and watcher filtering retains normal include rules, explicit exclusion precedence, separate Git-only `includeIgnored` behavior, and Git/index-storage protections. This replaces the unpublished build-only `excludeBuildPaths` option.
