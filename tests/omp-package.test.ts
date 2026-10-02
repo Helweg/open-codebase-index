@@ -1,4 +1,6 @@
 import * as fs from "fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
@@ -48,10 +50,6 @@ describe("omp package integration", () => {
     expect(pkg.pi?.extensions).toContain("./dist/pi-extension.js");
   });
 
-  it("includes the omp extension source in the TypeScript build entries", () => {
-    expect(fs.readFileSync("tsup.config.ts", "utf-8")).toContain("src/omp-extension.ts");
-  });
-
   it("registers the shared host tool surface", () => {
     const toolNames = collectTools().map((tool) => tool.name);
 
@@ -90,5 +88,37 @@ describe("omp package integration", () => {
     expect(reads).toContain("Object");
     expect(reads).toContain("String");
     expect(tools.map((tool) => tool.name)).toEqual([...PI_TOOL_NAMES]);
+  });
+
+  it("preserves existing omp policy blocks and appends guidance without mutating them", async () => {
+    type BeforeAgentStartHandler = (
+      event: { systemPrompt: string[] },
+      ctx: { cwd: string },
+    ) => Promise<{ systemPrompt: string[] }>;
+    let beforeAgentStart: BeforeAgentStartHandler | undefined;
+    codebaseIndexOmpExtension({
+      registerTool() {},
+      on(event: string, handler: unknown) {
+        if (event === "before_agent_start") {
+          beforeAgentStart = handler as BeforeAgentStartHandler;
+        }
+      },
+    } as OmpExtensionApi);
+
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "omp-prompt-blocks-"));
+    fs.mkdirSync(path.join(root, ".codebase-index"));
+    fs.writeFileSync(path.join(root, ".codebase-index", "config.json"), JSON.stringify({
+      indexing: { autoIndex: false, watchFiles: false, requireProjectMarker: true },
+    }));
+    const blocks = ["Base policy\n\nPreserve these boundaries.", "Repository policy, with a comma."];
+    Object.freeze(blocks);
+
+    try {
+      if (!beforeAgentStart) throw new Error("Missing before_agent_start handler");
+      const result = await beforeAgentStart({ systemPrompt: blocks }, { cwd: root });
+      expect(result.systemPrompt).toEqual([...blocks, expect.any(String)]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

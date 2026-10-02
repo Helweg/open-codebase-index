@@ -1,8 +1,8 @@
 /**
  * Shared pi-contract extension core.
  *
- * `src/adapters/pi/extension.ts` and `src/adapters/omp/extension.ts` are thin
- * wrappers over this module and differ only in the schema builder they inject.
+ * `src/adapters/pi/extension.ts` and `src/adapters/omp/extension.ts` reuse this
+ * tool/session core with their own schema builders and prompt event shapes.
  * Storage follows the Pi host mode (`.codebase-index/`), which omp reuses.
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -81,6 +81,24 @@ export interface CodebaseIndexExtensionOptions {
   schema?: ExtensionSchemaBuilder;
 }
 
+/** Host capabilities shared by Pi and omp, excluding their prompt event shape. */
+export interface CodebaseIndexExtensionAPI {
+  registerTool: ExtensionAPI["registerTool"];
+  on(
+    event: "session_shutdown",
+    handler: (event: unknown, ctx: { cwd: string }) => Promise<void>,
+  ): void;
+}
+
+export const CODEBASE_INDEX_GUIDANCE =
+  "Check index_status first when index readiness is unknown. " +
+  "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
+  "not mechanically for every task. " +
+  "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
+  "For change requests with a known or strongly suspected target symbol, optionally use codebase_edit_context as a compact, bounded pre-edit context for source plus direct callers and callees. " +
+  "Avoid repeating broad reads when the compact evidence already answers the question. " +
+  "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.";
+
 function text(text: string, details?: unknown) {
   return { content: [{ type: "text" as const, text }], details };
 }
@@ -93,7 +111,7 @@ function isValidProject(projectRoot: string, requireProjectMarker: boolean): boo
   return !isHomeDirectory(projectRoot) && (!requireProjectMarker || hasProjectMarker(projectRoot));
 }
 
-async function ensureWatcher(projectRoot: string): Promise<void> {
+export async function ensureCodebaseIndexSession(projectRoot: string): Promise<void> {
   const config = parseConfig(loadMergedConfig(projectRoot, HOST));
   if (!isValidProject(projectRoot, config.indexing.requireProjectMarker)) {
     await stopBackgroundWorker(projectRoot, HOST).catch((error: unknown) => {
@@ -126,7 +144,7 @@ async function ensureWatcher(projectRoot: string): Promise<void> {
   await waitForBackgroundWorkerStart(projectRoot, HOST);
 }
 
-function registerCodebaseIndexTools(pi: ExtensionAPI, schema: ExtensionSchemaBuilder): void {
+export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema: ExtensionSchemaBuilder): void {
   const ChunkType = schema.Union([
     schema.Literal("function"),
     schema.Literal("class"),
@@ -388,21 +406,6 @@ function registerCodebaseIndexTools(pi: ExtensionAPI, schema: ExtensionSchemaBui
 
   registerCallGraphTools(pi, schema);
 
-  pi.on("before_agent_start", async (event, ctx) => {
-    await ensureWatcher(projectRoot(ctx));
-    return {
-      systemPrompt:
-        `${event.systemPrompt}\n\n` +
-        "Check index_status first when index readiness is unknown. " +
-        "Use codebase_context only when repository orientation is needed (for layout, key symbols, or cross-file dependency intent), " +
-        "not mechanically for every task. " +
-        "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
-        "For change requests with a known or strongly suspected target symbol, optionally use codebase_edit_context as a compact, bounded pre-edit context for source plus direct callers and callees. " +
-        "Avoid repeating broad reads when the compact evidence already answers the question. " +
-        "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.",
-    };
-  });
-
   pi.on("session_shutdown", async (_event, ctx) => {
     const root = projectRoot(ctx);
     await stopBackgroundWorker(root, HOST);
@@ -503,7 +506,13 @@ export function createCodebaseIndexExtension(
   options: CodebaseIndexExtensionOptions = {},
 ): (pi: ExtensionAPI) => void {
   const schema = options.schema ?? Type;
-  return (pi: ExtensionAPI) => registerCodebaseIndexTools(pi, schema);
+  return (pi: ExtensionAPI) => {
+    registerCodebaseIndexTools(pi, schema);
+    pi.on("before_agent_start", async (event, ctx) => {
+      await ensureCodebaseIndexSession(projectRoot(ctx));
+      return { systemPrompt: `${event.systemPrompt}\n\n${CODEBASE_INDEX_GUIDANCE}` };
+    });
+  };
 }
 
 export default createCodebaseIndexExtension();
