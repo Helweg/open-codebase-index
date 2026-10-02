@@ -113,7 +113,7 @@ function loadJsonFile(filePath: string): unknown {
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to load config file ${filePath}: ${message}`);
+    throw new Error(`Failed to load config file ${filePath}: ${message}`, { cause: error });
   }
 
 }

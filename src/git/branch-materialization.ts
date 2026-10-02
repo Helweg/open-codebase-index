@@ -119,7 +119,7 @@ async function removeWorktree(projectRoot: string, worktreePath: string): Promis
     registered = await isWorktreeRegistered(projectRoot, worktreePath);
   } catch (error) {
     errors.push(asError(error));
-    throw new AggregateError(errors, `Could not verify temporary worktree deregistration; preserved ${path.dirname(worktreePath)}`);
+    throw new AggregateError(errors, `Could not verify temporary worktree deregistration; preserved ${path.dirname(worktreePath)}`, { cause: error });
   }
 
   if (registered) {
@@ -138,7 +138,7 @@ async function removeWorktree(projectRoot: string, worktreePath: string): Promis
       registered = await isWorktreeRegistered(projectRoot, worktreePath);
     } catch (error) {
       errors.push(asError(error));
-      throw new AggregateError(errors, `Could not verify temporary worktree deregistration; preserved ${path.dirname(worktreePath)}`);
+      throw new AggregateError(errors, `Could not verify temporary worktree deregistration; preserved ${path.dirname(worktreePath)}`, { cause: error });
     }
   }
 
@@ -160,7 +160,7 @@ async function removeWorktree(projectRoot: string, worktreePath: string): Promis
     await fsPromises.rm(path.dirname(worktreePath), { recursive: true, force: true });
   } catch (error) {
     errors.push(asError(error));
-    throw new AggregateError(errors, `Deregistered the temporary worktree but could not remove ${path.dirname(worktreePath)}`);
+    throw new AggregateError(errors, `Deregistered the temporary worktree but could not remove ${path.dirname(worktreePath)}`, { cause: error });
   }
 }
 
@@ -176,6 +176,7 @@ async function cleanupTemporaryWorktree(
     throw new AggregateError(
       [asError(error)],
       `Could not verify temporary worktree registration; preserved ${temporaryRoot}`,
+      { cause: error },
     );
   }
 

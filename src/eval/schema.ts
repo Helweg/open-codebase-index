@@ -22,7 +22,7 @@ function parseJsonFile(filePath: string): unknown {
     return JSON.parse(content);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to parse JSON from ${filePath}: ${message}`);
+    throw new Error(`Failed to parse JSON from ${filePath}: ${message}`, { cause: error });
   }
 }
 
