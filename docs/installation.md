@@ -203,6 +203,8 @@ ocbi graph callers Indexer --project /path/to/repo
 
 Use `ocbi index --dry-run` for a parse-only embedding-token total, `--estimate-only` for an estimate, and `ocbi --help` for command usage.
 
+Without `--project`, the CLI discovers the nearest containing Git checkout and reuses its project configuration and branch catalog, even from a nested package directory. MCP startup uses the same rule. Nested repositories, submodules, and linked worktrees retain their own checkout roots. Non-Git directories keep the current directory as their scope. An explicit `--project` is never widened, so use `--project .` to deliberately index only a child directory.
+
 ## Generic MCP clients
 
 Run the published MCP server with `npx`:
@@ -240,7 +242,7 @@ Example MCP configuration:
 ### CLI options
 
 ```text
---project <path>  Repository to index. Defaults to the current directory.
+--project <path>  Repository to index. Defaults to the containing Git checkout, or cwd outside Git.
 --config <path>   Explicit configuration file.
 --host <mode>     opencode, codex, claude, pi, or jcode.
 ```

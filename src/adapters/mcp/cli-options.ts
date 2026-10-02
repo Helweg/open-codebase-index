@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseHostMode, type HostMode } from "../../config/host.js";
 import { loadConfigFile, loadMergedConfig } from "../../config/merger.js";
+import { resolveDefaultProjectRoot } from "../../git/index.js";
 
 export interface CliArgs {
   project: string;
@@ -12,7 +13,7 @@ export interface CliArgs {
 }
 
 export function parseArgs(argv: string[]): CliArgs {
-  let project = process.cwd();
+  let project: string | undefined;
   let mcpIdleTimeout: number | undefined;
   let config: string | undefined;
   let host: HostMode = "opencode";
@@ -35,7 +36,7 @@ export function parseArgs(argv: string[]): CliArgs {
     }
   }
 
-  return { project, config, host, ...(mcpIdleTimeout === undefined ? {} : { mcpIdleTimeout }) };
+  return { project: project ?? resolveDefaultProjectRoot(process.cwd()), config, host, ...(mcpIdleTimeout === undefined ? {} : { mcpIdleTimeout }) };
 }
 
 export function loadCliRawConfig(args: CliArgs): unknown {

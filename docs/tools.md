@@ -51,7 +51,7 @@ The MCP server and the OpenCode plugin expose the same three knowledge-base tool
 Notes for MCP clients:
 
 - `add_knowledge_base` writes the path to the **project-local** host config of the MCP server (for example `<repo>/.claude/codebase-index.json` for the `claude` host, or `<repo>/.codebase-index/config.json` for `codex`, `jcode`, and `pi`), and refreshes the index. It is not a user-global change.
-- The MCP server runs at a fixed project root (`process.cwd()` or `--project`) for its lifetime. Knowledge-base tools operate on that root and the server host config; they are not per-call worktree-aware. For worktree-local knowledge-base management, use OpenCode or Pi.
+- The MCP server runs at a fixed project root for its lifetime: explicit `--project`, otherwise the nearest containing Git checkout, otherwise `process.cwd()`. Knowledge-base tools operate on that root and the server host config; they do not reroute per call. Linked worktrees retain their own checkout root.
 - Different MCP hosts pointed at the same repository keep separate knowledge-base lists in separate host config files.
 - `list_knowledge_bases` shows the union of project-local and user-global knowledge bases. `remove_knowledge_base` edits only the project-local config, so a knowledge base inherited from a user-global config is not removable by this tool.
 - Git blame metadata is collected only for files in the project git repository. Knowledge-base files outside the repository remain searchable by content but have no blame, so `blameAuthor`, `blameSha`, and `blameSince` filters match only in-repo files.
