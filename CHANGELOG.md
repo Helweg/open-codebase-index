@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **External graph tool name in routing hints**: The discovery hint and `skill/SKILL.md` no longer name a third-party graph tool; they list the shipped `call_graph`, `call_graph_path`, and `pr_impact` tools.
 
+### Fixed
+
+- **Codex installation docs**: Restored `codex plugin add` in the installation examples; Codex uses `add`, not omp's `install` action.
+
 ## [0.34.0] - 2026-10-02
 
 ### Added

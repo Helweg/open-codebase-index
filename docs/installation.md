@@ -148,7 +148,7 @@ Add the marketplace and install the plugin:
 
 ```text
 codex plugin marketplace add Helweg/open-codebase-index
-codex plugin install codebase-index@helweg-plugins
+codex plugin add codebase-index@helweg-plugins
 ```
 
 Restart or open a new thread in the target workspace. The plugin bundles MCP configuration, session guidance, and the `codebase-search` skill.
@@ -161,7 +161,7 @@ For local plugin development from this checkout:
 npm run build:ts
 npm run dev:link-mcp
 codex plugin marketplace add Helweg/open-codebase-index
-codex plugin install codebase-index@helweg-plugins
+codex plugin add codebase-index@helweg-plugins
 ```
 
 Codex uses `.codebase-index/` project storage.
