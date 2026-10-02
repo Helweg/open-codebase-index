@@ -18,6 +18,24 @@ updates:
       npm-minor-patch:
         patterns:
           - "*"
+        # The OpenCode plugin API is pinned exactly and evolves through
+        # contract changes; keep it out of the catch-all group so such jumps
+        # arrive as their own reviewable PR.
+        exclude-patterns:
+          - "@opencode-ai/plugin"
         update-types:
           - minor
           - patch
+    ignore:
+      # TypeScript 7 is not installable with the current toolchain:
+      # typescript-eslint (newest 8.71.0) peers typescript ">=4.8.4 <6.1.0".
+      # Revisit as a deliberate migration PR once that range widens.
+      - dependency-name: typescript
+        update-types:
+          - version-update:semver-major
+      # Types must track the minimum supported runtime major (engines >=22.13.0,
+      # CI matrix 22 + 24), never the newest release. Revisit with the Node 22
+      # end-of-life (2027-04-30), adopting @types/node@24 at that point.
+      - dependency-name: "@types/node"
+        update-types:
+          - version-update:semver-major
