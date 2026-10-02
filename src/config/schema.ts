@@ -453,11 +453,14 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
       };
       // Warn if baseUrl doesn't end with an API version path like /v1.
       // Note: using console.warn here because Logger isn't initialized yet at config parse time.
+      // Keep this message free of parsed config values: customProvider carries apiKey in the same
+      // object literal, so interpolating any of its fields into a log trips static analysis for
+      // clear-text logging of secrets, and an unescaped baseUrl can itself embed credentials.
       if (!/\/v\d+\/?$/.test(customProvider.baseUrl)) {
         console.warn(
-          `[codebase-index] Warning: customProvider.baseUrl ("${customProvider.baseUrl}") does not end with an API version path like /v1. ` +
-          `The plugin appends /embeddings automatically, so the full URL will be "${customProvider.baseUrl}/embeddings". ` +
-          `If your provider expects /v1/embeddings, set baseUrl to "${customProvider.baseUrl}/v1".`
+          "[codebase-index] Warning: customProvider.baseUrl does not end with an API version path like /v1. " +
+          "The plugin appends /embeddings automatically, so the request URL is <customProvider.baseUrl>/embeddings. " +
+          "If your provider expects /v1/embeddings, set customProvider.baseUrl to end with /v1."
         );
       }
     } else {

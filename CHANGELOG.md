@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dependency security**: Raise the `overrides` pins to the patched releases — `brace-expansion` 5.0.12, `fast-uri` 3.1.8, `hono` 4.13.7, `ip-address` 10.7.1 — resolving GHSA-q2hr-2g5m-vwhr, GHSA-hrr3-gc8f-f4qj, GHSA-hxh3-vqpv-xpqv, GHSA-j6r3-76f7-8jcv, and GHSA-h3mg-xc3c-68pw. The previous pins (5.0.9, 3.1.7, 4.13.5, 10.5.1) sat below every fix version, which kept the resolved tree vulnerable and left the Dependabot update job unable to produce a fix. A dev-only `brace-expansion` 5.0.9 copy remains inside the `@earendil-works/pi-coding-agent` shrinkwrapped tree, where root `overrides` cannot reach it.
+
+- **Custom provider warning**: Keep the `customProvider.baseUrl` API-version warning free of parsed configuration values, so it can no longer echo credentials embedded in a URL and no longer trips the clear-text-logging static check.
+
 - **Automatic-exclusion wildcard traversal**: Keep matching ancestor directories traversable for selective opt-ins such as `build-*/src/*.ts` and `.g*/scripts/*.ts`, while retaining strict source selection, explicit exclusions, and Git/index-storage protections.
 - **Selected-source module configuration watching**: Watch the nearest TypeScript/JavaScript configuration and safe local `extends` dependencies used by source-only automatic-exclusion opt-ins, so configuration changes refresh module resolution on both watcher backends without separately opting in each JSON file.
 
