@@ -136,8 +136,7 @@
     "vite": "8.0.16",
     "esbuild": "0.28.1",
     "body-parser": "2.3.0",
-    "js-yaml": "4.3.2",
-    "undici": "8.10.0"
+    "js-yaml": "4.3.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
