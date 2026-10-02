@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "codebase-index": {
+      "command": "npx",
+      "args": ["-y", "--package", "opencode-codebase-index", "opencode-codebase-index-mcp", "--host", "codex"]
+    }
+  }
+}

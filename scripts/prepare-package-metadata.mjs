@@ -128,6 +128,8 @@ function copyProject() {
         || firstSegment === ".claude"
         || firstSegment === ".codebase-index"
         || firstSegment === ".codegraph"
+        || firstSegment === ".sisyphus"
+        || firstSegment === ".omo"
         || firstSegment === "opencode-codebase-index"
         || (firstSegment === "benchmarks" && segments[1] === "results")
       ) return false;
@@ -150,6 +152,26 @@ function isCurrentIdentity() {
   return selectedIdentity.packageName === catalog.product.current.packageName;
 }
 
+function prepareManifest(manifestPath, host) {
+  if (!existsSync(manifestPath)) fail(`Missing host manifest at ${manifestPath}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+  const server = manifest.mcpServers?.["codebase-index"];
+  if (!server?.command || !Array.isArray(server.args)) {
+    fail(`Missing codebase-index MCP server in ${manifestPath}`);
+  }
+  server.args = ["-y", "--package", selectedIdentity.packageName, selectedIdentity.mcpBinary, "--host", host];
+  if (manifest.author?.url) {
+    manifest.author.url = appliedRepositoryUrl;
+  }
+  if (manifest.homepage) {
+    manifest.homepage = appliedRepositoryUrl;
+  }
+  if (manifest.repository) {
+    manifest.repository = appliedRepositoryUrl;
+  }
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
+}
+
 function prepareClaudePluginManifest(manifestPath) {
   if (!existsSync(manifestPath)) fail(`Missing Claude plugin manifest at ${manifestPath}`);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
@@ -167,6 +189,32 @@ function prepareClaudePluginManifest(manifestPath) {
   }
   if (manifest.author?.url) {
     manifest.author.url = appliedRepositoryUrl;
+  }
+
+  writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
+}
+
+function prepareCodexManifest(manifestPath) {
+  if (!existsSync(manifestPath)) fail(`Missing Codex manifest at ${manifestPath}`);
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8"));
+
+  if (manifest.homepage) {
+    manifest.homepage = appliedRepositoryUrl;
+  }
+  if (manifest.repository) {
+    manifest.repository = appliedRepositoryUrl;
+  }
+  if (manifest.author?.url) {
+    manifest.author.url = appliedRepositoryUrl;
+  }
+  if (manifest.interface?.websiteURL) {
+    manifest.interface.websiteURL = appliedRepositoryUrl;
+  }
+  if (manifest.interface?.privacyPolicyURL) {
+    manifest.interface.privacyPolicyURL = `${appliedRepositoryUrl}/blob/main/SECURITY.md`;
+  }
+  if (manifest.interface?.termsOfServiceURL) {
+    manifest.interface.termsOfServiceURL = `${appliedRepositoryUrl}/blob/main/LICENSE`;
   }
 
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf-8");
@@ -231,7 +279,9 @@ if (shouldWritePackageJson || shouldWritePackageLock) {
 }
 
 if (!isCurrentIdentity() || repositoryUrl) {
+  prepareManifest(path.join(outputDir, ".mcp.json"), "codex");
   prepareClaudePluginManifest(path.join(outputDir, ".claude-plugin", "plugin.json"));
+  prepareCodexManifest(path.join(outputDir, ".codex-plugin", "plugin.json"));
   prepareClaudeMarketplace(path.join(outputDir, ".claude-plugin", "marketplace.json"));
 }
 

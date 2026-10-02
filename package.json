@@ -81,7 +81,10 @@
     "commands",
     "scripts/link-local-mcp-bin.mjs",
     ".claude-plugin",
-    "skills"
+    ".codex-plugin",
+    ".mcp.json",
+    "skills",
+    "hooks"
   ],
   "napi": {
     "binaryName": "codebase-index-native",

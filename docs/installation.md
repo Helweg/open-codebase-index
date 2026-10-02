@@ -144,7 +144,27 @@ To use the MCP server instead of the native extension, register it in `.omp/mcp.
 
 ## Codex
 
-This package no longer ships a Codex plugin. Register the MCP server through Codex's own configuration instead — see [Generic MCP clients](#generic-mcp-clients) — and keep `--host codex` so configuration and index paths stay Codex-compatible (`.codebase-index/`).
+Add the marketplace and install the plugin:
+
+```text
+codex plugin marketplace add Helweg/open-codebase-index
+codex plugin install codebase-index@helweg-plugins
+```
+
+Restart or open a new thread in the target workspace. The plugin bundles MCP configuration, session guidance, and the `codebase-search` skill.
+
+If Codex reports `Transport closed`, inspect `index_status` from a new thread or client session. Server-side cancellation and durable diagnostics cannot make a client reuse a stdio transport that it has already closed.
+
+For local plugin development from this checkout:
+
+```bash
+npm run build:ts
+npm run dev:link-mcp
+codex plugin marketplace add Helweg/open-codebase-index
+codex plugin install codebase-index@helweg-plugins
+```
+
+Codex uses `.codebase-index/` project storage.
 
 ## Claude Code
 
