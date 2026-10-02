@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Codex installation docs**: Restored `codex plugin add` in the installation examples; Codex uses `add`, not omp's `install` action.
+- **omp prompt preservation**: Keep existing system-prompt blocks intact when adding codebase-index guidance. omp's `before_agent_start` prompt is an array, unlike Pi's string-valued prompt; each adapter now preserves its host's format.
 
 ## [0.34.0] - 2026-10-02
 

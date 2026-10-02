@@ -143,7 +143,7 @@ Shared behavior belongs below `src/adapters/`. Host adapters should translate ho
 - **OpenCode:** `src/index.ts` re-exports `src/adapters/opencode.ts`.
 - **MCP:** `src/mcp-server.ts` re-exports `src/adapters/mcp/server.ts` `src/adapters/mcp/cli.ts` owns stdio transport.
 - **Pi:** public compatibility facades `src/pi-extension.ts`  `src/pi-call-graph.ts` delegate to `src/adapters/pi/`, which re-exports the shared core in `src/adapters/shared/`.
-- **omp:** `src/omp-extension.ts` re-exports `src/adapters/omp/extension.js`, a thin wrapper over the same shared core that injects omp's TypeBox-style builder (`pi.typebox.Type`) when the host exposes one. omp keeps the Pi host mode and `.codebase-index/` storage; only the manifest key (`omp` before `pi`) and the injected builder differ.
+- **omp:** `src/omp-extension.ts` re-exports `src/adapters/omp/extension.js`, a thin wrapper over the same shared tool/session core that injects omp's TypeBox-style builder (`pi.typebox.Type`) when the host exposes one. omp keeps the Pi host mode and `.codebase-index/` storage. Its `before_agent_start` hook appends guidance as a separate block in omp's `string[]` prompt; Pi retains its string-valued prompt hook.
 - **Shared tools:** use `src/tools/contracts.ts` `operations.ts` `operation-runtime.ts` `execute-common.ts`.
 
 When adding portable tool, update shared operation and contract first, add its canonical name to `src/tools/tool-names.ts`then wire each supported host adapter. Preserve host-specific schemas, registration order, and output formats.

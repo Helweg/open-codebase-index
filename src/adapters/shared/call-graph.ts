@@ -17,10 +17,10 @@ function projectRoot(ctx: { cwd?: string } | undefined): string | undefined {
 
 /**
  * Registers the call-graph tools with the host's schema builder, so a host that
- * injects its own builder (see `createCodebaseIndexExtension`) gets one schema
+ * injects its own builder gets one schema
  * source across every registered tool.
  */
-export function registerCallGraphTools(pi: ExtensionAPI, schema: typeof Type = Type): void {
+export function registerCallGraphTools(pi: Pick<ExtensionAPI, "registerTool">, schema: typeof Type = Type): void {
   const RelationshipType = schema.Union([
     schema.Literal("Call"),
     schema.Literal("MethodCall"),

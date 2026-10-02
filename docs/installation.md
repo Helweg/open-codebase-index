@@ -129,6 +129,8 @@ omp plugin link /path/to/open-codebase-index
 
 The package declares `omp.extensions` and `omp.skills`, so omp loads `dist/omp-extension.js` and the bundled `codebase-search` skill. The extension registers the same 19-tool surface as the Pi package and reuses `.codebase-index/` project storage, preferring the host's TypeBox-compatible schema builder when omp exposes one. omp still accepts the `pi` manifest as a fallback and takes `omp` first when both are declared.
 
+The omp extension preserves existing system-prompt blocks and appends its repository guidance as a separate block; Pi retains its string-based prompt format.
+
 To use the MCP server instead of the native extension, register it in `.omp/mcp.json` (project) or `~/.omp/agent/mcp.json` (user):
 
 ```json
