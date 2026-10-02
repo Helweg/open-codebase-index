@@ -46,7 +46,7 @@ export function loadCommandsFromDirectory(commandsDir: string): Map<string, Comm
       content = readFileSync(filePath, "utf-8");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Failed to load command file ${filePath}: ${message}`);
+      throw new Error(`Failed to load command file ${filePath}: ${message}`, { cause: error });
     }
 
     const { frontmatter, body } = parseFrontmatter(content);

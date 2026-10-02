@@ -53,7 +53,7 @@ function parseJsonConfigFile(filePath: string): unknown {
       throw error;
     }
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Failed to parse eval config JSON at ${filePath}: ${message}`);
+    throw new Error(`Failed to parse eval config JSON at ${filePath}: ${message}`, { cause: error });
   }
 }
 

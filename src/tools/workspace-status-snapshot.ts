@@ -82,7 +82,7 @@ export async function createWorkspaceDatabaseSnapshot(
         error.message === "Workspace index database is missing or unreadable."
         || error.message === "Workspace index WAL is unreadable."
       )) throw error;
-      if (attempt === maxAttempts) throw new Error("Workspace index database changed during status inspection.");
+      if (attempt === maxAttempts) throw new Error("Workspace index database changed during status inspection.", { cause: error });
       continue;
     }
     await rm(snapshotRoot, { recursive: true, force: true });

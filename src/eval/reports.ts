@@ -25,14 +25,14 @@ export function loadSummary(summaryPath: string, options?: LoadSummaryOptions): 
   } catch (error: unknown) {
     if (error instanceof SyntaxError) {
       const message = error.message;
-      throw new Error(`Failed to parse eval summary JSON at ${summaryPath}: ${message}`);
+      throw new Error(`Failed to parse eval summary JSON at ${summaryPath}: ${message}`, { cause: error });
     }
 
     if (error instanceof Error) {
       throw error;
     }
 
-    throw new Error(`Failed to load eval summary at ${summaryPath}: ${String(error)}`);
+    throw new Error(`Failed to load eval summary at ${summaryPath}: ${String(error)}`, { cause: error });
   }
 }
 

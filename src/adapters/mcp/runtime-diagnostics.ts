@@ -352,7 +352,7 @@ class ProcessRuntimeStore {
         continue;
       }
 
-      let state: PersistedRuntimeState | null = null;
+      let state: PersistedRuntimeState | null;
       try {
         state = parseRuntimeState(JSON.parse(await fs.readFile(recordPath, "utf8")));
       } catch {
