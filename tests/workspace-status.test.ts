@@ -24,6 +24,12 @@ function makeRepo(branch: string): string {
   execFileSync("git", ["init", "-b", branch], { cwd: root });
   execFileSync("git", ["config", "user.email", "test@example.com"], { cwd: root });
   execFileSync("git", ["config", "user.name", "Test User"], { cwd: root });
+  // Keep git from running background maintenance over this fixture: `git gc --auto` and
+  // `git maintenance run --auto` create and remove .git/objects/maintenance.lock while tests
+  // inspect the tree, which makes recursive directory snapshots such as the
+  // "does not mutate repository files while inspecting status" case flaky.
+  execFileSync("git", ["config", "gc.auto", "0"], { cwd: root });
+  execFileSync("git", ["config", "maintenance.auto", "false"], { cwd: root });
   fs.writeFileSync(path.join(root, "README.md"), branch);
   execFileSync("git", ["add", "README.md"], { cwd: root });
   execFileSync("git", ["commit", "-m", "initial"], { cwd: root });
