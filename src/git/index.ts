@@ -1,6 +1,29 @@
-import { existsSync, readFileSync, statSync } from "fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "fs";
 import * as path from "path";
 import { collectBranchRefs, readPackedRefs, resolveCommonGitDir, tryResolveRefCommit } from "./refs.js";
+
+/**
+ * Discover the nearest checkout for an implicit project scope. Explicit project
+ * paths must bypass this helper. Non-Git directories retain their original scope.
+ */
+export function resolveDefaultProjectRoot(cwd: string): string {
+  let directory: string;
+  try {
+    directory = realpathSync(cwd);
+  } catch {
+    return cwd;
+  }
+
+  while (true) {
+    if (existsSync(path.join(directory, ".git"))) {
+      // A broken nested checkout is still a boundary; never select its parent.
+      return resolveGitDir(directory) ? directory : cwd;
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory) return cwd;
+    directory = parent;
+  }
+}
 
 export function resolveWorktreeMainRepoRoot(repoRoot: string): string | null {
   const gitDir = resolveGitDir(repoRoot);

@@ -11,6 +11,7 @@ import * as path from "path";
 import { parseConfig } from "../../config/schema.js";
 import { parseHostMode, HOST_MODES, type HostMode } from "../../config/host.js";
 import { handleEvalCommand } from "../../eval/cli.js";
+import { resolveDefaultProjectRoot } from "../../git/index.js";
 import { Indexer } from "../../indexer/index.js";
 import {
   attachMcpBackgroundWatcher,
@@ -47,7 +48,7 @@ interface VisualizeArgs {
 }
 
 export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
-  let project = cwd;
+  let project: string | undefined;
   let host: HostMode = "opencode";
   let config: string | undefined;
   let force = false;
@@ -118,7 +119,7 @@ export function parseIndexArgs(argv: string[], cwd: string): CliIndexArgs {
     throw new Error(`Unknown index option: ${arg}`);
   }
 
-  return { project, host, config, force, estimateOnly, dryRun, verbose };
+  return { project: project ?? resolveDefaultProjectRoot(cwd), host, config, force, estimateOnly, dryRun, verbose };
 }
 
 export function printUsage(output: (text: string) => void = (text) => console.error(text)): void {
@@ -127,7 +128,7 @@ Usage:
   ${process.argv[1]} index [options]
 
 Options:
-  --project <path>       Project root (default: cwd)
+  --project <path>       Project root (default: containing Git checkout or cwd)
   --host <mode>          opencode, codex, claude, pi, or jcode
   --config <path>        Explicit JSON config path
   --force                Rebuild index even if already up to date
@@ -142,7 +143,7 @@ Progress and diagnostics are written to stderr. Final index output is written to
 }
 
 function parseVisualizeArgs(argv: string[], cwd: string): VisualizeArgs {
-  let project = cwd;
+  let project: string | undefined;
   let directory: string | undefined;
   let includeOrphans = false;
   let maxNodes = 5000;
@@ -166,7 +167,7 @@ function parseVisualizeArgs(argv: string[], cwd: string): VisualizeArgs {
     throw new Error("max must be a positive number");
   }
 
-  return { directory, includeOrphans, maxNodes, project };
+  return { directory, includeOrphans, maxNodes, project: project ?? resolveDefaultProjectRoot(cwd) };
 }
 
 async function handleVisualizeCommand(argv: string[], cwd: string): Promise<number> {

@@ -7,6 +7,7 @@ import type { HostMode } from "../config/host.js";
 import { parseHostMode } from "../config/host.js";
 import { loadConfigFile } from "../config/merger.js";
 import { parseConfig } from "../config/schema.js";
+import { resolveDefaultProjectRoot } from "../git/index.js";
 import {
   executeCallGraph,
   executeImplementationLookup,
@@ -68,7 +69,7 @@ Commands:
                                   Show bounded multi-repository readiness
 
 Global options:
-  --project <path>  Project root, default: current directory
+  --project <path>  Project root, default: containing Git checkout or current directory
   --host <mode>     opencode, codex, claude, pi, or jcode
   --config <path>   Explicit JSON config path
   --help            Show this message
@@ -97,7 +98,7 @@ function optionValue(args: string[], index: number, name: string): { value: stri
 }
 
 export function parseCbiCommandArgs(command: string, args: string[], cwd: string): CbiCommandArgs {
-  let project = cwd;
+  let project: string | undefined;
   let host: HostMode = "opencode";
   let config: string | undefined;
   let limit = 5;
@@ -143,7 +144,7 @@ export function parseCbiCommandArgs(command: string, args: string[], cwd: string
     positionals.push(arg);
   }
 
-  return { project, host, config, limit, filePath, positionals };
+  return { project: project ?? resolveDefaultProjectRoot(cwd), host, config, limit, filePath, positionals };
 }
 
 async function initializeFromConfig(args: CbiCommandArgs, deps: CbiDeps): Promise<void> {
