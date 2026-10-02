@@ -290,7 +290,7 @@ describe("Pi adapter conformance", () => {
       { cwd: "/invalid-pi-project" },
     );
     await vi.waitFor(() => {
-      expect(error).toHaveBeenCalledWith("[codebase-index] Failed to stop Pi background worker:", stopError);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("[codebase-index] Failed to stop"), stopError);
     });
     error.mockRestore();
   });

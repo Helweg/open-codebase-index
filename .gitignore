@@ -58,9 +58,7 @@ benchmarks/results/
 
 # Local agent/session artifacts
 .codex/environments/
-.sisyphus/
+.pi/
 .superset/
 
-# Local agent/workspace scratch (not part of the package)
-.omo/
 AGENTS.original.md

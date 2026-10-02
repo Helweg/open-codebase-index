@@ -59,7 +59,7 @@ Suggest: "知识库中未找到相关信息，是否添加相关文档文件夹�
 1. **Locate by meaning first**: `codebase_peek("authentication flow")` → get likely locations before grep or graph tools
 2. **Search with content**: `codebase_search("ADC channels ESP32")` → inspect implementation or knowledge-base matches
 3. **Read what matters**: `Read` the specific files you need
-4. **Trace structure after discovery**: `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph once you know the relevant symbol
+4. **Trace structure after discovery**: `call_graph`, `call_graph_path`, or `pr_impact` once you know the relevant symbol
 5. **Drill down with grep**: `grep "validateToken"` for exact matches
 
 ## Tools

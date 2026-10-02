@@ -96,7 +96,7 @@ The first index creates embeddings. Later runs reuse unchanged content and proce
 | OpenCode | Native plugin | `.opencode/` |
 | Jcode | Per-session MCP server | `.codebase-index/` |
 | Pi | Pi package | `.codebase-index/` |
-| Codex | Marketplace plugin with MCP and skill guidance | `.codebase-index/` |
+| omp (oh-my-pi) | omp package | `.codebase-index/` |
 | Claude Code | Marketplace plugin with MCP and skill guidance | `.claude/` |
 | Cursor, Windsurf, other MCP clients | `open-codebase-index-mcp` (legacy alias: `opencode-codebase-index-mcp`) | Selected by `--host`; default is OpenCode-compatible |
 

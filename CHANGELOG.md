@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **omp (oh-my-pi) package**: The package now declares an `omp` manifest with `dist/omp-extension.js` and the `codebase-search` skill, so omp loads the native tool surface (`omp plugin install npm:open-codebase-index`, or the bundled `helweg-plugins` marketplace) instead of depending on the root MCP fallback. omp exposes its own TypeBox-compatible parameter builder, which the extension prefers when present; the Pi manifest, the Pi tool surface, and `.codebase-index/` storage are unchanged.
+
+### Removed
+
+- **Codex/OMO plugin surface**: Dropped the Codex plugin distribution (`.codex-plugin/`, the `.agents/plugins/marketplace.json` listing, the root `.mcp.json`, and `hooks/hooks.json`) together with its staging code and manifest tests. OMO (`oh-my-openagent`) consumed this path as a Codex plugin; Codex itself can still register the MCP server through its own `[mcp_servers.*]` configuration, and `--host codex` is unchanged.
+- **External graph tool name in routing hints**: The discovery hint and `skill/SKILL.md` no longer name a third-party graph tool; they list the shipped `call_graph`, `call_graph_path`, and `pr_impact` tools.
+
 ## [0.34.0] - 2026-10-02
 
 ### Added

@@ -80,11 +80,8 @@
     "skill",
     "commands",
     "scripts/link-local-mcp-bin.mjs",
-    ".codex-plugin",
     ".claude-plugin",
-    ".mcp.json",
-    "skills",
-    "hooks"
+    "skills"
   ],
   "napi": {
     "binaryName": "codebase-index-native",
@@ -153,6 +150,14 @@
   "pi": {
     "extensions": [
       "./dist/pi-extension.js"
+    ],
+    "skills": [
+      "./skills"
+    ]
+  },
+  "omp": {
+    "extensions": [
+      "./dist/omp-extension.js"
     ],
     "skills": [
       "./skills"

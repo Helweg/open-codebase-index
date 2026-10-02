@@ -176,7 +176,7 @@ describe("routing hints", () => {
       expect(hint).toContain("`codebase_peek`");
       expect(hint).toContain("`codebase_search`");
       expect(hint).toContain("`grep`");
-      expect(hint).toContain("before graph tools such as `call_graph`, `call_graph_path`, `pr_impact`, or OMO CodeGraph");
+      expect(hint).toContain("before graph tools such as `call_graph`, `call_graph_path`, or `pr_impact`");
     });
 
     it("returns a semantic routing hint for broad local task prompts", () => {
@@ -262,7 +262,7 @@ describe("routing hints", () => {
       );
 
       expect(hint).toContain("one bounded `codebase_context` query before exploratory shell");
-      expect(hint).not.toContain("OMO CodeGraph");
+      expect(hint).not.toContain("before graph tools");
       expect(hint).not.toContain("Use graph tools after semantic discovery");
     });
 
@@ -420,7 +420,7 @@ describe("routing hints", () => {
       const hints = await controller.getSystemHints("session-1");
       expect(hints).toHaveLength(1);
       expect(hints[0]).toContain("one bounded `codebase_context` query before exploratory shell");
-      expect(hints[0]).toContain("OMO CodeGraph");
+      expect(hints[0]).toContain("before graph tools");
     });
 
     it("stores broad local task state and emits codebase_context-first hint", async () => {
