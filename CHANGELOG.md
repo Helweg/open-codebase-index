@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-10-03
+
 ### Added
 
 - **omp (oh-my-pi) package**: The package now declares an `omp` manifest with `dist/omp-extension.js` and the `codebase-search` skill, so omp loads the native tool surface (`omp plugin install npm:open-codebase-index`, or the bundled `helweg-plugins` marketplace) instead of depending on the root MCP fallback. omp exposes its own TypeBox-compatible parameter builder, which the extension prefers when present; the Pi manifest, the Pi tool surface, and `.codebase-index/` storage are unchanged.
@@ -900,7 +902,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/Helweg/open-codebase-index/compare/v0.34.0...v0.35.0
 [0.31.0]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...v0.30.0
 [0.29.1]: https://github.com/Helweg/open-codebase-index/compare/v0.29.0...v0.29.1
