@@ -130,6 +130,31 @@ describe("conceptual origin evidence packing", () => {
     expect(weak.text).not.toContain("/external/axios/index.ts");
   });
 
+  it("keeps strong non-overlapping declarations ahead of an overfetch tail of weak distinct files", () => {
+    const first = hit("/repo/src/core.ts", 1, 1);
+    const second = hit("/repo/src/core.ts", 0.99, 10);
+    const tail = Array.from({ length: 30 }, (_, index) => hit(`/repo/src/noise-${index}.ts`, 0.1));
+    const options = { tokenBudget: 2000, maxResults: 2 };
+    expect(buildContextPack([first, second, ...tail], options).results).toEqual([first, second]);
+    expect(buildContextPack([first, second], options).results).toEqual([first, second]);
+    const weakOrigin = hit("/external/axios/noise.ts", 0.1);
+    expect(buildContextPack([first, second, weakOrigin], { ...options, origins: roots }).results)
+      .toEqual([first, second]);
+  });
+
+  it.each([
+    { siblingScore: 0.79, expectedIndex: 1 },
+    { siblingScore: 0.8, expectedIndex: 2 },
+  ])("diversifies only comparably relevant files at score $siblingScore", ({ siblingScore, expectedIndex }) => {
+    const candidates = [
+      hit("/repo/src/core.ts", 1, 1),
+      hit("/repo/src/core.ts", 0.99, 10),
+      hit("/repo/src/sibling.ts", siblingScore),
+    ];
+    const pack = buildContextPack(candidates, { tokenBudget: 2000, maxResults: 2 });
+    expect(pack.results).toEqual([candidates[0], candidates[expectedIndex]]);
+  });
+
   it("preserves the complete repository-relative path even when the absolute root exceeds 120 characters", () => {
     const longRoot = `/private/${"nested/".repeat(25)}project`;
     const filePath = `${longRoot}/src/important-file.ts`;

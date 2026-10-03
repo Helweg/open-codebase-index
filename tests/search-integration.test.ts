@@ -465,6 +465,89 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     });
   });
 
+  it("migrates unchanged JavaScript-family chunks, symbols, and generator call edges incrementally", async () => {
+    const generatorSource = [
+      'import { readRecord } from "./helper.js";',
+      "export function* generateRecords() {",
+      "  yield readRecord();",
+      "}",
+      "",
+    ].join("\n");
+    fs.writeFileSync(path.join(tempDir, "generator.ts"), generatorSource);
+    fs.writeFileSync(path.join(tempDir, "helper.ts"), "export function readRecord() { return 42; }\n");
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: {
+        baseUrl: "http://localhost:11434/v1",
+        model: "mock-embedding-model",
+        dimensions: 8,
+      },
+      include: ["generator.ts", "helper.ts"],
+      indexing: { watchFiles: false },
+      search: { minScore: 0 },
+    });
+    const writer = new Indexer(tempDir, config, "opencode");
+    _indexers.push(writer);
+    await writer.index();
+    const status = await writer.getStatus();
+    await writer.close();
+    const versionKey = `index.parser.javascriptVersion.${hashContent("default").slice(0, 24)}`;
+    const legacyDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    try {
+      legacyDatabase.upsertChunksBatch(legacyDatabase.getChunksByFile("generator.ts").map((chunk) => ({
+        ...chunk,
+        name: undefined,
+        nodeType: "export_statement",
+      })));
+      legacyDatabase.deleteSymbolsByFile("generator.ts");
+      legacyDatabase.deleteMetadata(versionKey);
+    } finally {
+      legacyDatabase.close();
+    }
+
+    const reader = new Indexer(tempDir, config, "opencode");
+    _indexers.push(reader);
+    expect((await reader.getSymbolsForBranch()).some((symbol) => symbol.name === "generateRecords")).toBe(false);
+    await expect(reader.getIndexFreshness()).resolves.toEqual({
+      readable: true,
+      current: false,
+      reason: "migration-required",
+    });
+    await reader.index();
+    expect(fs.readFileSync(path.join(tempDir, "generator.ts"), "utf8")).toBe(generatorSource);
+    const symbols = await reader.getSymbolsForBranch();
+    const generator = symbols.find((symbol) => symbol.name === "generateRecords")!;
+    const helper = symbols.find((symbol) => symbol.name === "readRecord")!;
+    expect(generator).toMatchObject({ kind: "function_declaration", startLine: 2, endLine: 4 });
+    expect(await reader.getCallees(generator.id)).toEqual([
+      expect.objectContaining({
+        fromSymbolId: generator.id,
+        targetName: "readRecord",
+        toSymbolId: helper.id,
+        isResolved: true,
+        line: 3,
+      }),
+    ]);
+    const results = await reader.search("generateRecords", 5, {
+      metadataOnly: true,
+      definitionIntent: true,
+    });
+    expect(results[0]).toMatchObject({ name: "generateRecords", startLine: 2, endLine: 4 });
+    const migratedDatabase = Database.openReadOnly(path.join(status.indexPath, "codebase.db"));
+    try {
+      expect(migratedDatabase.getChunksByName("generateRecords")).toEqual([
+        expect.objectContaining({ filePath: "generator.ts", nodeType: "function_declaration" }),
+      ]);
+    } finally {
+      migratedDatabase.close();
+    }
+    await expect(reader.getIndexFreshness()).resolves.toEqual({
+      readable: true,
+      current: true,
+      reason: "current",
+    });
+  });
+
   it("indexes sanitized SVG chunks and reparses unchanged markup after a parser upgrade", async () => {
     const svgFile = path.join(tempDir, "diagram.svg");
     const geometryOnlySvgFile = path.join(tempDir, "geometry-only.svg");

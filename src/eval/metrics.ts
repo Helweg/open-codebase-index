@@ -96,26 +96,22 @@ function getRelevantEvidence(query: GoldenQuery): GoldenGradedEvidence[] {
   const gradedEvidence = query.expected.gradedEvidence ?? [];
   const allEvidence = [...legacyEvidence, ...gradedEvidence];
 
-  const dedupeKey = (entry: GoldenGradedEvidence): string => {
-    return `${normalizePath(entry.path)}::${entry.symbol ?? ""}`;
-  };
-
+  // Explicit lookup intent narrows labels before deduplication; mixed conceptual
+  // labels otherwise retain their independently declared granularity.
+  const explicitSymbol = query.expected.symbol ?? query.args?.symbol;
   const unique = new Map<string, GoldenGradedEvidence>();
   for (const entry of allEvidence) {
-    unique.set(dedupeKey(entry), entry);
+    if (explicitSymbol !== undefined && entry.symbol !== undefined && entry.symbol !== explicitSymbol) {
+      continue;
+    }
+    const normalized = explicitSymbol === undefined ? entry : { ...entry, symbol: explicitSymbol };
+    const key = `${normalizePath(normalized.path)}::${normalized.symbol ?? ""}`;
+    const previous = unique.get(key);
+    if (previous === undefined || normalized.relevance > previous.relevance) {
+      unique.set(key, normalized);
+    }
   }
-
   return Array.from(unique.values());
-}
-
-function hasSymbolRequirement(query: GoldenQuery): boolean {
-  return isSymbolIntended(query);
-}
-
-function isSymbolIntended(query: GoldenQuery): boolean {
-  return query.expected.symbol !== undefined
-    || query.args?.symbol !== undefined
-    || query.expected.gradedEvidence?.some((entry) => entry.symbol !== undefined) === true;
 }
 
 function isExpectedFile(filePath: string, relevant: GoldenGradedEvidence[]): boolean {
@@ -135,60 +131,28 @@ function resultRelevance(
   filePath: string,
   symbol: string | undefined,
   relevant: GoldenGradedEvidence[],
-  isSymbolIntendedQuery: boolean,
 ): number {
-  let relevance = 0;
-  for (const entry of relevant) {
-    if (!pathMatchesExpected(filePath, entry.path)) {
-      continue;
-    }
-
-    if (isSymbolIntendedQuery) {
-      if (symbol === undefined || entry.symbol === undefined || symbol !== entry.symbol) {
-        continue;
-      }
-    } else if (entry.symbol !== undefined && symbol !== undefined && symbol !== entry.symbol) {
-      continue;
-    }
-
-    if (entry.symbol === undefined) {
-      relevance = Math.max(relevance, entry.relevance);
-      continue;
-    }
-
-    if (isSymbolIntendedQuery && entry.symbol !== undefined && symbol === entry.symbol) {
-      relevance = Math.max(relevance, entry.relevance);
-      continue;
-    }
-
-    if (!isSymbolIntendedQuery && symbol !== undefined && symbol === entry.symbol) {
-      relevance = Math.max(relevance, entry.relevance);
-    }
-  }
-  return relevance;
+  return relevant.reduce((relevance, entry) =>
+    evidenceMatchesResult(entry, filePath, symbol)
+      ? Math.max(relevance, entry.relevance)
+      : relevance, 0);
 }
 
 function isRelevantResult(
   filePath: string,
   symbol: string | undefined,
   relevant: GoldenGradedEvidence[],
-  isSymbolIntendedQuery: boolean,
 ): boolean {
-  return resultRelevance(filePath, symbol, relevant, isSymbolIntendedQuery) > 0;
+  return resultRelevance(filePath, symbol, relevant) > 0;
 }
 
 function evidenceMatchesResult(
   entry: GoldenGradedEvidence,
   filePath: string,
   symbol: string | undefined,
-  isSymbolIntendedQuery: boolean,
 ): boolean {
   if (!pathMatchesExpected(filePath, entry.path)) {
     return false;
-  }
-
-  if (isSymbolIntendedQuery) {
-    return entry.symbol !== undefined && symbol === entry.symbol;
   }
 
   return entry.symbol === undefined || symbol === entry.symbol;
@@ -214,12 +178,11 @@ function dedupeRelevantEvidence(relevant: GoldenGradedEvidence[]): GoldenGradedE
 function reciprocalRankAtK(
   results: PerQueryEvalResult["results"],
   relevant: GoldenGradedEvidence[],
-  isSymbolIntendedQuery: boolean,
   k: number,
 ): number {
   const top = uniqueResultsByEvidence(results).slice(0, k);
   for (let i = 0; i < top.length; i += 1) {
-    if (isRelevantResult(top[i].filePath, top[i].name, relevant, isSymbolIntendedQuery)) {
+    if (isRelevantResult(top[i].filePath, top[i].name, relevant)) {
       return 1 / (i + 1);
     }
   }
@@ -230,13 +193,10 @@ function ndcgAtK(
   query: GoldenQuery,
   results: PerQueryEvalResult["results"],
   relevant: GoldenGradedEvidence[],
-  isSymbolIntendedQuery: boolean,
   k: number,
 ): number {
   const top = uniqueResultsByEvidence(results).slice(0, k);
-  const availableEvidence = dedupeRelevantEvidence(relevant).filter(
-    (entry) => !isSymbolIntendedQuery || entry.symbol !== undefined,
-  );
+  const availableEvidence = dedupeRelevantEvidence(relevant);
   const dcg = top.reduce((sum, result, i) => {
     let bestEvidenceIndex = -1;
     let rel = 0;
@@ -244,7 +204,7 @@ function ndcgAtK(
       const entry = availableEvidence[evidenceIndex];
       if (
         entry.relevance > rel
-        && evidenceMatchesResult(entry, result.filePath, result.name, isSymbolIntendedQuery)
+        && evidenceMatchesResult(entry, result.filePath, result.name)
       ) {
         bestEvidenceIndex = evidenceIndex;
         rel = entry.relevance;
@@ -259,9 +219,7 @@ function ndcgAtK(
     return sum + (2 ** rel - 1) / Math.log2(i + 2);
   }, 0);
 
-  const dedupedRelevant = dedupeRelevantEvidence(relevant).filter(
-    (entry) => !isSymbolIntendedQuery || entry.symbol !== undefined,
-  );
+  const dedupedRelevant = dedupeRelevantEvidence(relevant);
   const idealRelevances = hasGradeBasedEvidence(query)
     ? dedupedRelevant
         .map((entry) => entry.relevance)
@@ -304,16 +262,15 @@ export function classifyFailureBucket(
   k: number
 ): FailureBucket | undefined {
   const relevant = getRelevantEvidence(query);
-  const isSymbolIntendedQuery = isSymbolIntended(query);
   if (query.expected.expectedOutcome === "no-results") return undefined;
   const top = uniqueResultsByEvidence(results).slice(0, k);
   const hasRelevantTopK = top.some((result) =>
-    isRelevantResult(result.filePath, result.name, relevant, isSymbolIntendedQuery)
+    isRelevantResult(result.filePath, result.name, relevant)
   );
 
   if (!hasRelevantTopK) {
     const hasExpectedFileTopK = top.some((result) => isExpectedFile(result.filePath, relevant));
-    if (hasExpectedFileTopK && hasSymbolRequirement(query)) {
+    if (hasExpectedFileTopK && relevant.some((entry) => entry.symbol !== undefined)) {
       return "wrong-symbol";
     }
     return "no-relevant-hit-top-k";
@@ -351,12 +308,11 @@ export function buildPerQueryResult(
   },
 ): PerQueryEvalResult {
   const relevant = getRelevantEvidence(query);
-  const isSymbolIntendedQuery = isSymbolIntended(query);
   const deduped = uniqueResultsByEvidence(results);
 
   const hitAt = (cutoff: number): boolean =>
     deduped.slice(0, cutoff).some((result) =>
-      isRelevantResult(result.filePath, result.name, relevant, isSymbolIntendedQuery)
+      isRelevantResult(result.filePath, result.name, relevant)
     );
 
   const perQuery: PerQueryEvalResult = {
@@ -390,8 +346,8 @@ export function buildPerQueryResult(
     hitAt3: hitAt(3),
     hitAt5: hitAt(5),
     hitAt10: hitAt(10),
-    reciprocalRankAt10: reciprocalRankAtK(deduped, relevant, isSymbolIntendedQuery, 10),
-    ndcgAt10: ndcgAtK(query, deduped, relevant, isSymbolIntendedQuery, 10),
+    reciprocalRankAt10: reciprocalRankAtK(deduped, relevant, 10),
+    ndcgAt10: ndcgAtK(query, deduped, relevant, 10),
     failureBucket: classifyFailureBucket(query, results, k),
     rawTop3DistinctRatio: distinctTopKRatio(results, 3),
     tokenBudget: context?.tokenBudget,
