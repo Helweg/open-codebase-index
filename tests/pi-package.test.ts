@@ -25,7 +25,9 @@ describe("Pi package integration", () => {
     expect(pkg.pi?.skills).toContain("./skills");
     expect(pkg.files).toContain("dist");
     expect(pkg.files).toContain("skills");
-    expect(pkg.dependencies?.typebox).toBeDefined();
+    expect(pkg.dependencies?.typebox).toBeUndefined();
+    expect(pkg.peerDependencies?.typebox).toBe("*");
+    expect(pkg.peerDependenciesMeta?.typebox?.optional).not.toBe(true);
     expect(pkg.peerDependencies?.["@earendil-works/pi-coding-agent"]).toBe("*");
     expect(pkg.peerDependenciesMeta?.["@earendil-works/pi-coding-agent"]?.optional).toBe(true);
   });

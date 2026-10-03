@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Nested-directory CLI and MCP startup**: Discover the nearest containing Git checkout before loading configuration and selecting the branch catalog, so ordinary child/package directories reuse the repository index instead of selecting a separate `default` catalog. Explicit `--project` scopes and non-Git projects are unchanged; nested repositories, submodules, and linked worktrees retain their own boundaries.
 - **Codex installation docs**: Restored `codex plugin add` in the installation examples; Codex uses `add`, not omp's `install` action.
 - **omp prompt preservation**: Keep existing system-prompt blocks intact when adding codebase-index guidance. omp's `before_agent_start` prompt is an array, unlike Pi's string-valued prompt; each adapter now preserves its host's format.
+- **Pi extension `typebox` resolution**: Move `typebox` from `dependencies` to `peerDependencies` with a `*` range. The Pi extension loader treats `typebox` as host-provided, so an installed copy could bypass the loader and load a second module instance; the non-optional peer keeps the extension's fallback schema builder resolvable on hosts that expose none.
 
 ## [0.34.0] - 2026-10-02
 
