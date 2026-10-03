@@ -68,6 +68,12 @@ The pre-edit path additionally supports:
   - `direction`: `caller` or `callee`
   - one of `filePath` or `symbol` (at least one required)
 
+Pre-edit ranking metrics use only locations visible after final response fitting,
+in the order published to the agent. Conceptual fallback packing prefers
+implementation paths classified relative to the project root, not its ancestor
+directory names. The evaluator must not substitute the incoming search order
+for that final evidence order.
+
 Each graded label declares its own matching granularity: a file-only label accepts
 evidence from that file, while a symbol label requires both its path and exact
 symbol. Mixing the two does not narrow the file-only labels. Explicit

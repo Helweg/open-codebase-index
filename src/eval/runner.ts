@@ -256,6 +256,7 @@ async function runEditContextQuery(
     calleeLimit: query.args?.calleeLimit,
     tokenBudget: query.args?.tokenBudget,
   }, {
+    projectRoot,
     searchCodebase: async (searchQuery, options) => {
       conceptual = await indexer.search(searchQuery, options?.limit, {
         filterByBranch: !!query.expected.branch,
@@ -281,12 +282,15 @@ async function runEditContextQuery(
   const target = selectResolvedTarget(definitions, resolution);
   const targetCandidates = target ? [target] : [...definitions, ...conceptual];
   const results = targetCandidates
-    .filter((candidate) => (
-      resolution?.status !== "resolved" || editContext.details.sourceIncluded
-    ) && editContext.text.includes(
-      `${candidate.filePath}:${candidate.startLine}-${candidate.endLine}`,
-    ))
-    .map(toEvalSearchResult);
+    .map((candidate) => ({
+      candidate,
+      position: resolution?.status !== "resolved" || editContext.details.sourceIncluded
+        ? editContext.text.indexOf(`${candidate.filePath}:${candidate.startLine}-${candidate.endLine}`)
+        : -1,
+    }))
+    .filter(({ position }) => position >= 0)
+    .sort((left, right) => left.position - right.position)
+    .map(({ candidate }) => toEvalSearchResult(candidate));
 
   if (query.expected.graphNeighbor) {
     const symbols = await indexer.getCallGraphSymbols();

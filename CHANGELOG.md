@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Pi development dependency**: Upgrade `@earendil-works/pi-coding-agent` to 1.0.1, which removes its published shrinkwrap and resolves patched `brace-expansion` 5.0.12. The existing development dependency already required Node 22.19; the package's supported runtime floor remains Node 22.13.
+
+### Fixed
+
+- **Native dependency security**: Raise the `xxhash-rust` minimum and locked version to 0.8.16, addressing GHSA-6g2r-675j-hx59. The advisory's custom-secret entry point is not used by the native hashing wrappers; default-secret hash outputs remain unchanged.
+- **Pre-edit evaluation ordering**: Grade visible target and conceptual evidence in its final published response order rather than the incoming search order. Implementation-first fallback packing now receives the same ranking credit that agents actually observe; dataset labels and quality budgets are unchanged.
+- **Pre-edit source preference**: Classify fallback evidence relative to its project root, so checkout directories named `snapshot`, `tests`, or `docs` do not misclassify every source file as a fixture, test, or document.
+- **Pinned OpenCode dependency**: Remove the redundant broad optional peer declaration that could override the direct `@opencode-ai/plugin` 1.3.13 pin during clean installation. Published installs retain the tested plugin version and Node 22.13 compatibility without adopting the deferred beta-dependent plugin upgrade.
+
 ## [0.35.0] - 2026-10-03
 
 ### Added

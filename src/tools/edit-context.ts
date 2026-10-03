@@ -44,6 +44,7 @@ export interface CodebaseEditContextResult {
 }
 
 export interface CodebaseEditContextDependencies {
+  projectRoot: string | undefined;
   searchCodebase: (
     query: string,
     options?: { limit?: number },
@@ -165,6 +166,7 @@ async function fallbackPack(
     maxResults: 5,
     includeExactSearchHandoff: false,
     preferImplementationPaths: true,
+    projectRoot: dependencies.projectRoot,
   });
   const fitted = fitTextToContextBudget(`${risk}\n\n${pack.text}`, tokenBudget ?? undefined);
   return {
@@ -328,6 +330,7 @@ export async function resolveCodebaseEditContext(
   control?: OperationControl,
 ): Promise<CodebaseEditContextResult> {
   return resolveCodebaseEditContextWithDependencies(input, {
+    projectRoot,
     searchCodebase: (query, options, operationControl) => searchCodebase(
       projectRoot,
       host,
