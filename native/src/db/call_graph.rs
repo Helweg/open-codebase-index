@@ -46,12 +46,21 @@ pub struct CallerRow {
     pub is_resolved: bool,
 }
 
-/// Insert or replace a symbol
+/// Insert or update a symbol without deleting its outgoing call edges.
 pub fn upsert_symbol(conn: &Connection, symbol: &SymbolRow) -> DbResult<()> {
     conn.execute(
         r#"
-        INSERT OR REPLACE INTO symbols (id, file_path, name, kind, start_line, start_col, end_line, end_col, language)
+        INSERT INTO symbols (id, file_path, name, kind, start_line, start_col, end_line, end_col, language)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+            file_path = excluded.file_path,
+            name = excluded.name,
+            kind = excluded.kind,
+            start_line = excluded.start_line,
+            start_col = excluded.start_col,
+            end_line = excluded.end_line,
+            end_col = excluded.end_col,
+            language = excluded.language
         "#,
         params![
             symbol.id,
@@ -68,7 +77,7 @@ pub fn upsert_symbol(conn: &Connection, symbol: &SymbolRow) -> DbResult<()> {
     Ok(())
 }
 
-/// Batch insert or replace symbols within a single transaction
+/// Batch insert or update symbols within a single transaction, preserving call edges.
 pub fn upsert_symbols_batch(conn: &mut Connection, symbols: &[SymbolRow]) -> DbResult<()> {
     if symbols.is_empty() {
         return Ok(());
@@ -77,8 +86,17 @@ pub fn upsert_symbols_batch(conn: &mut Connection, symbols: &[SymbolRow]) -> DbR
     super::run_batch_with_write_transaction(conn, |conn| {
         let mut stmt = conn.prepare(
             r#"
-            INSERT OR REPLACE INTO symbols (id, file_path, name, kind, start_line, start_col, end_line, end_col, language)
+            INSERT INTO symbols (id, file_path, name, kind, start_line, start_col, end_line, end_col, language)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                file_path = excluded.file_path,
+                name = excluded.name,
+                kind = excluded.kind,
+                start_line = excluded.start_line,
+                start_col = excluded.start_col,
+                end_line = excluded.end_line,
+                end_col = excluded.end_col,
+                language = excluded.language
             "#,
         )?;
 

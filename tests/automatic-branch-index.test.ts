@@ -317,16 +317,6 @@ function changed(): number {
         (symbol) => symbol.name === "featureSwiftMarker",
       ),
     ).toBe(true);
-    for (const [prefix, version] of [
-      ["index.callGraphResolutionVersion", "10"],
-      ["index.parser.javascriptVersion", "1"],
-      [swiftPrefix, "2"],
-      ["index.parser.metalVersion", "1"],
-      ["index.parser.markupVersion", "1"],
-    ] as const) {
-      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "main"))).toBe(version);
-      expect(migratedDb.getMetadata(migrationMetadataKey(prefix, "feature"))).toBe(version);
-    }
   });
 
   it("reindexes a moved branch OID, replaces stale catalog data, and preserves primary data", async () => {

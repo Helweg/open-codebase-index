@@ -465,6 +465,64 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     });
   });
 
+  it("preserves generator callees when a later indexing batch imports the generator", async () => {
+    fs.writeFileSync(path.join(tempDir, "a-generator.ts"), [
+      "export function* generateRecords() {",
+      "  yield readRecord();",
+      "}",
+      "function readRecord() { return 42; }",
+      "",
+    ].join("\n"));
+    fs.writeFileSync(path.join(tempDir, "z-consumer.ts"), [
+      'import { generateRecords } from "./a-generator.js";',
+      "export function consumeRecords() { return generateRecords(); }",
+      "",
+    ].join("\n"));
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+      include: ["a-generator.ts", "z-consumer.ts"],
+      indexing: { watchFiles: false },
+    });
+    const indexer = new Indexer(tempDir, config, "opencode", {
+      fileBatchLimits: { maxFiles: 1, maxBytes: 1024 * 1024 },
+    });
+    _indexers.push(indexer);
+    await indexer.index();
+    const symbols = await indexer.getSymbolsForBranch();
+    const generator = symbols.find((symbol) => symbol.name === "generateRecords")!;
+    const helper = symbols.find((symbol) => symbol.name === "readRecord")!;
+    const consumer = symbols.find((symbol) => symbol.name === "consumeRecords")!;
+    expect(await indexer.getCallees(consumer.id)).toEqual([
+      expect.objectContaining({ targetName: generator.name, toSymbolId: generator.id, isResolved: true }),
+    ]);
+    expect(await indexer.getCallees(generator.id)).toEqual([
+      expect.objectContaining({ targetName: helper.name, toSymbolId: helper.id, isResolved: true, line: 2 }),
+    ]);
+
+    const status = await indexer.getStatus();
+    const legacyDatabase = new Database(path.join(status.indexPath, "codebase.db"));
+    try {
+      legacyDatabase.deleteCallEdgesByFile("a-generator.ts");
+      legacyDatabase.setMetadata(`index.callGraphResolutionVersion.${hashContent("default").slice(0, 24)}`, "10");
+    } finally {
+      legacyDatabase.close();
+    }
+    await expect(indexer.getIndexFreshness()).resolves.toMatchObject({ current: false, reason: "migration-required" });
+    const embeddingCallsBeforeMigration = fetchSpy.mock.calls.length;
+    await indexer.index();
+    expect(await indexer.getCallees(generator.id)).toEqual([
+      expect.objectContaining({ targetName: helper.name, toSymbolId: helper.id, isResolved: true, line: 2 }),
+    ]);
+    expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeMigration);
+
+    fs.appendFileSync(path.join(tempDir, "z-consumer.ts"), "export function consumeAgain() { return generateRecords(); }\n");
+    await indexer.index();
+    expect(await indexer.getCallees(generator.id)).toEqual([
+      expect.objectContaining({ targetName: helper.name, toSymbolId: helper.id, isResolved: true, line: 2 }),
+    ]);
+  });
+
   it("migrates unchanged JavaScript-family chunks, symbols, and generator call edges incrementally", async () => {
     const generatorSource = [
       'import { readRecord } from "./helper.js";',
