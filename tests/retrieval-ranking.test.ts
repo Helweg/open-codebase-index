@@ -130,22 +130,53 @@ describe("retrieval ranking", () => {
       expect(result.score).toBeLessThanOrEqual(1);
     }
   });
-  it("keeps strong same-file semantic declarations ahead of weak distinct files within the scored head", () => {
-    const semantic: Candidate[] = [
-      { id: "first", score: 0.99, metadata: meta({ filePath: "/repo/src/leases.ts", name: "first", startLine: 1, endLine: 5, hash: "first" }) },
-      { id: "second", score: 0.98, metadata: meta({ filePath: "/repo/src/leases.ts", name: "second", startLine: 10, endLine: 15, hash: "second" }) },
+  it("keeps higher-scored same-file declarations ahead of weaker distinct files within the scored head", () => {
+    const declarations: Candidate[] = [
+      { id: "first", score: 0.99, metadata: meta({ filePath: "/repo/src/leases.ts", name: "first", chunkType: "function_declaration", startLine: 1, endLine: 5, hash: "first" }) },
+      { id: "second", score: 0.98, metadata: meta({ filePath: "/repo/src/leases.ts", name: "second", chunkType: "function_declaration", startLine: 10, endLine: 15, hash: "second" }) },
     ];
-    const keyword: Candidate[] = Array.from({ length: 30 }, (_, index) => ({
+    const weaker: Candidate[] = Array.from({ length: 30 }, (_, index) => ({
       id: `noise-${index}`,
-      score: 30 - index,
-      metadata: meta({ filePath: `/repo/src/noise-${index}.ts`, name: "unrelated", hash: `noise-${index}` }),
+      score: 0.5 - index * 0.001,
+      metadata: meta({ filePath: `/repo/src/noise-${index}.ts`, name: "unrelated", chunkType: "function_declaration", hash: `noise-${index}` }),
     }));
-    const ranked = rankHybridResults("prevent concurrent writes to a code index", semantic, keyword, {
-      fusionStrategy: "rrf", rrfK: 60, hybridWeight: 0.4, rerankTopN: 20, limit: 10,
+    const ranked = rerankResults("prevent concurrent writes to a code index", [...declarations, ...weaker], 20, {
+      prioritizeSourcePaths: true,
     });
     expect(ranked.slice(0, 2).map((candidate) => candidate.id)).toEqual(["first", "second"]);
   });
 
+  it("keeps a strong lexical conceptual match ahead of unrelated semantic-only evidence", () => {
+    const semantic: Candidate[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `semantic-${index}`,
+      score: 0.99 - index * 0.001,
+      metadata: meta({ filePath: `/repo/tests/other-${index}.ts`, chunkType: "expression_statement", hash: `semantic-${index}` }),
+    }));
+    const lexical: Candidate = {
+      id: "lexical",
+      score: 100,
+      metadata: meta({ filePath: "/repo/src/context-pack.ts", name: "assembleContextEvidence", chunkType: "function_declaration", hash: "lexical" }),
+    };
+    const ranked = rankHybridResults("how context evidence is assembled before editing", semantic, [lexical], {
+      fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20, limit: 5, hybridWeight: 0.4,
+    });
+    expect(ranked[0]?.id).toBe("lexical");
+  });
+
+  it("retains RRF agreement when independent conceptual lane heads have equal admission scores", () => {
+    const semanticOnly: Candidate = {
+      id: "a-semantic-only", score: 0.99,
+      metadata: meta({ filePath: "/repo/src/a.ts", name: "handleItem", chunkType: "function_declaration", hash: "a" }),
+    };
+    const agreement: Candidate = {
+      id: "z-agreement", score: 0.98,
+      metadata: meta({ filePath: "/repo/src/z.ts", name: "handleItem", chunkType: "function_declaration", hash: "z" }),
+    };
+    const ranked = rankHybridResults("prevent concurrent processes from changing shared state", [semanticOnly, agreement], [agreement], {
+      fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20, limit: 5, hybridWeight: 0.4,
+    });
+    expect(ranked[0]?.id).toBe("z-agreement");
+  });
   it("admits semantic-only conceptual evidence before a lexical-heavy RRF shortlist", () => {
     const relevant: Candidate = {
       id: "relevant",
@@ -173,7 +204,6 @@ describe("retrieval ranking", () => {
     expect(ranked.map((candidate) => candidate.id)).toContain("lexical-only");
     expect(ranked.find((candidate) => candidate.id === "relevant")?.score)
       .toBeGreaterThan(fused.find((candidate) => candidate.id === "relevant")?.score ?? 0);
-    expect(ranked.filter((candidate) => candidate.score >= 1).map((candidate) => candidate.id)).toEqual(["relevant"]);
     expect(ranked.every((candidate) => candidate.score >= 0 && candidate.score <= 1)).toBe(true);
     expect(new Set(ranked.map((candidate) => candidate.id)).size).toBe(ranked.length);
     expect(rankHybridResults("prevent concurrent processes from changing shared state", [...semantic], [...keyword], options))

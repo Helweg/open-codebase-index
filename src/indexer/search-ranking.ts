@@ -266,14 +266,14 @@ export function rankHybridResults(
   const overfetchFactor = prioritizeSourcePaths ? 12 : 4;
   const overfetchLimit = Math.max(options.limit * overfetchFactor, options.limit);
   const intent = analyzeQueryIntent(query);
-  const preserveSemanticCoverage = options.rerankTopN > 0 &&
+  const preserveLaneCoverage = options.rerankTopN > 0 &&
     intent.primary === "conceptual" && intent.identifierHints.length === 0 &&
     semanticResults.length > 0 && keywordResults.length > 0 &&
     options.fusionStrategy === "rrf";
-  // For conceptual queries, consensus is useful but must not bury a strong
-  // semantic-only match. The stronger normalized relevance becomes the public
-  // score, so filtering, external reranking, and context packing agree on it.
-  const fusionLimit = preserveSemanticCoverage
+  // Preserve strong matches from either lane on the same relevance scale,
+  // so admitting semantic evidence cannot bury an independent lexical match.
+  // Public scores keep downstream filtering and context sorting consistent.
+  const fusionLimit = preserveLaneCoverage
     ? semanticResults.length + keywordResults.length
     : overfetchLimit;
   const fused = options.fusionStrategy === "rrf"
@@ -281,25 +281,33 @@ export function rankHybridResults(
     : fuseResultsWeighted(semanticResults, keywordResults, options.hybridWeight, fusionLimit);
   const rerankPoolLimit = Math.max(overfetchLimit, options.rerankTopN * 3, options.limit * 6);
   let rankingCandidates = fused;
-  if (preserveSemanticCoverage) {
+  if (preserveLaneCoverage) {
     const semanticLane = rerankResults(query, semanticResults, options.rerankTopN, {
       prioritizeSourcePaths,
       diversifyByFile: false,
     });
+    const keywordLane = rerankResults(query, keywordResults, options.rerankTopN, {
+      prioritizeSourcePaths,
+      diversifyByFile: false,
+    });
     const semanticRank = new Map(semanticLane.map((candidate, index) => [candidate.id, index + 1]));
+    const keywordRank = new Map(keywordLane.map((candidate, index) => [candidate.id, index + 1]));
     rankingCandidates = fused.map((candidate) => {
-      const rank = semanticRank.get(candidate.id);
-      if (rank === undefined) return candidate;
-      const semanticRelevance = (options.rrfK + 1) / (options.rrfK + rank);
-      return semanticRelevance > candidate.score
-        ? { ...candidate, score: semanticRelevance }
+      const semanticPosition = semanticRank.get(candidate.id);
+      const keywordPosition = keywordRank.get(candidate.id);
+      const semanticRelevance = semanticPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + semanticPosition);
+      const keywordRelevance = keywordPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + keywordPosition);
+      const relevance = Math.max(candidate.score, semanticRelevance, keywordRelevance);
+      return relevance > candidate.score
+        ? { ...candidate, score: relevance }
         : candidate;
     });
-    rankingCandidates.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+    // Stable sort retains RRF agreement and deterministic IDs when lane floors tie.
+    rankingCandidates.sort((a, b) => b.score - a.score);
   }
   // Retrieval has already bounded both lanes. Keep their union when changing
   // admission order so displaced lexical evidence remains available to callers.
-  const ranked = rerankResults(query, preserveSemanticCoverage ? rankingCandidates : rankingCandidates.slice(0, rerankPoolLimit), options.rerankTopN, {
+  const ranked = rerankResults(query, preserveLaneCoverage ? rankingCandidates : rankingCandidates.slice(0, rerankPoolLimit), options.rerankTopN, {
     prioritizeSourcePaths,
   });
 

@@ -140,8 +140,10 @@ Agents should drill into chosen locations with `implementation_lookup`,
 
 For conceptual queries without identifier hints, hybrid RRF retains the
 retrieval-bounded lane union and uses the stronger of its normalized RRF
-consensus score and independently intent-ranked semantic rank score. These
-scores express rank-based relevance, not calibrated probabilities. Exact-symbol,
+consensus score and the independently intent-ranked semantic and lexical lane
+scores. Neither lane requires agreement from the other to reach the shortlist;
+equal admission scores retain the original RRF agreement order. These scores
+express rank-based relevance, not calibrated probabilities. Exact-symbol,
 lexical, weighted-fusion, and hard-scope filtering policies are unchanged.
 
 Optional flags:
