@@ -80,6 +80,18 @@ describe("retrieval ranking", () => {
     expect(rankSemanticOnlyResults("page marker", candidates, { rerankTopN: 10, limit: 10 })).toHaveLength(count);
   });
 
+  it.each([
+    { otherName: "STREAM", expectedIds: ["a"] },
+    { otherName: "anotherStream", expectedIds: ["a", "b"] },
+  ])("deduplicates normalized file aliases without losing distinct named declarations ($otherName)", ({ otherName, expectedIds }) => {
+    const candidates: Candidate[] = [
+      { id: "a", score: 0.9, metadata: meta({ filePath: "C:\\repo\\src\\Caf\u00e9.ts", name: "stream" }) },
+      { id: "b", score: 0.8, metadata: meta({ filePath: "c:/repo/src/cafe\u0301.ts", name: otherName }) },
+    ];
+    const ranked = rankSemanticOnlyResults("page marker", candidates, { rerankTopN: 10, limit: 10 });
+    expect(ranked.map((candidate) => candidate.id)).toEqual(expectedIds);
+  });
+
   it("fuses hybrid results using RRF rank ordering", () => {
     const semantic: Candidate[] = [
       { id: "a", score: 0.91, metadata: meta({ filePath: "/repo/src/auth.ts", name: "validateAuth", chunkType: "function" }) },
@@ -118,6 +130,126 @@ describe("retrieval ranking", () => {
       expect(result.score).toBeLessThanOrEqual(1);
     }
   });
+  it("keeps higher-scored same-file declarations ahead of weaker distinct files within the scored head", () => {
+    const declarations: Candidate[] = [
+      { id: "first", score: 0.99, metadata: meta({ filePath: "/repo/src/leases.ts", name: "first", chunkType: "function_declaration", startLine: 1, endLine: 5, hash: "first" }) },
+      { id: "second", score: 0.98, metadata: meta({ filePath: "/repo/src/leases.ts", name: "second", chunkType: "function_declaration", startLine: 10, endLine: 15, hash: "second" }) },
+    ];
+    const weaker: Candidate[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `noise-${index}`,
+      score: 0.5 - index * 0.001,
+      metadata: meta({ filePath: `/repo/src/noise-${index}.ts`, name: "unrelated", chunkType: "function_declaration", hash: `noise-${index}` }),
+    }));
+    const ranked = rerankResults("prevent concurrent writes to a code index", [...declarations, ...weaker], 20, {
+      prioritizeSourcePaths: true,
+    });
+    expect(ranked.slice(0, 2).map((candidate) => candidate.id)).toEqual(["first", "second"]);
+  });
+
+  it("keeps a strong lexical conceptual match ahead of unrelated semantic-only evidence", () => {
+    const semantic: Candidate[] = Array.from({ length: 30 }, (_, index) => ({
+      id: `semantic-${index}`,
+      score: 0.99 - index * 0.001,
+      metadata: meta({ filePath: `/repo/tests/other-${index}.ts`, chunkType: "expression_statement", hash: `semantic-${index}` }),
+    }));
+    const lexical: Candidate = {
+      id: "lexical",
+      score: 100,
+      metadata: meta({ filePath: "/repo/src/context-pack.ts", name: "assembleContextEvidence", chunkType: "function_declaration", hash: "lexical" }),
+    };
+    const ranked = rankHybridResults("how context evidence is assembled before editing", semantic, [lexical], {
+      fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20, limit: 5, hybridWeight: 0.4,
+    });
+    expect(ranked[0]?.id).toBe("lexical");
+  });
+
+  it("retains RRF agreement when independent conceptual lane heads have equal admission scores", () => {
+    const semanticOnly: Candidate = {
+      id: "a-semantic-only", score: 0.99,
+      metadata: meta({ filePath: "/repo/src/a.ts", name: "handleItem", chunkType: "function_declaration", hash: "a" }),
+    };
+    const agreement: Candidate = {
+      id: "z-agreement", score: 0.98,
+      metadata: meta({ filePath: "/repo/src/z.ts", name: "handleItem", chunkType: "function_declaration", hash: "z" }),
+    };
+    const ranked = rankHybridResults("prevent concurrent processes from changing shared state", [semanticOnly, agreement], [agreement], {
+      fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20, limit: 5, hybridWeight: 0.4,
+    });
+    expect(ranked[0]?.id).toBe("z-agreement");
+  });
+  it("admits semantic-only conceptual evidence before a lexical-heavy RRF shortlist", () => {
+    const relevant: Candidate = {
+      id: "relevant",
+      score: 0.95,
+      metadata: meta({ filePath: "/repo/src/leases.ts", name: "acquireLease", chunkType: "function_declaration", hash: "relevant" }),
+    };
+    const consensus: Candidate[] = Array.from({ length: 100 }, (_, index) => ({
+      id: `consensus-${index}`,
+      score: 0.9 - index * 0.001,
+      metadata: meta({ filePath: `/repo/src/other-${index}.ts`, name: `handleItem${index}`, chunkType: "function_declaration", hash: `consensus-${index}` }),
+    }));
+    const semantic = [relevant, ...consensus];
+    const keyword = consensus.map((candidate, index) => ({ ...candidate, score: 100 - index }));
+    keyword.push({
+      id: "lexical-only",
+      score: 0.1,
+      metadata: meta({ filePath: "/repo/src/renewal.ts", name: "renewLease", chunkType: "function_declaration", hash: "lexical-only" }),
+    });
+    const fused = fuseResultsRrf(semantic, keyword, 60, semantic.length);
+    expect(fused.slice(0, 5).map((candidate) => candidate.id)).not.toContain("relevant");
+
+    const options = { fusionStrategy: "rrf" as const, rrfK: 60, rerankTopN: 20, limit: 5, hybridWeight: 0.4 };
+    const ranked = rankHybridResults("prevent concurrent processes from changing shared state", semantic, keyword, options);
+    expect(ranked.slice(0, 5).map((candidate) => candidate.id)).toContain("relevant");
+    expect(ranked.map((candidate) => candidate.id)).toContain("lexical-only");
+    expect(ranked.find((candidate) => candidate.id === "relevant")?.score)
+      .toBeGreaterThan(fused.find((candidate) => candidate.id === "relevant")?.score ?? 0);
+    expect(ranked.every((candidate) => candidate.score >= 0 && candidate.score <= 1)).toBe(true);
+    expect(new Set(ranked.map((candidate) => candidate.id)).size).toBe(ranked.length);
+    expect(rankHybridResults("prevent concurrent processes from changing shared state", [...semantic], [...keyword], options))
+      .toEqual(ranked);
+  });
+
+  it("preserves both scored declarations before weak files in an unscored overfetch tail", () => {
+    const candidates: Candidate[] = [
+      { id: "options", score: 0.96, metadata: meta({ filePath: "/repo/src/fusion.ts", name: "FusionOptions", chunkType: "interface_declaration", hash: "options" }) },
+      { id: "function", score: 0.94, metadata: meta({ filePath: "/repo/src/fusion.ts", name: "combineRanks", chunkType: "function_declaration", startLine: 20, endLine: 40, hash: "function" }) },
+      ...Array.from({ length: 30 }, (_, index) => ({
+        id: `tail-${index}`,
+        score: 0.5,
+        metadata: meta({ filePath: `/repo/src/tail-${index}.ts`, name: "other", chunkType: "function_declaration", hash: `tail-${index}` }),
+      })),
+    ];
+    const ranked = rerankResults("combine retrieval evidence from independent relevance signals", candidates, 2);
+    expect(new Set(ranked.slice(0, 2).map((candidate) => candidate.id))).toEqual(new Set(["options", "function"]));
+  });
+
+  it.each(["lease", "where is lease defined"])("keeps lexical and identifier precedence for %s", (query) => {
+    const semanticOnly: Candidate = {
+      id: "semantic",
+      score: 0.99,
+      metadata: meta({ filePath: "/repo/src/unrelated.ts", name: "unrelated", chunkType: "function_declaration", hash: "semantic" }),
+    };
+    const lexicalMatch: Candidate = {
+      id: "lexical",
+      score: 0.8,
+      metadata: meta({ filePath: "/repo/src/lease.ts", name: "lease", chunkType: "function_declaration", hash: "lexical" }),
+    };
+    const ranked = rankHybridResults(query, [semanticOnly, lexicalMatch], [{ ...lexicalMatch, score: 100 }], {
+      fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20, limit: 1, hybridWeight: 0.4,
+    });
+    expect(ranked[0]?.id).toBe("lexical");
+  });
+
+  it("preserves keyword-only weighted retrieval for conceptual wording", () => {
+    const semantic: Candidate = { id: "semantic", score: 0.99, metadata: meta({ filePath: "/repo/src/semantic.ts", hash: "semantic" }) };
+    const keyword: Candidate = { id: "keyword", score: 10, metadata: meta({ filePath: "/repo/src/keyword.ts", hash: "keyword" }) };
+    const ranked = rankHybridResults("prevent concurrent processes from changing shared state", [semantic], [keyword], {
+      fusionStrategy: "weighted", rrfK: 60, rerankTopN: 20, limit: 1, hybridWeight: 1,
+    });
+    expect(ranked[0]?.id).toBe("keyword");
+  });
+
 
   it("reranks deterministically using name/path/chunk-type signals", () => {
     const candidates: Candidate[] = [

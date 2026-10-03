@@ -20,6 +20,8 @@ export interface QueryIntentProfile {
   explicitArtifactIntent: boolean;
 }
 
+const DIVERSITY_SCORE_RATIO = 0.8;
+
 const STOPWORDS = new Set([
   "a", "an", "and", "are", "as", "at", "be", "been", "being", "by", "code",
   "find", "for", "from", "get", "how", "in", "into", "is", "of", "on", "or",
@@ -423,8 +425,7 @@ function containsRange(outer: ChunkMetadata, inner: ChunkMetadata): boolean {
   return outer.startLine <= inner.startLine && outer.endLine >= inner.endLine;
 }
 
-function areDuplicateEvidence(a: RankedCandidate, b: RankedCandidate): boolean {
-  if (normalizePath(a.metadata.filePath) !== normalizePath(b.metadata.filePath)) return false;
+function areDuplicateFileEvidence(a: RankedCandidate, b: RankedCandidate): boolean {
   const aLocation = a.metadata.documentLocation;
   const bLocation = b.metadata.documentLocation;
   if (aLocation?.kind === "pdf" || bLocation?.kind === "pdf") {
@@ -450,9 +451,14 @@ function areDuplicateEvidence(a: RankedCandidate, b: RankedCandidate): boolean {
 
 function deduplicateEvidence(entries: ScoredCandidate[]): ScoredCandidate[] {
   const selected: ScoredCandidate[] = [];
+  const byFile = new Map<string, ScoredCandidate[]>();
   for (const entry of entries) {
-    if (selected.some((existing) => areDuplicateEvidence(existing.candidate, entry.candidate))) continue;
+    const filePath = normalizePath(entry.candidate.metadata.filePath);
+    const existing = byFile.get(filePath);
+    if (existing?.some((other) => areDuplicateFileEvidence(other.candidate, entry.candidate))) continue;
     selected.push(entry);
+    if (existing) existing.push(entry);
+    else byFile.set(filePath, [entry]);
   }
   return selected;
 }
@@ -495,7 +501,7 @@ export function rankIntentAwareCandidates(
   query: string,
   candidates: RankedCandidate[],
   rerankTopN: number,
-  options?: { prioritizeSourcePaths?: boolean },
+  options?: { prioritizeSourcePaths?: boolean; diversifyByFile?: boolean },
 ): RankedCandidate[] {
   if (rerankTopN <= 0 || candidates.length <= 1) return candidates;
   const intent = analyzeQueryIntent(query);
@@ -522,8 +528,21 @@ export function rankIntentAwareCandidates(
   const shouldDiversify = intent.primary !== "definition" && intent.primary !== "implementation" || intent.identifierHints.length === 0;
   const preserveExactMatches = intent.identifierHints.length > 0 &&
     (intent.primary === "definition" || intent.primary === "implementation" || intent.primary === "neutral");
-  const ordered = shouldDiversify
-    ? diversify(deduplicated, preserveExactMatches)
-    : deduplicated;
-  return ordered.map((entry) => entry.candidate);
+  if (!shouldDiversify || options?.diversifyByFile === false) {
+    return deduplicated.map((entry) => entry.candidate);
+  }
+  if (intent.primary !== "conceptual") {
+    return diversify(deduplicated, preserveExactMatches).map((entry) => entry.candidate);
+  }
+  // Diversity is a tie-breaker among comparably relevant head candidates, not
+  // permission for weak files (including the overfetch tail) to evict evidence.
+  const topScore = scoredHead[0].adjustedScore;
+  const minimumScore = topScore > 0 ? topScore * DIVERSITY_SCORE_RATIO : topScore;
+  const headIds = new Set<string>();
+  for (const entry of scoredHead) {
+    if (entry.adjustedScore >= minimumScore) headIds.add(entry.candidate.id);
+  }
+  const head = deduplicated.filter((entry) => headIds.has(entry.candidate.id));
+  const tail = deduplicated.filter((entry) => !headIds.has(entry.candidate.id));
+  return [...diversify(head, preserveExactMatches), ...tail].map((entry) => entry.candidate);
 }

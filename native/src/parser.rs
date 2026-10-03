@@ -345,6 +345,21 @@ fn extract_semantic_nodes(
             let content = &source[start_byte..end_byte];
             let name = extract_name(cursor, source, language);
             let preserve_small_declaration = match language {
+                Language::JavaScript
+                | Language::JavaScriptJsx
+                | Language::TypeScript
+                | Language::TypeScriptTsx => {
+                    name.is_some()
+                        && (matches!(
+                            node_type,
+                            "function_declaration" | "generator_function_declaration"
+                        ) || (node_type == "export_statement"
+                            && node
+                                .child_by_field_name("declaration")
+                                .is_some_and(|child| {
+                                    child.kind() == "generator_function_declaration"
+                                })))
+                }
                 Language::Swift => name.is_some(),
                 Language::Bash => node_type == "function_definition",
                 Language::C => node_type == "function_definition",
@@ -611,6 +626,8 @@ static TS_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     let mut set = HashSet::new();
     // Original 10 types
     set.insert("function_declaration");
+    set.insert("generator_function_declaration");
+    set.insert("generator_function");
     set.insert("function");
     set.insert("arrow_function");
     set.insert("method_definition");
@@ -846,6 +863,26 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
 }
 
 fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Language) -> String {
+    if matches!(
+        language,
+        Language::JavaScript
+            | Language::JavaScriptJsx
+            | Language::TypeScript
+            | Language::TypeScriptTsx
+    ) {
+        if node.kind() == "generator_function_declaration"
+            || (node.kind() == "export_statement"
+                && node
+                    .child_by_field_name("declaration")
+                    .is_some_and(|child| child.kind() == "generator_function_declaration"))
+        {
+            return "function_declaration".to_string();
+        }
+        if node.kind() == "generator_function" {
+            return "function".to_string();
+        }
+    }
+
     if matches!(language, Language::TypeScript | Language::TypeScriptTsx)
         && node.kind() == "abstract_class_declaration"
     {
@@ -919,6 +956,12 @@ fn extract_name(
             PERF_STATS.lock().unwrap().extract_name_time += elapsed;
         }
         return name;
+    }
+
+    if node.kind() == "generator_function" {
+        if let Some(name) = extract_arrow_binding_name(node, source) {
+            return Some(name);
+        }
     }
 
     if *language == Language::Metal {
@@ -1040,6 +1083,7 @@ fn extract_name(
                 if matches!(
                     child_kind,
                     "function_declaration"
+                        | "generator_function_declaration"
                         | "class_declaration"
                         | "interface_declaration"
                         | "type_alias_declaration"
@@ -1207,6 +1251,9 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
 
         let is_preserved_call_graph_symbol =
             |candidate: &CodeChunk| match candidate.language.as_str() {
+                "javascript" | "jsx" | "typescript" | "tsx" => {
+                    candidate.chunk_type == "function_declaration" && candidate.name.is_some()
+                }
                 "bash" | "c" => candidate.chunk_type == "function_definition",
                 "cpp" => matches!(
                     candidate.chunk_type.as_str(),

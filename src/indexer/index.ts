@@ -213,7 +213,7 @@ function resolveSameCommunityCandidateIds(
     .map((candidate) => candidate.id));
 }
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "10";
+const CALL_GRAPH_RESOLUTION_VERSION = "11";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -764,6 +764,7 @@ const INDEX_METADATA_VERSION = "1";
 const PROJECT_PATH_STORAGE_VERSION = "2";
 const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
+const JAVASCRIPT_PARSER_VERSION = "1";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const MARKUP_PARSER_VERSION = "1";
@@ -1914,6 +1915,12 @@ export class Indexer {
     }
   }
 
+  private getJavaScriptParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.javascriptVersion", catalogIdentity);
+  }
+
   private getSwiftParserVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -1944,6 +1951,8 @@ export class Indexer {
   ): boolean {
     return database.getMetadata(this.getCallGraphResolutionMetadataKey(catalogIdentity))
       === CALL_GRAPH_RESOLUTION_VERSION
+      && database.getMetadata(this.getJavaScriptParserVersionMetadataKey(catalogIdentity))
+      === JAVASCRIPT_PARSER_VERSION
       && database.getMetadata(this.getSwiftParserVersionMetadataKey(catalogIdentity))
       === SWIFT_PARSER_VERSION
       && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
@@ -4929,6 +4938,9 @@ export class Indexer {
     this.loadFileHashCache();
     const rebuildStructuralKeyword = isStructural && this.structuralKeywordRebuildRequired;
 
+    const javaScriptParserMetadataKey = this.getJavaScriptParserVersionMetadataKey();
+    const reparseCachedJavaScriptFiles = database.getMetadata(javaScriptParserMetadataKey) !== JAVASCRIPT_PARSER_VERSION;
+
     const swiftParserMetadataKey = this.getSwiftParserVersionMetadataKey();
     const reparseCachedSwiftFiles = database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
     const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
@@ -5101,6 +5113,8 @@ export class Indexer {
           )
           || (needsCallGraphResolutionMigration && (isGoFilePath(storedPath) || isPythonFilePath(storedPath)))
         );
+      const requiresJavaScriptParserUpgrade =
+        reparseCachedJavaScriptFiles && isJavaScriptFamilyFilePath(storedPath);
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
@@ -5114,6 +5128,7 @@ export class Indexer {
         cachedHashMatches
         && !inMigrationScope
         && !needsCallGraphRefresh
+        && !requiresJavaScriptParserUpgrade
         && !requiresSwiftParserUpgrade
         && !requiresMetalParserUpgrade
         && !requiresMarkupParserUpgrade
@@ -5893,6 +5908,7 @@ export class Indexer {
         if (removedStoredChunks && !isStructural) {
           this.saveInvertedIndex(invertedIndex);
         }
+        database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
@@ -5937,6 +5953,7 @@ export class Indexer {
         );
         if (!isStructural) requireLoadedCapability(store, "vector store").save();
         if (!isStructural) this.saveInvertedIndex(invertedIndex);
+        database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
@@ -6034,6 +6051,7 @@ export class Indexer {
       if (forceScopedReembed) {
         database.setMetadata(this.getProjectMigrationFinalizedMetadataKey(), "true");
       }
+      database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);

@@ -115,6 +115,50 @@ describe("Database", () => {
     });
   });
 
+  describe("symbol updates", () => {
+    it.each(["single", "batch"])("preserves outgoing edges when updating an existing symbol through %s upsert", (mode) => {
+      const generator: SymbolData = {
+        id: "generator-symbol",
+        filePath: "/generator.ts",
+        name: "generateRecords",
+        kind: "function_declaration",
+        startLine: 1,
+        startCol: 0,
+        endLine: 5,
+        endCol: 1,
+        language: "typescript",
+      };
+      const helper: SymbolData = {
+        ...generator,
+        id: "helper-symbol",
+        name: "readRecord",
+        startLine: 10,
+        endLine: 12,
+      };
+      const edge: CallEdgeData = {
+        id: "generator-edge",
+        fromSymbolId: generator.id,
+        targetName: helper.name,
+        toSymbolId: helper.id,
+        callType: "Call",
+        confidence: "Direct",
+        line: 3,
+        col: 2,
+        isResolved: true,
+      };
+      db.upsertSymbolsBatch([generator, helper]);
+      db.addSymbolsToBranchBatch("main", [generator.id, helper.id]);
+      db.upsertCallEdgesBatch([edge]);
+
+      const updated = { ...generator, endLine: 8 };
+      if (mode === "single") db.upsertSymbol(updated);
+      else db.upsertSymbolsBatch([updated]);
+
+      expect(db.getSymbolsByName(generator.name)).toEqual([updated]);
+      expect(db.getCallees(generator.id, "main")).toEqual([edge]);
+    });
+  });
+
   describe("write transactions", () => {
     const chunk: ChunkData = {
       chunkId: "transaction-chunk",

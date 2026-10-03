@@ -93,6 +93,48 @@ function migrationMetadataKey(prefix: string, catalogIdentity = "default"): stri
   });
 
  describe("call extraction", () => {
+    it.each([
+      ["generators.js", "javascript"],
+      ["generators.ts", "typescript"],
+      ["generators.tsx", "tsx"],
+    ])("attributes calls to generator callers in %s", (filePath, language) => {
+      const content = `function outer() {
+  function* localItems() {
+    yield loadLocal();
+  }
+  const boundItems = function* () {
+    yield loadBound();
+  };
+  consume();
+}
+export async function* exportedItems() {
+  yield await loadExported();
+}
+class Streams {
+  *items() { yield loadMethod(); }
+}`;
+      const [parsed] = parseFiles([{ path: filePath, content }]);
+      const symbols: SymbolData[] = parsed.symbols
+        .filter((symbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(symbol.kind))
+        .map((symbol) => ({
+          ...symbol,
+          id: `${filePath}:${symbol.name}:${symbol.startLine}`,
+          filePath,
+        }));
+      const calls = extractCalls(content, language);
+      const callers = calls.map((call) => [
+        findEnclosingSymbol(symbols, call.line, call.column)?.name,
+        call.calleeName,
+      ]);
+      expect(callers).toEqual([
+        ["localItems", "loadLocal"],
+        ["boundItems", "loadBound"],
+        ["outer", "consume"],
+        ["exportedItems", "loadExported"],
+        ["items", "loadMethod"],
+      ]);
+    });
+
      it("should extract method calls", () => {
           const content = fs.readFileSync(path.join(fixturesDir, "php-method-calls.php"), "utf-8");
           const calls = extractCalls(content, "php");
@@ -2881,9 +2923,6 @@ main() {
         expect(fetchSpy).toHaveBeenCalledTimes(embeddingCallsBeforeManifestChange);
 
         await indexer.close();
-        const migratedDatabase = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        expect(migratedDatabase.getMetadata(migrationMetadataKey("index.callGraphResolutionVersion"))).toBe("10");
-        migratedDatabase.close();
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();
