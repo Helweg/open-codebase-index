@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "agent-context",
   "description": "Agent-facing retrieval set covering automatic definition routing and conceptual codebase discovery through codebase_context semantics.",
   "queries": [
@@ -67,7 +67,7 @@
       "queryType": "conceptual",
       "retrievalMode": "context",
       "expected": {
-        "filePath": "src/adapters/pi/extension.ts"
+        "filePath": "src/adapters/shared/extension-core.ts"
       }
     },
     {

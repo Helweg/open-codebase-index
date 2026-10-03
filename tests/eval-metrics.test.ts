@@ -274,6 +274,100 @@ describe("eval metrics", () => {
     expect(per.failureBucket).toBe("wrong-symbol");
   });
 
+  it("scores mixed file and symbol labels independently, including the ideal ranking", () => {
+    const q = query({
+      expected: { gradedEvidence: [
+        { path: "src/symbol.ts", symbol: "target", relevance: 3 },
+        { path: "src/file.ts", relevance: 2 },
+      ] },
+    });
+    const fileHit = { filePath: "/repo/src/file.ts", startLine: 1, endLine: 2, score: 1, chunkType: "function", name: "helper" };
+    const symbolHit = { ...fileHit, filePath: "/repo/src/symbol.ts", name: "target" };
+    const fileOnly = buildPerQueryResult(q, [fileHit], 0, 10);
+    const ideal = 7 + 3 / Math.log2(3);
+    expect(fileOnly.hitAt1).toBe(true);
+    expect(fileOnly.reciprocalRankAt10).toBe(1);
+    expect(fileOnly.ndcgAt10).toBeCloseTo(3 / ideal, 8);
+    expect(fileOnly.failureBucket).toBeUndefined();
+    const ranked = buildPerQueryResult(q, [symbolHit, fileHit], 0, 10);
+    expect(ranked.ndcgAt10).toBeCloseTo(1, 8);
+    const wrongSymbol = buildPerQueryResult(q, [{ ...symbolHit, name: "wrong" }], 0, 10);
+    expect(wrongSymbol.hitAt1).toBe(false);
+    expect(wrongSymbol.reciprocalRankAt10).toBe(0);
+    expect(wrongSymbol.ndcgAt10).toBe(0);
+    expect(wrongSymbol.failureBucket).toBe("wrong-symbol");
+  });
+
+  it("credits each file label and each source evidence at most once", () => {
+    const q = query({
+      expected: { gradedEvidence: [
+        { path: "src/file.ts", relevance: 2 },
+        { path: "src/other.ts", symbol: "target", relevance: 1 },
+      ] },
+    });
+    const first = { filePath: "src/file.ts", startLine: 1, endLine: 2, score: 1, chunkType: "function", name: "first" };
+    const per = buildPerQueryResult(q, [
+      first,
+      { ...first, startLine: 3, endLine: 4 },
+      { ...first, name: "second" },
+      { ...first, filePath: "src/other.ts", name: "target" },
+    ], 0, 10);
+    expect(per.ndcgAt10).toBeCloseTo((3 + 1 / Math.log2(4)) / (3 + 1 / Math.log2(3)), 8);
+    const overlapping = query({ expected: { gradedEvidence: [
+      { path: "src/file.ts", relevance: 1 },
+      { path: "src/file.ts", symbol: "first", relevance: 2 },
+    ] } });
+    expect(buildPerQueryResult(overlapping, [first, { ...first, startLine: 3 }], 0, 10).ndcgAt10)
+      .toBeCloseTo(3 / (3 + 1 / Math.log2(3)), 8);
+  });
+
+  it("uses explicit expected symbol before args symbol and requires it for file labels", () => {
+    const result = { filePath: "src/file.ts", startLine: 1, endLine: 2, score: 1, chunkType: "function" };
+    for (const expectedSymbol of [undefined, "expected"]) {
+      const q = query({
+        args: { symbol: "argument" },
+        expected: {
+          ...(expectedSymbol === undefined ? {} : { symbol: expectedSymbol }),
+          gradedEvidence: [
+            { path: "src/file.ts", relevance: 2 },
+            { path: "src/other.ts", symbol: "unrelated", relevance: 3 },
+          ],
+        },
+      });
+      const target = expectedSymbol ?? "argument";
+      for (const name of [undefined, "unrelated"]) {
+        const miss = buildPerQueryResult(q, [{ ...result, name }], 0, 10);
+        expect(miss.hitAt1).toBe(false);
+        expect(miss.reciprocalRankAt10).toBe(0);
+        expect(miss.ndcgAt10).toBe(0);
+        expect(miss.failureBucket).toBe("wrong-symbol");
+      }
+      expect(buildPerQueryResult(q, [{ ...result, name: target }], 0, 10).ndcgAt10).toBe(1);
+      expect(buildPerQueryResult(q, [{ ...result, filePath: "src/other.ts", name: "unrelated" }], 0, 10).hitAt1).toBe(false);
+    }
+  });
+
+  it("deduplicates file labels after applying an explicit argument symbol without losing their grades", () => {
+    const q = query({
+      args: { symbol: "target" },
+      expected: {
+        filePath: "src/primary.ts",
+        gradedEvidence: [
+          { path: "src/primary.ts", symbol: "target", relevance: 3 },
+          { path: "src/secondary.ts", symbol: "target", relevance: 2 },
+        ],
+      },
+    });
+    const result = buildPerQueryResult(q, [{
+      filePath: "src/secondary.ts",
+      name: "target",
+      score: 1,
+      chunkType: "function",
+    }], 0, 10);
+    expect(result.hitAt1).toBe(true);
+    expect(result.ndcgAt10).toBeCloseTo(3 / (7 + 3 / Math.log2(3)), 8);
+  });
+
   it("aggregates eval metrics including latency percentiles and costs", () => {
     const queries: GoldenQuery[] = [
       query({ id: "q1" }),

@@ -68,10 +68,17 @@ The pre-edit path additionally supports:
   - `direction`: `caller` or `callee`
   - one of `filePath` or `symbol` (at least one required)
 
-Hit and reciprocal-rank metrics require both the labeled path and symbol when a
-symbol is present. nDCG uses the relevance grades. Legacy `filePath` and
-`acceptableFiles` labels remain supported as binary alternatives. Expected
-paths are matched as exact repository-relative paths or as suffixes of absolute
+Each graded label declares its own matching granularity: a file-only label accepts
+evidence from that file, while a symbol label requires both its path and exact
+symbol. Mixing the two does not narrow the file-only labels. Explicit
+`expected.symbol` (or `args.symbol` when no expected symbol is declared) instead
+requires that symbol for every eligible label; contradictory symbol labels are
+ineligible. Hit and reciprocal-rank metrics use these same matching rules.
+nDCG uses the relevance grades, credits each label and source result at most
+once, and retains the highest grade when explicit-symbol normalization merges
+duplicate labels. Legacy `filePath` and `acceptableFiles` labels remain supported
+as binary alternatives.
+Expected paths are matched as exact repository-relative paths or as suffixes of absolute
 result paths, never in the reverse direction. The per-query artifact retains
 the declared axes plus route, outcome, and recovery matches for diagnosis.
 
@@ -79,6 +86,12 @@ This kernel measures retrieval and context packing on this repository. It does
 not prove end-to-end agent success or universal state-of-the-art quality. Keep
 cross-repository, provider-specific, latency, and production telemetry evidence
 separate when making broader claims.
+
+The Pi integration query labels `src/adapters/shared/extension-core.ts`, where
+the Pi adapter composes the actual tool/session behavior. Its three-line
+`src/adapters/pi/extension.ts` facade is not implementation evidence for that
+conceptual query. This label correction is included in agent-context `1.0.1`;
+do not compare its results against an older dataset fingerprint.
 
 Generate the deterministic privacy-safe effectiveness report without embeddings, network access, or repository indexing:
 
@@ -116,10 +129,22 @@ summary. Use the agent-context budget rather than the default search baseline wh
 `agent-context.json`.
 
 Context-mode evaluation applies the production evidence packer with its default
-1200-token response budget. The pack contains location evidence only, removes
-overlapping same-file candidates, and round-robins across files before selecting
-additional locations from the same file. Agents should drill into chosen
-locations with `implementation_lookup`, `codebase_search`, or targeted file reads.
+1200-token response budget. The pack contains location evidence only and removes
+overlapping same-file candidates. File diversity is a tie-breaker within the
+comparably relevant ranked head (at least 80% of its leading positive score),
+not a reason to promote weak overfetch-tail files ahead of stronger same-file
+declarations. Configured-origin promotion uses the same relevance floor, and
+explicit definition packs preserve lookup order.
+Agents should drill into chosen locations with `implementation_lookup`,
+`codebase_search`, or targeted file reads.
+
+For conceptual queries without identifier hints, hybrid RRF retains the
+retrieval-bounded lane union and uses the stronger of its normalized RRF
+consensus score and the independently intent-ranked semantic and lexical lane
+scores. Neither lane requires agreement from the other to reach the shortlist;
+equal admission scores retain the original RRF agreement order. These scores
+express rank-based relevance, not calibrated probabilities. Exact-symbol,
+lexical, weighted-fusion, and hard-scope filtering policies are unchanged.
 
 Optional flags:
 

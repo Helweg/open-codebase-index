@@ -146,7 +146,7 @@ export function rerankResults(
   query: string,
   candidates: RankedCandidate[],
   rerankTopN: number,
-  options?: { prioritizeSourcePaths?: boolean }
+  options?: { prioritizeSourcePaths?: boolean; diversifyByFile?: boolean }
 ): RankedCandidate[] {
   return rankIntentAwareCandidates(query, candidates, rerankTopN, options);
 }
@@ -265,13 +265,49 @@ export function rankHybridResults(
   // reranking can prefer the production evidence rather than losing it early.
   const overfetchFactor = prioritizeSourcePaths ? 12 : 4;
   const overfetchLimit = Math.max(options.limit * overfetchFactor, options.limit);
+  const intent = analyzeQueryIntent(query);
+  const preserveLaneCoverage = options.rerankTopN > 0 &&
+    intent.primary === "conceptual" && intent.identifierHints.length === 0 &&
+    semanticResults.length > 0 && keywordResults.length > 0 &&
+    options.fusionStrategy === "rrf";
+  // Preserve strong matches from either lane on the same relevance scale,
+  // so admitting semantic evidence cannot bury an independent lexical match.
+  // Public scores keep downstream filtering and context sorting consistent.
+  const fusionLimit = preserveLaneCoverage
+    ? semanticResults.length + keywordResults.length
+    : overfetchLimit;
   const fused = options.fusionStrategy === "rrf"
-    ? fuseResultsRrf(semanticResults, keywordResults, options.rrfK, overfetchLimit)
-    : fuseResultsWeighted(semanticResults, keywordResults, options.hybridWeight, overfetchLimit);
-
+    ? fuseResultsRrf(semanticResults, keywordResults, options.rrfK, fusionLimit)
+    : fuseResultsWeighted(semanticResults, keywordResults, options.hybridWeight, fusionLimit);
   const rerankPoolLimit = Math.max(overfetchLimit, options.rerankTopN * 3, options.limit * 6);
-  const rerankPool = fused.slice(0, rerankPoolLimit);
-  const ranked = rerankResults(query, rerankPool, options.rerankTopN, {
+  let rankingCandidates = fused;
+  if (preserveLaneCoverage) {
+    const semanticLane = rerankResults(query, semanticResults, options.rerankTopN, {
+      prioritizeSourcePaths,
+      diversifyByFile: false,
+    });
+    const keywordLane = rerankResults(query, keywordResults, options.rerankTopN, {
+      prioritizeSourcePaths,
+      diversifyByFile: false,
+    });
+    const semanticRank = new Map(semanticLane.map((candidate, index) => [candidate.id, index + 1]));
+    const keywordRank = new Map(keywordLane.map((candidate, index) => [candidate.id, index + 1]));
+    rankingCandidates = fused.map((candidate) => {
+      const semanticPosition = semanticRank.get(candidate.id);
+      const keywordPosition = keywordRank.get(candidate.id);
+      const semanticRelevance = semanticPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + semanticPosition);
+      const keywordRelevance = keywordPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + keywordPosition);
+      const relevance = Math.max(candidate.score, semanticRelevance, keywordRelevance);
+      return relevance > candidate.score
+        ? { ...candidate, score: relevance }
+        : candidate;
+    });
+    // Stable sort retains RRF agreement and deterministic IDs when lane floors tie.
+    rankingCandidates.sort((a, b) => b.score - a.score);
+  }
+  // Retrieval has already bounded both lanes. Keep their union when changing
+  // admission order so displaced lexical evidence remains available to callers.
+  const ranked = rerankResults(query, preserveLaneCoverage ? rankingCandidates : rankingCandidates.slice(0, rerankPoolLimit), options.rerankTopN, {
     prioritizeSourcePaths,
   });
 

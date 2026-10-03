@@ -176,6 +176,8 @@ When the caller supplies a progress token, long-running operations reuse that ex
 
 Finds direct callers or callees for a function or method. File-path disambiguation is available when names are duplicated. For TypeScript and JavaScript, indexed call targets can follow local relative ES module imports, re-export chains, `tsconfig`/`jsconfig` path aliases, and project-local package imports selected by root workspace declarations or ancestor compatibility when no declaration exists. Package entry points support exact and bounded single-wildcard `exports`. Conditional exports use the first active `node`, `import`, or `default` branch in declaration order. Exact, null, and unsupported export declarations block broader wildcard fallbacks, and wildcard precedence follows Node's package-export specificity. External packages, CommonJS-only exports, missing modules, malformed, encoded-traversal, `node_modules`, escaping, or unsafe package metadata, and ambiguous module, package, or star-export targets remain unresolved rather than being guessed.
 
+JavaScript and TypeScript generator declarations and expressions are indexed as named functions, with calls assigned to the owning generator. Imported-symbol refreshes preserve already stored outgoing edges across indexing batches. Normal incremental indexing upgrades legacy graph catalogs and rebuilds affected unchanged source files without deleting the index or re-embedding unchanged chunks.
+
 ### `call_graph_path`
 
 Finds the shortest known call path between two named symbols.

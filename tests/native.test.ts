@@ -18,6 +18,72 @@ import {
 
 describe("native module", () => {
   describe("parseFile", () => {
+    it.each(["generators.js", "generators.jsx", "generators.ts", "generators.tsx"])(
+      "preserves generator declarations and symbol boundaries in %s",
+      (filePath) => {
+        const declarations = [
+          "function* localItems() {\n  yield loadLocal();\n}",
+          "export function* exportedItems() {\n  yield loadExported();\n}",
+          "async function* asyncItems() {\n  yield await loadAsync();\n}",
+          "export async function* exportedAsyncItems() {\n  yield await loadExportedAsync();\n}",
+        ];
+        const names = ["localItems", "exportedItems", "asyncItems", "exportedAsyncItems"];
+        const [result] = parseFiles([{ path: filePath, content: declarations.join("\n") }]);
+
+        expect(result.chunks.map((chunk) => ({
+          name: chunk.name,
+          kind: chunk.chunkType,
+          content: chunk.content,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+        }))).toEqual(declarations.map((content, index) => ({
+          name: names[index],
+          kind: "function_declaration",
+          content,
+          startLine: index * 3 + 1,
+          endLine: index * 3 + 3,
+        })));
+        expect(result.symbols.map((symbol) => ({
+          name: symbol.name,
+          kind: symbol.kind,
+          startLine: symbol.startLine,
+          startCol: symbol.startCol,
+          endLine: symbol.endLine,
+          endCol: symbol.endCol,
+        }))).toEqual(names.map((name, index) => ({
+          name,
+          kind: "function_declaration",
+          startLine: index * 3 + 1,
+          startCol: declarations[index].startsWith("export ") ? 7 : 0,
+          endLine: index * 3 + 3,
+          endCol: 1,
+        })));
+      },
+    );
+
+    it.each(["bindings.js", "bindings.tsx"])(
+      "names generator expressions and preserves generator method kinds in %s",
+      (filePath) => {
+        const [result] = parseFiles([{ path: filePath, content: `const boundItems = function* internalItems() {
+  yield loadBound();
+};
+const asyncBoundItems = async function* () {
+  yield await loadAsyncBound();
+};
+class Streams {
+  *items() { yield loadMethod(); }
+  async *asyncItems() { yield await loadAsyncMethod(); }
+}` }]);
+        expect(result.symbols.map((symbol) => [symbol.name, symbol.kind])).toEqual([
+          ["boundItems", "function"],
+          ["asyncBoundItems", "function"],
+          ["Streams", "class_declaration"],
+          ["items", "method_definition"],
+          ["asyncItems", "method_definition"],
+        ]);
+      },
+    );
+
     it("should parse TypeScript functions", () => {
       const content = `
 export function validateEmail(email: string): boolean {
