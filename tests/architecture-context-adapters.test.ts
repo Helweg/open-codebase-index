@@ -85,7 +85,7 @@ describe("architecture_context host execution contracts", () => {
       { worktree: "/repo/opencode" } as Parameters<typeof architecture_context.execute>[1],
     );
     expect(openCodeResult).toBe("source-backed architecture response");
-    expect(executeArchitectureContext).toHaveBeenNthCalledWith(1, "/repo/opencode", "opencode", args);
+    expect(executeArchitectureContext).toHaveBeenNthCalledWith(1, "/repo/opencode", "opencode", args, { signal: undefined });
 
     const mcpServer = new McpServer({ name: "architecture-contract", version: "1.0.0" });
     registerMcpTools(mcpServer, {
@@ -129,6 +129,6 @@ describe("architecture_context host execution contracts", () => {
 
     expect(piResult.content).toEqual([{ type: "text", text: "source-backed architecture response" }]);
     expect(piResult.details).toEqual(details);
-    expect(executeArchitectureContext).toHaveBeenNthCalledWith(3, "/repo/pi", "pi", args);
+    expect(executeArchitectureContext).toHaveBeenNthCalledWith(3, "/repo/pi", "pi", args, { signal: expect.any(AbortSignal) });
   });
 });

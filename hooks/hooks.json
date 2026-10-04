@@ -6,8 +6,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "printf '\nFor repository questions, use index_status when readiness is unknown, then call codebase_context before shell search, grep, or broad file reads. Pass symbol for definitions or from+to for dependency paths; use specialized lookup and graph tools afterward.\\n'",
-            "commandWindows": "Write-Output 'For repository questions, use index_status when readiness is unknown, then call codebase_context before shell search, grep, or broad file reads. Pass symbol for definitions or from+to for dependency paths; use specialized lookup and graph tools afterward.'",
+            "command": "printf '\\nCheck index_status when readiness is unknown. Use one compact codebase_context first pass (tokenBudget: 600, limit: 5) only for unfamiliar repository orientation. Use implementation_lookup directly for known definitions and call_graph or call_graph_path directly for relationships. Read known paths and grep exact identifiers; use codebase_edit_context optionally for a known edit target. Do not repeat retrieval when existing evidence already answers the task.\\n'",
+            "commandWindows": "Write-Output 'Check index_status when readiness is unknown. Use one compact codebase_context first pass (tokenBudget: 600, limit: 5) only for unfamiliar repository orientation. Use implementation_lookup directly for known definitions and call_graph or call_graph_path directly for relationships. Read known paths and grep exact identifiers; use codebase_edit_context optionally for a known edit target. Do not repeat retrieval when existing evidence already answers the task.'",
             "statusMessage": "Codebase Index ready"
           }
         ]

@@ -3,6 +3,7 @@ import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import { getIndexerForProject } from "./tools.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
 import { calculatePercentage, formatProgressTitle } from "../../tools/utils.js";
+import { isOperationInterruption, throwIfOperationAborted } from "../../utils/operation-control.js";
 
 const z = tool.schema;
 const AUTOMATIC_PREPARATION_POLICY =
@@ -23,6 +24,7 @@ export const pr_impact: ToolDefinition = tool({
     direction: z.enum(["callers", "callees", "both"]).optional().default("both").describe("Call-graph traversal direction: 'callers' for upstream, 'callees' for downstream, 'both' for union (default: both)"),
   },
   async execute(args, context) {
+    throwIfOperationAborted(context?.abort);
     const indexer = getIndexerForProject(context?.worktree);
     try {
       context.metadata?.({
@@ -52,9 +54,11 @@ export const pr_impact: ToolDefinition = tool({
             preparationPolicy: AUTOMATIC_PREPARATION_POLICY,
           },
         });
-      });
+      }, { signal: context?.abort });
       return formatPrImpact(result);
     } catch (error) {
+      if (isOperationInterruption(error)) throw error;
+      throwIfOperationAborted(context?.abort);
       const message = error instanceof Error ? error.message : String(error);
       return `Error analyzing PR impact: ${message}`;
     }

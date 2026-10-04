@@ -1,6 +1,6 @@
 ---
 name: codebase-search
-description: Semantic code and documentation search by meaning. Use codebase_peek to find WHERE code is (saves tokens), codebase_search to see actual code. For exact identifiers, use grep instead. Search local codebase before using websearch for code/library/API/example questions.
+description: Task-specific semantic code and documentation retrieval. Use compact context for unfamiliar repository orientation, direct lookup for known definitions, graph tools for relationships, and grep for exhaustive literal matches.
 ---
 
 # Codebase Search Skill
@@ -16,6 +16,7 @@ The indexed codebase contains **two types of content**:
 
 | Scenario | Tool | Why |
 |----------|------|-----|
+| Unfamiliar repository layout or subsystem | `codebase_context` | Compact orientation before broad reads |
 | Code/library/API question | `codebase_search` | Search local knowledge first |
 | Just need file locations | `codebase_peek` | Metadata only, saves ~90% tokens |
 | Need to see actual code | `codebase_search` | Returns full code content |
@@ -23,44 +24,23 @@ The indexed codebase contains **two types of content**:
 | Understand code flow | `call_graph` | Find callers/callees of any function |
 | Trace dependency paths | `call_graph_path` | Find a shortest known path between two symbols |
 | Analyze PR blast radius | `pr_impact` | Find affected symbols, communities, hub nodes, and risk |
-| Don't know function/class names | `codebase_peek` or `codebase_search` | Natural language → code |
-| Know exact identifier names | `grep` | Faster, more precise |
+| Don't know function/class names | `codebase_context` | Natural-language orientation with bounded evidence |
+| Know a symbol and need its definition | `implementation_lookup` | Authoritative source without a context prerequisite |
 | Need ALL occurrences | `grep` | Semantic returns top N only |
 | Access specific URL | `webfetch` | Direct URL access, no codebase search needed |
 | Local search fails | `websearch` | Fallback when codebase has no results |
 | Local and web search fails | suggest adding knowledge base | Notify user to add related folder |
 
-## Search Rule
+## Task-specific Workflow
 
-**Search local codebase first, then web search if needed.**
+1. Check `index_status` when readiness or freshness is unknown. Index only when missing, stale, or incompatible.
+2. For unfamiliar repository orientation, use one compact `codebase_context` first pass (`tokenBudget: 600`, `limit: 5`) and inspect its evidence before broad reads or searches.
+3. For known definitions, use `implementation_lookup` directly. For callers/callees or dependency paths, use `call_graph` or `call_graph_path` directly once endpoints are identified.
+4. For known or suspected edit targets, optionally use `codebase_edit_context` for bounded source plus direct graph evidence.
+5. Use `codebase_peek` for semantic locations or `codebase_search` for matching content when needed. Neither requires another context call when scope is already known.
+6. Read known paths directly; use `grep` for exact identifiers and exhaustive literal matches. Apply directory/file filters when the scope is known, rather than guessing a narrower scope.
 
-```
-Question received
-    ↓
-Is this about code/library/API/framework?
-    ↓ YES
-codebase_search(query)
-    ↓
-Found relevant results? → YES → Return answer
-    ↓ NO
-websearch(query)
-    ↓
-Found relevant results? → YES → Return answer
-    ↓ NO
-Suggest: "知识库中未找到相关信息，是否添加相关文档文件夹？"
-```
-
-1. Use `codebase_search` for code/library/API questions
-2. If no relevant results → use `websearch`
-3. If web search also fails → suggest adding a knowledge base folder
-
-## Recommended Workflow
-
-1. **Locate by meaning first**: `codebase_peek("authentication flow")` → get likely locations before grep or graph tools
-2. **Search with content**: `codebase_search("ADC channels ESP32")` → inspect implementation or knowledge-base matches
-3. **Read what matters**: `Read` the specific files you need
-4. **Trace structure after discovery**: `call_graph`, `call_graph_path`, or `pr_impact` once you know the relevant symbol
-5. **Drill down with grep**: `grep "validateToken"` for exact matches
+For repository implementation questions, use local source evidence before web search. External library/API documentation questions may need web sources when the local index lacks relevant documentation. Avoid repeating retrieval when existing evidence already answers the task.
 
 ## Tools
 

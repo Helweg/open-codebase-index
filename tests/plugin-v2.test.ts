@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
+import * as tools from "../src/tools/index.js";
 
 const mockState = vi.hoisted(() => ({
   config: {
@@ -378,6 +379,9 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
 
     const result = await firstTool.execute({}, fakeToolContext);
     expect(result).toEqual({ content: "OK" });
+    expect(tools.codebase_context.execute).toHaveBeenCalledWith({}, expect.objectContaining({
+      abort: fakeToolContext.signal,
+    }));
     expect(progressMock).toHaveBeenCalledTimes(1);
     expect(progressMock).toHaveBeenCalledWith(expect.objectContaining({ title: "t", k: 1 }));
   });
@@ -450,17 +454,22 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
     await sessionHooks.get("prompt")!({ sessionID: "real", prompt: { text: "How does the retry queue work?" } });
     const first = { sessionID: "real", system: [] as Array<{ type: string; text: string }> };
     await sessionHooks.get("context")!(first);
-    expect(first.system[0].text).toContain("one bounded `codebase_context` query");
-    expect(first.system[0].text).toContain("Verify each cited path and claim with Read");
+    const remaining: Array<Array<{ type: string; text: string }>> = [];
     for (const tool of ["codebase_context", "codebase_search", "read"]) {
       await toolHooks.get("execute.after")!({ sessionID: "real", tool });
       const final = { sessionID: "real", system: [] as Array<{ type: string; text: string }> };
       await sessionHooks.get("context")!(final);
-      expect(final.system).toHaveLength(1);
-      expect(final.system[0].text).toContain("Verify each cited path and claim with Read");
-      expect(final.system[0].text).toContain("qualify runtime outcomes the source leaves conditional");
-      expect(final.system[0].text).not.toContain("codebase_context");
+      remaining.push(final.system);
     }
+    expect(first.system[0].text).toContain(remaining[0][0].text);
+    expect(remaining[0]).not.toEqual(first.system);
+    expect(remaining[1]).toEqual(remaining[0]);
+    expect(remaining[2]).toEqual(remaining[0]);
+
+    await sessionHooks.get("prompt")!({ sessionID: "real", prompt: { text: "hello" } });
+    const nextTurn = { sessionID: "real", system: [] as Array<{ type: string; text: string }> };
+    await sessionHooks.get("context")!(nextTurn);
+    expect(nextTurn.system).toEqual([]);
   });
 
   // Case 6: Hooks fire

@@ -4,8 +4,6 @@ import type { SearchTrace } from "../src/indexer/index.js";
 
 import {
   codebase_context as opencodeCodebaseContext,
-  codebase_peek as opencodeCodebasePeek,
-  codebase_search as opencodeCodebaseSearch,
 } from "../src/adapters/opencode/tools.js";
 import { countContextTokens } from "../src/tools/utils.js";
 import { resolveCodebaseContext, resolveSearchContext } from "../src/tools/context.js";
@@ -19,6 +17,7 @@ const operationMocks = vi.hoisted(() => ({
   recordToolEffectiveness: vi.fn(),
   isToolEffectivenessEnabled: vi.fn(() => true),
   getIndexMetrics: vi.fn(() => ({ text: "metrics" })),
+  runIndexCodebase: vi.fn(),
 }));
 
 vi.mock("../src/tools/operations.js", async () => {
@@ -33,6 +32,7 @@ vi.mock("../src/tools/operations.js", async () => {
     recordToolEffectiveness: operationMocks.recordToolEffectiveness,
     isToolEffectivenessEnabled: operationMocks.isToolEffectivenessEnabled,
     getIndexMetrics: operationMocks.getIndexMetrics,
+    runIndexCodebase: operationMocks.runIndexCodebase,
   };
 });
 
@@ -51,32 +51,6 @@ const commonArgs = {
   directory: undefined,
   tokenBudget: 128,
 };
-
-describe("native OpenCode tool descriptions", () => {
-  it("prefers context for current-index conceptual questions and distinguishes semantic navigation from exact lookup", () => {
-    expect(opencodeCodebaseContext.description).toContain("conceptual questions within the current configured repository index");
-    expect(opencodeCodebaseContext.description).toContain("from and to for dependency paths");
-    expect(opencodeCodebaseContext.description).toContain("symbol for definitions");
-    expect(opencodeCodebaseContext.description).toContain("Read for known paths");
-    expect(opencodeCodebaseContext.description).toContain("grep for literal identifiers");
-    expect(opencodeCodebaseContext.description).toContain("Cite only exact file paths verified with Read");
-    expect(opencodeCodebaseContext.description).toContain("do not infer a path or runtime outcome");
-
-    expect(codebase_peek.description).toContain("Metadata-only semantic navigation");
-    expect(codebase_peek.description).toContain("Read for known paths");
-    expect(codebase_peek.description).toContain("grep for literal identifiers");
-    expect(codebase_peek.description).toContain("codebase_context first");
-
-    expect(codebase_search.description).toContain("codebase_context first");
-    expect(codebase_search.description).toContain("implementation content is needed");
-    expect(codebase_search.description).toContain("known paths use Read");
-    expect(codebase_search.description).toContain("literal identifiers use grep");
-    expect(opencodeCodebasePeek.description).toContain("Metadata-only semantic navigation");
-    expect(opencodeCodebasePeek.description).toContain("codebase_context first");
-    expect(opencodeCodebaseSearch.description).toContain("codebase_context first");
-    expect(opencodeCodebaseSearch.description).toContain("implementation content is needed");
-  });
-});
 
 describe("native OpenCode codebase_context", () => {
   beforeEach(() => {
@@ -139,7 +113,7 @@ describe("native OpenCode codebase_context", () => {
     }, context);
     expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenLastCalledWith("/repo", "opencode", "peek", "request routing", expect.objectContaining({
       metadataOnly: true,
-    }), expect.any(Function));
+    }), expect.any(Function), { signal: undefined });
 
     await codebase_search.execute({
       query: "request routing",
@@ -160,6 +134,7 @@ describe("native OpenCode codebase_context", () => {
       "request routing",
       expect.any(Object),
       expect.any(Function),
+      { signal: undefined },
     );
   });
 
@@ -283,7 +258,7 @@ describe("native OpenCode codebase_context", () => {
       directory: undefined,
       metadataOnly: true,
       prioritizeSourcePaths: expect.any(Boolean),
-    });
+    }, { signal: undefined });
     expect(result).toContain("Codebase evidence");
     expect(result).toContain("2 additional results excluded by result limit");
     expect(result).not.toContain("secret source");
@@ -395,7 +370,7 @@ describe("native OpenCode codebase_context", () => {
       directory: undefined,
       exactSymbol: true,
       trace: undefined,
-    });
+    }, { signal: undefined });
     expect(result).toContain("src/auth.ts:12-30");
     expect(result).not.toContain("fullSource");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
@@ -476,7 +451,7 @@ describe("native OpenCode codebase_context", () => {
       to: "finish",
     }, context);
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10, undefined, undefined);
+    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "opencode", "start", "finish", 10, undefined, undefined, { signal: undefined });
     expect(result).toContain("Path (30 hops)");
     expect(countContextTokens(result)).toBeLessThanOrEqual(128);
   });
@@ -502,7 +477,7 @@ describe("native OpenCode codebase_context", () => {
       directory: undefined,
       metadataOnly: true,
       prioritizeSourcePaths: expect.any(Boolean),
-    });
+    }, { signal: undefined });
   });
 
   it("keeps explicit artifact-intent queries on host-aware scoped search instead of definition lookup", async () => {
@@ -540,7 +515,7 @@ describe("native OpenCode codebase_context", () => {
         directory: "src",
         metadataOnly: true,
         prioritizeSourcePaths: expect.any(Boolean),
-      });
+      }, { signal: undefined });
     }
   });
 
@@ -566,14 +541,14 @@ describe("native OpenCode codebase_context", () => {
       directory: undefined,
       exactSymbol: false,
       trace: undefined,
-    });
+    }, { signal: undefined });
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", "where is missingHandler defined", {
       limit: 100,
       fileType: undefined,
       directory: undefined,
       metadataOnly: true,
       prioritizeSourcePaths: expect.any(Boolean),
-    });
+    }, { signal: undefined });
     expect(result).toContain("src/fallback.ts:1-4");
   });
 

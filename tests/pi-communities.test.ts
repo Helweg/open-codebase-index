@@ -104,7 +104,7 @@ describe("Pi code_communities contract", () => {
       hubThreshold: 1,
       minCoupling: 2,
       couplingLimit: 4,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(result.content[0].text).toContain("CoreService");
     expect(result.content[0].text).toContain("2 cross-community");
     expect(result.content[0].text).toContain("Community couplings: 1 shown");
