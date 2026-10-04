@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.1] - 2026-10-04
+
 ### Changed
 
 - **Pi development dependency**: Upgrade `@earendil-works/pi-coding-agent` to 1.0.1, which removes its published shrinkwrap and resolves patched `brace-expansion` 5.0.12. The existing development dependency already required Node 22.19; the package's supported runtime floor remains Node 22.13.
@@ -919,7 +921,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.1...HEAD
+[0.35.1]: https://github.com/Helweg/open-codebase-index/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/Helweg/open-codebase-index/compare/v0.34.0...v0.35.0
 [0.31.0]: https://github.com/Helweg/open-codebase-index/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/Helweg/open-codebase-index/compare/v0.29.1...v0.30.0
