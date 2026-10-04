@@ -24,6 +24,7 @@ export interface ContextPackOptions {
   maxResults?: number;
   includeExactSearchHandoff?: boolean;
   preferImplementationPaths?: boolean;
+  projectRoot?: string;
   preserveInputOrder?: boolean;
   trace?: (trace: ContextPackTrace) => void;
 }
@@ -152,16 +153,21 @@ function normalizedLineRange(result: SearchResult): { start: number; end: number
 function rankContextCandidates(
   results: SearchResult[],
   preferImplementationPaths: boolean,
+  projectRoot: string | undefined,
 ): RankedSearchResult[] {
   return results
-    .map((result, originalIndex) => ({ result, originalIndex }))
+    .map((result, originalIndex) => ({
+      result,
+      originalIndex,
+      isImplementation: preferImplementationPaths && isLikelyImplementationPath(
+        projectRoot && path.isAbsolute(result.filePath)
+          ? path.relative(projectRoot, result.filePath)
+          : result.filePath,
+      ),
+    }))
     .sort((left, right) => {
-      if (preferImplementationPaths) {
-        const leftIsImplementation = isLikelyImplementationPath(left.result.filePath);
-        const rightIsImplementation = isLikelyImplementationPath(right.result.filePath);
-        if (leftIsImplementation !== rightIsImplementation) {
-          return leftIsImplementation ? -1 : 1;
-        }
+      if (left.isImplementation !== right.isImplementation) {
+        return left.isImplementation ? -1 : 1;
       }
       return right.result.score - left.result.score || left.originalIndex - right.originalIndex;
     });
@@ -378,7 +384,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const preserveInputOrder = options.preserveInputOrder ?? false;
   const ranked = preserveInputOrder
     ? results.map((result, originalIndex) => ({ result, originalIndex }))
-    : rankContextCandidates(results, options.preferImplementationPaths ?? false);
+    : rankContextCandidates(results, options.preferImplementationPaths ?? false, options.projectRoot);
   const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
   const deduplicated = deduplicateContextCandidates(ranked);
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));

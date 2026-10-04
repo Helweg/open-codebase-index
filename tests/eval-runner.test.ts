@@ -1,10 +1,11 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runEvaluation, runSweep } from "../src/eval/runner.js";
+import { Indexer } from "../src/indexer/index.js";
 import * as operationRuntime from "../src/tools/operation-runtime.js";
 
 describe("eval runner", () => {
@@ -290,6 +291,69 @@ describe("eval runner", () => {
     expect(result.summary.metrics.contextEfficiency.queryCount).toBe(2);
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8"))
       .toContain("Graph-neighbor recall");
+  });
+
+  it.each(["checkout", "snapshot", "tests", "docs"])("grades published edit-context evidence relative to a %s project root", async (rootName) => {
+    const projectRoot = path.join(tempDir, rootName);
+    cpSync(path.join(tempDir, "src"), path.join(projectRoot, "src"), { recursive: true });
+    cpSync(path.join(tempDir, ".opencode"), path.join(projectRoot, ".opencode"), { recursive: true });
+    mkdirSync(path.join(projectRoot, "benchmarks", "golden"), { recursive: true });
+    writeFileSync(
+      path.join(projectRoot, "benchmarks", "golden", "edit-fallback.json"),
+      JSON.stringify({
+        version: "1.0.0",
+        name: "edit-fallback",
+        queries: [{
+          id: "unresolved-target",
+          query: "assemble code evidence before editing",
+          queryType: "definition",
+          retrievalMode: "edit-context",
+          args: { symbol: "missingSymbol", tokenBudget: 1200 },
+          expected: {
+            filePath: "src/indexer/index.ts",
+            symbol: "rankHybridResults",
+          },
+        }],
+      }),
+    );
+    const searchSpy = vi.spyOn(Indexer.prototype, "search").mockResolvedValue([
+      {
+        filePath: path.join(projectRoot, "tests", "context.test.ts"),
+        startLine: 1,
+        endLine: 1,
+        score: 1,
+        chunkType: "function_declaration",
+        name: "testContext",
+        content: "function testContext() { return true; }",
+      },
+      {
+        filePath: path.join(projectRoot, "src", "indexer", "index.ts"),
+        startLine: 1,
+        endLine: 1,
+        score: 0.9,
+        chunkType: "function_declaration",
+        name: "rankHybridResults",
+        content: "function rankHybridResults() { return true; }",
+      },
+    ]);
+    try {
+      const result = await runEvaluation({
+        projectRoot,
+        datasetPath: "benchmarks/golden/edit-fallback.json",
+        outputRoot: "benchmarks/results",
+        ciMode: false,
+        reindex: false,
+      });
+      expect(result.perQuery[0]).toMatchObject({
+        resolvedRoute: "search",
+        hitAt1: true,
+        reciprocalRankAt10: 1,
+      });
+      expect(result.perQuery[0].results.map((item) => item.name))
+        .toEqual(["rankHybridResults", "testContext"]);
+    } finally {
+      searchSpy.mockRestore();
+    }
   });
 
   it("fails fast when reindexing produces no searchable vectors", async () => {
