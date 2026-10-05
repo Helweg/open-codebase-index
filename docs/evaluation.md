@@ -136,10 +136,9 @@ summary. Use the agent-context budget rather than the default search baseline wh
 
 Context-mode evaluation applies the production evidence packer with its default
 1200-token response budget. The pack contains location evidence only and removes
-overlapping same-file candidates. File diversity is a tie-breaker within the
-comparably relevant ranked head (at least 80% of its leading positive score),
-not a reason to promote weak overfetch-tail files ahead of stronger same-file
-declarations. Configured-origin promotion uses the same relevance floor, and
+overlapping same-file candidates. File diversity breaks ties in the leading
+relevance score; a distinct file cannot displace a higher-scored declaration.
+Configured-origin promotion retains its separate 80% relevance floor, and
 explicit definition packs preserve lookup order.
 Agents should drill into chosen locations with `implementation_lookup`,
 `codebase_search`, or targeted file reads.
@@ -151,6 +150,15 @@ scores. Neither lane requires agreement from the other to reach the shortlist;
 equal admission scores retain the original RRF agreement order. These scores
 express rank-based relevance, not calibrated probabilities. Exact-symbol,
 lexical, weighted-fusion, and hard-scope filtering policies are unchanged.
+
+For those conceptual queries, ordinary name/path matches no longer place an
+entire definition-priority lane ahead of hybrid evidence. The promotion and
+retrieval lanes instead compete through RRF with independent lane relevance
+floors, preserving useful lexical promotions and strong retrieval-only matches.
+This balancing requires both semantic and keyword candidates, enabled local
+reranking, and no external reranker. Explicit identifier lookups, lexical-only
+fallback, weighted fusion, and external reranker ordering retain their existing
+lane policies.
 
 Optional flags:
 

@@ -10,7 +10,7 @@ export const MIN_CONTEXT_PACK_TOKEN_BUDGET = 128;
 export const MAX_CONTEXT_PACK_TOKEN_BUDGET = 4000;
 export const DEFAULT_CONTEXT_PACK_TOKEN_BUDGET = 1200;
 const CONTEXT_TOKENIZER = get_encoding("cl100k_base");
-const CONTEXT_DIVERSITY_SCORE_RATIO = 0.8;
+const CONTEXT_ORIGIN_DIVERSITY_SCORE_RATIO = 0.8;
 
 interface RankedSearchResult {
   result: SearchResult;
@@ -196,9 +196,8 @@ function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchR
 
 function diversifyContextCandidates(results: SearchResult[]): SearchResult[] {
   if (results.length <= 1) return results;
-  const minimumScore = results[0].score > 0
-    ? results[0].score * CONTEXT_DIVERSITY_SCORE_RATIO
-    : results[0].score;
+  // File diversity breaks leading relevance ties; it must not demote a stronger declaration.
+  const minimumScore = results[0].score;
   let headCount = results.length;
   for (let index = 1; index < results.length; index += 1) {
     if (results[index].score < minimumScore) {
@@ -264,7 +263,7 @@ function diversifyByOrigin(results: SearchResult[], origins: CanonicalContextOri
   seen.add(resultOrigin(fileDiversified[0], origins));
   for (const result of fileDiversified.slice(1)) {
     const origin = resultOrigin(result, origins);
-    if (origin >= 0 && !seen.has(origin) && topScore > 0 && result.score > 0 && result.score >= topScore * CONTEXT_DIVERSITY_SCORE_RATIO) {
+    if (origin >= 0 && !seen.has(origin) && topScore > 0 && result.score > 0 && result.score >= topScore * CONTEXT_ORIGIN_DIVERSITY_SCORE_RATIO) {
       seen.add(origin);
       first.push(result);
     }

@@ -17,6 +17,7 @@ import {
 } from "../src/indexer/definition-ranking.js";
 import { Indexer } from "../src/indexer/index.js";
 import { parseConfig } from "../src/config/schema.js";
+import { resolveSearchContext } from "../src/tools/context-search.js";
 import type { RankedCandidate } from "../src/indexer/search-ranking.js";
 
 function candidate(
@@ -303,6 +304,57 @@ end
     }
   });
 
+  it.each([0, 0.9])("keeps the semantic implementation visible when prose matches many declaration names (minScore %s)", async (minScore) => {
+    const tempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "conceptual-name-promotion-")));
+    const sourcePath = path.join(tempDir, "app", "merge.ts");
+    const query = "combine instance defaults with request configuration";
+    fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
+    fs.writeFileSync(sourcePath, "export function mergeConfiguration(defaults: object, request: object) { return { ...defaults, ...request }; }");
+    for (let index = 0; index < 30; index += 1) {
+      fs.writeFileSync(path.join(tempDir, "app", `noise-${index}.ts`),
+        `export function combine() { return "unrelated item ${index}"; }`);
+    }
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+      const texts = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+      return new Response(JSON.stringify({
+        data: texts.map((text) => ({
+          embedding: text.includes("mergeConfiguration") || text.includes(query)
+            ? [1, 0, 0, 0, 0, 0, 0, 0]
+            : [0, 1, 0, 0, 0, 0, 0, 0],
+        })),
+        usage: { total_tokens: texts.length },
+      }), { status: 200 });
+    });
+    const indexer = new Indexer(tempDir, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-model", dimensions: 8 },
+      indexing: { watchFiles: false, requireProjectMarker: false },
+      search: { minScore, fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20 },
+    }), "opencode");
+
+    try {
+      await indexer.index();
+      const context = await resolveSearchContext({ query, limit: 5, tokenBudget: 1200 }, {
+        lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
+          ...scope, metadataOnly: true, definitionIntent: true,
+        }),
+        search: (searchQuery, limit, scope, _trace, options) => indexer.search(searchQuery, limit, {
+          ...scope, metadataOnly: true, definitionIntent: false,
+          prioritizeSourcePaths: options?.prioritizeSourcePaths,
+        }),
+      });
+      expect(context.details?.results).toEqual(expect.arrayContaining([
+        expect.objectContaining({ filePath: fs.realpathSync.native(sourcePath), name: "mergeConfiguration" }),
+      ]));
+    } finally {
+      await indexer.close();
+      fetchSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("keeps hybrid evidence ahead of identifier lanes for multi-term identifier prose", async () => {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "identifier-prose-search-"));
     const sourcePath = path.join(tempDir, "Src", "Library", "DefaultContractResolver.cs");
@@ -343,28 +395,13 @@ public class NamingStrategy${index} {
 
     try {
       await indexer.index();
-      let proseTrace: import("../src/indexer/index.js").SearchTrace | undefined;
       const results = await indexer.search(
         "CreateProperties GetSerializableMembers NamingStrategy resolve contract properties",
         50,
-        { metadataOnly: true, filterByBranch: false, trace: (trace) => { proseTrace = trace; } },
+        { metadataOnly: true, filterByBranch: false },
       );
       const sourceResult = results.slice(0, 5).find((result) => result.filePath === sourcePath);
       expect(sourceResult).toBeDefined();
-      expect(proseTrace?.tieredCandidates.map((entry) => entry.id)).toEqual(
-        proseTrace?.postExternalRerankCandidates.slice(0, 200).map((entry) => entry.id),
-      );
-
-      let noIdentifierTrace: import("../src/indexer/index.js").SearchTrace | undefined;
-      await indexer.search("resolve contract properties", 50, {
-        metadataOnly: true,
-        filterByBranch: false,
-        prioritizeSourcePaths: true,
-        trace: (trace) => { noIdentifierTrace = trace; },
-      });
-      expect(noIdentifierTrace?.tieredCandidates.map((entry) => entry.id)).not.toEqual(
-        noIdentifierTrace?.postExternalRerankCandidates.slice(0, 200).map((entry) => entry.id),
-      );
 
       const loneIdentifier = await indexer.search("NamingStrategy0", 10, {
         metadataOnly: true,

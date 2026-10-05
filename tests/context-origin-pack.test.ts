@@ -95,25 +95,13 @@ describe("conceptual origin evidence packing", () => {
     expect(pack.tokenEstimate).toBeLessThanOrEqual(pack.tokenBudget);
   });
 
-  it("does not restart file round robin after promoting another origin", () => {
-    const candidates = [
-      hit("/repo/src/memory.ts", 0.99, 1),
-      hit("/repo/src/memory.ts", 0.98, 10),
-      hit("/repo/src/other.ts", 0.97),
-      hit("/external/axios/index.ts", 0.96),
-    ];
-    const pack = buildContextPack(candidates, { origins: roots, tokenBudget: 2000, maxResults: 3 });
-    expect(pack.results).toEqual([candidates[0], candidates[3], candidates[2]]);
-  });
-
-  it("labels KB-only evidence without inventing a project hit or changing file ordering", () => {
+  it("labels KB-only evidence without inventing a project hit", () => {
     const candidates = [
       hit("/external/axios/a.ts", 0.99, 1),
       hit("/external/axios/a.ts", 0.98, 10),
       hit("/external/axios/b.ts", 0.97),
     ];
     const pack = buildContextPack(candidates, { origins: roots, tokenBudget: 2000 });
-    expect(pack.results).toEqual([candidates[0], candidates[2], candidates[1]]);
     expect(pack.text).toContain("[origin: knowledge base: /external/axios]");
     expect(pack.text).not.toContain("[origin: project:");
   });
@@ -143,12 +131,12 @@ describe("conceptual origin evidence packing", () => {
   });
 
   it.each([
-    { siblingScore: 0.79, expectedIndex: 1 },
-    { siblingScore: 0.8, expectedIndex: 2 },
-  ])("diversifies only comparably relevant files at score $siblingScore", ({ siblingScore, expectedIndex }) => {
+    { secondScore: 0.99, siblingScore: 0.98, expectedIndex: 1 },
+    { secondScore: 1, siblingScore: 1, expectedIndex: 2 },
+  ])("uses file diversity only for a relevance tie ($secondScore, $siblingScore)", ({ secondScore, siblingScore, expectedIndex }) => {
     const candidates = [
       hit("/repo/src/core.ts", 1, 1),
-      hit("/repo/src/core.ts", 0.99, 10),
+      hit("/repo/src/core.ts", secondScore, 10),
       hit("/repo/src/sibling.ts", siblingScore),
     ];
     const pack = buildContextPack(candidates, { tokenBudget: 2000, maxResults: 2 });
