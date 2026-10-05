@@ -106,7 +106,7 @@
     "p-retry": "^7.1.1",
     "pdfjs-dist": "6.3.289",
     "tiktoken": "^1.0.15",
-    "unicode-case-folding": "1.1.1",
+    "unicode-case-folding": "1.1.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
