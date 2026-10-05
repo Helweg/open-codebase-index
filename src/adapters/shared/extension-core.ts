@@ -56,6 +56,7 @@ import { isHomeDirectory, startAutoIndexForBackgroundWorker, stopAutoIndexForBac
 import { hasProjectMarker } from "../../utils/files.js";
 import { createWatcherWithIndexer } from "../../watcher/index.js";
 import { TOOL_NAME } from "../../tools/tool-names.js";
+import { isOperationInterruption, throwIfOperationAborted } from "../../utils/operation-control.js";
 import {
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
   CODE_COMMUNITIES_DEFAULT_LIMIT,
@@ -97,7 +98,9 @@ export const CODEBASE_INDEX_GUIDANCE =
   "When using codebase_context for orientation, request a compact first pass (for example: tokenBudget: 600, limit: 5) and inspect returned evidence before broad search/grep/bash/read-style reads. " +
   "For change requests with a known or strongly suspected target symbol, optionally use codebase_edit_context as a compact, bounded pre-edit context for source plus direct callers and callees. " +
   "Avoid repeating broad reads when the compact evidence already answers the question. " +
-  "Use implementation_lookup for known symbols and call_graph/call_graph_path after endpoints are identified for dependency flow.";
+  "Use implementation_lookup directly as the authoritative known-symbol definition tool; no codebase_context prerequisite. " +
+  "Use call_graph for callers/callees and call_graph_path after endpoints are identified for dependency flow. " +
+  "Use codebase_search for semantic source content or codebase_peek for metadata-only locations when useful; neither requires codebase_context first.";
 
 function text(text: string, details?: unknown) {
   return { content: [{ type: "text" as const, text }], details };
@@ -159,7 +162,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.CODEBASE_CONTEXT,
     label: "Codebase Context",
-    description: "PREFERRED FIRST TOOL for any repository question. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when freshness is unknown, then use this tool for low-token location discovery and dependency flow. Use fromFilePath/toFilePath only when duplicate path endpoints are reported.",
+    description: "Orient yourself in an unfamiliar subsystem: layout, key symbols, or cross-file dependency intent. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Check index_status when readiness is unknown; start compact (tokenBudget: 600, limit: 5) and inspect the evidence before broad reads. For known definitions use implementation_lookup directly; for callers/callees use call_graph. Use fromFilePath/toFilePath only when duplicate path endpoints are reported.",
     parameters: schema.Object({
       query: schema.String({ description: "Natural language description of what code you're trying to locate" }),
       from: schema.Optional(schema.Union([schema.String(), schema.Null()], { description: "Source symbol when asking for a dependency path." })),
@@ -186,12 +189,12 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         description: `Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`,
       })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const normalizedParams = {
         ...params,
         diagnostic: params.diagnostic ?? undefined,
       };
-      const result = await resolveCodebaseContext(projectRoot(ctx), HOST, normalizedParams);
+      const result = await resolveCodebaseContext(projectRoot(ctx), HOST, normalizedParams, { signal });
       return text(result.text, result.details);
     },
   });
@@ -221,8 +224,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         description: "Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only.",
       })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await resolveCodebaseEditContext(projectRoot(ctx), HOST, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await resolveCodebaseEditContext(projectRoot(ctx), HOST, params, { signal });
       return text(result.text);
     },
   });
@@ -230,7 +233,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.CODEBASE_SEARCH,
     label: "Codebase Search",
-    description: "Use this after codebase_context when you need semantic content, not just locations. Describe behavior, not syntax.",
+    description: "Optional semantic retrieval with source content. Describe behavior, not syntax. Use directly when semantic source matches are needed; codebase_context is not a prerequisite.",
     parameters: schema.Object({
       query: schema.String({ description: "Natural language description of what code you're looking for" }),
       limit: schema.Optional(schema.Number({ description: "Maximum results (default: 10)" })),
@@ -243,7 +246,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       blameSince: schema.Optional(schema.String({ description: "Filter to chunks last changed on or after this date" })),
       blameUntil: schema.Optional(schema.String({ description: "Filter to chunks last changed on or before this date" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "search", params.query, {
         ...params,
       }, (results) => {
@@ -252,14 +255,14 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
           : formatSearchResults(results);
         const output = text(renderedText, results);
         return { output, text: output.content[0].text };
-      });
+      }, { signal });
     },
   });
 
   pi.registerTool({
     name: TOOL_NAME.CODEBASE_PEEK,
     label: "Codebase Peek",
-    description: "LOW-TOKEN location-first retrieval. Prefer codebase_context first, then use this for cheap conceptual lookup.",
+    description: "Optional low-token semantic retrieval of metadata-only locations. Use directly for cheap conceptual lookup; codebase_context is not a prerequisite.",
     parameters: schema.Object({
       query: schema.String(),
       limit: schema.Optional(schema.Number()),
@@ -271,14 +274,14 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       blameSince: schema.Optional(schema.String()),
       blameUntil: schema.Optional(schema.String()),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       return searchCodebaseWithEffectiveness(projectRoot(ctx), HOST, "peek", params.query, {
         ...params,
         metadataOnly: true,
       }, (results) => {
         const output = text(formatCodebasePeek(results), results);
         return { output, text: output.content[0].text };
-      });
+      }, { signal });
     },
   });
 
@@ -296,8 +299,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       blameSince: schema.Optional(schema.String({ description: "Filter to chunks last changed on or after this date" })),
       blameUntil: schema.Optional(schema.String({ description: "Filter to chunks last changed on or before this date" })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const results = await findSimilarCode(projectRoot(ctx), HOST, params.code, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const results = await findSimilarCode(projectRoot(ctx), HOST, params.code, params, { signal });
       return text(formatSearchResults(results, "similarity"), results);
     },
   });
@@ -305,18 +308,18 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.IMPLEMENTATION_LOOKUP,
     label: "Implementation Lookup",
-    description: "Find likely symbol definitions or implementations after codebase_context identifies a symbol.",
+    description: "Authoritative definition lookup for a known symbol. Use directly without a codebase_context prerequisite; exact identifiers resolve structurally, while descriptive queries use semantic implementation discovery.",
     parameters: schema.Object({
       query: schema.String(),
       limit: schema.Optional(schema.Number()),
       fileType: schema.Optional(schema.String()),
       directory: schema.Optional(schema.String()),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const results = await implementationLookup(projectRoot(ctx), HOST, params.query, {
         ...params,
         exactSymbol: isExactSymbolQuery(params.query),
-      });
+      }, { signal });
       return text(formatDefinitionLookup(results, params.query), results);
     },
   });
@@ -331,15 +334,23 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       dryRun: schema.Optional(schema.Boolean({ default: false })),
       verbose: schema.Optional(schema.Boolean({ default: false })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       try {
-        const result = await runIndexCodebase(projectRoot(ctx), HOST, params);
+        const result = await runIndexCodebase(
+          projectRoot(ctx),
+          HOST,
+          params,
+          onUpdate ? (title, metadata) => onUpdate(text(title, metadata)) : undefined,
+          { signal },
+        );
         if (result.kind === "estimate") return text(formatCostEstimate(result.estimate), result.estimate);
         if (result.kind === "dryrun") return text(formatDryRunEstimate(result.dryrun), result.dryrun);
         if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
         if (result.kind === "message") return text(result.text);
         return text(formatIndexStats(result.stats, params.verbose ?? false), result.stats);
       } catch (error: unknown) {
+        throwIfOperationAborted(signal);
+        if (isOperationInterruption(error)) throw error;
         const message = error instanceof Error ? error.message : String(error);
         return text(`index_codebase failed: ${message}`);
       }
@@ -351,8 +362,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     label: "Index Status",
     description: "Check index health and current status.",
     parameters: schema.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const status = await getIndexStatus(projectRoot(ctx), HOST);
+    async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
+      const status = await getIndexStatus(projectRoot(ctx), HOST, { signal });
       return text(formatStatus(status), status);
     },
   });
@@ -362,8 +373,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     label: "Index Health Check",
     description: "Garbage collect orphaned embeddings/chunks and report index health status.",
     parameters: schema.Object({}),
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const result = await runIndexHealthCheck(projectRoot(ctx), HOST);
+    async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
+      const result = await runIndexHealthCheck(projectRoot(ctx), HOST, { signal });
       if (result.kind === "busy") return text(result.text, { code: "INDEX_BUSY" });
       return text(formatHealthCheck(result.health), result.health);
     },
@@ -423,8 +434,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       checkConflicts: schema.Optional(schema.Boolean({ default: false })),
       direction: schema.Optional(schema.Union([schema.Literal("callers"), schema.Literal("callees"), schema.Literal("both")])),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getPrImpact(projectRoot(ctx), HOST, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await getPrImpact(projectRoot(ctx), HOST, params, { signal });
       return text(formatPrImpact(result), result);
     },
   });
@@ -440,8 +451,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       includeRecentActivity: schema.Optional(schema.Boolean({ default: false })),
       tokenBudget: schema.Optional(schema.Integer({ minimum: 128, maximum: 4000, default: 1200 })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await executeArchitectureContext(projectRoot(ctx), HOST, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await executeArchitectureContext(projectRoot(ctx), HOST, params, { signal });
       return text(result.text, result.details);
     },
   });
@@ -460,8 +471,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         schema.Integer({ minimum: 1, maximum: CODE_COMMUNITIES_MAX_COUPLING_LIMIT, default: CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT }),
       ),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getCodeCommunities(projectRoot(ctx), HOST, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await getCodeCommunities(projectRoot(ctx), HOST, params, { signal });
       return text(formatCodeCommunities(result), result);
     },
   });

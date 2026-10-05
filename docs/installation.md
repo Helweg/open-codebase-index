@@ -127,9 +127,13 @@ npm run build:ts
 omp plugin link /path/to/open-codebase-index
 ```
 
-The package declares `omp.extensions` and `omp.skills`, so omp loads `dist/omp-extension.js` and the bundled `codebase-search` skill. The extension registers the same 19-tool surface as the Pi package and reuses `.codebase-index/` project storage, preferring the host's TypeBox-compatible schema builder when omp exposes one. omp still accepts the `pi` manifest as a fallback and takes `omp` first when both are declared.
+The package declares `omp.extensions` and `omp.skills`, so omp loads `dist/omp-extension.js` and the bundled `codebase-search` skill. The extension registers the same native tool surface as the Pi package and reuses `.codebase-index/` project storage, preferring the host's TypeBox-compatible schema builder when omp exposes one. omp still accepts the `pi` manifest as a fallback and takes `omp` first when both are declared.
 
 The omp extension preserves existing system-prompt blocks and appends its repository guidance as a separate block; Pi retains its string-based prompt format.
+
+Use either the native extension or the MCP server, not both. If a repository's portable `.mcp.json` also declares `codebase-index`, merge `"disabledServers": ["codebase-index"]` into your omp user configuration at `~/.omp/agent/mcp.json` to suppress that MCP copy while retaining the native extension. Preserve any existing server definitions and disabled entries. Run `/mcp reload` or start a new session after changing MCP configuration; this omp-only exclusion does not affect other hosts.
+
+Native Pi and omp tools pass host cancellation to supported shared operations. `index_codebase` publishes partial updates with indexing phase, file/chunk counts, and percentage. Cancellation is cooperative: it stops eligible asynchronous work at operation boundaries, but cannot preempt a synchronous native computation already executing.
 
 To use the MCP server instead of the native extension, register it in `.omp/mcp.json` (project) or `~/.omp/agent/mcp.json` (user):
 
@@ -297,6 +301,6 @@ For every host:
 1. Open the repository you want to index.
 2. Run `index_status` or `/status`.
 3. Run `index_codebase` or `/index` if the index is missing or stale.
-4. Start with `codebase_context` for repository questions.
+4. Choose the task-specific tool: compact `codebase_context` for unfamiliar orientation, `implementation_lookup` for known definitions, or graph tools for identified relationships.
 
 Provider setup and storage configuration are covered in [Configuration](configuration.md). Tool selection is covered in [Tools and commands](tools.md).

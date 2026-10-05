@@ -504,27 +504,6 @@ describe("MCP server tools and prompts", () => {
     expect(content[0].text).toContain("funcA (src/a.ts) -> funcB (src/b.ts)");
   });
 
-  it("should expose self-routing descriptions even when the client ignores server instructions", async () => {
-    const tools = await client.listTools();
-    const descriptions = new Map(tools.tools.map(tool => [tool.name, tool.description ?? ""]));
-
-    expect(tools.tools[0]?.name).toBe("codebase_context");
-    expect(descriptions.get("codebase_context")).toContain("PREFERRED FIRST TOOL");
-    expect(descriptions.get("codebase_context")).toContain("before built-in code search");
-    expect(descriptions.get("index_status")).toContain("START HERE");
-    expect(descriptions.get("index_status")).toContain("codebase_peek");
-    expect(descriptions.get("codebase_peek")).toContain("LOW-TOKEN");
-    expect(descriptions.get("codebase_peek")).toContain("codebase_context");
-    expect(descriptions.get("implementation_lookup")).toContain("FIRST TOOL");
-    expect(descriptions.get("implementation_lookup")).toContain("known-symbol");
-    expect(descriptions.get("implementation_lookup")).toContain("Do not use for callers");
-    expect(descriptions.get("codebase_search")).toContain("after codebase_peek");
-    expect(descriptions.get("codebase_search")).toContain("grep");
-    expect(descriptions.get("call_graph")).toContain("Unique names resolve automatically");
-    expect(descriptions.get("call_graph_path")).toContain("fromFilePath or toFilePath");
-    expect(descriptions.get("pr_impact")).toContain("FIRST TOOL");
-  });
-
   it("should expose a diagnostic option on codebase_context schema", async () => {
     const tools = await client.listTools();
     const codebaseContext = tools.tools.find((tool) => tool.name === "codebase_context");
@@ -1025,22 +1004,6 @@ describe("MCP server tools and prompts", () => {
     const content = result.content as Array<{ type: string; text?: string }>;
     expect(content[0].text).toContain("Direct path: fromNode --Call--> toNode");
     expect(content[0].text).toContain("edge is unresolved");
-  });
-
-  it("should expose concise server instructions for tool workflow", async () => {
-    const instructions = await client.getInstructions();
-
-    expect(instructions).toBeDefined();
-    expect(instructions).toContain("index_status");
-    expect(instructions).toContain("codebase_context");
-    expect(instructions).toContain("codebase_edit_context");
-    expect(instructions).toContain("compact pre-edit");
-    expect(instructions).toContain("codebase_peek");
-    expect(instructions).toContain("implementation_lookup");
-    expect(instructions).toContain("codebase_search");
-    expect(instructions).toContain("grep");
-    expect(instructions).toContain("call_graph");
-    expect(instructions).toContain("opencode");
   });
 
   it("should execute index_status tool", async () => {

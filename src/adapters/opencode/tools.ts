@@ -52,6 +52,7 @@ import {
   executeIndexStatus,
   executeImplementationLookup,
 } from "../../tools/execute-common.js";
+import { throwIfOperationAborted } from "../../utils/operation-control.js";
 import {
   MAX_CONTEXT_PATH_DEPTH,
   MAX_CONTEXT_RESULT_LIMIT,
@@ -108,7 +109,7 @@ export function getIndexerForProject(directory: string): Indexer {
 
 export const codebase_context: ToolDefinition = tool({
   description:
-    "Preferred for conceptual questions within the current configured repository index. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Cite only exact file paths verified with Read; do not infer a path or runtime outcome from a retrieved snippet. Use from and to for dependency paths, symbol for definitions, Read for known paths, grep for literal identifiers, and codebase_peek for metadata-only semantic navigation; this tool does not automatically fan out across repositories.",
+    "Use for repository orientation when layout, relevant symbols, or cross-file intent is unfamiliar, not before every repository tool. Request a compact first pass (tokenBudget: 600, limit: 5) and inspect the deduplicated, file-diverse evidence before broad reads or searches. Use implementation_lookup directly for known definitions and call_graph/call_graph_path directly for relationships. Explicit symbol and from/to routing remains supported. Read known paths and grep literal identifiers directly; do not infer runtime outcomes from snippets. Searches use the configured index, not an automatic cross-repository fan-out.",
   args: {
     query: z.string().describe("The repository question or behavior to locate"),
     from: z.string().nullable().optional().describe("Source symbol for a dependency path"),
@@ -128,7 +129,7 @@ export const codebase_context: ToolDefinition = tool({
     diagnostic: z.boolean().optional().describe("Collect diagnostic routing and search traces without changing normal text output."),
   },
   async execute(args, context) {
-    const result = await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args);
+    const result = await executeCodebaseContext(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort });
     if (!args.diagnostic || !result.details?.diagnostic) {
       return result.text;
     }
@@ -138,7 +139,7 @@ export const codebase_context: ToolDefinition = tool({
 });
 
 export const codebase_edit_context: ToolDefinition = tool({
-  description: "PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when the target cannot be resolved.",
+  description: "Optional compact PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when the target cannot be resolved.",
   args: {
     query: z.string().describe("The requested change or target behavior"),
     symbol: z.string().nullable().optional().describe("Authoritative target symbol when known"),
@@ -153,13 +154,13 @@ export const codebase_edit_context: ToolDefinition = tool({
       .describe("Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only."),
   },
   async execute(args, context) {
-    return (await executeCodebaseEditContext(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeCodebaseEditContext(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
 export const codebase_peek: ToolDefinition = tool({
   description:
-    "Metadata-only semantic navigation. Returns file, line, name, and type WITHOUT code content. Use to locate related code before Read; use Read for known paths and grep for literal identifiers. For conceptual questions within the current configured repository index, use codebase_context first. This tool does not automatically fan out across repositories.",
+    "Metadata-only semantic location lookup. Returns file, line, name, and type WITHOUT code content. Use when you need likely locations; no preceding context call is required when the task is already scoped. Read known paths and grep literal identifiers directly. Searches use the configured index, not an automatic cross-repository fan-out.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for."),
     limit: z.number().optional().default(10).describe("Maximum number of results to return"),
@@ -185,13 +186,13 @@ export const codebase_peek: ToolDefinition = tool({
     }, (results) => {
       const text = formatCodebasePeek(results);
       return { output: text, text };
-    });
+    }, { signal: context?.abort });
   },
 });
 
 export const index_codebase: ToolDefinition = tool({
   description:
-    "Index the codebase for semantic search. Creates vector embeddings of code chunks. Incremental - only re-indexes changed files (~50ms when nothing changed). Run before first codebase_search.",
+    "Create or update the codebase index. Incremental indexing reuses unchanged files; structural mode does not request embeddings. Run when index_status reports a missing, stale, or incompatible index.",
   args: {
     force: z.boolean().optional().default(false).describe("Force reindex even if already indexed"),
     estimateOnly: z.boolean().optional().default(false).describe("Only show cost estimate without indexing"),
@@ -200,17 +201,17 @@ export const index_codebase: ToolDefinition = tool({
   },
   async execute(args, context) {
     return (await executeIndexCodebase(context?.worktree, DEFAULT_HOST, args, (title, metadata) => {
-      context.metadata({ title, metadata });
-    })).text;
+      context?.metadata?.({ title, metadata });
+    }, { signal: context?.abort })).text;
   },
 });
 
 export const index_status: ToolDefinition = tool({
   description:
-    "Check the status of the codebase index. Shows whether the codebase is indexed, how many chunks are stored, and the embedding provider being used.",
+    "Check index readiness or freshness when unknown. Reports indexed chunks, compatibility, and embedding configuration. A ready index does not require another indexing call before retrieval.",
   args: {},
   async execute(_args, context) {
-    return (await executeIndexStatus(context?.worktree, DEFAULT_HOST)).text;
+    return (await executeIndexStatus(context?.worktree, DEFAULT_HOST, { signal: context?.abort })).text;
   },
 });
 
@@ -219,7 +220,7 @@ export const index_health_check: ToolDefinition = tool({
     "Check index health and remove stale entries from deleted files. Run this to clean up the index after files have been deleted.",
   args: {},
   async execute(_args, context) {
-    return (await executeIndexHealthCheck(context?.worktree, DEFAULT_HOST)).text;
+    return (await executeIndexHealthCheck(context?.worktree, DEFAULT_HOST, { signal: context?.abort })).text;
   },
 });
 
@@ -230,7 +231,7 @@ export const index_metrics: ToolDefinition = tool({
     reset: z.boolean().optional().default(false).describe("Reset in-memory operational and effectiveness metrics before returning the snapshot"),
   },
   async execute(args, context) {
-    return (await executeIndexMetrics(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeIndexMetrics(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -243,7 +244,7 @@ export const index_logs: ToolDefinition = tool({
     level: z.enum(INDEX_LOG_LEVELS).optional().describe("Filter by minimum log level"),
   },
   async execute(args, context) {
-    return (await executeIndexLogs(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeIndexLogs(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -269,7 +270,7 @@ export const find_similar: ToolDefinition = tool({
       excludeFile: args.excludeFile,
       blameSince: args.blameSince,
       blameUntil: args.blameUntil,
-    });
+    }, { signal: context?.abort });
 
     if (results.length === 0) {
       return "No similar code found. Try a different snippet or run index_codebase first.";
@@ -281,7 +282,7 @@ export const find_similar: ToolDefinition = tool({
 
 export const codebase_search: ToolDefinition = tool({
   description:
-    "Search codebase by MEANING, not keywords. Returns full code content. Use codebase_context first for conceptual questions within the current configured repository index, then use this when implementation content is needed. For known paths use Read; for literal identifiers use grep. This tool does not automatically fan out across repositories.",
+    "Search codebase by MEANING, not keywords, when matching implementation content is needed. Use a compact codebase_context first pass only if repository orientation is still needed, not before every search. Read known paths and grep literal identifiers directly. Searches use the configured index, not an automatic cross-repository fan-out.",
   args: {
     query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
     limit: z.number().optional().default(5).describe("Maximum number of results to return"),
@@ -310,16 +311,13 @@ export const codebase_search: ToolDefinition = tool({
         ? "No matching code found. Try a different query or run index_codebase first."
         : formatSearchResults(results, "score");
       return { output: text, text };
-    });
+    }, { signal: context?.abort });
   },
 });
 
 export const implementation_lookup: ToolDefinition = tool({
   description:
-    "Jump to symbol definition. Find WHERE something is defined. " +
-    "Returns the authoritative source location(s) for a function, class, method, type, or variable. " +
-    "Prefers real implementation files over tests, docs, examples, and fixtures. " +
-    "Use when you need the definition site, not all usages.",
+    "Use directly for known-symbol definition questions. Returns authoritative source locations for functions, classes, methods, types, or variables and prefers implementations over tests, docs, examples, and fixtures. For callers or callees use call_graph; for dependency paths use call_graph_path.",
   args: {
     query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
     limit: z.number().optional().default(5).describe("Maximum number of results"),
@@ -327,7 +325,7 @@ export const implementation_lookup: ToolDefinition = tool({
     directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils')"),
   },
   async execute(args, context) {
-    return (await executeImplementationLookup(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeImplementationLookup(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -343,7 +341,7 @@ export const call_graph: ToolDefinition = tool({
     relationshipType: z.enum(RELATIONSHIP_TYPE_VALUES).optional().describe("Filter by relationship type. Omit to show all."),
   },
   async execute(args, context) {
-    return (await executeCallGraph(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeCallGraph(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -358,7 +356,7 @@ export const call_graph_path: ToolDefinition = tool({
     maxDepth: z.number().optional().default(10).describe("Maximum traversal depth (default: 10)"),
   },
   async execute(args, context) {
-    return (await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeCallGraphPath(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -371,6 +369,7 @@ export const add_knowledge_base: ToolDefinition = tool({
     path: z.string().describe("Path to the folder to add as a knowledge base (absolute or relative to the project root)"),
   },
   async execute(args, context) {
+    throwIfOperationAborted(context?.abort);
     return addKnowledgeBase(context?.worktree, DEFAULT_HOST, args.path);
   },
 });
@@ -380,6 +379,7 @@ export const list_knowledge_bases: ToolDefinition = tool({
     "List all configured knowledge base folders that are indexed alongside the main project.",
   args: {},
   async execute(_args, context) {
+    throwIfOperationAborted(context?.abort);
     return listKnowledgeBases(context?.worktree, DEFAULT_HOST);
   },
 });
@@ -391,6 +391,7 @@ export const remove_knowledge_base: ToolDefinition = tool({
     path: z.string().describe("Path of the knowledge base to remove (must match the configured path exactly)"),
   },
   async execute(args, context) {
+    throwIfOperationAborted(context?.abort);
     return removeKnowledgeBase(context?.worktree, DEFAULT_HOST, args.path.trim());
   },
 });
@@ -407,7 +408,7 @@ export const architecture_context: ToolDefinition = tool({
     tokenBudget: z.number().int().min(128).max(4000).optional().default(1200).describe("Maximum response token budget"),
   },
   async execute(args, context) {
-    return (await executeArchitectureContext(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeArchitectureContext(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -425,7 +426,7 @@ export const code_communities: ToolDefinition = tool({
     couplingLimit: z.number().int().min(1).max(CODE_COMMUNITIES_MAX_COUPLING_LIMIT).optional().default(CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT).describe("Maximum number of couplings to return (default: 20)"),
   },
   async execute(args, context) {
-    return (await executeCodeCommunities(context?.worktree, DEFAULT_HOST, args)).text;
+    return (await executeCodeCommunities(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 
@@ -439,10 +440,12 @@ export const index_visualize: ToolDefinition = tool({
     includeOrphans: z.boolean().optional().default(false).describe("Include symbols with no call relationships"),
   },
   async execute(args, context) {
+    throwIfOperationAborted(context?.abort);
     const projectRoot = context?.worktree ?? process.cwd();
     const indexer = getIndexerForProject(projectRoot);
     const rawData = await indexer.getVisualizationData({
       directory: args.directory,
+      signal: context?.abort,
     });
 
     if (rawData.symbols.length === 0) {
@@ -460,6 +463,7 @@ export const index_visualize: ToolDefinition = tool({
     }
 
     const html = generateVisualizationHtml(vizData);
+    throwIfOperationAborted(context?.abort);
     const outputPath = path.join(os.tmpdir(), `call-graph-${Date.now()}.html`);
     writeFileSync(outputPath, html, "utf-8");
 

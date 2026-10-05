@@ -41,8 +41,8 @@ export function registerCallGraphTools(pi: Pick<ExtensionAPI, "registerTool">, s
       symbolId: schema.Optional(schema.String()),
       relationshipType: schema.Optional(RelationshipType),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await getCallGraphData(projectRoot(ctx), HOST, params);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await getCallGraphData(projectRoot(ctx), HOST, params, { signal });
       return text(formatCallGraphResult(result), result);
     },
   });
@@ -58,7 +58,7 @@ export function registerCallGraphTools(pi: Pick<ExtensionAPI, "registerTool">, s
       toFilePath: schema.Optional(schema.String()),
       maxDepth: schema.Optional(schema.Number({ default: 10 })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const result = await getCallGraphPath(
         projectRoot(ctx),
         HOST,
@@ -67,6 +67,7 @@ export function registerCallGraphTools(pi: Pick<ExtensionAPI, "registerTool">, s
         params.maxDepth,
         params.fromFilePath,
         params.toFilePath,
+        { signal },
       );
       return text(formatCallGraphPathResult(result), result);
     },

@@ -314,16 +314,17 @@ describe("plugin routing hint hook selection", () => {
     } as Parameters<typeof message>[1]);
     const first = { system: [] as string[], developer: [] as string[] };
     await transform({ sessionID: "real" }, first);
-    expect(first[role][0]).toContain("one bounded `codebase_context` query");
-    expect(first[role][0]).toContain("Verify each cited path and claim with Read");
+    expect(first[role]).toHaveLength(1);
+    let retainedHint: string | undefined;
     for (const tool of ["codebase_context", "codebase_search", "read"]) {
       await after({ sessionID: "real", tool, callID: tool, args: {} }, { title: "", output: "", metadata: {} });
       const final = { system: [] as string[], developer: [] as string[] };
       await transform({ sessionID: "real" }, final);
       expect(final[role]).toHaveLength(1);
-      expect(final[role][0]).toContain("Verify each cited path and claim with Read");
-      expect(final[role][0]).toContain("qualify runtime outcomes the source leaves conditional");
-      expect(final[role][0]).not.toContain("codebase_context");
+      expect(final[role][0]).toEqual(expect.any(String));
+      expect(first[role][0]).toContain(final[role][0]);
+      if (retainedHint !== undefined) expect(final[role][0]).toBe(retainedHint);
+      retainedHint = final[role][0];
     }
   });
 

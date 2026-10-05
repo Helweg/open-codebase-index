@@ -37,7 +37,7 @@
     "termsOfServiceURL": "https://github.com/Helweg/open-codebase-index/blob/main/LICENSE",
     "brandColor": "#3B82F6",
     "defaultPrompt": [
-      "For repository questions, use index_status when readiness is unknown, then call codebase_context before shell search or broad file reads."
+      "Check index_status when readiness is unknown. Use one compact codebase_context first pass (tokenBudget: 600, limit: 5) only for unfamiliar repository orientation. Use implementation_lookup directly for known definitions and call_graph or call_graph_path directly for relationships; read known paths and grep exact identifiers without a mandatory context call."
     ]
   }
 }

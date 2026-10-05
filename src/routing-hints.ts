@@ -163,14 +163,14 @@ export function buildRoutingHint(
     : "";
 
   if (!status || !status.indexed || status.compatibility?.compatible === false) {
-    const graphHandoff = includeGraphHandoff ? " Use graph tools after semantic discovery identifies relevant symbols." : "";
-    return `For this turn, if local code discovery by behavior is needed, check \`index_status\` first and run \`index_codebase\` if the index is missing or incompatible.${graphHandoff} Then use \`codebase_context\` as the first local repository lookup. Use \`grep\` for exact identifiers or exhaustive matches.${preEditHint}`;
+    const graphHandoff = includeGraphHandoff ? " Use call_graph or call_graph_path directly once symbols or endpoints are identified." : "";
+    return `For this turn, check \`index_status\` when readiness is unknown and run \`index_codebase\` if the index is missing or incompatible. Use one compact \`codebase_context\` first pass (tokenBudget: 600, limit: 5) only when repository orientation is needed.${graphHandoff} Use \`implementation_lookup\` directly for known definitions, Read for known paths, and \`grep\` for exact or exhaustive literal matches.${preEditHint}`;
   }
 
   const graphHandoff = includeGraphHandoff
-    ? " before graph tools such as `call_graph`, `call_graph_path`, or `pr_impact`"
+    ? " Use call_graph or call_graph_path directly once symbols or endpoints are identified."
     : "";
-  return `For this turn, when the relevant behavior or location is not yet known, make one bounded \`codebase_context\` query before exploratory shell, glob, grep, or Read calls. ${ANSWER_HINT} Use \`codebase_peek\` for metadata and \`codebase_search\` when you need implementation content${graphHandoff}. If the exact path or identifier is already known, use Read or \`grep\` directly instead.${preEditHint}`;
+  return `For this turn, use one compact \`codebase_context\` first pass (tokenBudget: 600, limit: 5) only when repository orientation is needed (layout, relevant symbols, or cross-file intent). Inspect returned evidence before broad reads or searches; do not repeat retrieval when the task is already scoped. ${ANSWER_HINT} Use \`codebase_peek\` for metadata and \`codebase_search\` when matching source content is needed.${graphHandoff} Use \`implementation_lookup\` directly for known definitions, Read for known paths, and \`grep\` for exact or exhaustive literal matches.${preEditHint}`;
 }
 
 export class RoutingHintController {

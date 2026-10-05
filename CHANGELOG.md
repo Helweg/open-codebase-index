@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Task-specific retrieval guidance**: Align OpenCode, MCP, Pi, omp, and bundled skills around compact context for unfamiliar repository orientation, direct symbol definitions and graph relationships, and optional bounded pre-edit context. Already-scoped tasks no longer receive conflicting instructions to repeat context retrieval before every search.
+
+### Fixed
+
+- **Native tool cancellation and indexing progress**: Pi and omp now pass host cancellation into supported shared retrieval, graph, and indexing operations. Native `index_codebase` emits partial phase/count/percentage updates and preserves cancellation and stall interruptions instead of converting them into ordinary result text.
+- **OpenCode cancellation propagation**: Forward tool abort signals through shared operations, including the OpenCode v2 bridge, and preserve PR-impact interruptions. Pre-aborted synchronous knowledge-base operations reject before changing configuration. MCP's existing cancellation/progress lifecycle remains unchanged.
+
 ## [0.35.1] - 2026-10-04
 
 ### Changed

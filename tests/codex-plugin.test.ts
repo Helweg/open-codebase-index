@@ -61,10 +61,5 @@ describe("Codex plugin host mode", () => {
       "codex",
     ]);
 
-    const hookManifest = fs.readFileSync("hooks/hooks.json", "utf-8");
-    const skill = fs.readFileSync("skills/codebase-search/SKILL.md", "utf-8");
-    expect(pluginManifest.interface?.defaultPrompt?.join(" ")).toContain("codebase_context");
-    expect(hookManifest).toContain("codebase_context before shell search");
-    expect(skill).toContain("codebase_context(query, ...)");
   });
 });

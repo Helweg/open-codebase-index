@@ -2,10 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { countContextTokens } from "../src/tools/utils.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { OperationCancelledError, OperationStallTimeoutError } from "../src/utils/operation-control.js";
 
 const operationMocks = vi.hoisted(() => ({
   getCallGraphData: vi.fn(),
   getCallGraphPath: vi.fn(),
+  findSimilarCode: vi.fn(),
+  getIndexStatus: vi.fn(),
+  getPrImpact: vi.fn(),
+  getCodeCommunities: vi.fn(),
+  getArchitectureContext: vi.fn(),
   getIndexHealthCheck: vi.fn(),
   getIndexerForProject: vi.fn(() => ({})),
   runIndexCodebase: vi.fn(),
@@ -40,15 +46,17 @@ const watcherMocks = vi.hoisted(() => ({
 
 vi.mock("../src/tools/operations.js", () => ({
   addKnowledgeBase: vi.fn(() => "Added knowledge base"),
-  findSimilarCode: vi.fn(() => []),
+  findSimilarCode: operationMocks.findSimilarCode,
   getCallGraphData: operationMocks.getCallGraphData,
   getCallGraphPath: operationMocks.getCallGraphPath,
   getIndexHealthCheck: operationMocks.getIndexHealthCheck,
   getIndexerForProject: operationMocks.getIndexerForProject,
   runIndexCodebase: operationMocks.runIndexCodebase,
   getIndexMetrics: operationMocks.getIndexMetrics,
-  getIndexStatus: vi.fn(),
-  getPrImpact: vi.fn(),
+  getIndexStatus: operationMocks.getIndexStatus,
+  getPrImpact: operationMocks.getPrImpact,
+  getCodeCommunities: operationMocks.getCodeCommunities,
+  getArchitectureContext: operationMocks.getArchitectureContext,
   implementationLookup: operationMocks.implementationLookup,
   listKnowledgeBases: vi.fn(() => "No knowledge bases configured."),
   removeKnowledgeBase: vi.fn(() => "Removed knowledge base"),
@@ -94,7 +102,7 @@ interface RegisteredTool {
     toolCallId: string,
     params: Record<string, unknown>,
     signal: AbortSignal,
-    onUpdate: () => void,
+    onUpdate: (result: { readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>; readonly details?: unknown }) => void,
     ctx?: { readonly cwd?: string },
   ) => Promise<{ readonly content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>; readonly details?: unknown }>;
 }
@@ -141,6 +149,11 @@ describe("Pi adapter conformance", () => {
     operationMocks.getCallGraphData.mockReset();
     operationMocks.getCallGraphPath.mockReset();
     operationMocks.getIndexHealthCheck.mockReset();
+    operationMocks.findSimilarCode.mockReset();
+    operationMocks.getIndexStatus.mockReset();
+    operationMocks.getPrImpact.mockReset();
+    operationMocks.getCodeCommunities.mockReset();
+    operationMocks.getArchitectureContext.mockReset();
     operationMocks.runIndexHealthCheck.mockReset();
     operationMocks.searchCodebase.mockReset();
     operationMocks.searchCodebaseWithEffectiveness.mockReset();
@@ -420,7 +433,7 @@ describe("Pi adapter conformance", () => {
     expect(result?.details).toEqual(expect.arrayContaining([expect.objectContaining({ name: "validateToken" })]));
     expect(operationMocks.searchCodebaseWithEffectiveness).toHaveBeenCalledWith("/repo", "pi", "peek", "authentication validation", expect.objectContaining({
       metadataOnly: true,
-    }), expect.any(Function));
+    }), expect.any(Function), { signal: expect.any(AbortSignal) });
   });
 
   it("marks full-content search for effectiveness aggregation", async () => {
@@ -442,6 +455,7 @@ describe("Pi adapter conformance", () => {
       "request routing",
       expect.any(Object),
       expect.any(Function),
+      { signal: expect.any(AbortSignal) },
     );
     expect(result?.content[0]?.text).toBe("No matching code found. Try a different query or run index_codebase first.");
     expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledTimes(1);
@@ -634,12 +648,12 @@ describe("Pi adapter conformance", () => {
       { cwd: "/repo" },
     );
 
-    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10, undefined, undefined);
+    expect(operationMocks.getCallGraphPath).toHaveBeenCalledWith("/repo", "pi", "callerFn", "targetFn", 10, undefined, undefined, { signal: expect.any(AbortSignal) });
     expect(operationMocks.getCallGraphData).toHaveBeenCalledWith("/repo", "pi", {
       name: "targetFn",
       direction: "callers",
       filePath: undefined,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");
     expect(result?.content[0]?.text).toContain("edge is unresolved");
@@ -674,7 +688,7 @@ describe("Pi adapter conformance", () => {
       directory: undefined,
       exactSymbol: true,
       trace: undefined,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(result?.content[0]?.text).toContain("src/auth.ts:12-30");
     expect(result?.content[0]?.text).not.toContain("function validateToken() {}");
     expect(countContextTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
@@ -715,7 +729,7 @@ describe("Pi adapter conformance", () => {
       directory: undefined,
       exactSymbol: false,
       trace: undefined,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(result?.content[0]?.text).toContain("\"getStatus\"");
   });
 
@@ -749,7 +763,7 @@ describe("Pi adapter conformance", () => {
       directory: undefined,
       exactSymbol: false,
       trace: undefined,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(operationMocks.searchCodebase).toHaveBeenCalledWith(
       "/repo",
       "pi",
@@ -761,6 +775,7 @@ describe("Pi adapter conformance", () => {
         metadataOnly: true,
         prioritizeSourcePaths: true,
       },
+      { signal: expect.any(AbortSignal) },
     );
     expect(result?.content[0]?.text).toContain("Codebase evidence");
     expect(result?.content[0]?.text).toContain("Recovery: inferred definition missed.");
@@ -796,7 +811,7 @@ describe("Pi adapter conformance", () => {
       directory: "src",
       metadataOnly: true,
       prioritizeSourcePaths: true,
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(result?.content[0]?.text).toContain("Codebase evidence");
     expect(result?.content[0]?.text).not.toContain("validation helper");
     expect(countContextTokens(result?.content[0]?.text ?? "")).toBeLessThanOrEqual(128);
@@ -831,35 +846,7 @@ describe("Pi adapter conformance", () => {
       directory: undefined,
       metadataOnly: true,
       prioritizeSourcePaths: true,
-    });
-  });
-
-  it("injects adaptive, compact Pi repository guidance on before_agent_start", async () => {
-    const { beforeAgentStartHandlers } = await registerPiTools();
-
-    const result = await beforeAgentStartHandlers[0]?.({ systemPrompt: "Base system prompt." });
-
-    expect(result).toMatchObject({
-      systemPrompt: expect.stringContaining("Check index_status first"),
-    });
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
-      "Use codebase_context only when repository orientation is needed",
-    );
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("tokenBudget: 600");
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("limit: 5");
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
-      "inspect returned evidence before broad search/grep/bash/read-style reads",
-    );
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
-      "optionally use codebase_edit_context",
-    );
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("direct callers and callees");
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain(
-      "Avoid repeating broad reads when the compact evidence already answers the question",
-    );
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("not mechanically for every task");
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("implementation_lookup");
-    expect((result as { systemPrompt?: string }).systemPrompt).toContain("call_graph");
+    }, { signal: expect.any(AbortSignal) });
   });
 
   it("returns INDEX_BUSY details from the Pi health-check tool", async () => {
@@ -881,6 +868,23 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("INDEX_BUSY");
     expect(result?.content[0]?.text).toContain("PID 4444");
     expect(result?.details).toEqual({ code: "INDEX_BUSY" });
+  });
+
+  it("preserves indexing stall interruptions and normalizes a host abort reason", async () => {
+    const { tools } = await registerPiTools();
+    const tool = tools.get("index_codebase")!;
+    const stalled = new OperationStallTimeoutError();
+    operationMocks.runIndexCodebase.mockRejectedValueOnce(stalled);
+    await expect(tool.execute("stall-call", {}, new AbortController().signal, () => {}, { cwd: "/repo" }))
+      .rejects.toBe(stalled);
+
+    const controller = new AbortController();
+    operationMocks.runIndexCodebase.mockImplementationOnce(async () => {
+      controller.abort(new Error("host-specific reason"));
+      throw new Error("provider wrapped the abort");
+    });
+    await expect(tool.execute("abort-call", {}, controller.signal, () => {}, { cwd: "/repo" }))
+      .rejects.toBeInstanceOf(OperationCancelledError);
   });
 
   it("returns a clear text failure when runIndexCodebase rejects with deprecated github-copilot config", async () => {

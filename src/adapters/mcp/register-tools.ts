@@ -99,7 +99,7 @@ function registerMcpTool<Shape extends ZodRawShapeCompat>(
 export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): void {
   registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_CONTEXT,
-    "PREFERRED FIRST TOOL for any question about this repository. Returns a deduplicated, file-diverse evidence pack within tokenBudget. Use before built-in code search, grep, shell search, or broad file reads. Provide from+to for a dependency path, with optional fromFilePath/toFilePath when names are ambiguous; provide symbol for a definition; or provide only query for low-token conceptual discovery. Use call_graph directly for callers or callees.",
+    "Use for repository orientation when layout, relevant symbols, or cross-file intent is unfamiliar, not before every repository tool. Request a compact first pass (tokenBudget: 600, limit: 5) and inspect the deduplicated, file-diverse evidence before broad reads or searches. For known definitions use implementation_lookup directly; for relationships use call_graph or call_graph_path directly. Explicit symbol and from/to routing remains supported; use file-path disambiguation only when duplicate names are reported.",
     {
       query: z.string().describe("The codebase question or behavior to locate. Always provide the user's repository question here."),
       from: allowNullAsUndefined(z.string().optional()).describe("Source symbol. For dependency-path questions, extract the first endpoint and provide it here."),
@@ -132,7 +132,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_EDIT_CONTEXT,
-    "PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when resolution is unsafe.",
+    "Optional compact PRE-EDIT TOOL for a known or suspected symbol. Returns token-bounded target source, direct callers and callees, or a risk-marked conceptual fallback when resolution is unsafe.",
     {
       query: z.string().describe("The requested change or target behavior."),
       symbol: allowNullAsUndefined(z.string().optional()).describe("Authoritative target symbol when known."),
@@ -155,7 +155,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_SEARCH,
-    "FULL-CONTENT semantic retrieval. Use after codebase_peek when you need implementation text, not as the default first step. For exact identifiers or exhaustive matches use grep instead.",
+    "FULL-CONTENT semantic retrieval when matching implementation text is needed. Use a compact codebase_context first pass only if repository orientation is still needed, not before every search. For exact identifiers or exhaustive literal matches use grep.",
     {
       query: z.string().describe("Natural language description of what code you're looking for. Describe behavior, not syntax."),
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results to return"),
@@ -190,7 +190,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.CODEBASE_PEEK,
-    "DIRECT LOW-TOKEN semantic location lookup for unfamiliar-code discovery. Prefer codebase_context when the request may involve definitions or graph navigation; use this specialized tool when you only need conceptual locations.",
+    "DIRECT LOW-TOKEN metadata-only semantic location lookup. Use when you need likely files and symbols without source bodies; no preceding context call is required when the task is already scoped.",
     {
       query: z.string().describe("Natural language description of what code you're looking for."),
       limit: allowNullAsUndefined(z.number().optional().default(10)).describe("Maximum number of results to return"),
@@ -240,7 +240,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_STATUS,
-    "START HERE once per repository task when index readiness or freshness is unknown. Reports whether semantic retrieval is ready, chunk counts, compatibility, and the embedding provider. If ready, continue with codebase_peek or implementation_lookup; otherwise run index_codebase.",
+    "Check index readiness or freshness when unknown. Reports indexed chunks, compatibility, and embedding configuration. If ready, use the tool appropriate to the task; otherwise run index_codebase.",
     {},
     async (_args, control) => {
       const result = await executeIndexStatus(runtime.projectRoot, runtime.host, control);
@@ -322,7 +322,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.IMPLEMENTATION_LOOKUP,
-    "FIRST TOOL only for known-symbol definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. Do not use for callers, callees, dependency paths, or code flow; use codebase_context with direction or from/to for those questions.",
+    "Use directly for known-symbol definition questions. Returns authoritative source locations and prefers implementations over tests, docs, examples, and fixtures. For callers or callees use call_graph; for dependency paths use call_graph_path.",
     {
       query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
       limit: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum number of results"),

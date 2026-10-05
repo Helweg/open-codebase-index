@@ -105,20 +105,18 @@ See [Installation and host setup](docs/installation.md) for complete instruction
 
 ## Recommended workflow
 
-1. **Check readiness** with `index_status` or `/status`.
-2. **Index when needed** with `index_codebase` or `/index`.
-3. **Start repository discovery** with `codebase_context`.
-4. **Use `codebase_peek`** when you only need likely locations.
-5. **Use `implementation_lookup`** for a known symbol or definition question.
-6. **Use `codebase_search`** when you need full matching source content.
-7. **Use `grep`** for exact identifiers or exhaustive text matches.
-8. **Use call-graph tools** for callers, callees, and dependency paths.
+1. **Check readiness when unknown** with `index_status` or `/status`; index only when needed.
+2. **Orient in unfamiliar code** with one compact `codebase_context` first pass (`tokenBudget: 600`, `limit: 5`), then inspect the evidence. Skip this step when the task is already scoped.
+3. **Go directly to known definitions or relationships** with `implementation_lookup`, `call_graph`, or `call_graph_path`.
+4. **Optionally prepare a known edit target** with `codebase_edit_context` for bounded source and direct graph evidence.
+5. **Choose metadata or matching source** with `codebase_peek` or `codebase_search`; do not repeat context calls unnecessarily.
+6. **Read known paths or match literals directly** with targeted reads or `grep`.
 
 ### Which search tool should I use?
 
 | Need | Tool |
 |---|---|
-| Route a repository question to a bounded evidence pack | `codebase_context` |
+| Orient in unfamiliar repository code with a compact evidence pack | `codebase_context` |
 | Find likely files and symbols without source bodies | `codebase_peek` |
 | Retrieve full matching code | `codebase_search` |
 | Find an authoritative definition | `implementation_lookup` |

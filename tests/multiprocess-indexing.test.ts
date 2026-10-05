@@ -1525,11 +1525,11 @@ describe("multiprocess indexing", () => {
     }, { timeout: 10_000 });
 
     process.kill(firstOwner.pid, "SIGKILL");
-    await waitForCondition(() => {
-      if (!fs.existsSync(leasePath)) return false;
+    // Promotion can create the lease directory before publishing owner.json.
+    await vi.waitFor(() => {
       const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
-      return owner.pid === follower.transport.pid;
-    }, "follower background worker promotion", 12_000);
+      expect(owner.pid).toBe(follower.transport.pid);
+    }, { timeout: 12_000, interval: 25 });
 
     await waitForCondition(() => {
       if (!fs.existsSync(watcherEventsPath)) return false;
@@ -1586,11 +1586,10 @@ describe("multiprocess indexing", () => {
 
     await leader.client.close();
     mcpClients = mcpClients.filter((client) => client !== leader.client);
-    await waitForCondition(() => {
-      if (!fs.existsSync(leasePath)) return false;
+    await vi.waitFor(() => {
       const replacement = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
-      return replacement.pid === follower.transport.pid;
-    }, "clean follower promotion", 12_000);
+      expect(replacement.pid).toBe(follower.transport.pid);
+    }, { timeout: 12_000, interval: 25 });
     await waitForCondition(() => {
       if (!fs.existsSync(watcherEventsPath)) return false;
       const watcherStarts = fs.readFileSync(watcherEventsPath, "utf-8").split("\n").filter(Boolean);

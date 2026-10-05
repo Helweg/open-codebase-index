@@ -11,6 +11,8 @@ Tool availability depends on the host mode.
 | `pi` (Pi extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
 | `omp` (omp extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
 
+Codex, Claude Code, Jcode, Cursor, Windsurf, and generic MCP clients share the same MCP registrations and operation lifecycle; they are thin host/configuration integrations, not independent retrieval implementations. MCP cancellation and progress depend on the client forwarding cancellation notifications and requesting a progress token. OpenCode v1 forwards its tool `abort` signal and publishes indexing metadata; OpenCode v2 bridges its `signal` and `progress` callbacks to the same tool handlers. Pi and omp use the shared native-extension registrar.
+
 ### Portable MCP core (16 tools)
 
 These tools are available through the MCP server and the OpenCode plugin.
@@ -78,17 +80,20 @@ Pi exposes all 16 portable tools, including `architecture_context`, `call_graph`
 
 omp registers the same names and aliases through the shared Pi registrar, so the Pi naming notes above apply unchanged.
 
-## Recommended selection order
+## Task-specific tool selection
 
-1. `index_status` when index readiness is unknown.
-2. `architecture_context` before repository-scale planning when module responsibilities and boundaries are not yet known.
-3. `codebase_context` for a repository question that may require discovery, a definition, or a dependency path.
-4. `codebase_edit_context` optionally when a broad change request already has a known or suspected target symbol, for compact pre-edit source plus caller/callee context.
-5. `codebase_peek` for direct low-token location discovery.
-6. `implementation_lookup` for a known symbol or definition question.
-7. `codebase_search` when full matching source content is required.
-8. `grep` for exact identifiers or exhaustive text matches.
-9. `call_graph` or `call_graph_path` for graph-specific questions.
+Check `index_status` when index readiness or freshness is unknown; index only when missing, stale, or incompatible. Then choose the tool for the current task, not a mandatory sequence:
+
+- **Unfamiliar repository orientation:** one compact `codebase_context` first pass (`tokenBudget: 600`, `limit: 5`) for layout, relevant symbols, or cross-file intent. Inspect the evidence before broad reads or searches; skip this step when scope is already known.
+- **Known definition:** `implementation_lookup` directly.
+- **Callers/callees or dependency paths:** `call_graph` or `call_graph_path` directly once symbols or endpoints are identified.
+- **Known or suspected edit target:** optional `codebase_edit_context` for bounded target source plus direct callers/callees.
+- **Metadata-only semantic locations:** `codebase_peek`.
+- **Matching implementation text:** `codebase_search`.
+- **Known paths or exact/exhaustive literal matches:** targeted file reads or `grep` directly.
+- **Repository-scale planning:** `architecture_context` when module responsibilities and boundaries are unknown.
+
+Do not repeat context calls or broad reads when existing evidence already answers the question.
 
 ## Core retrieval tools
 
@@ -102,7 +107,7 @@ Set `includeRecentActivity: true` to include matching Git activity from the last
 
 ### `codebase_context`
 
-Preferred entry point for general repository questions. It returns a bounded, deduplicated, file-diverse evidence pack. It can also route explicit symbol definitions or `from`/`to` dependency-path requests.
+Use for compact orientation when repository layout, relevant symbols, or cross-file intent is unfamiliar; start with `tokenBudget: 600` and `limit: 5`. It returns a bounded, deduplicated, file-diverse evidence pack. Explicit symbol-definition and `from`/`to` path routing remains supported, but known definitions and relationships can go directly to their specialized tools.
 
 Important options include result limits, file and directory filters, path disambiguation, and a `tokenBudget` from 128 to 4000 tokens.
 
@@ -114,11 +119,11 @@ Returns likely locations and metadata without full source bodies. Use it when yo
 
 ### `codebase_search`
 
-Returns full semantic search results, optionally with context lines and filters. Use it after discovery when you need implementation text.
+Returns full semantic search results, optionally with context lines and filters. Use when matching implementation text is needed; no preceding context or peek call is required when the task is already scoped.
 
 ### `implementation_lookup`
 
-Finds authoritative definition locations and prefers implementation files over tests, documentation, examples, and fixtures.
+Use directly for known-definition questions. Finds authoritative definition locations and prefers implementation files over tests, documentation, examples, and fixtures.
 
 ### `find_similar`
 
