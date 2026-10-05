@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { analyzeQueryIntent, isExplicitIdentifierLookup } from "../src/indexer/intent-aware-ranking.js";
+import { analyzeQueryIntent, extractIntentIdentifierHints, isExplicitIdentifierLookup, rankIntentAwareCandidates } from "../src/indexer/intent-aware-ranking.js";
 import { vi } from "vitest";
 import {
   buildDeterministicIdentifierPass,
@@ -54,6 +54,40 @@ describe("definition ranking helpers", () => {
     expect(analyzeQueryIntent("find tests for `PaymentValidator`").preferSourcePaths).toBe(false);
     expect(analyzeQueryIntent("find docs for 'PaymentValidator'").preferSourcePaths).toBe(false);
     expect(isExplicitIdentifierLookup("conceptual view of how a JsonReader token stream is validated")).toBe(false);
+  });
+
+  it.each([
+    "How does file walking apply .ignore and .gitignore files, hidden-file filtering, and explicit glob overrides, and where is matching precedence implemented?",
+    "Where does Axios merge instance defaults with request options, and where is the merge implementation?",
+    "Where is command short help generated, and how are options and arguments formatted?",
+  ])("does not manufacture identifier operands from ordinary questions: %s", (query) => {
+    expect(extractIntentIdentifierHints(query)).toEqual([]);
+    expect(isExplicitIdentifierLookup(query)).toBe(false);
+    const evidence = candidate("behavior", "src/policy.ts", "resolvePolicy", "function_declaration", 0.95);
+    const unrelated = ["does", "file", "walking", "command", "short", "help"].map((name) =>
+      candidate(name, `src/${name}.ts`, name, "function_declaration", 0.4));
+    expect(rankIntentAwareCandidates(query, [...unrelated, evidence], 10)[0]?.id).toBe("behavior");
+  });
+
+  it.each([
+    "PaymentValidator",
+    "`PaymentValidator`",
+    "where is PaymentValidator defined",
+    "find PaymentValidator implementation",
+    "where is payment implemented",
+    "get_name",
+    "api.get_name",
+    "where is api.get_name defined",
+    "where is Namespace::get_name implemented",
+  ])("retains genuine single-operand identifier lookup: %s", (query) => {
+    expect(isExplicitIdentifierLookup(query)).toBe(true);
+  });
+
+  it("keeps prose identifiers useful without interpreting prose as exact lookup", () => {
+    const query = "How does PaymentValidator apply get_name before the validation implementation returns?";
+    expect(extractIntentIdentifierHints(query)).toEqual(["paymentvalidator", "get_name"]);
+    expect(isExplicitIdentifierLookup(query)).toBe(false);
+    expect(analyzeQueryIntent(query).preferSourcePaths).toBe(true);
   });
 
   it("extracts, strips, and matches normalized file path hints", () => {
@@ -348,6 +382,83 @@ end
       expect(context.details?.results).toEqual(expect.arrayContaining([
         expect.objectContaining({ filePath: fs.realpathSync.native(sourcePath), name: "mergeConfiguration" }),
       ]));
+    } finally {
+      await indexer.close();
+      fetchSpy.mockRestore();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it.each([0, 0.9])("routes ordinary questions through scoped hybrid evidence rather than a related exact symbol (minScore %s)", async (minScore) => {
+    const tempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "natural-question-routing-")));
+    const cases = [
+      {
+        query: "How does file walking apply .ignore and .gitignore files, hidden-file filtering, and explicit glob overrides, and where is matching precedence implemented?",
+        name: "walkPolicy",
+        content: "file walking ignore gitignore hidden-file filtering explicit glob overrides matching precedence",
+      },
+      {
+        query: "Where does Axios merge instance defaults with request options, and where is the merge implementation?",
+        name: "mergePolicy",
+        content: "Axios merge instance defaults request options implementation",
+      },
+      {
+        query: "Where is command short help generated, and how are options and arguments formatted?",
+        name: "helpPolicy",
+        content: "command short help generated options arguments formatted",
+      },
+    ];
+    fs.mkdirSync(path.join(tempDir, "app"));
+    fs.mkdirSync(path.join(tempDir, "excluded"));
+    for (const item of cases) {
+      fs.writeFileSync(path.join(tempDir, "app", `${item.name}.ts`),
+        `// ${item.content}\nfunction ${item.name}() { return "${item.content}"; }\n`);
+    }
+    for (const name of ["does", "file", "walking", "command", "short", "help", "Axios", "merge"]) {
+      fs.writeFileSync(path.join(tempDir, "app", `${name}.ts`), `function ${name}() { return "unrelated"; }\n`);
+    }
+    fs.writeFileSync(path.join(tempDir, "excluded", "walkPolicy.ts"),
+      'function walkPolicy() { return "outside requested scope"; }\n');
+
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { input?: string | string[] };
+      const texts = Array.isArray(body.input) ? body.input : [body.input ?? ""];
+      return new Response(JSON.stringify({
+        data: texts.map((text) => {
+          const match = cases.findIndex((item) => text.includes(item.name) || text.includes(item.query));
+          return { embedding: Array.from({ length: 8 }, (_, index) => index === (match < 0 ? 7 : match) ? 1 : 0) };
+        }),
+        usage: { total_tokens: texts.length },
+      }), { status: 200 });
+    });
+    const indexer = new Indexer(tempDir, parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-model", dimensions: 8 },
+      indexing: { watchFiles: false, requireProjectMarker: false },
+      search: { minScore, fusionStrategy: "rrf", rerankTopN: 20 },
+    }), "opencode");
+
+    try {
+      await indexer.index();
+      for (const item of cases) {
+        const lookup = (symbol: string, limit: number, scope: { directory?: string; fileType?: string }) =>
+          indexer.search(symbol, limit, { ...scope, metadataOnly: true, filterByBranch: false, definitionIntent: true });
+        const context = await resolveSearchContext({
+          query: item.query, limit: 5, tokenBudget: 1800, directory: "app", fileType: "ts",
+        }, {
+          lookup,
+          search: (query, limit, scope, _trace, options) => indexer.search(query, limit, {
+            ...scope, metadataOnly: true, filterByBranch: false, definitionIntent: false,
+            prioritizeSourcePaths: options?.prioritizeSourcePaths,
+          }),
+        });
+        expect(context.details?.route).toBe("conceptual");
+        expect(context.details?.routedQuery).toBe(item.query);
+        expect(context.details?.results?.slice(0, 3)).toEqual(expect.arrayContaining([
+          expect.objectContaining({ filePath: path.join(tempDir, "app", `${item.name}.ts`), name: item.name }),
+        ]));
+        expect(context.details?.results?.every((result) => result.filePath.startsWith(path.join(tempDir, "app") + path.sep))).toBe(true);
+      }
     } finally {
       await indexer.close();
       fetchSpy.mockRestore();

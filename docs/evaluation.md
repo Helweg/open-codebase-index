@@ -146,6 +146,14 @@ explicit definition packs preserve lookup order.
 Agents should drill into chosen locations with `implementation_lookup`,
 `codebase_search`, or targeted file reads.
 
+Exact-symbol inference and retrieval use the same single-operand lookup rule.
+Question wording such as “where is” or “implementation” does not turn the first
+few content words into identifier hints. Broad behavior questions retain their
+whole query rather than becoming a lookup for a related name. Quoted,
+code-shaped, and qualified identifiers remain useful hints in prose; only a
+single meaningful operand can select exact lookup. Explicit tests, docs, config,
+and call-flow intent retain their priorities.
+
 For conceptual queries without identifier hints, hybrid RRF retains the
 retrieval-bounded lane union and uses the stronger of its normalized RRF
 consensus score and the independently intent-ranked semantic and lexical lane
