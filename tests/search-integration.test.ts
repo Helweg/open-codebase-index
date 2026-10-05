@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../src/config/schema.js";
 import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
 import { Database, hashContent, InvertedIndex, parseFiles, VectorStore } from "../src/native/index.js";
+import { resolveSearchContext } from "../src/tools/context-search.js";
 
 describe("search integration", () => {
   let tempDir: string;
@@ -162,6 +163,120 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     expect(absoluteSimilar.map((result) => result.filePath)).toEqual(
       relativeSimilar.map((result) => result.filePath),
     );
+  });
+
+  it("retains overflow source blocks as consumer-visible conceptual evidence without widening exact lookups", async () => {
+    const query = "converter naming policy serialization";
+    const sources = [
+      {
+        path: "app/indexer/Converter.java",
+        content: `public class Converter {
+  public String encode(String field) {
+    // converter naming policy serialization
+    return field.toLowerCase();
+  }
+}
+${Array.from({ length: 12 }, (_, index) =>
+  `class Filler${index} { public int value() { return ${index}; } }`).join("\n")}
+`,
+        target: "return field.toLowerCase();",
+      },
+      {
+        path: "app/indexer/Converter.cs",
+        content: `public class Converter {
+  public string Encode(string field) {
+    // converter naming policy serialization
+    return field.ToLowerInvariant();
+  }
+}
+${Array.from({ length: 12 }, (_, index) =>
+  `class Filler${index} { public int Value() { return ${index}; } }`).join("\n")}
+`,
+        target: "return field.ToLowerInvariant();",
+      },
+    ];
+    for (const source of sources) {
+      fs.writeFileSync(path.join(tempDir, source.path), source.content);
+    }
+    fs.writeFileSync(path.join(tempDir, "app/indexer/policy.ts"),
+      `export function policy() { return "${query}"; }\n`);
+    fs.writeFileSync(path.join(tempDir, "tests/policy.test.ts"),
+      `export function testPolicy() { return "${query}"; }\n`);
+    fs.writeFileSync(path.join(tempDir, "README.md"), `# ${query}\nDocumentation about ${query}.\n`);
+
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+      indexing: { watchFiles: false, maxChunksPerFile: 2, linesPerChunk: 30, fallbackToTextOnMaxChunks: true },
+      search: { maxResults: 20, minScore: 0.01, fusionStrategy: "rrf", rrfK: 60, rerankTopN: 20 },
+    });
+    const indexer = _indexers[_indexers.push(new Indexer(tempDir, config, "opencode")) - 1];
+    await indexer.index();
+
+    const options = { filterByBranch: false, prioritizeSourcePaths: true };
+    const results = await indexer.search(query, 20, options);
+    for (const source of sources) {
+      expect(results).toContainEqual(expect.objectContaining({
+        filePath: path.join(tempDir, source.path),
+        chunkType: "block",
+        content: expect.stringContaining(source.target),
+      }));
+    }
+    expect(results.every((result) => result.score >= config.search.minScore)).toBe(true);
+    expect(results.every((result) =>
+      !result.filePath.startsWith(path.join(tempDir, "tests") + path.sep) &&
+      result.filePath !== path.join(tempDir, "README.md"))).toBe(true);
+    expect(results.some((result) => result.filePath.endsWith("policy.ts") && result.chunkType !== "block")).toBe(true);
+
+    const context = await resolveSearchContext({ query, limit: 20, tokenBudget: 4000 }, {
+      lookup: (symbol, limit, scope, exactSymbol, trace) =>
+        indexer.search(symbol, limit, { ...scope, definitionIntent: exactSymbol, filterByBranch: false, trace }),
+      search: (text, limit, scope, trace, searchOptions) =>
+        indexer.search(text, limit, { ...scope, ...searchOptions, filterByBranch: false, trace }),
+    });
+    expect(context.details?.route).toBe("conceptual");
+    for (const source of sources) {
+      // Context packs expose locations, not code bodies. Follow the consumer's
+      // selected range and assert it contains the actual naming implementation.
+      const location = context.details?.results?.find((result) => result.filePath === path.join(tempDir, source.path));
+      expect(location?.chunkType).toBe("block");
+      expect(context.text).toContain(source.path);
+      const evidence = source.content.split("\n").slice((location?.startLine ?? 1) - 1, location?.endLine).join("\n");
+      expect(evidence).toContain(source.target);
+    }
+
+    for (const source of sources) {
+      const fileType = path.extname(source.path).slice(1);
+      const scoped = await indexer.search(query, 20, { ...options, fileType, directory: "app/indexer" });
+      expect(scoped).toContainEqual(expect.objectContaining({ content: expect.stringContaining(source.target) }));
+      expect(scoped.every((result) => result.filePath.endsWith(`.${fileType}`))).toBe(true);
+    }
+    expect(await indexer.search(query, 20, { ...options, fileType: "java", directory: "tests" })).toEqual([]);
+    const testsOnly = await indexer.search(query, 20, { ...options, directory: "tests" });
+    expect(testsOnly).toContainEqual(expect.objectContaining({
+      filePath: path.join(tempDir, "tests/policy.test.ts"),
+    }));
+    expect(testsOnly.every((result) => result.filePath.startsWith(path.join(tempDir, "tests")))).toBe(true);
+    const documentation = await indexer.search(`documentation ${query}`, 20, { filterByBranch: false });
+    expect(documentation.some((result) => result.filePath === path.join(tempDir, "README.md"))).toBe(true);
+    const testIntent = await indexer.search(`tests ${query}`, 20, { filterByBranch: false });
+    expect(testIntent.some((result) => result.filePath === path.join(tempDir, "tests/policy.test.ts"))).toBe(true);
+    const blocksOnly = await indexer.search(query, 20, { ...options, chunkType: "block" });
+    expect(blocksOnly.every((result) => result.chunkType === "block" && !result.filePath.endsWith(".md"))).toBe(true);
+    for (const exactQuery of ["policy", "`policy`", "where is policy implementation"]) {
+      for (const definitionIntent of [false, true]) {
+        const exact = await indexer.search(exactQuery, 5, { ...options, definitionIntent });
+        expect(exact[0]).toMatchObject({ name: "policy", filePath: path.join(tempDir, "app/indexer/policy.ts") });
+        expect(exact.every((result) => result.chunkType !== "block")).toBe(true);
+      }
+    }
+    config.search.minScore = 1;
+    const highThreshold = await indexer.search(query, 20, options);
+    expect(highThreshold.every((result) => result.score >= 1)).toBe(true);
+    expect(highThreshold).toContainEqual(expect.objectContaining({
+      filePath: path.join(tempDir, "app/indexer/policy.ts"),
+      score: 1,
+    }));
   });
 
   it("returns exact symbols whose semantic chunks were omitted by the per-file cap", async () => {

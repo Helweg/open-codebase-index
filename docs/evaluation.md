@@ -160,6 +160,13 @@ reranking, and no external reranker. Explicit identifier lookups, lexical-only
 fallback, weighted fusion, and external reranker ordering retain their existing
 lane policies.
 
+Source-path preference in conceptual searches does not require declaration-only
+chunks. Large source files can exceed `indexing.maxChunksPerFile` and use the
+supported `fallbackToTextOnMaxChunks` representation; those source text blocks
+remain eligible alongside declarations. Explicit identifier lookups retain
+declaration-only eligibility. Directory, file-type, chunk-type, branch,
+and score filters still apply before selection.
+
 Optional flags:
 
 - `--project <path>`: project root (default: current directory)
