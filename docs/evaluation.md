@@ -68,11 +68,14 @@ The pre-edit path additionally supports:
   - `direction`: `caller` or `callee`
   - one of `filePath` or `symbol` (at least one required)
 
-Pre-edit ranking metrics use only locations visible after final response fitting,
-in the order published to the agent. Conceptual fallback packing prefers
-implementation paths classified relative to the project root, not its ancestor
-directory names. The evaluator must not substitute the incoming search order
-for that final evidence order.
+Pre-edit ranking metrics consume structured source and graph evidence in the
+order actually published after final response fitting. Complete evidence rows
+are tracked at rendering time; partially clipped rows and budget-omitted
+neighbors receive no credit. Display ellipsis in long paths, or a location echoed
+inside a risk message or source body, does not identify selected evidence.
+Conceptual fallback packing prefers implementation paths classified relative to
+the project root, not its ancestor directory names. The evaluator must not
+substitute incoming search order or the raw candidate pool for the final evidence.
 
 Each graded label declares its own matching granularity: a file-only label accepts
 evidence from that file, while a symbol label requires both its path and exact

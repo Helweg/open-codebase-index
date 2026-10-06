@@ -27,6 +27,8 @@ export interface ContextPackOptions {
   projectRoot?: string;
   preserveInputOrder?: boolean;
   trace?: (trace: ContextPackTrace) => void;
+  /** Complete rendered rows, with UTF-16 end offsets into the packed text. */
+  onSelectedEvidence?: (evidence: Array<{ result: SearchResult; endOffset: number }>) => void;
 }
 
 interface CanonicalContextOrigin {
@@ -97,6 +99,8 @@ export interface BudgetedTextResult {
   tokenBudget: number;
   tokenEstimate: number;
   truncated: boolean;
+  /** UTF-16 length of the retained input prefix, excluding the truncation notice. */
+  retainedLength: number;
 }
 
 export function clampContextPackTokenBudget(tokenBudget?: number): number {
@@ -122,6 +126,7 @@ export function fitTextToContextBudget(text: string, tokenBudget?: number): Budg
       tokenBudget: normalizedBudget,
       tokenEstimate,
       truncated: false,
+      retainedLength: text.length,
     };
   }
 
@@ -135,12 +140,14 @@ export function fitTextToContextBudget(text: string, tokenBudget?: number): Budg
     if (countContextTokens(candidate) <= normalizedBudget) low = middle;
     else high = middle - 1;
   }
-  const fitted = `${codePoints.slice(0, low).join("").trimEnd()}${suffix}`;
+  const retained = codePoints.slice(0, low).join("").trimEnd();
+  const fitted = `${retained}${suffix}`;
   return {
     text: fitted,
     tokenBudget: normalizedBudget,
     tokenEstimate: countContextTokens(fitted),
     truncated: true,
+    retainedLength: retained.length,
   };
 }
 
@@ -360,8 +367,18 @@ function formatContextPack(
   budgetOmittedCount: number,
   includeExactSearchHandoff: boolean,
   origins?: CanonicalContextOrigin[],
+  evidence?: Array<{ result: SearchResult; endOffset: number }>,
 ): string {
-  const lines = selected.map((result, index) => formatContextEvidence(result, index + 1, origins));
+  let offset = heading.length + 2;
+  const lines = selected.map((result, index) => {
+    const line = formatContextEvidence(result, index + 1, origins);
+    if (evidence) {
+      offset += line.length;
+      evidence.push({ result, endOffset: offset });
+      offset += 1;
+    }
+    return line;
+  });
   const notes: string[] = [];
   if (duplicateCount > 0) notes.push(`${duplicateCount} overlapping duplicate${duplicateCount === 1 ? "" : "s"} removed`);
   if (limitOmittedCount > 0) notes.push(`${limitOmittedCount} additional result${limitOmittedCount === 1 ? "" : "s"} excluded by result limit`);
@@ -399,6 +416,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   const selectable = diversified.slice(0, maxResults);
   const limitOmittedCount = deduplicated.length - selectable.length;
   let selected: SearchResult[] = [];
+  let selectedEvidence: Array<{ result: SearchResult; endOffset: number }> | undefined;
   let text = formatContextPack(
     heading,
     selected,
@@ -413,6 +431,8 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
   for (let count = 1; count <= selectable.length; count += 1) {
     const candidateSelection = selectable.slice(0, count);
     const budgetOmittedCount = selectable.length - candidateSelection.length;
+    const candidateEvidence: Array<{ result: SearchResult; endOffset: number }> | undefined =
+      options.onSelectedEvidence ? [] : undefined;
     const candidateText = formatContextPack(
       heading,
       candidateSelection,
@@ -422,13 +442,16 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       budgetOmittedCount,
       includeExactSearchHandoff,
       origins,
+      candidateEvidence,
     );
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;
     text = candidateText;
+    if (candidateEvidence) selectedEvidence = candidateEvidence;
   }
 
   const fitted = fitTextToContextBudget(text, tokenBudget);
+  options.onSelectedEvidence?.((selectedEvidence ?? []).filter((entry) => entry.endOffset <= fitted.retainedLength));
   const budgetOmittedCount = selectable.length - selected.length;
   const omittedCount = candidateCount - selected.length;
   if (options.trace) {
