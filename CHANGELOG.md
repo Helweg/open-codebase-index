@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.35.3] - 2026-10-06
+
+### Changed
+
+- **Runtime dependencies**: Update `p-retry` to 8.0.1, `ignore` to 7.0.11, and `unicode-case-folding` to 1.1.2. The supported Node.js runtime floor remains 22.13.
+- **Development dependencies**: Update `@napi-rs/cli`, Node.js types, Vitest, and coverage tooling to their reviewed patch releases.
+
 ### Fixed
 
 - **Source text-fallback evidence**: Keep supported text-fallback chunks eligible for source-preferred conceptual searches when large files exceed the semantic chunk cap. Declaration-only eligibility remains reserved for explicit identifier lookups; hard scopes and score thresholds are unchanged.
@@ -939,7 +946,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...HEAD
+[0.35.3]: https://github.com/Helweg/open-codebase-index/compare/v0.35.2...v0.35.3
 [0.35.2]: https://github.com/Helweg/open-codebase-index/compare/v0.35.1...v0.35.2
 [0.35.1]: https://github.com/Helweg/open-codebase-index/compare/v0.35.0...v0.35.1
 [0.35.0]: https://github.com/Helweg/open-codebase-index/compare/v0.34.0...v0.35.0
