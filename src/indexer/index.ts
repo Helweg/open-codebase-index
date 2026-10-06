@@ -6595,9 +6595,11 @@ export class Indexer {
       }
     }
 
+    // Source-path preference must retain text-fallback blocks. Declaration-only
+    // eligibility belongs to explicit identifier lookups, not conceptual lanes.
     const implementationOnly = communityRanked.filter((r) =>
       isLikelyImplementationPath(r.metadata.filePath) &&
-      (!prioritizeIdentifierLanes || isImplementationChunkType(r.metadata.chunkType))
+      (!explicitIdentifierLookup || isImplementationChunkType(r.metadata.chunkType))
     );
 
     const filtered = (sourceIntent && hasCodeHints && implementationOnly.length > 0
