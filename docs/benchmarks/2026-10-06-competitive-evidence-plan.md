@@ -25,7 +25,7 @@ These are candidate participants, not evidence they were evaluated at the newer 
 
 ## Independent holdout gate
 
-No independently approved fresh cohort is currently supplied. Do not acquire new study sources, author answer-dependent queries, or label existing tasks held-out to work around that prerequisite.
+No independently approved fresh cohort is currently supplied. Participant/runner source acquisition, indexing and scored execution remain blocked. An independent curator may obtain and inspect pinned sources solely to prepare and validate the sealed package, under applicable access permissions and in an isolated workspace outside participant-visible roots. That curation permission is not participant acquisition authorization. Do not label existing tasks held-out to work around the approval prerequisite.
 
 A curator/reviewer independent of OCBI tuning must provide:
 

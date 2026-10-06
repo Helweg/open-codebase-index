@@ -9,7 +9,7 @@ The [study protocol](2026-10-06-competitive-evidence-plan.md) defines fair input
 ## Roles and independence
 
 - **Maintainer:** supplies the exposure register, frozen candidate commit and public interface documentation; does not select tasks based on candidate results.
-- **Curator:** selects repositories/tasks independently of OCBI tuning, records selection and exclusions, and prepares source-grounded reference answers outside participant-visible roots.
+- **Curator:** selects repositories/tasks independently of OCBI tuning, records selection and exclusions, and may obtain and inspect pinned sources solely for curation under applicable source-access permissions. Curation uses an isolated workspace outside participant-visible roots; sources, questions and reference answers are not handed to the runner before final approval.
 - **Reviewer:** discloses involvement in OCBI development or comparator development, checks overlap and task validity, and explicitly accepts or rejects novelty and source acquisition. Prefer a reviewer separate from the curator; disclose any combined role and its limitations.
 - **Runner:** executes approved frozen inputs uniformly, preserves every outcome and does not tune against the held-out answers.
 
@@ -23,7 +23,7 @@ Before participant source acquisition or scored execution, return a selection pr
 2. Repository-level sample size and a statistical rationale for the chosen primary endpoint and practically meaningful effect. Tasks from one repository are not independent repository samples. Do not reuse September's 100-task count as a power calculation.
 3. Planned coverage of exact-symbol and natural-language questions, implementation discovery, cross-file dependencies, lifecycle/configuration behavior and pre-edit evidence. Include scope/no-result, ambiguous identifiers and large-file coverage cases; keep unsupported interfaces explicit.
 4. An overlap matrix against the exposed repositories below, repository fixtures under `benchmarks/`, prior evaluation reports and maintainer-disclosed tuning/experiment history. Record exact identity, forks, shared ancestry, revisions and reused tasks. Unknown history is a limitation, not proof of novelty.
-5. A documented, independently authorized curation process for preparing source-grounded tasks. Curator access and participant access are separate; do not acquire sources on behalf of the participant study before approval.
+5. A documented curation process recording source-access permissions, pinned revisions and the isolated curator workspace. The independent curator may acquire and inspect those sources to prepare and validate the sealed task/reference package before final study approval. This permission does not authorize participant/runner acquisition, indexing or scored execution; those remain gated on approval of the completed package.
 
 Known exposed September repositories: **axios, express, click, cobra, ripgrep, gson, newtonsoft-json, symfony-console and sinatra**. This is a starting exclusion register, not an exhaustive history audit. Maintainers must disclose additional exposure relevant to the proposed cohort through a sanitized register.
 
