@@ -48,6 +48,7 @@ import {
   applyCommunityBoost,
   classifyQueryIntentRaw,
   diversifyCandidatesByFile,
+  fuseResultsRrf,
   rankHybridResults,
   rankSemanticOnlyResults,
   type RankedCandidate,
@@ -6557,7 +6558,15 @@ export class Indexer {
     const primaryLane = options?.definitionIntent === true
       ? mergeTieredResults(symbolLane, prePrimaryLane, maxResults * 4)
       : mergeTieredResults(prePrimaryLane, symbolLane, maxResults * 4);
-    const tiered = mergeTieredResults(primaryLane, rescued, maxResults * 4);
+    // Ordinary words can match many declaration names. Balance those promotions
+    // against hybrid evidence instead of placing the entire definition lane first.
+    const balanceConceptualLanes = primaryLane.length > 0 && rescued.length > 0 &&
+      !explicitIdentifierLookup && identifierHints.length === 0 && fusionStrategy === "rrf" && rerankTopN > 0 &&
+      scopedSemanticCandidates.length > 0 && scopedKeywordCandidates.length > 0 &&
+      !this.config.reranker?.enabled;
+    const tiered = balanceConceptualLanes
+      ? fuseResultsRrf(primaryLane, rescued, rrfK, maxResults * 4, true)
+      : mergeTieredResults(primaryLane, rescued, maxResults * 4);
     const hasCodeHints = extractCodeTermHints(query).length > 0 || identifierHints.length > 0;
 
     const baseFiltered = tiered.filter((r) =>

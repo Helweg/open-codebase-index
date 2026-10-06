@@ -99,7 +99,8 @@ export function fuseResultsRrf(
   semanticResults: RankedCandidate[],
   keywordResults: RankedCandidate[],
   rrfK: number,
-  limit: number
+  limit: number,
+  preserveLaneCoverage: boolean = false
 ): RankedCandidate[] {
   const maxPossibleRaw = 2 / (rrfK + 1);
   const rankByIdSemantic = new Map<string, number>();
@@ -139,7 +140,27 @@ export function fuseResultsRrf(
   }
 
   fused.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  if (preserveLaneCoverage) {
+    applyRrfLaneCoverage(fused, rankByIdSemantic, rankByIdKeyword, rrfK);
+  }
   return fused.slice(0, limit);
+}
+
+function applyRrfLaneCoverage(
+  fused: RankedCandidate[],
+  firstLaneRanks: ReadonlyMap<string, number>,
+  secondLaneRanks: ReadonlyMap<string, number>,
+  rrfK: number,
+): void {
+  for (const candidate of fused) {
+    const firstPosition = firstLaneRanks.get(candidate.id);
+    const secondPosition = secondLaneRanks.get(candidate.id);
+    const firstRelevance = firstPosition === undefined ? 0 : (rrfK + 1) / (rrfK + firstPosition);
+    const secondRelevance = secondPosition === undefined ? 0 : (rrfK + 1) / (rrfK + secondPosition);
+    candidate.score = Math.max(candidate.score, firstRelevance, secondRelevance);
+  }
+  // Fusion owns these result objects; stable ties retain the original RRF agreement order.
+  fused.sort((a, b) => b.score - a.score);
 }
 
 export function rerankResults(
@@ -280,7 +301,6 @@ export function rankHybridResults(
     ? fuseResultsRrf(semanticResults, keywordResults, options.rrfK, fusionLimit)
     : fuseResultsWeighted(semanticResults, keywordResults, options.hybridWeight, fusionLimit);
   const rerankPoolLimit = Math.max(overfetchLimit, options.rerankTopN * 3, options.limit * 6);
-  let rankingCandidates = fused;
   if (preserveLaneCoverage) {
     const semanticLane = rerankResults(query, semanticResults, options.rerankTopN, {
       prioritizeSourcePaths,
@@ -292,22 +312,11 @@ export function rankHybridResults(
     });
     const semanticRank = new Map(semanticLane.map((candidate, index) => [candidate.id, index + 1]));
     const keywordRank = new Map(keywordLane.map((candidate, index) => [candidate.id, index + 1]));
-    rankingCandidates = fused.map((candidate) => {
-      const semanticPosition = semanticRank.get(candidate.id);
-      const keywordPosition = keywordRank.get(candidate.id);
-      const semanticRelevance = semanticPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + semanticPosition);
-      const keywordRelevance = keywordPosition === undefined ? 0 : (options.rrfK + 1) / (options.rrfK + keywordPosition);
-      const relevance = Math.max(candidate.score, semanticRelevance, keywordRelevance);
-      return relevance > candidate.score
-        ? { ...candidate, score: relevance }
-        : candidate;
-    });
-    // Stable sort retains RRF agreement and deterministic IDs when lane floors tie.
-    rankingCandidates.sort((a, b) => b.score - a.score);
+    applyRrfLaneCoverage(fused, semanticRank, keywordRank, options.rrfK);
   }
   // Retrieval has already bounded both lanes. Keep their union when changing
   // admission order so displaced lexical evidence remains available to callers.
-  const ranked = rerankResults(query, preserveLaneCoverage ? rankingCandidates : rankingCandidates.slice(0, rerankPoolLimit), options.rerankTopN, {
+  const ranked = rerankResults(query, preserveLaneCoverage ? fused : fused.slice(0, rerankPoolLimit), options.rerankTopN, {
     prioritizeSourcePaths,
   });
 

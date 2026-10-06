@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Conceptual evidence selection**: Balance ordinary name/path promotions with hybrid retrieval through RRF and independent lane relevance floors, rather than allowing an entire definition-priority lane to bury strong evidence. Preserve exact-symbol, lexical-only, weighted-fusion, disabled-local-reranking, and external-reranker lane policies.
+- **Context packing relevance**: Use file diversity only to break leading relevance ties, so lower-scored distinct files cannot displace stronger non-overlapping declarations from the same file. Configured knowledge-base origin promotion retains its existing relevance floor.
+
 ## [0.35.2] - 2026-10-05
 
 ### Changed
