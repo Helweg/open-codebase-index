@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "private-original-evidence-retention",
+  "independentlyReviewed": false,
+  "archive": "${USER_HOME}/.jcode/scratch/ocbi-self-curated-20261006-originals.tar.gz",
+  "sha256": "38e16c94d6e575bbab9f5f22605a19d3d7167866022b34ca12b643f62bbec1ae",
+  "bytes": 768711988,
+  "observedVerification": {
+    "archiveCreationExitCode": 0,
+    "gzipIntegrityExitCode": 0,
+    "completionMemberReadBack": "./run/completed.json",
+    "primaryRows": 700,
+    "candidateAndInputLocksUnchanged": true
+  },
+  "scope": "Complete owned original study workspace: original private-path inputs and SDK/CLI records, pinned upstream archives/checkouts, retained per-cell native indexes, isolated comparator installations, unscored smoke evidence, diagnosis snapshots and actual temporary execution/analysis/publication programs.",
+  "limits": "Private local retention, not redistributed or a portable runtime image. Project build/dependency files and system Node/Ollama/model bytes outside the workspace are represented by frozen identity/byte inventories, not included here. Does not imply independent review, representative sampling, fresh holdout status or score amendments.",
+  "publishedPreregistrationSha256": "7be6e9854a882b294bedaecab35daeec6ea35ad5386f533899b43fee0f8f4ba2",
+  "publishedResultsEvidenceSha256": "f414dec3a77e0c32e808c60b15903548fc4c869938bfdfda0bba663644b64c13"
+}

@@ -2,6 +2,8 @@
 
 Status: evaluation preparation and historical diagnostic replay, not a new superiority result. Accepted OCBI reference: v0.35.3, commit `261f5d0a9ac9b4ebb758326136aed0737b36b372`. No retrieval/ranking change is part of this work.
 
+**Workflow amendment:** the maintainer requested that the assistant conduct the study without an outside curator/reviewer. Recruitment in [issue #420](https://github.com/Helweg/open-codebase-index/issues/420) was withdrawn, not fulfilled. The [self-curated exploratory comparison](2026-10-06-self-curated-study.md) has a separate frozen protocol and does not satisfy or claim the independent approval gates below. The historical replay and independent confirmatory route remain documented here; they are not prerequisites for that explicitly exploratory execution.
+
 ## What the existing evidence establishes
 
 The [September study](2026-09-10-competitive-results.md) already compares five configurations on 100 tasks across nine pinned repositories. That cohort has been used during OCBI development and tuning. It remains **development-only**. Replaying its saved responses with more detailed reporting creates neither new quality observations nor a held-out dataset.
@@ -117,6 +119,6 @@ A synthetic local Git fixture demonstrated the approval gap before and after: th
 **Remaining prerequisite:** an independently curated and approved fresh cohort, followed by frozen current participant configurations and scored execution. Agent-task evidence also needs a successful, uniformly controlled broker/evaluator feasibility run. This replay supplies neither prerequisite and supports no current comparative or SOTA claim.
 
 
-## Independent review request
+## Independent-review route, withdrawn for current work
 
-The [curator/reviewer handoff](2026-10-06-independent-review-handoff.md) specifies selection and overlap review, the sealed task/evaluator package, exact artifact hashes, roles, acceptance checks and the required review response. It is a request for independent review, not an approved cohort or acquisition authorization.
+The [curator/reviewer handoff](2026-10-06-independent-review-handoff.md) records the independent route's selection, overlap, sealed-package and approval requirements. Outside recruitment is no longer the current workflow. No independent approval or acquisition authorization is inferred from closing the request or from the separate self-curated study.

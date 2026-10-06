@@ -2,6 +2,8 @@
 
 This guide documents how to run the cross-repo benchmark runner in a portable way.
 
+The dated [assistant-run self-curated comparison](benchmarks/2026-10-06-self-curated-study.md) reports a completed nine-repository, 100-task study across seven current pinned conditions, including literal/plain-file-BM25 controls, all query-pass evidence and verified report replay. OCBI trails the primary rivals on exact-symbol file discovery and trails grepai/BM25 on natural-language file discovery in this sample. This is exploratory development evidence, not the independently approved holdout workflow described below.
+
 ## What it measures
 
 - Plugin retrieval quality (`codebase-index`) via eval harness

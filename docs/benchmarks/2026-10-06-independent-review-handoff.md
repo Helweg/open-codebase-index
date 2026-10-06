@@ -1,10 +1,10 @@
 # Independent competitive-study review handoff, 2026-10-06
 
-## Request and current status
+## Historical independent-review route
 
-Recruit an independent curator and reviewer for a fresh OCBI competitive study. This document is a review request, **not an approved cohort, acquisition authorization or performance claim**. No fresh cohort has been selected or self-approved.
+Outside recruitment was withdrawn at the maintainer's direction; [issue #420](https://github.com/Helweg/open-codebase-index/issues/420) was closed as not planned, not fulfilled. The current work is an [assistant-run, self-curated exploratory comparison](2026-10-06-self-curated-study.md). This document records the separate independent-review requirements, not the current execution gate. No independently approved cohort, acquisition authorization or performance claim is supplied by this handoff.
 
-The [study protocol](2026-10-06-competitive-evidence-plan.md) defines fair inputs, failure accounting and claim limits. September's nine-repository study is exposed development data; its new diagnostic replay must not be called a holdout. Current participant versions still need calibration and a frozen tool lock before scored execution.
+The [independent-study protocol](2026-10-06-competitive-evidence-plan.md) defines that route's fair inputs, approval gates and claim limits. September's nine-repository study is exposed development data; its diagnostic replay is not a holdout. [Current participant calibration](2026-10-06-current-participant-calibration.md) and the separately frozen self-curated study do not establish independent approval.
 
 ## Roles and independence
 

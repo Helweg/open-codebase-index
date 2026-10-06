@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Competitive evaluation diagnostics**: Report per-task wins, losses, ties, metric deltas, ranked paths, operational failures and unsupported interfaces. Publish a dated historical replay and fresh-study protocol without treating development data as a blind holdout or claiming SOTA.
 - **Study preparation evidence**: Publish a sanitized maintainer exposure register, current-version public-interface calibration and isolated broker/evaluator feasibility observations. Distinguish passing infrastructure controls from the failed bounded model repair attempt.
+- **Assistant-run exploratory comparison**: Publish frozen nine-repository, 100-task results across seven conditions, all 2,100 query-pass records and a verified evidence replay. Report OCBI's exact-symbol and natural-language deficits, source-policy/declaration coverage failures and explicit self-curation limits; no outside-review prerequisite or SOTA claim.
 
 ### Fixed
 
