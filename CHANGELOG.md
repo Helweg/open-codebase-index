@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Runtime dependency security**: Update the MCP SDK's transitive `proxy-addr` dependency to 2.0.8, addressing critical IP spoofing advisory GHSA-jqcg-44mw-7w3h (CVE-2026-90711).
+- **Development dependency security**: Update development-only `source-map-js` to 1.2.2, addressing indexed source-map denial of service advisory GHSA-68fv-2mgg-jv7q (CVE-2026-93749).
 - **Source text-fallback evidence**: Keep supported text-fallback chunks eligible for source-preferred conceptual searches when large files exceed the semantic chunk cap. Declaration-only eligibility remains reserved for explicit identifier lookups; hard scopes and score thresholds are unchanged.
 - **Conceptual evidence selection**: Balance ordinary name/path promotions with hybrid retrieval through RRF and independent lane relevance floors, rather than allowing an entire definition-priority lane to bury strong evidence. Preserve exact-symbol, lexical-only, weighted-fusion, disabled-local-reranking, and external-reranker lane policies.
 - **Context packing relevance**: Use file diversity only to break leading relevance ties, so lower-scored distinct files cannot displace stronger non-overlapping declarations from the same file. Configured knowledge-base origin promotion retains its existing relevance floor.
