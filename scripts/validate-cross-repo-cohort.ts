@@ -16,6 +16,7 @@ export interface CrossRepoCohortValidationOptions {
   cohortDir: string;
   workDir?: string;
   studyApproval?: string;
+  noveltyEvidence?: string;
 }
 
 interface CohortManifestRepository {
@@ -109,7 +110,7 @@ function parseCohortManifest(manifestPath: string): CohortManifest {
     parsed = JSON.parse(raw);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Cannot parse cohort manifest ${manifestPath}: ${message}`);
+    throw new Error(`Cannot parse cohort manifest ${manifestPath}: ${message}`, { cause: error });
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -173,6 +174,7 @@ function repositoryKey(repository: StudyApprovalRepository): string {
 
 function validateStudyApproval(
   approvalPath: string,
+  evidencePath: string,
   manifestPath: string,
   cohort: CohortManifest,
 ): void {
@@ -180,7 +182,7 @@ function validateStudyApproval(
   try {
     parsed = JSON.parse(fs.readFileSync(approvalPath, "utf-8"));
   } catch (error: unknown) {
-    throw new Error(`Cannot parse study approval ${approvalPath}: ${getErrorMessage(error)}`);
+    throw new Error(`Cannot parse study approval ${approvalPath}: ${getErrorMessage(error)}`, { cause: error });
   }
 
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
@@ -206,6 +208,17 @@ function validateStudyApproval(
   const evidenceSha256 = requireNonEmptyString(approval.evidenceSha256, "evidenceSha256");
   if (!/^[a-f0-9]{64}$/.test(evidenceSha256)) {
     throw new Error("Invalid study approval: evidenceSha256 must be a lowercase SHA-256 digest");
+  }
+
+  let evidence: Buffer;
+  try {
+    evidence = fs.readFileSync(evidencePath);
+  } catch (error: unknown) {
+    throw new Error(`Cannot read novelty evidence ${evidencePath}: ${getErrorMessage(error)}`, { cause: error });
+  }
+  const actualEvidenceSha256 = crypto.createHash("sha256").update(evidence).digest("hex");
+  if (evidenceSha256 !== actualEvidenceSha256) {
+    throw new Error("Study source acquisition blocked: evidenceSha256 does not match novelty evidence");
   }
 
   const cohortSha256 = requireNonEmptyString(approval.cohortSha256, "cohortSha256");
@@ -287,14 +300,14 @@ async function cloneRepository(source: string, revision: string, destination: st
     await runGit(destination, ["fetch", "--quiet", "--depth", "1", "origin", revision]);
   } catch (error: unknown) {
     if (!fs.existsSync(path.join(destination, ".git"))) {
-      throw new Error(`Failed to fetch ${revision} for ${source}: ${getErrorMessage(error)}`);
+      throw new Error(`Failed to fetch ${revision} for ${source}: ${getErrorMessage(error)}`, { cause: error });
     }
   }
 
   try {
     await runGit(destination, ["checkout", "--quiet", "--detach", revision]);
   } catch (error: unknown) {
-    throw new Error(`Failed to checkout ${revision} for ${source}: ${getErrorMessage(error)}`);
+    throw new Error(`Failed to checkout ${revision} for ${source}: ${getErrorMessage(error)}`, { cause: error });
   }
 }
 
@@ -368,11 +381,22 @@ async function validateRepo(
 export async function validateCrossRepoCohortSources(
   options: CrossRepoCohortValidationOptions,
 ): Promise<CrossRepoCohortValidationSummary> {
+  if (options.studyApproval && !options.noveltyEvidence) {
+    throw new Error("--study-approval requires --novelty-evidence");
+  }
+  if (options.noveltyEvidence && !options.studyApproval) {
+    throw new Error("--novelty-evidence requires --study-approval");
+  }
   const resolvedCohortDir = path.resolve(options.cohortDir);
   const manifestPath = path.join(resolvedCohortDir, "cohort.json");
   const cohort = parseCohortManifest(manifestPath);
-  if (options.studyApproval) {
-    validateStudyApproval(path.resolve(options.studyApproval), manifestPath, cohort);
+  if (options.studyApproval && options.noveltyEvidence) {
+    validateStudyApproval(
+      path.resolve(options.studyApproval),
+      path.resolve(options.noveltyEvidence),
+      manifestPath,
+      cohort,
+    );
   }
 
   const baseWorkRoot = options.workDir
@@ -418,6 +442,7 @@ export function parseCliArgs(argv: string[]): CrossRepoCohortValidationOptions {
   let cohortDir = DEFAULT_COHORT_DIR;
   let workDir: string | undefined;
   let studyApproval: string | undefined;
+  let noveltyEvidence: string | undefined;
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -451,17 +476,29 @@ export function parseCliArgs(argv: string[]): CrossRepoCohortValidationOptions {
       continue;
     }
 
+    if (arg === "--novelty-evidence") {
+      const value = argv[i + 1];
+      if (!value) {
+        throw new Error("--novelty-evidence requires a path");
+      }
+      noveltyEvidence = path.resolve(expandHome(value));
+      i += 1;
+      continue;
+    }
+
     if (arg === "--help" || arg === "-h") {
       console.log(`Usage:
-npx tsx scripts/validate-cross-repo-cohort.ts [--cohort-dir PATH] [--work-dir PATH] [--study-approval PATH]
+npx tsx scripts/validate-cross-repo-cohort.ts [--cohort-dir PATH] [--work-dir PATH] [--study-approval PATH --novelty-evidence PATH]
 
 Defaults:
   --cohort-dir: ${DEFAULT_COHORT_DIR}
   --work-dir: a temporary directory created under os.tmpdir()
 
 Fresh study gate:
-  --study-approval validates an accepted novelty audit bound to the exact cohort
+  --study-approval requires --novelty-evidence and validates an accepted novelty
+  audit bound to the exact cohort and SHA-256 of the exact evidence file bytes
   before creating a workspace or fetching repository sources
+  Hash binding verifies artifact integrity, not truth or reviewer independence
 
 Aliases:
   --cache-dir can be used as a CI-friendly work directory alias for --work-dir
@@ -472,7 +509,7 @@ Aliases:
     throw new Error(`Unknown argument: ${arg}`);
   }
 
-  return { cohortDir, workDir, studyApproval };
+  return { cohortDir, workDir, studyApproval, noveltyEvidence };
 }
 
 function printFailureReport(summary: CrossRepoCohortValidationSummary): void {

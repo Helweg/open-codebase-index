@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { aggregateScores } from "./competitive-scoring.js";
-import type { CompetitiveAggregate, CompetitiveQueryScore } from "./competitive-scoring.js";
+import type { CompetitiveAggregate, CompetitiveMetrics, CompetitiveQueryScore } from "./competitive-scoring.js";
 
 export const PRIMARY_CONDITION = "ocbi-hybrid";
 export const PRIMARY_RIVALS = ["codegraph", "codebase-memory", "grepai"] as const;
@@ -78,11 +78,47 @@ export interface PrimaryPairReport {
   exploratory: true;
 }
 
+export interface TaskComparisonSide {
+  status: CompetitiveQueryScore["status"];
+  rankedPaths: string[];
+  metrics: CompetitiveMetrics | null;
+  retrievalOutcome: "hit-at-5" | "miss-at-5" | "operational-error" | "unsupported";
+}
+
+export interface CompetitiveTaskComparison {
+  repository: string;
+  queryId: string;
+  track: CompetitiveTrack;
+  baseline: typeof PRIMARY_CONDITION;
+  rival: typeof PRIMARY_RIVALS[number];
+  baselineResult: TaskComparisonSide;
+  rivalResult: TaskComparisonSide;
+  metricDeltas: CompetitiveMetrics | null;
+  hitAt5Outcome: "win" | "loss" | "tie" | "unsupported";
+}
+
+export interface CompetitiveComparisonCounts {
+  baseline: typeof PRIMARY_CONDITION;
+  rival: typeof PRIMARY_RIVALS[number];
+  track: CompetitiveTrack;
+  queryCount: number;
+  supportedPairedCount: number;
+  winCount: number;
+  lossCount: number;
+  tieCount: number;
+  unsupportedCount: number;
+  baselineErrorCount: number;
+  rivalErrorCount: number;
+  operationalErrorPairCount: number;
+}
+
 export interface CompetitiveReport {
   cohort: "development-only";
   exploratory: true;
   tracks: Record<string, Partial<Record<CompetitiveTrack, TrackReport>>>;
   primaryPairs: PrimaryPairReport[];
+  taskComparisons: CompetitiveTaskComparison[];
+  comparisonCounts: CompetitiveComparisonCounts[];
 }
 
 function mean(values: readonly number[]): number {
@@ -131,6 +167,7 @@ function pairedRows(
   return [...baseline.values()].map((left) => {
     const right = comparison.get(taskKey(left));
     if (!right) throw new Error(`Missing rival task pair: ${left.repository}/${left.queryId}`);
+    // Frozen primary pairs require explicit-symbol support for every task; never waive the denominator.
     if (left.score.status === "unsupported" || right.score.status === "unsupported") {
       throw new Error(`Unsupported row in frozen explicit-symbol primary track: ${left.repository}/${left.queryId}`);
     }
@@ -246,6 +283,138 @@ function buildTrack(rows: readonly CompetitiveArtifactRow[]): TrackReport {
   };
 }
 
+function validateScores(rows: readonly CompetitiveArtifactRow[]): void {
+  for (const row of rows) {
+    const { score } = row;
+    const label = `${row.condition}/${row.repository}/${row.queryId}`;
+    if (
+      score.queryId !== row.queryId
+      || !["success", "error", "unsupported"].includes(score.status)
+      || !Array.isArray(score.rankedPaths)
+      || score.rankedPaths.some((rankedPath) => typeof rankedPath !== "string")
+    ) {
+      throw new Error(`Malformed benchmark score: ${label}`);
+    }
+    if (score.status === "unsupported") {
+      if (score.metrics !== undefined) throw new Error(`Unsupported benchmark score has metrics: ${label}`);
+      continue;
+    }
+    const metrics = score.metrics;
+    if (!metrics) throw new Error(`Missing supported benchmark metrics: ${label}`);
+    for (const metric of ["hitAt1", "hitAt5", "mrrAt10", "ndcgAt10"] as const) {
+      const value = metrics[metric];
+      if (
+        !Number.isFinite(value)
+        || value < 0
+        || value > 1
+        || ((metric === "hitAt1" || metric === "hitAt5") && value !== 0 && value !== 1)
+        || (score.status === "error" && value !== 0)
+      ) {
+        throw new Error(`Invalid benchmark metric ${metric}: ${label}`);
+      }
+    }
+  }
+}
+
+function comparisonSide(score: CompetitiveQueryScore): TaskComparisonSide {
+  let retrievalOutcome: TaskComparisonSide["retrievalOutcome"];
+  if (score.status === "unsupported") retrievalOutcome = "unsupported";
+  else if (score.status === "error") retrievalOutcome = "operational-error";
+  else retrievalOutcome = hitAt5(score) === 1 ? "hit-at-5" : "miss-at-5";
+  return {
+    status: score.status,
+    rankedPaths: score.rankedPaths,
+    metrics: score.metrics ?? null,
+    retrievalOutcome,
+  };
+}
+
+function buildTaskComparisons(
+  rows: readonly CompetitiveArtifactRow[],
+): Pick<CompetitiveReport, "taskComparisons" | "comparisonCounts"> {
+  const byCondition = new Map<string, Map<string, CompetitiveArtifactRow>>();
+  for (const row of rows) {
+    let byTask = byCondition.get(row.condition);
+    if (!byTask) {
+      byTask = new Map();
+      byCondition.set(row.condition, byTask);
+    }
+    byTask.set(taskKey(row), row);
+  }
+  const baselineRows = [...(byCondition.get(PRIMARY_CONDITION)?.values() ?? [])]
+    .sort((left, right) => left.track.localeCompare(right.track)
+      || left.repository.localeCompare(right.repository)
+      || left.queryId.localeCompare(right.queryId));
+  const taskComparisons: CompetitiveTaskComparison[] = [];
+  const comparisonCounts: CompetitiveComparisonCounts[] = [];
+  for (const rival of [...PRIMARY_RIVALS].sort()) {
+    const rivalRows = byCondition.get(rival);
+    if (!rivalRows) continue;
+    for (const track of ["explicit-symbol", "natural-language"] as const) {
+      const counts: CompetitiveComparisonCounts = {
+        baseline: PRIMARY_CONDITION,
+        rival,
+        track,
+        queryCount: 0,
+        supportedPairedCount: 0,
+        winCount: 0,
+        lossCount: 0,
+        tieCount: 0,
+        unsupportedCount: 0,
+        baselineErrorCount: 0,
+        rivalErrorCount: 0,
+        operationalErrorPairCount: 0,
+      };
+      for (const left of baselineRows) {
+        if (left.track !== track) continue;
+        const right = rivalRows.get(taskKey(left));
+        if (!right) throw new Error(`Missing rival task pair: ${rival}/${left.repository}/${left.queryId}`);
+        const unsupported = left.score.status === "unsupported" || right.score.status === "unsupported";
+        let metricDeltas: CompetitiveMetrics | null = null;
+        let hitAt5Outcome: CompetitiveTaskComparison["hitAt5Outcome"] = "unsupported";
+        if (!unsupported) {
+          // validateScores guarantees metrics, including the scorer's zero-valued operational errors.
+          const leftMetrics = left.score.metrics!;
+          const rightMetrics = right.score.metrics!;
+          metricDeltas = {
+            hitAt1: leftMetrics.hitAt1 - rightMetrics.hitAt1,
+            hitAt5: leftMetrics.hitAt5 - rightMetrics.hitAt5,
+            mrrAt10: leftMetrics.mrrAt10 - rightMetrics.mrrAt10,
+            ndcgAt10: leftMetrics.ndcgAt10 - rightMetrics.ndcgAt10,
+          };
+          if (metricDeltas.hitAt5 > 0) hitAt5Outcome = "win";
+          else if (metricDeltas.hitAt5 < 0) hitAt5Outcome = "loss";
+          else hitAt5Outcome = "tie";
+        }
+        taskComparisons.push({
+          repository: left.repository,
+          queryId: left.queryId,
+          track,
+          baseline: PRIMARY_CONDITION,
+          rival,
+          baselineResult: comparisonSide(left.score),
+          rivalResult: comparisonSide(right.score),
+          metricDeltas,
+          hitAt5Outcome,
+        });
+        counts.queryCount += 1;
+        if (unsupported) counts.unsupportedCount += 1;
+        else {
+          counts.supportedPairedCount += 1;
+          if (hitAt5Outcome === "win") counts.winCount += 1;
+          else if (hitAt5Outcome === "loss") counts.lossCount += 1;
+          else counts.tieCount += 1;
+        }
+        if (left.score.status === "error") counts.baselineErrorCount += 1;
+        if (right.score.status === "error") counts.rivalErrorCount += 1;
+        if (left.score.status === "error" || right.score.status === "error") counts.operationalErrorPairCount += 1;
+      }
+      comparisonCounts.push(counts);
+    }
+  }
+  return { taskComparisons, comparisonCounts };
+}
+
 function validateManifestCoverage(
   rows: readonly CompetitiveArtifactRow[],
   expectedTasks: readonly CompetitiveExpectedTask[],
@@ -290,6 +459,7 @@ export function buildCompetitiveReport(
   },
 ): CompetitiveReport {
   validateManifestCoverage(rows, options.expectedTasks, options.conditions);
+  validateScores(rows);
   const tracks: CompetitiveReport["tracks"] = {};
   for (const condition of [...new Set(rows.map((row) => row.condition))].sort()) {
     tracks[condition] = {};
@@ -306,6 +476,7 @@ export function buildCompetitiveReport(
     exploratory: true,
     tracks,
     primaryPairs: PRIMARY_RIVALS.map((rival) => buildPair(rows, rival, samples, seed)),
+    ...buildTaskComparisons(rows),
   };
 }
 
