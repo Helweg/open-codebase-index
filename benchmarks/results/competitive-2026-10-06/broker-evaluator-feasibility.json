@@ -1,0 +1,1665 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-06",
+  "classification": "development-only broker/evaluator feasibility; not a participant comparison",
+  "conclusion": {
+    "infrastructureControlPassed": true,
+    "modelDrivenRepairPassed": false,
+    "largerCodingProductivityStudyReady": false,
+    "reason": "The actual broker accepted an exact-match source repair and the isolated evaluator independently rejected the mutant and accepted the reference/control patch. The sole reduced-scope, capped Ollama attempt made no patch and exhausted its predeclared four-chat limit. No missing sandbox/runtime prerequisite was observed."
+  },
+  "normalization": {
+    "disclosed": true,
+    "substitutions": {
+      "${REPO}": "repository checkout",
+      "${STUDY}": "read-only preserved September study directory",
+      "${OWNED}": "unique owned temporary workspace",
+      "${HOST_NODE}": "host Node executable",
+      "${HOST_BUN}": "host Bun executable",
+      "${HOST_OLLAMA}": "host Ollama executable",
+      "${OLLAMA_MODEL_STORAGE_HOME}": "local Ollama model storage home"
+    },
+    "policy": "Private absolute machine paths are replaced throughout commands, output, nested raw JSON response strings, and provenance. Original-byte SHA-256 digests are computed before normalization; published text is not byte-identical to private originals. Tool/model content is otherwise preserved."
+  },
+  "provenance": [
+    {
+      "path": "${STUDY}/tools/npm/node_modules/@colbymchenry/codegraph-darwin-arm64/node",
+      "sha256": "1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8",
+      "bytes": 120573328
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/public-source/lib/helpers/isAbsoluteURL.js",
+      "sha256": "5cd00bb88f60bb9bcc44f598e13162fcac029b720308fdc1d9efb8470904cf7d",
+      "bytes": 561
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/preflight.json",
+      "sha256": "bb5d67ef4e833cfab314cc9150eee56476b59c32d3f468522ea99248995dbfcd",
+      "bytes": 2168
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/run-plan.json",
+      "sha256": "52c0891a55973b8e5ff89fdfdc9f4a911488b086c86814ce5c7d72e5dd0f730e",
+      "bytes": 3666
+    },
+    {
+      "path": "${REPO}/scripts/competitive-coding-pilot.ts",
+      "sha256": "aeb3734adb027df655fb1e2c6e85e1cca51cb40ade2069b7327e3a82994a3cef",
+      "bytes": 42307
+    },
+    {
+      "path": "${REPO}/scripts/competitive-pilot-runner.ts",
+      "sha256": "feef792499f2902da6ae9cffb900f14e4ec15c3411e2b5d7df7d2a3cec97b8b7",
+      "bytes": 27711
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/02-axios-rfc3986-scheme-ocbi-hybrid/result.json",
+      "sha256": "fa2d8d3fd07f35c3514c7e6993fb203a1bd4a89b0c0ff82483502aff62da5927",
+      "bytes": 48028
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/03-axios-repeated-boundary-slashes-codegraph/result.json",
+      "sha256": "1f793261e2641981827845bd758f763e3e1899ceb1ca1b6f88881f0fb5454087",
+      "bytes": 55657
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/01-axios-rfc3986-scheme-literal-unindexed/result.json",
+      "sha256": "ff7f015e9b0bb0b3e86bbd8ca46206797b2606ba318b7dab1ae3d5e275695dc7",
+      "bytes": 62705
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/04-axios-repeated-boundary-slashes-literal-unindexed/result.json",
+      "sha256": "3ba0fc68b40dd0ec3868cccb7ec9cce0bc8255dc2c4e5c462887bb1c3e7f44e6",
+      "bytes": 50838
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/00-axios-rfc3986-scheme-codegraph/result.json",
+      "sha256": "00c2b593cdec465053c494a43ce22a6c07f171dd296313d390b5758820c95035",
+      "bytes": 64135
+    },
+    {
+      "path": "${STUDY}/coding-pilot-v2/runs/05-axios-repeated-boundary-slashes-ocbi-hybrid/result.json",
+      "sha256": "5c876d9ed1ad3ab992d1c05b96c4d5e12d4eb8105d90260936118d76ec3793fe",
+      "bytes": 65854
+    },
+    {
+      "path": "${OWNED}/evidence.json",
+      "sha256": "b2ae45be345777c7801c95743eb07d38f7caa2c6afea905b6692735e88bd0d25",
+      "bytes": 49207
+    },
+    {
+      "path": "${OWNED}/probe.mjs",
+      "sha256": "bd2790ab2b62cee0f5a3c5a88507d7d19fc38e6f028b63d93883ccb0f01d88a2",
+      "bytes": 7768
+    }
+  ],
+  "historicalLatestPilot": {
+    "root": "${STUDY}/coding-pilot-v2",
+    "preflight": {
+      "schemaVersion": 1,
+      "status": "passed",
+      "tasks": [
+        {
+          "taskId": "axios-rfc3986-scheme",
+          "reference": {
+            "passed": true,
+            "stdout": "[true,true,true,true,false,false,false,false]",
+            "stderr": "(node:38392) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-38297-1789037860175 --trace-warnings ...` to show where the warning was created)\n",
+            "exitCode": 0,
+            "signal": null
+          },
+          "mutant": {
+            "passed": false,
+            "stdout": "[true,true,true,true,true,true,false,false]",
+            "stderr": "(node:38421) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-38297-1789037861935 --trace-warnings ...` to show where the warning was created)\n",
+            "exitCode": 0,
+            "signal": null
+          }
+        },
+        {
+          "taskId": "axios-repeated-boundary-slashes",
+          "reference": {
+            "passed": true,
+            "stdout": "[\"https://api.example.com/users\",\"https://api.example.com/users\",\"https://api.example.com/users\",\"https://api.example.com/users\",\"https://api.example.com/users/\"]",
+            "stderr": "(node:38453) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-38297-1789037863690 --trace-warnings ...` to show where the warning was created)\n",
+            "exitCode": 0,
+            "signal": null
+          },
+          "mutant": {
+            "passed": false,
+            "stdout": "[\"https://api.example.com/users\",\"https://api.example.com///users\",\"https://api.example.com////users\",\"https://api.example.com/users\",\"https://api.example.com/users/\"]",
+            "stderr": "(node:38527) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-38297-1789037865474 --trace-warnings ...` to show where the warning was created)\n",
+            "exitCode": 0,
+            "signal": null
+          }
+        }
+      ],
+      "safety": {
+        "outsideReadDenied": true,
+        "outsideWriteDenied": true,
+        "networkDenied": true,
+        "childProcessDenied": true
+      }
+    },
+    "runs": [
+      {
+        "taskId": "axios-rfc3986-scheme",
+        "condition": "ocbi-hybrid",
+        "status": "failed",
+        "toolCalls": 6,
+        "error": "This operation was aborted",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "list",
+              "arguments": {
+                "path": "test"
+              }
+            },
+            "error": "path contains a forbidden segment"
+          }
+        ]
+      },
+      {
+        "taskId": "axios-repeated-boundary-slashes",
+        "condition": "codegraph",
+        "status": "failed",
+        "toolCalls": 13,
+        "error": "tool call limit exceeded",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new API by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base 'base' URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')",
+                "oldText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')",
+                "oldText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "read",
+              "arguments": {
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "tool call limit exceeded"
+          }
+        ]
+      },
+      {
+        "taskId": "axios-rfc3986-scheme",
+        "condition": "literal-unindexed",
+        "status": "failed",
+        "toolCalls": 13,
+        "error": "tool call limit exceeded",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "list",
+              "arguments": {
+                "path": "test"
+              }
+            },
+            "error": "path contains a forbidden segment"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "  return /^([a-z][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "oldText": "  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "path": "lib/helpers/isAbsoluteURL.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "search",
+              "arguments": {
+                "query": "return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);"
+              }
+            },
+            "error": "tool call limit exceeded"
+          }
+        ]
+      },
+      {
+        "taskId": "axios-repeated-boundary-slashes",
+        "condition": "literal-unindexed",
+        "status": "failed",
+        "toolCalls": 13,
+        "error": "tool call limit exceeded",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new API by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base 'base' URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')",
+                "oldText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use 'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "read",
+              "arguments": {
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "tool call limit exceeded"
+          }
+        ]
+      },
+      {
+        "taskId": "axios-rfc3986-scheme",
+        "condition": "codegraph",
+        "status": "failed",
+        "toolCalls": 10,
+        "error": "This operation was aborted",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "import isAbsoluteURL from './lib/helpers/isAbsoluteURL.js';\n\nconst urls = [\n  'http://example.com',\n  'https://example.com',\n  '//example.com',\n  '1abc://example.com',\n  'abc://example.com',\n];\n\nurls.forEach(url => {\n  console.log(`URL: ${url}, isAbsolute: ${isAbsoluteURL(url)}`);\n});\n",
+                "oldText": "",
+                "path": "reproduce_issue.js"
+              }
+            },
+            "error": "writes are limited to existing lib/*.js files"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "  return /^([a-z][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "oldText": "  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "path": "lib/helpers/isAbsoluteURL.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "  return /^([a-z][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "oldText": "  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);",
+                "path": "lib/helpers/isAbsoluteURL.js"
+              }
+            },
+            "error": "oldText was not found"
+          }
+        ]
+      },
+      {
+        "taskId": "axios-repeated-boundary-slashes",
+        "condition": "ocbi-hybrid",
+        "status": "failed",
+        "toolCalls": 13,
+        "error": "tool call limit exceeded",
+        "changedFiles": [],
+        "successfulWrites": 0,
+        "failedCalls": [
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new API by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base 'base' URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}\n",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}\n",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')",
+                "oldText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "export default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}",
+                "oldText": "export default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}",
+                "path": "lib/helpers/combine']"
+              }
+            },
+            "error": "writes are limited to existing lib/*.js files"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "export default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}",
+                "oldText": "export default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')",
+                "oldText": "    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "oldText was not found"
+          },
+          {
+            "call": {
+              "name": "replace_unique",
+              "arguments": {
+                "newText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\/+/, '')\n    : baseURL;\n}",
+                "oldText": "'use strict';\n\n/**\n * Creates a new URL by combining the specified URLs\n *\n * @param {string} baseURL The base URL\n * @param {string} relativeURL The relative URL\n *\n * @returns {string} The combined URL\n */\nexport default function combineURLs(baseURL, relativeURL) {\n  return relativeURL\n    ? baseURL.replace(/\\/?\\//$, '') + '/' + relativeURL.replace(/^\\//, '')\n    : baseURL;\n}",
+                "path": "lib/helpers/combineURLs.js"
+              }
+            },
+            "error": "tool call limit exceeded"
+          }
+        ]
+      }
+    ]
+  },
+  "commands": [
+    {
+      "purpose": "runtime inventory",
+      "command": "command -v node bun ollama docker podman sandbox-exec bwrap limactl colima",
+      "exitCode": 0,
+      "stdout": "${HOST_NODE}\n${HOST_BUN}\n${HOST_OLLAMA}\n/usr/local/bin/docker\n/usr/bin/sandbox-exec\n/opt/homebrew/bin/limactl\n"
+    },
+    {
+      "purpose": "sandbox facility only; no candidate executed and not the evaluator security profile",
+      "command": "/usr/bin/sandbox-exec -p '(version 1)(allow default)' /usr/bin/true",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "purpose": "Docker server availability",
+      "command": "docker info --format '{{json .ServerVersion}}'",
+      "exitCode": 0,
+      "stdout": "\"29.5.3\"\n"
+    },
+    {
+      "purpose": "Lima instance availability",
+      "command": "limactl list --json",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "time=\"2026-10-06T12:05:41+02:00\" level=warning msg=\"No instance found. Run `limactl create` to create an instance.\"\n"
+    },
+    {
+      "purpose": "actual broker/evaluator infrastructure control",
+      "command": "env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=${OWNED} LANG=C LC_ALL=C REPO=${REPO} OWNED=${OWNED} RUNTIME_SOURCE=${STUDY}/tools/npm/node_modules/@colbymchenry/codegraph-darwin-arm64/node SOURCE_FILE=${STUDY}/coding-pilot-v2/public-source/lib/helpers/isAbsoluteURL.js ${HOST_NODE} --import ${REPO}/node_modules/tsx/dist/loader.mjs ${OWNED}/probe.mjs",
+      "exitCode": 0,
+      "stdout": "{\"output\":\"${OWNED}/evidence.json\",\"stages\":[{\"name\":\"pinned-runtime-and-model-verification\",\"result\":{\"evaluator\":{\"path\":\"${OWNED}/runtime-node\",\"sha256\":\"1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8\",\"version\":\"v24.16.0\"},\"model\":{\"name\":\"gemma4:26b-a4b-it-q4_K_M\",\"digest\":\"5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251\",\"endpoint\":\"http://127.0.0.1:11434\"}},\"durationMs\":1506},{\"name\":\"real-sandbox-denials\",\"result\":{\"outsideReadDenied\":true,\"outsideWriteDenied\":true,\"networkDenied\":true,\"childProcessDenied\":true},\"durationMs\":1669},{\"name\":\"reference-in-private-independent-evaluator\",\"result\":{\"passed\":true,\"stdout\":\"[true,true,true,true,false,false,false,false]\",\"stderr\":\"(node:20230) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281273886 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1634},{\"name\":\"initial-mutant-in-private-independent-evaluator\",\"result\":{\"passed\":false,\"stdout\":\"[true,true,true,true,true,true,false,false]\",\"stderr\":\"(node:20248) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281275520 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1626},{\"name\":\"broker-patch-in-private-independent-evaluator\",\"result\":{\"passed\":true,\"stdout\":\"[true,true,true,true,false,false,false,false]\",\"stderr\":\"(node:20260) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281277154 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1651}],\"infrastructureMechanicsProved\":true,\"modelDrivenSuccess\":false}\n",
+      "wallMs": 8800
+    },
+    {
+      "purpose": "one actual bounded model attempt; command exit zero means evidence captured, not repair success",
+      "command": "env -i PATH=/usr/bin:/bin:/usr/sbin:/sbin HOME=${OWNED} LANG=C LC_ALL=C REPO=${REPO} OWNED=${OWNED} ${HOST_NODE} --import ${REPO}/node_modules/tsx/dist/loader.mjs ${OWNED}/probe.mjs --model",
+      "exitCode": 0,
+      "stdout": "{\"output\":\"${OWNED}/evidence.json\",\"stages\":[{\"name\":\"pinned-runtime-and-model-verification\",\"result\":{\"evaluator\":{\"path\":\"${OWNED}/runtime-node\",\"sha256\":\"1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8\",\"version\":\"v24.16.0\"},\"model\":{\"name\":\"gemma4:26b-a4b-it-q4_K_M\",\"digest\":\"5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251\",\"endpoint\":\"http://127.0.0.1:11434\"}},\"durationMs\":1506},{\"name\":\"real-sandbox-denials\",\"result\":{\"outsideReadDenied\":true,\"outsideWriteDenied\":true,\"networkDenied\":true,\"childProcessDenied\":true},\"durationMs\":1669},{\"name\":\"reference-in-private-independent-evaluator\",\"result\":{\"passed\":true,\"stdout\":\"[true,true,true,true,false,false,false,false]\",\"stderr\":\"(node:20230) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281273886 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1634},{\"name\":\"initial-mutant-in-private-independent-evaluator\",\"result\":{\"passed\":false,\"stdout\":\"[true,true,true,true,true,true,false,false]\",\"stderr\":\"(node:20248) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281275520 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1626},{\"name\":\"broker-patch-in-private-independent-evaluator\",\"result\":{\"passed\":true,\"stdout\":\"[true,true,true,true,false,false,false,false]\",\"stderr\":\"(node:20260) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20201-1791281277154 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1651},{\"name\":\"model-candidate-in-private-independent-evaluator\",\"result\":{\"passed\":false,\"stdout\":\"[true,true,true,true,true,true,false,false]\",\"stderr\":\"(node:20913) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20383-1791281324165 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null},\"durationMs\":1818}],\"infrastructureMechanicsProved\":true,\"modelDrivenSuccess\":false,\"modelDurationMs\":39167,\"modelToolCalls\":4,\"modelChatRequestsSent\":4,\"modelError\":\"predeclared feasibility chat-request cap exhausted\",\"modelEvaluator\":{\"passed\":false,\"stdout\":\"[true,true,true,true,true,true,false,false]\",\"stderr\":\"(node:20913) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\\n(Use `.pilot-runtime-node-20383-1791281324165 --trace-warnings ...` to show where the warning was created)\\n\",\"exitCode\":0,\"signal\":null}}\n",
+      "wallMs": 41240
+    }
+  ],
+  "executedHarnessSource": "import fs from 'node:fs';\nimport path from 'node:path';\nimport { createHash } from 'node:crypto';\nimport { pathToFileURL } from 'node:url';\nconst { PilotBroker, literalSearchAdapter, PILOT_MANIFEST, applyTaskMutation, evaluateCandidate, proveSandboxDenials, verifyPilotRuntime, OllamaModelDriver, EVALUATOR_NODE_SHA256 } = await import(pathToFileURL(path.join(process.env.REPO, 'scripts/competitive-coding-pilot.ts')).href);\nconst root = fs.realpathSync(process.env.OWNED);\nconst privateRoot = path.join(root, 'private-evaluator');\nconst reference = path.join(root, 'reference-control');\nconst control = path.join(root, 'broker-control');\nconst participant = path.join(root, 'model-participant');\nconst output = path.join(root, 'evidence.json');\nconst digest = value => createHash('sha256').update(value).digest('hex');\nconst task = PILOT_MANIFEST.tasks[0];\nconst runtime = { path: path.join(root, 'runtime-node'), expectedVersion: 'v24.16.0', expectedSha256: EVALUATOR_NODE_SHA256 };\nconst evaluation = { privateRoot, runtime };\nconst record = { schemaVersion: 1, date: '2026-10-06', developmentOnly: true, modelDrivenSuccess: false, sourceScope: 'one already-exposed Axios helper, not a full repository', taskId: task.id, prompt: task.prompt, modelAttemptBudget: { attempts: 1, condition: 'literal-unindexed', maxChatRequests: 4, maxGeneratedTokens: 2048, maxWallMs: 120000, requestTimeoutMs: 60000, maxBrokerToolCalls: 12, modelSettings: PILOT_MANIFEST.model }, stages: [], brokerControl: [], network: [] };\nconst checkpoint = () => fs.writeFileSync(output, JSON.stringify(record, null, 2) + '\\n');\nconst stage = async (name, run) => {\n  const started = Date.now();\n  try { const result = await run(); record.stages.push({ name, result, durationMs: Date.now() - started }); checkpoint(); return result; }\n  catch (error) { record.stages.push({ name, error: { name: error.name, message: error.message, ...(error.result ? { result: error.result } : {}) }, durationMs: Date.now() - started }); checkpoint(); throw error; }\n};\ntry {\n  if (process.argv[2] !== '--model') {\n    fs.mkdirSync(privateRoot, { mode: 0o700 });\n    fs.copyFileSync(process.env.RUNTIME_SOURCE, runtime.path, fs.constants.COPYFILE_EXCL);\n    fs.chmodSync(runtime.path, 0o500);\n    const clean = fs.readFileSync(process.env.SOURCE_FILE, 'utf8');\n    record.source = { sha256: digest(clean), content: clean };\n    for (const workspace of [reference, control, participant]) {\n      const file = path.join(workspace, task.mutation.file);\n      fs.mkdirSync(path.dirname(file), { recursive: true });\n      fs.writeFileSync(file, clean);\n      if (workspace !== reference) applyTaskMutation(workspace, task);\n    }\n    record.runtime = await stage('pinned-runtime-and-model-verification', () => verifyPilotRuntime(runtime));\n    await stage('real-sandbox-denials', () => proveSandboxDenials(control, evaluation));\n    const original = await stage('reference-in-private-independent-evaluator', () => evaluateCandidate(reference, task, evaluation));\n    const initial = await stage('initial-mutant-in-private-independent-evaluator', () => evaluateCandidate(control, task, evaluation));\n    if (!original.passed || original.exitCode !== 0 || initial.passed || initial.exitCode !== 0 || initial.error) throw new Error('behavioral reference/mutant preflight failed');\n    const broker = new PilotBroker(control, literalSearchAdapter);\n    record.brokerControlAllowedFiles = broker.allowedFiles;\n    for (const call of [\n      { name: 'list', arguments: {} },\n      { name: 'search', arguments: { query: 'isAbsoluteURL', limit: 5 } },\n      { name: 'read', arguments: { path: task.mutation.file } },\n      { name: 'read', arguments: { path: '../reference-control/' + task.mutation.file } },\n      { name: 'replace_unique', arguments: { path: task.mutation.file, oldText: task.mutation.newText, newText: task.mutation.oldText } },\n    ]) record.brokerControl.push({ call, result: await broker.execute(call) });\n    record.controlPatch = { before: fs.readFileSync(path.join(participant, task.mutation.file), 'utf8'), after: fs.readFileSync(path.join(control, task.mutation.file), 'utf8'), toolCalls: broker.callCount, label: 'deterministic infrastructure control, not model-driven repair' };\n    const repaired = await stage('broker-patch-in-private-independent-evaluator', () => evaluateCandidate(control, task, evaluation));\n    if (!repaired.passed) throw new Error('real broker infrastructure control failed');\n    record.infrastructureMechanicsProved = true;\n    checkpoint();\n  } else {\n    const prior = JSON.parse(fs.readFileSync(output, 'utf8'));\n    Object.assign(record, prior);\n    if (!record.infrastructureMechanicsProved) throw new Error('model execution requires successful mechanics preflight');\n    const broker = new PilotBroker(participant, literalSearchAdapter);\n    record.modelAllowedFiles = broker.allowedFiles;\n    record.modelInitial = fs.readFileSync(path.join(participant, task.mutation.file), 'utf8');\n    let chatRequests = 0;\n    const actualFetch = async (url, init) => {\n      if (url.endsWith('/api/chat') && ++chatRequests > record.modelAttemptBudget.maxChatRequests) throw new Error('predeclared feasibility chat-request cap exhausted');\n      const entry = { url, method: init.method, ...(init.body ? { body: JSON.parse(init.body) } : {}), startedAt: new Date().toISOString() };\n      record.network.push(entry);\n      checkpoint();\n      try {\n        const response = await fetch(url, init);\n        entry.status = response.status;\n        entry.response = await response.clone().text();\n        entry.finishedAt = new Date().toISOString();\n        checkpoint();\n        return response;\n      } catch (error) { entry.error = { name: error.name, message: error.message }; entry.finishedAt = new Date().toISOString(); checkpoint(); throw error; }\n    };\n    const started = Date.now();\n    try {\n      record.model = await new OllamaModelDriver(actualFetch).run({ prompt: task.prompt, broker, deadlineMs: started + record.modelAttemptBudget.maxWallMs, maxGeneratedTokens: record.modelAttemptBudget.maxGeneratedTokens, requestTimeoutMs: record.modelAttemptBudget.requestTimeoutMs });\n    } catch (error) {\n      record.modelError = { name: error.name, message: error.message, transcript: error.transcript, promptTokens: error.promptTokens, generatedTokens: error.generatedTokens };\n    }\n    record.modelDurationMs = Date.now() - started;\n    record.modelToolCalls = broker.callCount;\n    record.modelChatRequestsSent = record.network.filter(entry => entry.url.endsWith('/api/chat')).length;\n    record.modelFinal = fs.readFileSync(path.join(participant, task.mutation.file), 'utf8');\n    record.modelPatchValidity = { valid: record.modelInitial !== record.modelFinal && fs.readdirSync(path.join(participant, 'lib/helpers')).join() === 'isAbsoluteURL.js', expectedFile: task.mutation.file, changed: record.modelInitial !== record.modelFinal };\n    record.modelEvaluator = await stage('model-candidate-in-private-independent-evaluator', () => evaluateCandidate(participant, task, evaluation));\n    record.modelDrivenSuccess = !record.modelError && record.modelEvaluator.passed && record.modelPatchValidity.valid;\n    checkpoint();\n  }\n  console.log(JSON.stringify({ output, stages: record.stages, infrastructureMechanicsProved: record.infrastructureMechanicsProved, modelDrivenSuccess: record.modelDrivenSuccess, modelDurationMs: record.modelDurationMs, modelToolCalls: record.modelToolCalls, modelChatRequestsSent: record.modelChatRequestsSent, modelError: record.modelError?.message, modelEvaluator: record.modelEvaluator }));\n} catch (error) { record.fatal = { name: error.name, message: error.message }; checkpoint(); console.error(error.stack); process.exitCode = 1; }\n",
+  "evidence": {
+    "schemaVersion": 1,
+    "date": "2026-10-06",
+    "developmentOnly": true,
+    "modelDrivenSuccess": false,
+    "sourceScope": "one already-exposed Axios helper, not a full repository",
+    "taskId": "axios-rfc3986-scheme",
+    "prompt": "Axios treats URLs whose scheme begins with a digit as absolute. Fix the regression so scheme detection follows RFC 3986 while continuing to accept valid custom schemes, uppercase schemes, and protocol-relative URLs. Keep the change focused and do not modify tests.",
+    "modelAttemptBudget": {
+      "attempts": 1,
+      "condition": "literal-unindexed",
+      "maxChatRequests": 4,
+      "maxGeneratedTokens": 2048,
+      "maxWallMs": 120000,
+      "requestTimeoutMs": 60000,
+      "maxBrokerToolCalls": 12,
+      "modelSettings": {
+        "name": "gemma4:26b-a4b-it-q4_K_M",
+        "digest": "5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251",
+        "endpoint": "http://127.0.0.1:11434",
+        "seed": 20260910,
+        "numCtx": 32768,
+        "temperature": 0,
+        "think": "high",
+        "systemPrompt": "You are repairing one seeded regression. Use only the provided repository tools. Do not modify tests. Make the smallest correct source change, then stop."
+      }
+    },
+    "stages": [
+      {
+        "name": "pinned-runtime-and-model-verification",
+        "result": {
+          "evaluator": {
+            "path": "${OWNED}/runtime-node",
+            "sha256": "1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8",
+            "version": "v24.16.0"
+          },
+          "model": {
+            "name": "gemma4:26b-a4b-it-q4_K_M",
+            "digest": "5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251",
+            "endpoint": "http://127.0.0.1:11434"
+          }
+        },
+        "durationMs": 1506
+      },
+      {
+        "name": "real-sandbox-denials",
+        "result": {
+          "outsideReadDenied": true,
+          "outsideWriteDenied": true,
+          "networkDenied": true,
+          "childProcessDenied": true
+        },
+        "durationMs": 1669
+      },
+      {
+        "name": "reference-in-private-independent-evaluator",
+        "result": {
+          "passed": true,
+          "stdout": "[true,true,true,true,false,false,false,false]",
+          "stderr": "(node:20230) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-20201-1791281273886 --trace-warnings ...` to show where the warning was created)\n",
+          "exitCode": 0,
+          "signal": null
+        },
+        "durationMs": 1634
+      },
+      {
+        "name": "initial-mutant-in-private-independent-evaluator",
+        "result": {
+          "passed": false,
+          "stdout": "[true,true,true,true,true,true,false,false]",
+          "stderr": "(node:20248) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-20201-1791281275520 --trace-warnings ...` to show where the warning was created)\n",
+          "exitCode": 0,
+          "signal": null
+        },
+        "durationMs": 1626
+      },
+      {
+        "name": "broker-patch-in-private-independent-evaluator",
+        "result": {
+          "passed": true,
+          "stdout": "[true,true,true,true,false,false,false,false]",
+          "stderr": "(node:20260) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-20201-1791281277154 --trace-warnings ...` to show where the warning was created)\n",
+          "exitCode": 0,
+          "signal": null
+        },
+        "durationMs": 1651
+      },
+      {
+        "name": "model-candidate-in-private-independent-evaluator",
+        "result": {
+          "passed": false,
+          "stdout": "[true,true,true,true,true,true,false,false]",
+          "stderr": "(node:20913) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-20383-1791281324165 --trace-warnings ...` to show where the warning was created)\n",
+          "exitCode": 0,
+          "signal": null
+        },
+        "durationMs": 1818
+      }
+    ],
+    "brokerControl": [
+      {
+        "call": {
+          "name": "list",
+          "arguments": {}
+        },
+        "result": {
+          "ok": true,
+          "output": [
+            "lib/helpers/isAbsoluteURL.js"
+          ]
+        }
+      },
+      {
+        "call": {
+          "name": "search",
+          "arguments": {
+            "query": "isAbsoluteURL",
+            "limit": 5
+          }
+        },
+        "result": {
+          "ok": true,
+          "output": [
+            {
+              "filePath": "lib/helpers/isAbsoluteURL.js",
+              "startLine": 10,
+              "endLine": 10,
+              "score": 1,
+              "content": "export default function isAbsoluteURL(url) {"
+            }
+          ]
+        }
+      },
+      {
+        "call": {
+          "name": "read",
+          "arguments": {
+            "path": "lib/helpers/isAbsoluteURL.js"
+          }
+        },
+        "result": {
+          "ok": true,
+          "output": {
+            "filePath": "lib/helpers/isAbsoluteURL.js",
+            "content": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n"
+          }
+        }
+      },
+      {
+        "call": {
+          "name": "read",
+          "arguments": {
+            "path": "../reference-control/lib/helpers/isAbsoluteURL.js"
+          }
+        },
+        "result": {
+          "ok": false,
+          "error": "path contains a forbidden segment"
+        }
+      },
+      {
+        "call": {
+          "name": "replace_unique",
+          "arguments": {
+            "path": "lib/helpers/isAbsoluteURL.js",
+            "oldText": "return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);",
+            "newText": "return /^([a-z][a-z\\d+\\-.]*:)?\\/\\//i.test(url);"
+          }
+        },
+        "result": {
+          "ok": true,
+          "output": {
+            "filePath": "lib/helpers/isAbsoluteURL.js",
+            "replacements": 1
+          }
+        }
+      }
+    ],
+    "network": [
+      {
+        "url": "http://127.0.0.1:11434/api/tags",
+        "method": "GET",
+        "startedAt": "2026-10-06T10:08:04.798Z",
+        "status": 200,
+        "response": "{\"models\":[{\"name\":\"qwen3-embedding:4b\",\"model\":\"qwen3-embedding:4b\",\"modified_at\":\"2026-08-12T13:45:27.940472028+02:00\",\"size\":2496704041,\"digest\":\"df5bd2e3c74cd8d069d21dc038f1b359fcdc9458fce1c99bd43c9eb1518ff907\",\"details\":{\"parent_model\":\"${OLLAMA_MODEL_STORAGE_HOME}/.ollama/models/blobs/sha256-2b0cf8f17b4c723c27303015383c27ec4bf2d8314bb677d05e920dd70bb0f16b\",\"format\":\"gguf\",\"family\":\"qwen3\",\"families\":[\"qwen3\"],\"parameter_size\":\"4.0B\",\"quantization_level\":\"Q4_K_M\",\"context_length\":40960,\"embedding_length\":2560},\"capabilities\":[\"tools\",\"embedding\"]},{\"name\":\"embeddinggemma:latest\",\"model\":\"embeddinggemma:latest\",\"modified_at\":\"2026-08-12T13:45:18.6192212+02:00\",\"size\":621875917,\"digest\":\"85462619ee721b466c5927d109d4cb765861907d5417b9109caebc4e614679f1\",\"details\":{\"parent_model\":\"embeddinggemma:300m-bf16\",\"format\":\"gguf\",\"family\":\"gemma3\",\"families\":[\"gemma3\"],\"parameter_size\":\"307.58M\",\"quantization_level\":\"BF16\",\"context_length\":2048,\"embedding_length\":768},\"capabilities\":[\"embedding\"]},{\"name\":\"bge-m3:latest\",\"model\":\"bge-m3:latest\",\"modified_at\":\"2026-08-12T13:45:17.829329359+02:00\",\"size\":1157672605,\"digest\":\"7907646426070047a77226ac3e684fbbe8410524f7b4a74d02837e43f2146bab\",\"details\":{\"parent_model\":\"\",\"format\":\"gguf\",\"family\":\"bert\",\"families\":[\"bert\"],\"parameter_size\":\"566.70M\",\"quantization_level\":\"F16\",\"context_length\":8192,\"embedding_length\":1024},\"capabilities\":[\"embedding\"]},{\"name\":\"mxbai-embed-large:latest\",\"model\":\"mxbai-embed-large:latest\",\"modified_at\":\"2026-08-12T13:45:11.010607447+02:00\",\"size\":669615493,\"digest\":\"468836162de7f81e041c43663fedbbba921dcea9b9fefea135685a39b2d83dd8\",\"details\":{\"parent_model\":\"\",\"format\":\"gguf\",\"family\":\"bert\",\"families\":[\"bert\"],\"parameter_size\":\"334M\",\"quantization_level\":\"F16\",\"context_length\":512,\"embedding_length\":1024},\"capabilities\":[\"embedding\"]},{\"name\":\"qwen3-embedding:0.6b\",\"model\":\"qwen3-embedding:0.6b\",\"modified_at\":\"2026-08-12T13:32:17.353226743+02:00\",\"size\":639150858,\"digest\":\"ac6da0dfba84a81fdbfbaf330198c33cd77c4cdfc53e8bc50eb581914a15621d\",\"details\":{\"parent_model\":\"${OLLAMA_MODEL_STORAGE_HOME}/.ollama/models/blobs/sha256-06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439\",\"format\":\"gguf\",\"family\":\"qwen3\",\"families\":[\"qwen3\"],\"parameter_size\":\"595.78M\",\"quantization_level\":\"Q8_0\",\"context_length\":32768,\"embedding_length\":1024},\"capabilities\":[\"tools\",\"thinking\",\"embedding\"]},{\"name\":\"gemma4:26b-a4b-it-q4_K_M\",\"model\":\"gemma4:26b-a4b-it-q4_K_M\",\"modified_at\":\"2026-06-28T13:12:55.755608749+02:00\",\"size\":17987581215,\"digest\":\"5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251\",\"details\":{\"parent_model\":\"\",\"format\":\"gguf\",\"family\":\"gemma4\",\"families\":[\"gemma4\"],\"parameter_size\":\"25.8B\",\"quantization_level\":\"Q4_K_M\",\"context_length\":262144,\"embedding_length\":2816},\"capabilities\":[\"completion\",\"vision\",\"tools\",\"thinking\"]},{\"name\":\"nomic-embed-text:latest\",\"model\":\"nomic-embed-text:latest\",\"modified_at\":\"2026-01-16T13:43:33.510036761+01:00\",\"size\":274302450,\"digest\":\"0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f\",\"details\":{\"parent_model\":\"\",\"format\":\"gguf\",\"family\":\"nomic-bert\",\"families\":[\"nomic-bert\"],\"parameter_size\":\"137M\",\"quantization_level\":\"F16\",\"context_length\":2048,\"embedding_length\":768},\"capabilities\":[\"embedding\"]}]}",
+        "finishedAt": "2026-10-06T10:08:04.830Z"
+      },
+      {
+        "url": "http://127.0.0.1:11434/api/chat",
+        "method": "POST",
+        "body": {
+          "model": "gemma4:26b-a4b-it-q4_K_M",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are repairing one seeded regression. Use only the provided repository tools. Do not modify tests. Make the smallest correct source change, then stop."
+            },
+            {
+              "role": "user",
+              "content": "Axios treats URLs whose scheme begins with a digit as absolute. Fix the regression so scheme detection follows RFC 3986 while continuing to accept valid custom schemes, uppercase schemes, and protocol-relative URLs. Keep the change focused and do not modify tests."
+            }
+          ],
+          "stream": false,
+          "think": "high",
+          "keep_alive": "5m",
+          "options": {
+            "num_predict": 2048,
+            "temperature": 0,
+            "seed": 20260910,
+            "num_ctx": 32768
+          },
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "list",
+                "description": "List allowed repository files",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "read",
+                "description": "Read one allowed repository file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "replace_unique",
+                "description": "Replace one unique text occurrence in an existing lib JavaScript file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "oldText",
+                    "newText"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "oldText": {
+                      "type": "string"
+                    },
+                    "newText": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "search",
+                "description": "Search repository source through the condition-specific adapter",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "query"
+                  ],
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "startedAt": "2026-10-06T10:08:04.835Z",
+        "status": 200,
+        "response": "{\"model\":\"gemma4:26b-a4b-it-q4_K_M\",\"created_at\":\"2026-10-06T10:08:20.879842Z\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"The user is reporting a regression in Axios where URLs starting with a digit in the scheme are treated as absolute.\\nI need to fix this so that scheme detection follows RFC 3986.\\nRFC 3986 states that a scheme name must begin with a letter.\\n\\nLet's start by exploring the codebase to find the relevant code for URL/scheme detection.\",\"tool_calls\":[{\"id\":\"call_g6bq7hpc\",\"function\":{\"index\":0,\"name\":\"list\",\"arguments\":{\"path\":\".\"}}}]},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":16041129250,\"load_duration\":11686848500,\"prompt_eval_count\":299,\"prompt_eval_cached_count\":0,\"prompt_eval_duration\":996724000,\"eval_count\":95,\"eval_duration\":3345118000}",
+        "finishedAt": "2026-10-06T10:08:20.883Z"
+      },
+      {
+        "url": "http://127.0.0.1:11434/api/chat",
+        "method": "POST",
+        "body": {
+          "model": "gemma4:26b-a4b-it-q4_K_M",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are repairing one seeded regression. Use only the provided repository tools. Do not modify tests. Make the smallest correct source change, then stop."
+            },
+            {
+              "role": "user",
+              "content": "Axios treats URLs whose scheme begins with a digit as absolute. Fix the regression so scheme detection follows RFC 3986 while continuing to accept valid custom schemes, uppercase schemes, and protocol-relative URLs. Keep the change focused and do not modify tests."
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The user is reporting a regression in Axios where URLs starting with a digit in the scheme are treated as absolute.\nI need to fix this so that scheme detection follows RFC 3986.\nRFC 3986 states that a scheme name must begin with a letter.\n\nLet's start by exploring the codebase to find the relevant code for URL/scheme detection.",
+              "tool_calls": [
+                {
+                  "id": "call_g6bq7hpc",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "."
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "list",
+              "content": "{\"ok\":true,\"output\":[\"lib/helpers/isAbsoluteURL.js\"]}"
+            }
+          ],
+          "stream": false,
+          "think": "high",
+          "keep_alive": "5m",
+          "options": {
+            "num_predict": 1953,
+            "temperature": 0,
+            "seed": 20260910,
+            "num_ctx": 32768
+          },
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "list",
+                "description": "List allowed repository files",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "read",
+                "description": "Read one allowed repository file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "replace_unique",
+                "description": "Replace one unique text occurrence in an existing lib JavaScript file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "oldText",
+                    "newText"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "oldText": {
+                      "type": "string"
+                    },
+                    "newText": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "search",
+                "description": "Search repository source through the condition-specific adapter",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "query"
+                  ],
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "startedAt": "2026-10-06T10:08:20.886Z",
+        "status": 200,
+        "response": "{\"model\":\"gemma4:26b-a4b-it-q4_K_M\",\"created_at\":\"2026-10-06T10:08:23.602435Z\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"The file `lib/helpers/isAbsoluteURL.js` seems like the place where this logic resides.\\nLet's examine its content.\",\"tool_calls\":[{\"id\":\"call_q6ld2r4a\",\"function\":{\"index\":0,\"name\":\"read\",\"arguments\":{\"path\":\"lib/helpers/isAbsoluteURL.js\"}}}]},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":2708800875,\"load_duration\":7584250,\"prompt_eval_count\":425,\"prompt_eval_cached_count\":294,\"prompt_eval_duration\":621040000,\"eval_count\":53,\"eval_duration\":2063525000}",
+        "finishedAt": "2026-10-06T10:08:23.606Z"
+      },
+      {
+        "url": "http://127.0.0.1:11434/api/chat",
+        "method": "POST",
+        "body": {
+          "model": "gemma4:26b-a4b-it-q4_K_M",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are repairing one seeded regression. Use only the provided repository tools. Do not modify tests. Make the smallest correct source change, then stop."
+            },
+            {
+              "role": "user",
+              "content": "Axios treats URLs whose scheme begins with a digit as absolute. Fix the regression so scheme detection follows RFC 3986 while continuing to accept valid custom schemes, uppercase schemes, and protocol-relative URLs. Keep the change focused and do not modify tests."
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The user is reporting a regression in Axios where URLs starting with a digit in the scheme are treated as absolute.\nI need to fix this so that scheme detection follows RFC 3986.\nRFC 3986 states that a scheme name must begin with a letter.\n\nLet's start by exploring the codebase to find the relevant code for URL/scheme detection.",
+              "tool_calls": [
+                {
+                  "id": "call_g6bq7hpc",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "."
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "list",
+              "content": "{\"ok\":true,\"output\":[\"lib/helpers/isAbsoluteURL.js\"]}"
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The file `lib/helpers/isAbsoluteURL.js` seems like the place where this logic resides.\nLet's examine its content.",
+              "tool_calls": [
+                {
+                  "id": "call_q6ld2r4a",
+                  "function": {
+                    "index": 0,
+                    "name": "read",
+                    "arguments": {
+                      "path": "lib/helpers/isAbsoluteURL.js"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "read",
+              "content": "{\"ok\":true,\"output\":{\"filePath\":\"lib/helpers/isAbsoluteURL.js\",\"content\":\"'use strict';\\n\\n/**\\n * Determines whether the specified URL is absolute\\n *\\n * @param {string} url The URL to test\\n *\\n * @returns {boolean} True if the specified URL is absolute, otherwise false\\n */\\nexport default function isAbsoluteURL(url) {\\n  // A URL is considered absolute if it begins with \\\"<scheme>://\\\" or \\\"//\\\" (protocol-relative URL).\\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\\n  // by any combination of letters, digits, plus, period, or hyphen.\\n  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);\\n}\\n\"}}"
+            }
+          ],
+          "stream": false,
+          "think": "high",
+          "keep_alive": "5m",
+          "options": {
+            "num_predict": 1900,
+            "temperature": 0,
+            "seed": 20260910,
+            "num_ctx": 32768
+          },
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "list",
+                "description": "List allowed repository files",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "read",
+                "description": "Read one allowed repository file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "replace_unique",
+                "description": "Replace one unique text occurrence in an existing lib JavaScript file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "oldText",
+                    "newText"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "oldText": {
+                      "type": "string"
+                    },
+                    "newText": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "search",
+                "description": "Search repository source through the condition-specific adapter",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "query"
+                  ],
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "startedAt": "2026-10-06T10:08:23.611Z",
+        "status": 200,
+        "response": "{\"model\":\"gemma4:26b-a4b-it-q4_K_M\",\"created_at\":\"2026-10-06T10:08:40.713011Z\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"The current implementation of `isAbsoluteURL` is:\\n```javascript\\nexport default function isAbsoluteURL(url) {\\n  // A URL is considered absolute if it begins with \\\"\\u003cscheme\\u003e://\\\" or \\\"//\\\" (protocol-relative URL).\\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\\n  // by any combination of letters, digits, plus, period, or hyphen.\\n  return /^([a-z\\\\\\\\d][a-z\\\\\\\\d+\\\\\\\\-.]*:)?\\\\\\\\/\\\\\\\\//i.test(url);\\n}\\n```\\nThe regex `^([a-z\\\\\\\\d][a-z\\\\\\\\d+\\\\\\\\-.]*:)?\\\\\\\\/\\\\\\\\/` is used.\\nThe first character of the scheme is `[a-z\\\\\\\\d]`, which includes digits.\\nRFC 3986 says: \\\"A scheme name consists of a sequence of characters comprising letters, digits, plus (\\\"+\\\"), period (\\\".\\\"), or hyphen (\\\"-\\\"), and **must begin with a letter**.\\\"\\n\\nSo, the first character should be `[a-z]` instead of `[a-z\\\\\\\\d]`.\\n\\nWait, the regex is `^([a-z\\\\\\\\d][a-z\\\\\\\\d+\\\\\\\\-.]*:)?\\\\\\\\/\\\\\\\\/`.\\nIf the URL is `123://example.com`, the regex matches `123:` as the scheme and `//` as the rest.\\nThe issue is that `[a-z\\\\\\\\d]` allows a digit as the first character.\\n\\nLet's verify this with a test case if I can find any tests.\\nI'll look for tests in the repository.\",\"tool_calls\":[{\"id\":\"call_eyrv6ehv\",\"function\":{\"index\":0,\"name\":\"list\",\"arguments\":{\"path\":\"test\"}}}]},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":17095731708,\"load_duration\":6775625,\"prompt_eval_count\":686,\"prompt_eval_cached_count\":420,\"prompt_eval_duration\":1086338000,\"eval_count\":374,\"eval_duration\":15988642000}",
+        "finishedAt": "2026-10-06T10:08:40.714Z"
+      },
+      {
+        "url": "http://127.0.0.1:11434/api/chat",
+        "method": "POST",
+        "body": {
+          "model": "gemma4:26b-a4b-it-q4_K_M",
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are repairing one seeded regression. Use only the provided repository tools. Do not modify tests. Make the smallest correct source change, then stop."
+            },
+            {
+              "role": "user",
+              "content": "Axios treats URLs whose scheme begins with a digit as absolute. Fix the regression so scheme detection follows RFC 3986 while continuing to accept valid custom schemes, uppercase schemes, and protocol-relative URLs. Keep the change focused and do not modify tests."
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The user is reporting a regression in Axios where URLs starting with a digit in the scheme are treated as absolute.\nI need to fix this so that scheme detection follows RFC 3986.\nRFC 3986 states that a scheme name must begin with a letter.\n\nLet's start by exploring the codebase to find the relevant code for URL/scheme detection.",
+              "tool_calls": [
+                {
+                  "id": "call_g6bq7hpc",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "."
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "list",
+              "content": "{\"ok\":true,\"output\":[\"lib/helpers/isAbsoluteURL.js\"]}"
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The file `lib/helpers/isAbsoluteURL.js` seems like the place where this logic resides.\nLet's examine its content.",
+              "tool_calls": [
+                {
+                  "id": "call_q6ld2r4a",
+                  "function": {
+                    "index": 0,
+                    "name": "read",
+                    "arguments": {
+                      "path": "lib/helpers/isAbsoluteURL.js"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "read",
+              "content": "{\"ok\":true,\"output\":{\"filePath\":\"lib/helpers/isAbsoluteURL.js\",\"content\":\"'use strict';\\n\\n/**\\n * Determines whether the specified URL is absolute\\n *\\n * @param {string} url The URL to test\\n *\\n * @returns {boolean} True if the specified URL is absolute, otherwise false\\n */\\nexport default function isAbsoluteURL(url) {\\n  // A URL is considered absolute if it begins with \\\"<scheme>://\\\" or \\\"//\\\" (protocol-relative URL).\\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\\n  // by any combination of letters, digits, plus, period, or hyphen.\\n  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);\\n}\\n\"}}"
+            },
+            {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The current implementation of `isAbsoluteURL` is:\n```javascript\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);\n}\n```\nThe regex `^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\/` is used.\nThe first character of the scheme is `[a-z\\\\d]`, which includes digits.\nRFC 3986 says: \"A scheme name consists of a sequence of characters comprising letters, digits, plus (\"+\"), period (\".\"), or hyphen (\"-\"), and **must begin with a letter**.\"\n\nSo, the first character should be `[a-z]` instead of `[a-z\\\\d]`.\n\nWait, the regex is `^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\/`.\nIf the URL is `123://example.com`, the regex matches `123:` as the scheme and `//` as the rest.\nThe issue is that `[a-z\\\\d]` allows a digit as the first character.\n\nLet's verify this with a test case if I can find any tests.\nI'll look for tests in the repository.",
+              "tool_calls": [
+                {
+                  "id": "call_eyrv6ehv",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "test"
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "role": "tool",
+              "tool_name": "list",
+              "content": "{\"ok\":false,\"error\":\"path contains a forbidden segment\"}"
+            }
+          ],
+          "stream": false,
+          "think": "high",
+          "keep_alive": "5m",
+          "options": {
+            "num_predict": 1526,
+            "temperature": 0,
+            "seed": 20260910,
+            "num_ctx": 32768
+          },
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "list",
+                "description": "List allowed repository files",
+                "parameters": {
+                  "type": "object",
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "read",
+                "description": "Read one allowed repository file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "replace_unique",
+                "description": "Replace one unique text occurrence in an existing lib JavaScript file",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "path",
+                    "oldText",
+                    "newText"
+                  ],
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "oldText": {
+                      "type": "string"
+                    },
+                    "newText": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "function",
+              "function": {
+                "name": "search",
+                "description": "Search repository source through the condition-specific adapter",
+                "parameters": {
+                  "type": "object",
+                  "required": [
+                    "query"
+                  ],
+                  "properties": {
+                    "query": {
+                      "type": "string"
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 20
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "startedAt": "2026-10-06T10:08:40.716Z",
+        "status": 200,
+        "response": "{\"model\":\"gemma4:26b-a4b-it-q4_K_M\",\"created_at\":\"2026-10-06T10:08:43.949437Z\",\"message\":{\"role\":\"assistant\",\"content\":\"\",\"thinking\":\"Ah, I cannot list `test` directory. Let me check if there are any other files.\\nI'll try to search for `isAbsoluteURL` in the codebase to see how it's used and if there are tests.\",\"tool_calls\":[{\"id\":\"call_xrg0y8iw\",\"function\":{\"index\":0,\"name\":\"search\",\"arguments\":{\"query\":\"isAbsoluteURL\"}}}]},\"done\":true,\"done_reason\":\"stop\",\"total_duration\":3230241667,\"load_duration\":3654292,\"prompt_eval_count\":1086,\"prompt_eval_cached_count\":1059,\"prompt_eval_duration\":500616000,\"eval_count\":66,\"eval_duration\":2711909000}",
+        "finishedAt": "2026-10-06T10:08:43.953Z"
+      }
+    ],
+    "source": {
+      "sha256": "5cd00bb88f60bb9bcc44f598e13162fcac029b720308fdc1d9efb8470904cf7d",
+      "content": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n"
+    },
+    "runtime": {
+      "evaluator": {
+        "path": "${OWNED}/runtime-node",
+        "sha256": "1ee75375e33b94fc34b3b19aede049e11dae90efb63b374dc96d6bdace70c4b8",
+        "version": "v24.16.0"
+      },
+      "model": {
+        "name": "gemma4:26b-a4b-it-q4_K_M",
+        "digest": "5571076f3d70050487b26b341705799e0ab29b808164f90d20d4cf84f699d251",
+        "endpoint": "http://127.0.0.1:11434"
+      }
+    },
+    "brokerControlAllowedFiles": [
+      "lib/helpers/isAbsoluteURL.js"
+    ],
+    "controlPatch": {
+      "before": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n",
+      "after": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n",
+      "toolCalls": 5,
+      "label": "deterministic infrastructure control, not model-driven repair"
+    },
+    "infrastructureMechanicsProved": true,
+    "modelAllowedFiles": [
+      "lib/helpers/isAbsoluteURL.js"
+    ],
+    "modelInitial": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n",
+    "modelError": {
+      "name": "PilotModelError",
+      "message": "predeclared feasibility chat-request cap exhausted",
+      "transcript": [
+        {
+          "type": "model_response",
+          "usage": {
+            "promptEvalCount": 299,
+            "promptEvalCachedCount": 0,
+            "evalCount": 95,
+            "totalDuration": 16041129250
+          },
+          "response": {
+            "model": "gemma4:26b-a4b-it-q4_K_M",
+            "created_at": "2026-10-06T10:08:20.879842Z",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The user is reporting a regression in Axios where URLs starting with a digit in the scheme are treated as absolute.\nI need to fix this so that scheme detection follows RFC 3986.\nRFC 3986 states that a scheme name must begin with a letter.\n\nLet's start by exploring the codebase to find the relevant code for URL/scheme detection.",
+              "tool_calls": [
+                {
+                  "id": "call_g6bq7hpc",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "."
+                    }
+                  }
+                }
+              ]
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 16041129250,
+            "load_duration": 11686848500,
+            "prompt_eval_count": 299,
+            "prompt_eval_cached_count": 0,
+            "prompt_eval_duration": 996724000,
+            "eval_count": 95,
+            "eval_duration": 3345118000
+          }
+        },
+        {
+          "type": "tool_request",
+          "call": {
+            "name": "list",
+            "arguments": {
+              "path": "."
+            }
+          }
+        },
+        {
+          "type": "tool_response",
+          "call": {
+            "name": "list",
+            "arguments": {
+              "path": "."
+            }
+          },
+          "result": {
+            "ok": true,
+            "output": [
+              "lib/helpers/isAbsoluteURL.js"
+            ]
+          }
+        },
+        {
+          "type": "model_response",
+          "usage": {
+            "promptEvalCount": 425,
+            "promptEvalCachedCount": 294,
+            "evalCount": 53,
+            "totalDuration": 2708800875
+          },
+          "response": {
+            "model": "gemma4:26b-a4b-it-q4_K_M",
+            "created_at": "2026-10-06T10:08:23.602435Z",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The file `lib/helpers/isAbsoluteURL.js` seems like the place where this logic resides.\nLet's examine its content.",
+              "tool_calls": [
+                {
+                  "id": "call_q6ld2r4a",
+                  "function": {
+                    "index": 0,
+                    "name": "read",
+                    "arguments": {
+                      "path": "lib/helpers/isAbsoluteURL.js"
+                    }
+                  }
+                }
+              ]
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 2708800875,
+            "load_duration": 7584250,
+            "prompt_eval_count": 425,
+            "prompt_eval_cached_count": 294,
+            "prompt_eval_duration": 621040000,
+            "eval_count": 53,
+            "eval_duration": 2063525000
+          }
+        },
+        {
+          "type": "tool_request",
+          "call": {
+            "name": "read",
+            "arguments": {
+              "path": "lib/helpers/isAbsoluteURL.js"
+            }
+          }
+        },
+        {
+          "type": "tool_response",
+          "call": {
+            "name": "read",
+            "arguments": {
+              "path": "lib/helpers/isAbsoluteURL.js"
+            }
+          },
+          "result": {
+            "ok": true,
+            "output": {
+              "filePath": "lib/helpers/isAbsoluteURL.js",
+              "content": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n"
+            }
+          }
+        },
+        {
+          "type": "model_response",
+          "usage": {
+            "promptEvalCount": 686,
+            "promptEvalCachedCount": 420,
+            "evalCount": 374,
+            "totalDuration": 17095731708
+          },
+          "response": {
+            "model": "gemma4:26b-a4b-it-q4_K_M",
+            "created_at": "2026-10-06T10:08:40.713011Z",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "thinking": "The current implementation of `isAbsoluteURL` is:\n```javascript\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\//i.test(url);\n}\n```\nThe regex `^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\/` is used.\nThe first character of the scheme is `[a-z\\\\d]`, which includes digits.\nRFC 3986 says: \"A scheme name consists of a sequence of characters comprising letters, digits, plus (\"+\"), period (\".\"), or hyphen (\"-\"), and **must begin with a letter**.\"\n\nSo, the first character should be `[a-z]` instead of `[a-z\\\\d]`.\n\nWait, the regex is `^([a-z\\\\d][a-z\\\\d+\\\\-.]*:)?\\\\/\\\\/`.\nIf the URL is `123://example.com`, the regex matches `123:` as the scheme and `//` as the rest.\nThe issue is that `[a-z\\\\d]` allows a digit as the first character.\n\nLet's verify this with a test case if I can find any tests.\nI'll look for tests in the repository.",
+              "tool_calls": [
+                {
+                  "id": "call_eyrv6ehv",
+                  "function": {
+                    "index": 0,
+                    "name": "list",
+                    "arguments": {
+                      "path": "test"
+                    }
+                  }
+                }
+              ]
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 17095731708,
+            "load_duration": 6775625,
+            "prompt_eval_count": 686,
+            "prompt_eval_cached_count": 420,
+            "prompt_eval_duration": 1086338000,
+            "eval_count": 374,
+            "eval_duration": 15988642000
+          }
+        },
+        {
+          "type": "tool_request",
+          "call": {
+            "name": "list",
+            "arguments": {
+              "path": "test"
+            }
+          }
+        },
+        {
+          "type": "tool_response",
+          "call": {
+            "name": "list",
+            "arguments": {
+              "path": "test"
+            }
+          },
+          "result": {
+            "ok": false,
+            "error": "path contains a forbidden segment"
+          }
+        },
+        {
+          "type": "model_response",
+          "usage": {
+            "promptEvalCount": 1086,
+            "promptEvalCachedCount": 1059,
+            "evalCount": 66,
+            "totalDuration": 3230241667
+          },
+          "response": {
+            "model": "gemma4:26b-a4b-it-q4_K_M",
+            "created_at": "2026-10-06T10:08:43.949437Z",
+            "message": {
+              "role": "assistant",
+              "content": "",
+              "thinking": "Ah, I cannot list `test` directory. Let me check if there are any other files.\nI'll try to search for `isAbsoluteURL` in the codebase to see how it's used and if there are tests.",
+              "tool_calls": [
+                {
+                  "id": "call_xrg0y8iw",
+                  "function": {
+                    "index": 0,
+                    "name": "search",
+                    "arguments": {
+                      "query": "isAbsoluteURL"
+                    }
+                  }
+                }
+              ]
+            },
+            "done": true,
+            "done_reason": "stop",
+            "total_duration": 3230241667,
+            "load_duration": 3654292,
+            "prompt_eval_count": 1086,
+            "prompt_eval_cached_count": 1059,
+            "prompt_eval_duration": 500616000,
+            "eval_count": 66,
+            "eval_duration": 2711909000
+          }
+        },
+        {
+          "type": "tool_request",
+          "call": {
+            "name": "search",
+            "arguments": {
+              "query": "isAbsoluteURL"
+            }
+          }
+        },
+        {
+          "type": "tool_response",
+          "call": {
+            "name": "search",
+            "arguments": {
+              "query": "isAbsoluteURL"
+            }
+          },
+          "result": {
+            "ok": true,
+            "output": [
+              {
+                "filePath": "lib/helpers/isAbsoluteURL.js",
+                "startLine": 10,
+                "endLine": 10,
+                "score": 1,
+                "content": "export default function isAbsoluteURL(url) {"
+              }
+            ]
+          }
+        }
+      ],
+      "promptTokens": 2496,
+      "generatedTokens": 588
+    },
+    "modelDurationMs": 39167,
+    "modelToolCalls": 4,
+    "modelChatRequestsSent": 4,
+    "modelFinal": "'use strict';\n\n/**\n * Determines whether the specified URL is absolute\n *\n * @param {string} url The URL to test\n *\n * @returns {boolean} True if the specified URL is absolute, otherwise false\n */\nexport default function isAbsoluteURL(url) {\n  // A URL is considered absolute if it begins with \"<scheme>://\" or \"//\" (protocol-relative URL).\n  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed\n  // by any combination of letters, digits, plus, period, or hyphen.\n  return /^([a-z\\d][a-z\\d+\\-.]*:)?\\/\\//i.test(url);\n}\n",
+    "modelPatchValidity": {
+      "valid": false,
+      "expectedFile": "lib/helpers/isAbsoluteURL.js",
+      "changed": false
+    },
+    "modelEvaluator": {
+      "passed": false,
+      "stdout": "[true,true,true,true,true,true,false,false]",
+      "stderr": "(node:20913) ExperimentalWarning: VM Modules is an experimental feature and might change at any time\n(Use `.pilot-runtime-node-20383-1791281324165 --trace-warnings ...` to show where the warning was created)\n",
+      "exitCode": 0,
+      "signal": null
+    }
+  },
+  "limitations": [
+    "One already-exposed source helper only; no full Axios checkout, current participant index, condition comparison, or full runCompetitivePilot execution.",
+    "The deterministic reference replacement is an infrastructure control supplied by the controller, not a model repair.",
+    "The model attempt used the unchanged actual OllamaModelDriver and tools but lower predeclared token/wall limits and a four-chat request cap; it is not a September pilot rerun.",
+    "Out-of-process private evaluation is an execution boundary, not independent human novelty or holdout approval.",
+    "No reference/oracle was supplied through the model prompt, model messages, or participant broker roots. This now-public task remains development-only.",
+    "Successful mechanics do not establish model task success, productivity gains, ranking quality, comparative speed, or SOTA."
+  ],
+  "cleanup": {
+    "ownedTemporaryWorkspaceRemoved": true,
+    "method": "recursive removal of this invocation’s unique owned workspace after capturing evidence and harness source; no preserved study directory changed"
+  }
+}

@@ -27,6 +27,8 @@ Before participant source acquisition or scored execution, return a selection pr
 
 Known exposed September repositories: **axios, express, click, cobra, ripgrep, gson, newtonsoft-json, symfony-console and sinatra**. This is a starting exclusion register, not an exhaustive history audit. Maintainers must disclose additional exposure relevant to the proposed cohort through a sanitized register.
 
+The [partial maintainer exposure register](2026-10-06-exposure-register.md) records confirmed pins, fixture families, source fingerprints and audit limitations. It supplies starting evidence for the reviewer, not an independent novelty decision.
+
 The reviewer should reject repository-held-out status for a previously exposed repository even if the query is new. Public tasks may have model-training contamination; do not claim that review eliminates it.
 
 ## Phase B: sealed study package and approval

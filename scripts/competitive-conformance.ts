@@ -547,7 +547,7 @@ class CbmDriver implements ConformanceDriver {
     if (input.operation === "definitions") {
       const definitions = [];
       for (const node of searched.nodes) {
-        const raw = await this.mcp.call("get_code_snippet", { project: this.project, qualified_name: node.qualifiedName }); provenance.push({ operation: "get_code_snippet", qualifiedName: node.qualifiedName, raw });
+        const raw = await this.mcp.call("get_code_snippet", { project: this.project, qualified_name: node.qualifiedName, format: "json" }); provenance.push({ operation: "get_code_snippet", qualifiedName: node.qualifiedName, raw });
         const snippet = mcpJson(raw);
         if (snippet.qualified_name !== node.qualifiedName || relativeFile(snippet.file_path, this.context.sourceRoot) !== node.path || typeof snippet.source !== "string") return manual("CBM snippet did not preserve exact indexed identity", provenance);
         definitions.push({ path: node.path, symbol: node.symbol, content: snippet.source });
