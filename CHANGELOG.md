@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Competitive evaluation diagnostics**: Report per-task wins, losses, ties, metric deltas, ranked paths, operational failures and unsupported interfaces. Publish a dated historical replay and fresh-study protocol without treating development data as a blind holdout or claiming SOTA.
+
+### Fixed
+
+- **Fresh-study evidence integrity**: Require paired study-approval and novelty-evidence paths, and verify the evidence file's exact-byte SHA-256 before creating a workspace or acquiring source. Preserve underlying errors when validation fails.
+
 ## [0.35.3] - 2026-10-06
 
 ### Changed

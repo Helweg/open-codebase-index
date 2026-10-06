@@ -131,10 +131,11 @@ Before acquiring sources for a new quality study, require an independently revie
 npx tsx scripts/validate-cross-repo-cohort.ts \
   --cohort-dir /path/to/fresh-cohort \
   --study-approval /path/to/study-approval.json \
+  --novelty-evidence /path/to/novelty-evidence \
   --work-dir ./.tmp/fresh-study-sources
 ```
 
-The validator checks the approval before creating the work directory or invoking Git. Existing integrity checks may omit `--study-approval`, but results intended as fresh holdout evidence must use it. The approval JSON contract is:
+The validator checks the approval and hashes the exact bytes of the supplied evidence file before creating the work directory or invoking Git. `--study-approval` and `--novelty-evidence` must be supplied together; a missing, unreadable, or hash-mismatched evidence file fails closed. Hash binding verifies artifact integrity, not the truth of the evidence or reviewer independence. Existing integrity checks may omit both flags, but results intended as fresh holdout evidence must use both. The approval JSON contract is:
 
 ```json
 {
@@ -143,7 +144,7 @@ The validator checks the approval before creating the work directory or invoking
   "sourceAcquisitionAuthorized": true,
   "auditor": "independent reviewer identity",
   "auditedAt": "2026-09-21T00:00:00.000Z",
-  "evidenceSha256": "<lowercase SHA-256 of the novelty evidence>",
+  "evidenceSha256": "<lowercase SHA-256 of the exact novelty evidence file bytes>",
   "cohortSha256": "<lowercase SHA-256 of the exact cohort.json bytes>",
   "repositories": [
     { "name": "repo", "url": "https://example/repo.git", "revision": "<pinned revision>" }

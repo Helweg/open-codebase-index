@@ -105,24 +105,31 @@ function createCohortFixture(options: { repoPath: string; revision: string; symb
   return { cohortDir };
 }
 
-function writeStudyApproval(cohortDir: string, overrides: Record<string, unknown> = {}): string {
+function writeStudyApproval(
+  cohortDir: string,
+  overrides: Record<string, unknown> = {},
+): { studyApproval: string; noveltyEvidence: string } {
   const manifestPath = path.join(cohortDir, "cohort.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf-8")) as {
     repositories: Array<{ name: string; url: string; revision: string }>;
   };
   const approvalPath = path.join(cohortDir, "study-approval.json");
+  const noveltyEvidence = path.join(cohortDir, "synthetic-novelty-evidence.bin");
+  // Synthetic test evidence only: include non-text bytes and CRLF to catch text normalization.
+  const evidence = Buffer.from([0xef, 0xbb, 0xbf, 0x66, 0x69, 0x78, 0x74, 0x75, 0x72, 0x65, 0x0d, 0x0a, 0xff, 0x00]);
+  fs.writeFileSync(noveltyEvidence, evidence);
   writeJson(approvalPath, {
     schemaVersion: 1,
     noveltyDecision: "accepted_novel",
     sourceAcquisitionAuthorized: true,
-    auditor: "independent-reviewer",
+    auditor: "synthetic-fixture-reviewer",
     auditedAt: "2026-09-21T00:00:00.000Z",
-    evidenceSha256: "a".repeat(64),
+    evidenceSha256: crypto.createHash("sha256").update(evidence).digest("hex"),
     cohortSha256: crypto.createHash("sha256").update(fs.readFileSync(manifestPath)).digest("hex"),
     repositories: manifest.repositories.map(({ name, url, revision }) => ({ name, url, revision })),
     ...overrides,
   });
-  return approvalPath;
+  return { studyApproval: approvalPath, noveltyEvidence };
 }
 
 beforeEach(() => {
@@ -182,16 +189,16 @@ describe("cross-repo source validator", () => {
     expect(result.repoResults[0].missing[0]!.queryId).toBe("definition-1");
   });
 
-  it("accepts an authorized novelty approval bound to the exact cohort", async () => {
+  it("accepts a synthetic authorized approval bound to exact cohort and evidence bytes", async () => {
     const { repoPath, rev1 } = createGitRepo();
     const { cohortDir } = createCohortFixture({
       repoPath,
       revision: rev1,
       symbol: "expectedSymbol",
     });
-    const studyApproval = writeStudyApproval(cohortDir);
+    const { studyApproval, noveltyEvidence } = writeStudyApproval(cohortDir);
 
-    const summary = await validateCrossRepoCohortSources({ cohortDir, studyApproval });
+    const summary = await validateCrossRepoCohortSources({ cohortDir, studyApproval, noveltyEvidence });
 
     expect(summary.repositoriesPassed).toBe(1);
     expect(summary.repositoriesFailed).toBe(0);
@@ -209,18 +216,73 @@ describe("cross-repo source validator", () => {
       revision: rev1,
       symbol: "expectedSymbol",
     });
-    const studyApproval = writeStudyApproval(cohortDir, overrides);
+    const { studyApproval, noveltyEvidence } = writeStudyApproval(cohortDir, overrides);
     const workDir = path.join(tempDir("cross-repo-approval-parent-"), "must-not-exist");
 
-    await expect(validateCrossRepoCohortSources({ cohortDir, studyApproval, workDir }))
+    await expect(validateCrossRepoCohortSources({ cohortDir, studyApproval, noveltyEvidence, workDir }))
       .rejects.toThrow(message);
     expect(fs.existsSync(workDir)).toBe(false);
   });
 
-  it("supports cohort, cache, and study approval CLI flags", () => {
+  it.each([
+    ["tampered", "evidenceSha256"],
+    ["missing", "Cannot read novelty evidence"],
+    ["unreadable directory", "Cannot read novelty evidence"],
+  ])("blocks %s evidence before workspace creation or Git invocation", async (state, message) => {
+    const { cohortDir } = createCohortFixture({
+      repoPath: path.join(tempDir("cross-repo-unused-source-"), "must-not-be-acquired"),
+      revision: "fixture-revision",
+      symbol: "expectedSymbol",
+    });
+    const { studyApproval, noveltyEvidence } = writeStudyApproval(cohortDir);
+    if (state === "tampered") {
+      fs.appendFileSync(noveltyEvidence, "\n");
+    } else {
+      fs.rmSync(noveltyEvidence);
+      if (state === "unreadable directory") {
+        fs.mkdirSync(noveltyEvidence);
+      }
+    }
+    const parent = tempDir("cross-repo-evidence-parent-");
+    const workDir = path.join(parent, "must-not-exist");
+    const gitMarker = path.join(parent, "git-was-invoked");
+    const gitBin = path.join(parent, "bin");
+    fs.mkdirSync(gitBin);
+    fs.writeFileSync(path.join(gitBin, "git"), `#!/bin/sh\nprintf called > "${gitMarker}"\nexit 1\n`, { mode: 0o755 });
+    const previousPath = process.env.PATH;
+    process.env.PATH = `${gitBin}${path.delimiter}${previousPath ?? ""}`;
+    try {
+      await expect(validateCrossRepoCohortSources({ cohortDir, studyApproval, noveltyEvidence, workDir }))
+        .rejects.toThrow(message);
+      expect(fs.existsSync(workDir)).toBe(false);
+      expect(fs.existsSync(gitMarker)).toBe(false);
+    } finally {
+      if (previousPath === undefined) {
+        delete process.env.PATH;
+      } else {
+        process.env.PATH = previousPath;
+      }
+    }
+  });
+
+  it.each([
+    [{ studyApproval: "fixture-approval.json" }, "--study-approval requires --novelty-evidence"],
+    [{ noveltyEvidence: "fixture-evidence.bin" }, "--novelty-evidence requires --study-approval"],
+  ])("rejects an unpaired gate option before reading sources or creating a workspace", async (options, message) => {
+    const parent = tempDir("cross-repo-unpaired-parent-");
+    const cohortDir = path.join(parent, "must-not-be-read");
+    const workDir = path.join(parent, "must-not-exist");
+
+    await expect(validateCrossRepoCohortSources({ cohortDir, workDir, ...options }))
+      .rejects.toThrow(message);
+    expect(fs.existsSync(workDir)).toBe(false);
+  });
+
+  it("supports cohort, cache, paired study approval and novelty evidence CLI flags", () => {
     const customCohortDir = path.join(process.cwd(), "tmp-fixture-cohort");
     const customWorkDir = path.join(process.cwd(), "tmp-validator-work");
     const customApproval = path.join(process.cwd(), "tmp-study-approval.json");
+    const customEvidence = path.join(process.cwd(), "tmp-novelty-evidence.bin");
     const parsed = parseCliArgs([
       "--cohort-dir",
       customCohortDir,
@@ -228,12 +290,20 @@ describe("cross-repo source validator", () => {
       customWorkDir,
       "--study-approval",
       customApproval,
+      "--novelty-evidence",
+      customEvidence,
     ]);
 
     expect(parsed).toEqual({
       cohortDir: path.resolve(customCohortDir),
       workDir: path.resolve(customWorkDir),
       studyApproval: path.resolve(customApproval),
+      noveltyEvidence: path.resolve(customEvidence),
     });
+  });
+
+  it("rejects a novelty evidence flag without a path", () => {
+    expect(() => parseCliArgs(["--novelty-evidence"]))
+      .toThrow("--novelty-evidence requires a path");
   });
 });

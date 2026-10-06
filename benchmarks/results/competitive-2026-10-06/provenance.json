@@ -1,0 +1,2293 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-06",
+  "evidenceType": "historical-development-artifact-replay-not-new-retrieval",
+  "startingCommit": "261f5d0a9ac9b4ebb758326136aed0737b36b372",
+  "evaluatedOcbi": "0.27.0+ebd0702",
+  "evaluatedOcbiCommit": "ebd07022fe99b95a6ec4c56d5324fd8be6a2941d",
+  "sourceArtifactRoot": "${STUDY}/results-corrected",
+  "executedCommand": [
+    "node_modules/.bin/tsx",
+    "scripts/competitive-report.ts",
+    "${STUDY}/results-corrected/axios-run",
+    "${STUDY}/results-corrected/express-run",
+    "${STUDY}/results-corrected/click-run",
+    "${STUDY}/results-corrected/cobra-run",
+    "${STUDY}/results-corrected/ripgrep-run",
+    "${STUDY}/results-corrected/gson-run",
+    "${STUDY}/results-corrected/newtonsoft-json-run",
+    "${STUDY}/results-corrected/symfony-console-run",
+    "${STUDY}/results-corrected/sinatra-run"
+  ],
+  "reportSha256": "4387591983d7709d83d900897aa10cab47817a81e07bc593a6ff411ea0226ef3",
+  "reportScriptSha256": "357578b5edfab7f3d9df68477a047a35bc99b0ab557286a2645ff367e2b5c71a",
+  "originalAggregateReportSha256": "7a2d17c26e7fcbf1833cfa83a423a5f76c58c7460285ded0d92e7ffea8dfcc3c",
+  "unchangedAggregateFields": [
+    "cohort",
+    "exploratory",
+    "tracks",
+    "primaryPairs"
+  ],
+  "tasks": 100,
+  "repositories": 9,
+  "primaryQualityRows": 500,
+  "pairedDiagnosticRows": 300,
+  "consumedInputs": [
+    {
+      "runRoot": "axios-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "34aefe3ee55ccd986d6a0858707ce3a336fcd27ebbc1c12498e9338abba35a4f"
+        },
+        {
+          "path": "axios/inputs.json",
+          "sha256": "126da1993ffbd4164433387c6ce180ecb5537bfa422a70fb4b040bb05f4ce10f"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-build-url.json",
+          "sha256": "e3847300fa462ab2c0be8937cbca989646e35ce6d5a0a414a223402b20d389f0"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-config-merge-concept.json",
+          "sha256": "84c4329a0e13d738f38193176704858c426912ae4eaec95127e7758f5f689ec2"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-config-merge-strategies.json",
+          "sha256": "4b51bfa2c1857d6593d4fdbf4c83d03f7e901eafb438ab8be939c51b6044e6ca"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-create-instance.json",
+          "sha256": "1e2a98a76725ed1bde82e31fd5ac2d9ffb7e58034ce9564bd5a0a04717caa363"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-node-http-transport-controls.json",
+          "sha256": "510e2a46e8849e19b909f7f6782a3fcadd5b59837e9e29fe81480217758add4e"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-request-dispatch-implementation.json",
+          "sha256": "61da9189a46c13220b4bff31f5c70bba0d41a42b53f92607f81a162cd23ec6e3"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-spread.json",
+          "sha256": "b521a0c254185e9b0080f796c826794149c50eb1787baa2fbdc7b588916da515"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-throttle.json",
+          "sha256": "fea48042645caf91a9d65d1f4c0d91d3d8d5f3194f95f3deb000e0026093a078"
+        },
+        {
+          "path": "axios/codebase-memory/repeat-1/axios-to-form-data.json",
+          "sha256": "ca5f37bd50b2ca54d5843d02d0f8b4ba9c0dafdedcf50546a6dc39d3497b285d"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-build-url.json",
+          "sha256": "df05f4c62df41f2c7ffc2a3b2133ab2cde6c1fd9ea970c8c719d891973266b37"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-config-merge-concept.json",
+          "sha256": "01090c7691d2e5558583fa88f03126912ed00013d60239e8970f593ce8d6ab6b"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-config-merge-strategies.json",
+          "sha256": "6406294a5c3fac3ee6858bf9e35de1b1de7e2aecfe1615545950901e7adadb26"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-create-instance.json",
+          "sha256": "6fbd609b0f9a2c0377f063bff9ea14720a2059b4e974c7eecb0a470f010f0a21"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-node-http-transport-controls.json",
+          "sha256": "4e324835108be81fa6c66aaedd5e730ce575314592100490e38d20540b09993c"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-request-dispatch-implementation.json",
+          "sha256": "b7a4982d023cd23c0d3930ce019b39c7481e3957cb175ba25d78a07946482b86"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-spread.json",
+          "sha256": "3234a61e2727e0143b9d6ca3c03bf6e281da87020bec5d1eb2553e5fb50c62ac"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-throttle.json",
+          "sha256": "0bda0b1ed4ff71f4a5cd1633650acb9acbd570b82d0ef77064bed451a1f59674"
+        },
+        {
+          "path": "axios/codegraph/repeat-1/axios-to-form-data.json",
+          "sha256": "f3e63b924cc5294860628fa7b78b85b3be151b168402933be5ce4b222b4e8909"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-build-url.json",
+          "sha256": "a0c1f5ac9eb0e1ebe920f003f6c44a6d15ecf08be7e68e333893103ea1c47bf4"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-config-merge-concept.json",
+          "sha256": "c8187970a480fcdb67da0f997dca8507b6f503e210fd26ad61a9756cac59b529"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-config-merge-strategies.json",
+          "sha256": "e1587b35d22437e89d96a51f11f8eb6a4b15ca65e18acdd2fec55bf6b222f82d"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-create-instance.json",
+          "sha256": "c022e6ce4fa381caf9563762b046fbbb8af8204d4c1a315a3286391614fd059b"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-node-http-transport-controls.json",
+          "sha256": "ca6cf24f8d8d695601df4f8e1e6e1470643ea0901daeef6ac866352f55231e53"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-request-dispatch-implementation.json",
+          "sha256": "05ee651f05a1c924b4b06cc2e2bd312cd08efd2f86aa1d6ee3bf97caa4f26738"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-spread.json",
+          "sha256": "f3961fc519aa991e97b7a1365d8bc14ca875cbc1e6f8421a033c97adbd025d65"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-throttle.json",
+          "sha256": "1196f755600b35c1e87ae6951549c64873eedc7f548e1ab133a7b75b415f5b9c"
+        },
+        {
+          "path": "axios/grepai/repeat-1/axios-to-form-data.json",
+          "sha256": "3bbabdfd10f7c1d968283619473992ee811d932b9f5e5de873442a9ff1583eba"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-build-url.json",
+          "sha256": "bd74b8f7cfe6958154477a3a4b5210ce71f889ca87791d2cd8750afe20dde46a"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-config-merge-concept.json",
+          "sha256": "acb1dc070c5beaceceeb357fee17797564c6972a369389cd1e3a48a363c9da5d"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-config-merge-strategies.json",
+          "sha256": "085a3494b20e6da385c93d71e6d628177aebf8405c4cb3adf01cd6e0ab258aed"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-create-instance.json",
+          "sha256": "c3af171f468f87017b6e11552a28386393441300a4ec1c557a00064320fdedd1"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-node-http-transport-controls.json",
+          "sha256": "123d75ea9dee2f368e5c5fde10485bb951859f03b23fcaeee9875a5b5713be4c"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-request-dispatch-implementation.json",
+          "sha256": "0d03fa7e36f66ed96f71aca6d37e054adc4fc232598069f50fdd57be0c8e8eb6"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-spread.json",
+          "sha256": "daa48fc4ae16691646270f385fc51d032a00509d6ffe6ade422ae0918f42fc2d"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-throttle.json",
+          "sha256": "fd1fff0aa0ade9115351849d9c173bf802c90ff6842961dcf42eb62e6d0fd1d0"
+        },
+        {
+          "path": "axios/ocbi-hybrid/repeat-1/axios-to-form-data.json",
+          "sha256": "3deefba54fc6172343b8b4f895b60e7147044fe881b6c1657acc8eaeb11bc349"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-build-url.json",
+          "sha256": "b755bbcbb747574f11de59b857e823f0ee811761ce4de1fc801c3407fa11a7b9"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-config-merge-concept.json",
+          "sha256": "0ba35e274a280749e4ae855b836f1eacd46cb529904ead45abb2de32a2771d8f"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-config-merge-strategies.json",
+          "sha256": "889c339cd87c63cf32cfd9634feebcb4c88ce1c18934193970828798227f4756"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-create-instance.json",
+          "sha256": "10706502c27d46c87d36af1555248b85abe8b740ad03e9b19f83d33063f0f4b2"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-node-http-transport-controls.json",
+          "sha256": "e9f9575f6c8f0a3c6e8788d5570a05a454fe4143acc43e27e8579e96c98c3ad0"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-request-dispatch-implementation.json",
+          "sha256": "086e1bc815ed88b14e3367d92846c912a2f344bdeb88956dd6d24c167db62577"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-spread.json",
+          "sha256": "e5c31ce49980e3ac7bd0b991b91de60d32c0658436875d667fed56e406e3c702"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-throttle.json",
+          "sha256": "0325dbe4bc65cde16e64be16d08854de7dd60a5d52f0b4ea8ac674a5845b9322"
+        },
+        {
+          "path": "axios/ocbi-structural/repeat-1/axios-to-form-data.json",
+          "sha256": "4d85b77b9bb2ba9062fc4fec0e0cd7815e07d8faa0ef98945cd14f798e1ad134"
+        }
+      ]
+    },
+    {
+      "runRoot": "express-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "7d2c37164ded861c4e79b97da7b37a1cd757ddb2dd470d5922d6c71841f728ab"
+        },
+        {
+          "path": "express/inputs.json",
+          "sha256": "6282f3c838f7df46a7e9d6537da47cbbaa7711e102260a29be9413a057924cba"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-authenticate.json",
+          "sha256": "a009a910305385e2a3bb18ea831da53b20d88913bb0ed9222f027b81298de0c6"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-create-application.json",
+          "sha256": "ce20245069d0f93d5749e46b7ea05f9d911e60fcb5fd021dd1b2bed55e636118"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-error-handler.json",
+          "sha256": "440d8f9a78a3c58e604256dd0df07b969c655a00ec72460d5c8c530607a51505"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-file-transfer-concept.json",
+          "sha256": "b31d615203a5a3b18ee1168619eb0f983ba780264a1653af4ec06a72414ae890"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-format.json",
+          "sha256": "b245d092062199a11423c44782a1c32f6a80662fdd359acfed77db13b0880d89"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-github-view.json",
+          "sha256": "77bf8ce8c629f538b3e20d29eaa4531b72ff90f56dd02ec05776699803a733d5"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-response-file-transfer.json",
+          "sha256": "71f994b00b73c5345faf99ee5349f65c9c4ba1e4ce9fce5af44d60e109aeeebc"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-view-render-resolution.json",
+          "sha256": "efd59f9a3e433c3d12562eda788046ea35a33e72003cebb69f30157407e9b91c"
+        },
+        {
+          "path": "express/codebase-memory/repeat-1/express-view-rendering-implementation.json",
+          "sha256": "e877135be2bae6d3067dfe43032efe62ca648ca34f949b88cd80c20a593e84ad"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-authenticate.json",
+          "sha256": "412bff44f309f1dd3c145c23ba993da4f4d01c1bc14d752f0249aac996d04a4a"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-create-application.json",
+          "sha256": "12a0800f4f0dd93c12b7db9352623719781e0814f54ba219a910e5db7f82755c"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-error-handler.json",
+          "sha256": "43ae70a2f8c037c8293a453b24d47c52fc5bd4f3ccfd9bf94e5e1dc54d865634"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-file-transfer-concept.json",
+          "sha256": "946ffe86e3231bab211eeee9faf3cec8d47263ca2c16c41f9be79d9ab64ad95c"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-format.json",
+          "sha256": "9a8ed88b0e05c29c83a636da7dc5fe1f45a43f1b8b8e2a1be6a6afd29eb82b07"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-github-view.json",
+          "sha256": "ec3632aa40d7b52ba4bee33aaaa7435a5dd85f5e7bac3d480ed7c7f98a806fc6"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-response-file-transfer.json",
+          "sha256": "d70574491c5baadd0e0300bf46b22a244b3784eeeb0d1030f2470dcf3fe01c70"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-view-render-resolution.json",
+          "sha256": "83fd4e814b32873b3d107c284c1b5507163ed05d938a9739c7202ec9372c1eba"
+        },
+        {
+          "path": "express/codegraph/repeat-1/express-view-rendering-implementation.json",
+          "sha256": "a014914f67f07544ab4c979880bc11f909c3a5f299706c72a7ac38e17aaee328"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-authenticate.json",
+          "sha256": "428fd775ee352dd4e568666d5c4f1c8980f95e68f00765122ee7eb834b0bd2b7"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-create-application.json",
+          "sha256": "b05dfb6800b06a7208e6bd378e5062e6f9d3c841e991f04b85b3dba70557d3c6"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-error-handler.json",
+          "sha256": "bc7467ffa936cb5ec8f9144fddfc3ebc3ecd2c156af5301102c35ddd070d0da2"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-file-transfer-concept.json",
+          "sha256": "2f93497bafcc286c0e8197c165b0870a6da7d36a34d37e6cec6ca9dea37fa921"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-format.json",
+          "sha256": "df0a7c3842cb5d6db58063098636e23bf413af6e5d8c007c89f9e725a1e290a0"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-github-view.json",
+          "sha256": "1167aa81b822cfe011cc198bc2f6115e5ca9f3e57b9ab33814d6610a8fd1ea4b"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-response-file-transfer.json",
+          "sha256": "8c68a1518bbb73ff953ea2685813792533a07b6d6413ff55c8a9b24d08601c23"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-view-render-resolution.json",
+          "sha256": "8742d90fcf25dffde1a66d84bf8019ef4a9027231190122d1ecee18cd79aa375"
+        },
+        {
+          "path": "express/grepai/repeat-1/express-view-rendering-implementation.json",
+          "sha256": "2560508f186286546a7ff89cb6e08c1b805bef77a178f911673e4677ef96e7ab"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-authenticate.json",
+          "sha256": "b05f7c4cfe2d7c426f425ca7dd5312b4ac3114e5475fbd35b3c3a68adacd21f7"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-create-application.json",
+          "sha256": "7feec951e79dc2daed6838e2d01b0f3d6069af5712802227750e4b738faa08d9"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-error-handler.json",
+          "sha256": "ef2029f6b915102474988ceb8c811d71f8977d39953a1ee79ad4fa21bd3ad711"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-file-transfer-concept.json",
+          "sha256": "517cedcc13e1f9799f5fdc6d0148b9e662f8a0a58440ced390c52dbed7c75bff"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-format.json",
+          "sha256": "429f41fcacabfbcb345b421e4b84c7fba54af8abf73a2b33bd6777efedd27525"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-github-view.json",
+          "sha256": "5d9ba9611b37570ac9e98a34b4317fa4e7ee2b1d250f6ddb9bdeaac4623ff58b"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-response-file-transfer.json",
+          "sha256": "854e2943c07b0cf546f121d926827f82664d3ad65d283911e4f00d83e1235d94"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-view-render-resolution.json",
+          "sha256": "455e1d06c89f56e790057990a0ffd179e1cd361ee4ea27a2dce829542fc73630"
+        },
+        {
+          "path": "express/ocbi-hybrid/repeat-1/express-view-rendering-implementation.json",
+          "sha256": "318405a418df0719964bdf8eb6bf03242ecf2c450fac7c2abcc6afeceabdc6c4"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-authenticate.json",
+          "sha256": "66678dd581ef49008713cf3b810083ea1b5122a443cef32b423147b975c21c06"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-create-application.json",
+          "sha256": "e80949ed670536ad7db1332f09c458dbd1a921654bc4545daa03f1b7b90798d1"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-error-handler.json",
+          "sha256": "13c9727dfedb37dc002171eaa74d1d5869864e62db05be01e021d6cd5e5ad5a6"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-file-transfer-concept.json",
+          "sha256": "95e0e0d33a4107c86aaa048a1dd452098c7b539b8e24b3584819d6fc9953cfc0"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-format.json",
+          "sha256": "da22b373b4457ae80b33bf0898ba7b34baca035250c61a8b3b8757e7f5573a24"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-github-view.json",
+          "sha256": "921aacbb9203f5c0191cc0b464439f40066f1f3e424e1c103bd2721f8fdd09b5"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-response-file-transfer.json",
+          "sha256": "d02395665df5eba076a4b2adb59f31dca4953f5852db0f2ba6289fc14ccae780"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-view-render-resolution.json",
+          "sha256": "7b1404ecb546292077f3d9c459c32c1428093b0116b2ef805d4ed012c456a566"
+        },
+        {
+          "path": "express/ocbi-structural/repeat-1/express-view-rendering-implementation.json",
+          "sha256": "56f20da076d6a2d2a2170c88a1a8d0b1f98fb20913fe5461cf41d3d2fe66e920"
+        }
+      ]
+    },
+    {
+      "runRoot": "click-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "9df345c9c940637b99ca05a10ed666f6e88db35cb755d0b9769bdf9b1f07c449"
+        },
+        {
+          "path": "click/inputs.json",
+          "sha256": "7ec63ce5efc9e8e0adcab26395d4f5decc4cc33b5c09bbf6d0a8ca334702c91e"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-atomic-lazy-file-io.json",
+          "sha256": "204c1098644e15f5032202a556330fdb3c69d53266b2ddbfdce8cee60c496252"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-command-invocation-implementation.json",
+          "sha256": "7cffcf14113534fa7759da1029375120109fc068fb1b26f2447b4c1cd0d397e7"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-confirm.json",
+          "sha256": "1a84505bc88f71783f49011fc9d4bfd5125c82d6a1304865de02527eeb5afdc1"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-echo.json",
+          "sha256": "39afc856d6891a970363cbcd70f37343133f248c9c401fefe89643831df87aea"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-option.json",
+          "sha256": "7c5861637ba087a4ec13d054c42b117bd392c4de124495fdb674949ebe8ac28a"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-prompt.json",
+          "sha256": "ca945513058c332d25eed4f93989734a0ea3cedb420c56ea98d2207fd9b8a628"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-shell-completion-concept.json",
+          "sha256": "2d1e0b4fe96fac93ebfc938bb09cd32e1b7486b5f2b31c647b9a74f05601769a"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-shell-completion.json",
+          "sha256": "0d7bf8b8f909a4520d7aee65ebbcf2d9a94197e975151410175c3ed587071fa8"
+        },
+        {
+          "path": "click/codebase-memory/repeat-1/click-style.json",
+          "sha256": "9331ee05761d104847140bf0f98b6eb89795d397673201295c409cd0bd000753"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-atomic-lazy-file-io.json",
+          "sha256": "0af99f93e84ac44fb7897cc637bfa92dad3fc86309e0b62fd447145495b5a7f2"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-command-invocation-implementation.json",
+          "sha256": "cbc7c2b0c35d4aeffdfe9aec95342165a9a2648c7de463acbd8a1cd4a6f7bc0d"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-confirm.json",
+          "sha256": "52e9eb0d6c8fa6efd4a101d84cd62f0a877061fbab85b78dbc3514f2f6b4b661"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-echo.json",
+          "sha256": "f8ef71822ca670511bf2913f9aa0628fb09b691d96d4e97c893a202b0b03416a"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-option.json",
+          "sha256": "81bd0b48c9ea648c24f7fed150f72fdf28fe7ba7237129eabfe1456b02c0c6cc"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-prompt.json",
+          "sha256": "4c57afc536a9590570f4186b771900b2cac5c4996e7a1945ed3b7a274e4b5af2"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-shell-completion-concept.json",
+          "sha256": "e947a6ae3f7fc711249457fb5e7d1065c3827c99c3c6b67491530ac596b7eda5"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-shell-completion.json",
+          "sha256": "c20bff868f27948c646ecdc6cb1938839601fd10456be975b53d35e509e1fe47"
+        },
+        {
+          "path": "click/codegraph/repeat-1/click-style.json",
+          "sha256": "c4840db5b4e5088af9a3dff489c4e8272022a9e15d484f34dedb662d4596f26f"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-atomic-lazy-file-io.json",
+          "sha256": "1c3256c9837eec86f4a4545cc035c4b8d1759b733688c57fc9b2e392950d248a"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-command-invocation-implementation.json",
+          "sha256": "4686ade2908068eb6450bf4afe9d3290eb9732ea655433ac4745ce093a3852f9"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-confirm.json",
+          "sha256": "12760e8c365c66145ed1adc912ee073bfde17d7798c70468a6e8f0792efffcd6"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-echo.json",
+          "sha256": "d73b83c480665df1b9ab922645f8f454a90c06bf279b008dd72d14e38ae39b41"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-option.json",
+          "sha256": "6c5ddb486e1c91aff10d662131932075a49f883e88f52aa6ffc3eb56dd9d102b"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-prompt.json",
+          "sha256": "2763ec4b69fe9c1e6b1a72f54abea2f48a1548251665690e9038af850773a19a"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-shell-completion-concept.json",
+          "sha256": "7468fc3e6b0ced6c30934e1229d66fbce36aca5cb6d09e3845bc6dcc1b6a5b73"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-shell-completion.json",
+          "sha256": "b435a7872a266ab5b6b21c9880cdd5afe9f4373966412743ff25d2cd00b69476"
+        },
+        {
+          "path": "click/grepai/repeat-1/click-style.json",
+          "sha256": "437ff135b456dd5082e6ea892d50107644ae65a30105b2dce5d6a75bd737f807"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-atomic-lazy-file-io.json",
+          "sha256": "349ba568118bac583a3c7b6370d4815a4fe380c7aaf8336511e16115b066f429"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-command-invocation-implementation.json",
+          "sha256": "159551b7967ff83f71b355250b0b8a17b57155cd3169414733fd230c358991fb"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-confirm.json",
+          "sha256": "903e7e1c3679f0462f71b231139b42a0eb4d1ad39108ab7c075568d34a2019f7"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-echo.json",
+          "sha256": "b41725eb9c90d7f060c148b8ed207ae12ca38ee2b9b3d7e5d7b5f1c30f46ee9e"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-option.json",
+          "sha256": "78fb5f462012e6b5f49f5d1bd6fde8c6d21e4183e6c891dff0caa5a8650b1309"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-prompt.json",
+          "sha256": "f05b5ecbc0bebb2fd8e9ff33cfce7e284486d1fa601d87173690e231a03ef8e0"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-shell-completion-concept.json",
+          "sha256": "b96a727306a6e4ad90c0a5c79380143377d0ab025cf310844f52a1a972545b18"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-shell-completion.json",
+          "sha256": "0acc5b69779082af94e7cc0af1839ce9cd4d794902ea1a1a728094d94d2b5cbb"
+        },
+        {
+          "path": "click/ocbi-hybrid/repeat-1/click-style.json",
+          "sha256": "d7e12dfdf8f59bf7bc9fc9ee5cab1ed21c8a980e33ecf4857303d611884cce92"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-atomic-lazy-file-io.json",
+          "sha256": "e354a39e6586bef89d15ed6998948214414e5b70d35a8c8f1d50f3ac9c98d8bf"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-command-invocation-implementation.json",
+          "sha256": "e4719d89aac620e4a96676ce99b8ad7387cbb9bd30e74a61971fb29757d26224"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-confirm.json",
+          "sha256": "08a70e427bf77e6e3d5ff112211d92d428352adb6dff19ad34cb482901e16ffd"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-echo.json",
+          "sha256": "c1893ba3d2a8aab35ce59be4d6eb42acf84c4d81339f8533fd43b4d2e2c3e560"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-option.json",
+          "sha256": "936fa038b22f4852ee29224a06960ecf4de30ff7a93def27bdb8a610550c12f3"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-prompt.json",
+          "sha256": "4227d9c52edd3c583cd0e1ab7c4d08c8d35c7ccbe6b0beafcf3a957a7f6250b7"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-shell-completion-concept.json",
+          "sha256": "9aa1772d19fc6056fd2ba484f0b728f78fca7bd9c31db47abc4109d519544c44"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-shell-completion.json",
+          "sha256": "3257a2e23e00240aa6ac5dd308b6ceeee9ad195f4974bc8b7fb71ef1b2b70296"
+        },
+        {
+          "path": "click/ocbi-structural/repeat-1/click-style.json",
+          "sha256": "0c6b636147cfdf2ee735872659cb220d28682f1e264f9c2b323d704df97d5c4b"
+        }
+      ]
+    },
+    {
+      "runRoot": "cobra-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "c0b3a14fb31be81fd74baad35f6001117c7d101cbb753e7826bd3dfbc1de75ae"
+        },
+        {
+          "path": "cobra/inputs.json",
+          "sha256": "14cfe31ef80684e8cc31f7dc6d9935f7d32d2d2b8ec01ed537514aee7b849c18"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-command-execution-implementation.json",
+          "sha256": "da924c4ff7a2ee3a3ff842db977b36052e302943e76fd51608c2d89a49bcbb99"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-dynamic-shell-completion.json",
+          "sha256": "14fe3454e40af74d67aa8054f63b94eed0830d84b5d202e87acaa86833722a72"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-exact-args.json",
+          "sha256": "b264bf5d119614f8b9be02706ebc071d9f8bb19e0f7ce3fb1d95b15966056092"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-flag-group-validation.json",
+          "sha256": "1131760aea22e89082102bf710810851d7afd2fc045f6ecc997d4bbc8de35b6a"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-minimum-n.json",
+          "sha256": "54ed0157796f6fa1b95f6c10d0b28d0343410542deb05cecbd4b7692d328da89"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-no-args.json",
+          "sha256": "f74937347cd24209011bc787511598bad0fb320a34d397e559ad0c8dc1be6ff3"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-on-initialize.json",
+          "sha256": "3b39c01e12f1be0cc07bde630ab147a44ec5d76e14e9c4818a1d618922a838f8"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-range-args.json",
+          "sha256": "29f80c0c491d462959a2058ef62ea287f5837f07b21b05ae4b21668c32a1836c"
+        },
+        {
+          "path": "cobra/codebase-memory/repeat-1/cobra-shell-completion-concept.json",
+          "sha256": "66bff19b0b3b529ff37c71acb8d2a429ebab00137d8571fadd616a7621177a9b"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-command-execution-implementation.json",
+          "sha256": "6a58b5fee44ea8ea4eabcad9774b307e8bd249cc8746d1b2d87e573e22e77be8"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-dynamic-shell-completion.json",
+          "sha256": "0c65e4a46e07c8b1dc40cdcc53325da7adfb0d3e6e12d428444eac2f3ba1f63b"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-exact-args.json",
+          "sha256": "3c6b724d5a922bf6e05ac12fc65d561f89c512c3afe2e58ee99808355e476a66"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-flag-group-validation.json",
+          "sha256": "61a9357364cd8195dc4eba7cc470b9b2a4647bf1418af12d16e16e71223db9e1"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-minimum-n.json",
+          "sha256": "d205aaf3cc5121c68e9c9a86f123002da930a93e069b0bdd85eb6114357691a5"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-no-args.json",
+          "sha256": "55b5794722a4781da35f23a0175e83ed9d53230e8f13018bd17a8496c3647459"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-on-initialize.json",
+          "sha256": "35ece0e6a12c214938b85b73c623c2d84bc8aecb7b5f3b96a5a36279204628e3"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-range-args.json",
+          "sha256": "deecba2b675634a4bb53785e7abfaba3b641fba10a82f2bf325fc3bd0cce49a5"
+        },
+        {
+          "path": "cobra/codegraph/repeat-1/cobra-shell-completion-concept.json",
+          "sha256": "899a9df569198cf1e64aff01be0eebfaaa6ff43c7029964fbed290dac51a4a0d"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-command-execution-implementation.json",
+          "sha256": "2126a7a46b917ec9af12a8b8ee611a32ff1b043a4d7f9a67ebf9466554be8996"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-dynamic-shell-completion.json",
+          "sha256": "594eb80295e855b473d7e513edfa4a430282c0473bee106f827aa670cb3226a2"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-exact-args.json",
+          "sha256": "f3d26aed3f96dbc7abf3a6f758634c8d4c8a0275d774452382af155798272fab"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-flag-group-validation.json",
+          "sha256": "63864263d627e41ac01fff93ca6f8a98b418602a73765daff39ab564679e07d0"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-minimum-n.json",
+          "sha256": "6dbf6df1aece2137f7847834cf841a628e5b90c2be4c1dac5c603cc09e800fef"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-no-args.json",
+          "sha256": "b5d92600eb345037a3d00031395f0792996c380d891799a286049395624e6f75"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-on-initialize.json",
+          "sha256": "9b4b96257873cd0cb69acd49d446118186108c003e951c4e6c543fc7eb4e64de"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-range-args.json",
+          "sha256": "5aa5a284981ec2c5e9cca039d29609477b38166053159a2e88e3d9554ba8cdef"
+        },
+        {
+          "path": "cobra/grepai/repeat-1/cobra-shell-completion-concept.json",
+          "sha256": "b8d40141a88a303547c998464ece944d511b53a3eaae6478ab9dc8811948178d"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-command-execution-implementation.json",
+          "sha256": "fc144cdbefbc360c16fc2262a39e4396a95700ebad8c436023b1e6e17216256f"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-dynamic-shell-completion.json",
+          "sha256": "c440e8a66505f7c776a60f917f525a84a1f1e4abc5664a2fba6b9065b9e22cfa"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-exact-args.json",
+          "sha256": "7aa837003500c89f34210be17a215136044dc8bc887623d45b760af758d9bba6"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-flag-group-validation.json",
+          "sha256": "cf40dcfa7a4fb3151a3aaa4695947aead189dba2757bbc13a106e11340829940"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-minimum-n.json",
+          "sha256": "81682b9f765e4ef7d27970246db4bab0e8790abfcd42de3a3925429254bee46b"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-no-args.json",
+          "sha256": "057272d2a0bd2eceaac7b8c9b646a044d5120f2fcde23538b7a28d57c6cbbf7a"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-on-initialize.json",
+          "sha256": "53fdea01da30b3f768cdca33e720161fdc264ffe2371d274641becab3acfaee0"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-range-args.json",
+          "sha256": "5620277eb4e5f21a90923ef42627535deb11c4d9a0e58f43cbbe2f77ad9fce28"
+        },
+        {
+          "path": "cobra/ocbi-hybrid/repeat-1/cobra-shell-completion-concept.json",
+          "sha256": "ddab74a2018582f72f8052ef7532ddecaabe201c7c55078221146b7f1a9a3aeb"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-command-execution-implementation.json",
+          "sha256": "9840b2ba89ae43fdf10f8028b22e13ddf94f5fb81200fe86d2d25fdc4ed32b42"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-dynamic-shell-completion.json",
+          "sha256": "7fa0e2e795233ce58d222fe8a581ed9f0d62f1ce45155bbde9da61bb1a3baa1f"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-exact-args.json",
+          "sha256": "b2930751fa86d45dd82c3bb22de5a4db047ef4af76e5d07c5520ce7ab1a2b956"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-flag-group-validation.json",
+          "sha256": "5333b702bed12c648d09679d3efdbb277f8cf2d3b6b018a67ef10652e152e5c1"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-minimum-n.json",
+          "sha256": "3fdc66063d852853c80c65fc4f33bd635b4cbc071a9c5f3fe5adc8c2e8b5f3d2"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-no-args.json",
+          "sha256": "388cffc7b93511617eb1624ac14ed61753c290f4f60a5a123de086c5be093791"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-on-initialize.json",
+          "sha256": "e248e2a9027f3e517f806a4c1c416823cc6a7d8518402e794ed65b73b7bf86ce"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-range-args.json",
+          "sha256": "18b4dffa6bdbf7f4a7a047251edba9fc615470e9d0cf1c057a572ae6106449b1"
+        },
+        {
+          "path": "cobra/ocbi-structural/repeat-1/cobra-shell-completion-concept.json",
+          "sha256": "98c3df30096309053172c51a5e427ce1ba2e0ff993cbf5fc8568149e1192ead0"
+        }
+      ]
+    },
+    {
+      "runRoot": "ripgrep-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "c08ef90d98fe36b2afb5f775df7814bc6aeca28260954bb7bd4ceab38ec365f9"
+        },
+        {
+          "path": "ripgrep/inputs.json",
+          "sha256": "ce1b944e1ecde5662ef69e0e15c49bc6836fd59dc78ca9e7f3ff8dddb95e3bd9"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-glob-escape.json",
+          "sha256": "8b10b847ccc6b0303ca0d08c6aed7cf12f15d6c5ee2b6d71800dd5a5842c6212"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-hostname.json",
+          "sha256": "059f320295bb2e741cf7dbf962dd216a6f5a2b415c8ac0a87709780efc458d71"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-human-size.json",
+          "sha256": "6134ce7d0b4795576f93b306fcf10ffed19bd21672f03153b7a75b1758083c83"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-ignore-filtering-concept.json",
+          "sha256": "b157b564bdf5097ef7917c7e5a5f04044f28103c9f1c5b63507944a4acaa0076"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-interpolate.json",
+          "sha256": "2bfaed6dd3d3196db6de28646114e4fc7e34337cfc991832d64f82776088e7fd"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-json-printer-events.json",
+          "sha256": "181c8683fe124eea3df34d22e6281b06402619e2b89f80559f87dcf2093b4441"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-preprocessor-decompression.json",
+          "sha256": "fc6adc199791fad94e83ef6ef212d78f66d93114847bf35421afbc24267d83f1"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-search-worker-implementation.json",
+          "sha256": "ac62c83d20654502f6fad5772532d2e9248a8662d010c45b88fbfaeb60fdb8c3"
+        },
+        {
+          "path": "ripgrep/codebase-memory/repeat-1/ripgrep-stdout.json",
+          "sha256": "3fd57d3223028a0f4e473c875ea6301f47005bd7cb716853a83a1e6c4f0e8d67"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-glob-escape.json",
+          "sha256": "fc6c30deb888ea81b7642c6a0e0db849cb64d0ba0020ca4783fdacd595d92926"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-hostname.json",
+          "sha256": "6765c0b1bb82d88a5a0ccfecb8363938082a9ea22e783da7ed29cb9a7e3a2f71"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-human-size.json",
+          "sha256": "de3d6904d6012db09b62998f3ae609aa07575986345f59639dbe48c46e66c7f6"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-ignore-filtering-concept.json",
+          "sha256": "97dc2cea2ec8d1d0e6d38a210959d05e60257115d08f9cc1a1786c5bc80f8889"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-interpolate.json",
+          "sha256": "76b8a3c5a7aad14ae287a8f3b628ee796b895b00938ca9a69f36f796fc8efe16"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-json-printer-events.json",
+          "sha256": "800d5c5af046ab5ae80bf2ea52100bf2d42e4fca9c029ad90c56c45381535e4d"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-preprocessor-decompression.json",
+          "sha256": "b959bf4e49ee57a4169d30aed49d8d607b244d420fa5a832a5bc172b7bd5026f"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-search-worker-implementation.json",
+          "sha256": "c2c274e05d1b10ccaac59721ad730334d5467bdf6f0bbd725ce0ac736e2e848e"
+        },
+        {
+          "path": "ripgrep/codegraph/repeat-1/ripgrep-stdout.json",
+          "sha256": "60ea810a6305e1ff92b51abb3c9e748197291bfcd9f5a5d5d3e391a11d3ffb6b"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-glob-escape.json",
+          "sha256": "1c56d55c577de8eb7d6fda2659c18ba16ed8f89926b868475e0959678aef15f8"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-hostname.json",
+          "sha256": "6d66d67a0704e362c62f1429a1e23b33d38044cf97c68b3f4d8af05bf7b1a833"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-human-size.json",
+          "sha256": "da01d6dcecafa855434df7015814fe566637041fb4be1544a5f89c1c53aef211"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-ignore-filtering-concept.json",
+          "sha256": "8c34b3eb7e70eeb20c059d32b2eac06912b3d0be42e483c92902e29e336037e6"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-interpolate.json",
+          "sha256": "4df6c94ff5239e728728926c54d2d02c5e8beb85e33999c70565ab615acf5428"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-json-printer-events.json",
+          "sha256": "8b37d1bcacc5b6768fbf0075458a15aa5979dfae54f8e8b417decfd68f76b108"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-preprocessor-decompression.json",
+          "sha256": "6498619f68c3a8168bfa882f8d6b3444169d74341d80d6d5d2116ce5815aef7d"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-search-worker-implementation.json",
+          "sha256": "12617360589997b3d896cd062b593891f486f7f4be789a17197f2b2af2adf535"
+        },
+        {
+          "path": "ripgrep/grepai/repeat-1/ripgrep-stdout.json",
+          "sha256": "5319ee7734864f660bcbf0add63ea31a1a753dbcab832dca0636dc83c3766d30"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-glob-escape.json",
+          "sha256": "bf3bc4e14d4b0438105cee5038885999734aefbb84cb7f641f9bb13a36baa615"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-hostname.json",
+          "sha256": "081889d77c7567512ace6dca9a1a334182ee27743a76b40d66870bb427749805"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-human-size.json",
+          "sha256": "deaf52a46a2038207c605ded1f9fbf12777763facb8903e1ec9da338b37c8d3b"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-ignore-filtering-concept.json",
+          "sha256": "a83fa2ced1704ab1e7f61a7783469913869052e0af91eec6d91d1372555a2c33"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-interpolate.json",
+          "sha256": "769cdf4dc9b8cdd9708131e994a3103330c117df0ff39cf9031587fcd5073594"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-json-printer-events.json",
+          "sha256": "e6e579f566c241c4ee808f507b6d8dcba51693bacda16c400edb695b2e8d1bdb"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-preprocessor-decompression.json",
+          "sha256": "51a58ed0d66b08d54f8b3c184842f2303768da47bbddf5f14b29a27a27c9205c"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-search-worker-implementation.json",
+          "sha256": "fa0276e89ed0a3d0368da00d715ba064ac5e5b4290c9cb20a857d288d11f69a2"
+        },
+        {
+          "path": "ripgrep/ocbi-hybrid/repeat-1/ripgrep-stdout.json",
+          "sha256": "37d52050519d3e45e790926a90a41cff47847d333584c9e4e4b2193f2ce5f71c"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-glob-escape.json",
+          "sha256": "8dafb89086553a0ff9a262b4030122beb8e239c7d49bf1f6bb1d6a8a6aba898a"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-hostname.json",
+          "sha256": "e068d4b7cc400903c16f43c6d768f620c559886d072ff6710ba888d35ffce13e"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-human-size.json",
+          "sha256": "e50a208d559ddb20c1cdf71bd66d36c49bec90a2417f41b7b9f11e15816a64e6"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-ignore-filtering-concept.json",
+          "sha256": "86c6cadac17a0a74ee5350c6480cea8e295243f6734086daeee612dad86e048e"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-interpolate.json",
+          "sha256": "286cda37aeaf6bbf940ba46746cf705269decde9167bc6df4a67c224ed866b9f"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-json-printer-events.json",
+          "sha256": "37c4f47028b9834befc454e822552aa42cbc3d4affa0bfe4f914e41e3eb4223e"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-preprocessor-decompression.json",
+          "sha256": "1cff87395d51312183a29f229ab371de290cb42a52ba55d76207f01dba10fd61"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-search-worker-implementation.json",
+          "sha256": "4fd1192d830b37820b9d76efc82718fc5276c44419e525532c223fd4629cc7a8"
+        },
+        {
+          "path": "ripgrep/ocbi-structural/repeat-1/ripgrep-stdout.json",
+          "sha256": "2d79c0f24fdb96db03229fa9df9648b899115a38b0c3dd4b09dd3d8aca460154"
+        }
+      ]
+    },
+    {
+      "runRoot": "gson-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "b91a43b08f6c956bdc7c34473278e78244183d5c28719fc99494e5d525a8e536"
+        },
+        {
+          "path": "gson/inputs.json",
+          "sha256": "95d5b6adf929f0a7f6d5cc1c7bece3d235fa688577db5924623ba9fcb6dcb2ed"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-adapter-resolution-keywords.json",
+          "sha256": "0c3002d135c59cf8b0cbbdb6e43aa8690fa91898a1189c0f2afd3d2fe06d63f3"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-builder-definition.json",
+          "sha256": "2b4bd4adf90130f89be3d093a9ca8ef393d3e4ab2ca7aff24b55cb70820c18d5"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-conversion-implementation.json",
+          "sha256": "d8fa005394a93ced58eeb3331b80776ecc4a4f5edf58f98eb860914489ef02c1"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-gson-definition.json",
+          "sha256": "58c901b1a74ec184b7bdf5c1f825587a1f1b68cf4c3fb6d2780fff793bc70aae"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-object-definition.json",
+          "sha256": "cd7e99e4438ef687268ba95c6f5231cc70a22101f88f002db68bd7b552c76873"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-parser-definition.json",
+          "sha256": "827c0f56026f41d03e790c383acb7a66f7c710ae12809694245e59b6e5450f01"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-reflection-concept.json",
+          "sha256": "694eead526bc3880b6a2534531aadfd4be6fbeda3c9641bf2362b246b71e4ea8"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-reflective-adapter-definition.json",
+          "sha256": "825fa10edea5bcddef75b145aa7c542076386760f8c3f74981257d8118718f0d"
+        },
+        {
+          "path": "gson/codebase-memory/repeat-1/gson-streaming-reader-keywords.json",
+          "sha256": "5d3504dfed0869a530b4acd50ec5c209f55af538c9deaff343a39627e397ad15"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-adapter-resolution-keywords.json",
+          "sha256": "49ee3e614cf155fcd51b54dd9aabc2e6cc63238ac83d5a61e0e993b720cf0068"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-builder-definition.json",
+          "sha256": "1292b351a14e7b2598885fa491c0a3d95a7043efaa41231f09edf7a25a755c65"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-conversion-implementation.json",
+          "sha256": "9dc59ab0ca664f2b8fc4093365c86da83af6acea022f6c472b093c3383258c1a"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-gson-definition.json",
+          "sha256": "1fbdf396cbbbc01b72148e364b35d5cc921e3ba1346a437d8ff847517616771f"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-object-definition.json",
+          "sha256": "114d00f15bb5d02bb28a9a4a2e9a5786ae3dbee12817a23929ff05d91e51ebde"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-parser-definition.json",
+          "sha256": "a8031d362ab542ef3e3d238a04a7d6bbc59f47385b5341797b089d8463a0ccd9"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-reflection-concept.json",
+          "sha256": "9de27617539ea066112e7a9d6edb3bbc88b2500de90825305a4acb4e60791809"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-reflective-adapter-definition.json",
+          "sha256": "0238b8fa6e2adbc6a3bfe4b3dbf71643d9c207ea92bc4fc3e562200cf44acedf"
+        },
+        {
+          "path": "gson/codegraph/repeat-1/gson-streaming-reader-keywords.json",
+          "sha256": "a9b56adae8d28f4fad3638d8db541c4d126cba9148b13059f0f03790c639d3b5"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-adapter-resolution-keywords.json",
+          "sha256": "4532236fb54a1a8a1f07bef3fd1b14caad1d4aff0717db9c6cd8309bef80a61f"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-builder-definition.json",
+          "sha256": "d42b2a77e7297e8bbb7a79bb14e94b5309e7d87733c8ec9efb5de83240f41ab4"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-conversion-implementation.json",
+          "sha256": "00b840cd22477cd8436862c3815d3904efd89233b13e1d1ff97bedd113e63bcf"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-gson-definition.json",
+          "sha256": "9d0d8a977f9228f23d92c44e1b2226bd009a308f0333d001bb03c31e294224f3"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-object-definition.json",
+          "sha256": "daee56fba0373ff84cd5ec2e005f71f4da941d7c889b39b7bba88525dcf1bcd5"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-parser-definition.json",
+          "sha256": "40e6a27b5b8e48e4c707b406c164ffa72b6dedc9b10a3cc51fdd05bb15988f9c"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-reflection-concept.json",
+          "sha256": "dbe8eb538864b68b66fcbe0a8d2923fc75ed56568d4b47814d142bebbe20bfc0"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-reflective-adapter-definition.json",
+          "sha256": "6a57e5ec01bffc7fc9f58a60f480c58bcca7b8eced197ddaf78933efa1335ede"
+        },
+        {
+          "path": "gson/grepai/repeat-1/gson-streaming-reader-keywords.json",
+          "sha256": "6fb914a14c983c2d17247833752ee087ddc082557c998f15866613ad2828b088"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-adapter-resolution-keywords.json",
+          "sha256": "89ca374233719db745cf683a83b421a821f1f3ecec4e01dca1742ac70f5a845e"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-builder-definition.json",
+          "sha256": "1f3cf1c93a65632adca434a6b9fae5457fd6bb2c57c5478687eefa6b53aad0dd"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-conversion-implementation.json",
+          "sha256": "c2bb0702e385c82c82062502617943eb1e9338f9b94f14e9457784eb4a05bab5"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-gson-definition.json",
+          "sha256": "c4e05c031eeb1b81f4c7bd43dad74b71b92434651b70a80951edd82511adec22"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-object-definition.json",
+          "sha256": "1efb8896280cbe31f05e768eb2d8c4df2e9dbb5c34cf4e90e595f2cff57def86"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-parser-definition.json",
+          "sha256": "bc14b2d5f1c3557c21383965ebf6bf4bdfaffe41487e125e79c5f43de25b60a2"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-reflection-concept.json",
+          "sha256": "3aa7c83fa96d5bbd23c8927fb3c74491d439ce6483a5dbe14ff861902be1ac81"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-reflective-adapter-definition.json",
+          "sha256": "2b4daa3c7c574a62c87eb1c19437454fd3ade7188cdd4f7201ab8e60b2605c34"
+        },
+        {
+          "path": "gson/ocbi-hybrid/repeat-1/gson-streaming-reader-keywords.json",
+          "sha256": "b91bafb6b706c05bc37615fde825a581d9795467726f871ad3eb241ed77bd6ae"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-adapter-resolution-keywords.json",
+          "sha256": "ea13919c74e43eea148ce89ec906939c5704162db697c65fb9811dfe4cfa953e"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-builder-definition.json",
+          "sha256": "c5e7c83b225cce30697b39ca8fbcef9cb8fb6db792e3d16c59f02b70e4010df2"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-conversion-implementation.json",
+          "sha256": "d14994f138d2a0e5a1274acb70133c30b8723ef0a51fb9ae0a468c4ba59269f5"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-gson-definition.json",
+          "sha256": "0e18e352bd130cd0a6e48a30678d138741081d56d937b5d5277b32004cbaec3f"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-object-definition.json",
+          "sha256": "478ec2be6ad91c6f7f3c02315a92e03c7a54469f392ee93d9609f1f6f556863e"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-parser-definition.json",
+          "sha256": "8472b7d24bd3393c938289f04b26989bc6893879d9ef82bfc75cd053640370cd"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-reflection-concept.json",
+          "sha256": "3a572062881e079d741240185dd95f1491d54c53dd3e5dfc358092f8f47f272e"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-reflective-adapter-definition.json",
+          "sha256": "99bc6f3651335673b6ef75f190469357da374013d6d404b8c41a010bb707c594"
+        },
+        {
+          "path": "gson/ocbi-structural/repeat-1/gson-streaming-reader-keywords.json",
+          "sha256": "34a89528578c4f83f73231fb766de43c2fb572d9448be7b43f7a0f585a0e06b2"
+        }
+      ]
+    },
+    {
+      "runRoot": "newtonsoft-json-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "2caa79084d10d23b297e90d40e069e6bdbe220e1a31271ae0744abd5bc6e5f84"
+        },
+        {
+          "path": "newtonsoft-json/inputs.json",
+          "sha256": "1e688755eaa4fe87b84a6b88385836235b3dd51bfbd45174b530785973d6e089"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-camel-case-naming-definition.json",
+          "sha256": "508cedcf1eeee3dd07d530393336675b7d43a218156dc962201f2354cc815537"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-conceptual.json",
+          "sha256": "d092d2905b01f07186f2a65963d90e99c624fbd888bf2b6f1367e66898490ea5"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-contract-keywords.json",
+          "sha256": "d5c372ec30022dbf69ae68ad7e6c54f0c7a3e1b5e3d00651ab3397f29c39567a"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-contract-resolver-keyword-heavy.json",
+          "sha256": "67edec7554a14f3d85be173d953a5e52d9bf489df4ed04b2c3e1289eb08b7772"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-converter-implementation.json",
+          "sha256": "5fbc5f001a564b6000e8bf2114f5e617d4797802834844d907f308ce3ae53480"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-converter-keywords.json",
+          "sha256": "c1e59b10a73c6c8f884c4bffd5d2c39a195cb97e72d89b0eb7e18e2a27a3f409"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-default-contract-resolver.json",
+          "sha256": "e0e5ee1776b0b826fc1623cfb6dcf17d98e94fb549257fb9b9a7955d5503750a"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-default-json-name-table.json",
+          "sha256": "95f935bfa77a92503902eacc61b2bfb7da03cf3f08f9b55f7a8aaf697a40cf3d"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-implementation-intent.json",
+          "sha256": "c7e5ef561f70c44a3fd34eb14c598bdca5e2265f67382e108be55a3c9caeada0"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-contract-definition.json",
+          "sha256": "893b2782d768700999badd96299f278768963e366bdac74063382973287830c3"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-converter-definition.json",
+          "sha256": "d6b8bccb00759a1e1bfab541915afc2fd2faf595105606d12b6c4d3670d87bfe"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-exception-definition.json",
+          "sha256": "1b900152b91112a32c09650260728a301dd037ea01c30f114665d050a7b83ca3"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-reader-concept.json",
+          "sha256": "a15ee8690cb0b428a4ddf1b0ae9ce78c027e21b05b76c05c5a21fe59615ee4d9"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-serializer.json",
+          "sha256": "deb393c429f7ea5bd606fd1251b3f7b7c1dbb61e437eeb699232a479092dfa3a"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-json-text-reader.json",
+          "sha256": "9719e3f98373ae8b16132ec9694ca187a1cdc1ade57b2240ce5286745350c3ca"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-jsonconvert-keyword-heavy.json",
+          "sha256": "ef8547278abafc51483ad632533759f180ce2cbc54b4ab64fd8e91f3c25653a1"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-metadata-concept.json",
+          "sha256": "7aaab4c7ff695f951d76dd411696a7e0ba9f8e8dd89526f93a66497845224802"
+        },
+        {
+          "path": "newtonsoft-json/codebase-memory/repeat-1/newtonsoft-json-serializer-settings.json",
+          "sha256": "fc815345e5df0ac25476f8026967937daeeb161ab80fa0284c68e038203fd69c"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-camel-case-naming-definition.json",
+          "sha256": "663e8074b17ae47511b833cb6d6d8b8f8cfaed4699369ea7026da6326ab26b3f"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-conceptual.json",
+          "sha256": "0ad7ae607f28be4ca6738496b839f983f8b69956a5364f8aaf8e5e14e74536b2"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-contract-keywords.json",
+          "sha256": "f95390bcbfbff214537240d339ed7f7669e5f3e783424227e7a7d109380038e7"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-contract-resolver-keyword-heavy.json",
+          "sha256": "f6229e0b6a0deec3693491f8f3dc64d0a70f8e414852389e3e7f8a36d626b4d8"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-converter-implementation.json",
+          "sha256": "2f1c2d29eeb844815aea389b85b228e250b35648a3b225b6d6f21e4618750b3f"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-converter-keywords.json",
+          "sha256": "093689d5026124a239a5ab19caf184db42c0c89ea2ba10191eeb24c95101beb3"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-default-contract-resolver.json",
+          "sha256": "0627dcd57962cd48e707dcb4c061549659dcba46849c7d2b065357638e4a7803"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-default-json-name-table.json",
+          "sha256": "6b9366d1eb61ef30109872bec78ad3999715c7ad0149871ac5259a15de0730bf"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-implementation-intent.json",
+          "sha256": "6e3175185955150e0727d06b490ba11811eee0e6b0f818e04a67ec3c8b9eaf1e"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-contract-definition.json",
+          "sha256": "124c9144a799511754a730b2956bef7993d0a1a5aa0ca977905758f6b87af8f4"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-converter-definition.json",
+          "sha256": "540397d5955b5f6a55cdae3c9212ef660fd469f74fd30d82c118b923f4b37067"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-exception-definition.json",
+          "sha256": "27b0651b919f59ff160ccbbbf1207c9c4b136e89c97b8471b39e8c9048fb8df7"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-reader-concept.json",
+          "sha256": "c12a99cd9219a2e35dd3d205e1dafadcb49fa26c49de3b13be0d52e1a3bbe8cc"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-serializer.json",
+          "sha256": "ef4f61738e4eb42e6c81841c3f256dcc7aab3c80ae0ebce33e6e28fffc64b5d0"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-json-text-reader.json",
+          "sha256": "2095818301b673e856bf643d54fda97137ae305402f76179a60ec5c9e93750b8"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-jsonconvert-keyword-heavy.json",
+          "sha256": "69f11dc2056109bba41488736a5157115de17551eb8b5833c71d18d033f67359"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-metadata-concept.json",
+          "sha256": "6070422a63d0cc7b07a083fc36db609983ea8f60fde8c8c19120de292681fe14"
+        },
+        {
+          "path": "newtonsoft-json/codegraph/repeat-1/newtonsoft-json-serializer-settings.json",
+          "sha256": "8c5fba5239ae93b20ca3ee394953d50cfbec9686abde434ee8ee4f271b710c58"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-camel-case-naming-definition.json",
+          "sha256": "18d60eaa3fbacd0308a06481e4ecea5b270bd57fafa3a6ac10307ca2aab05041"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-conceptual.json",
+          "sha256": "5337337938140e9169d1f40c30c786900301f119d7c2d629387ea3b6ca4abb77"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-contract-keywords.json",
+          "sha256": "f4915c0fe282ae590792af543b43c6d8ac3c6b24decce2abaf887290fc6c01bd"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-contract-resolver-keyword-heavy.json",
+          "sha256": "b6a6a05a1ae5edf7e220fe050c689fbb2128f5524e8382c1bef21597be5d3a8c"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-converter-implementation.json",
+          "sha256": "05709a372cfac58e4bd48c334d6be56537ee0498660fb6d5f3b1ddb99bb65e1a"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-converter-keywords.json",
+          "sha256": "b23cc57503ea58cdfab0de0708d5f6c6e2765a7b4b5d7f31efd450a42b0d14d9"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-default-contract-resolver.json",
+          "sha256": "300b081d3b33d99adf63ceda85097235722c359a77f4b0ee22d298aadba590f2"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-default-json-name-table.json",
+          "sha256": "45fa4e79a273fbdea7f0c1cbc82efc6eb842c3c82ebeeb5ece252dd4ca3ee066"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-implementation-intent.json",
+          "sha256": "336bd29eb716c74e0a428d3ba9b7761d6a67013ac39b184724cb7512d35a325d"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-contract-definition.json",
+          "sha256": "689b9559ae1b5c5753ecab94d81d7c0d5dea4af673fb031e2a281f04b6067db8"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-converter-definition.json",
+          "sha256": "6e370ac266b448ccb1456aec4f8701169ed45a06408e24c38df7d691dafb7fc8"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-exception-definition.json",
+          "sha256": "a32c4bc86418d48031741191e4f5e419757d1317954e61213797ffc15dcf7428"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-reader-concept.json",
+          "sha256": "8febd889f083f60f0765f16a42b822a618da6fbf3aaa0e69eae31428110d1bd5"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-serializer.json",
+          "sha256": "6e6ffbfca78114e2ec39905022ae1d268f5c9c84e76db6764e23f7bfe9ec43f0"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-json-text-reader.json",
+          "sha256": "a854b3c9772cf6caa3fbb58491c5ff221e8bcdc974993e923e1a3aae85156c4d"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-jsonconvert-keyword-heavy.json",
+          "sha256": "c4c567d4c195c17b1ad829a489b5c6d76ae28c578d753ce7b858c418529216e6"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-metadata-concept.json",
+          "sha256": "2b5cd14fdc351ab954a10cec3b0d4a37753671b9865bf218e5387ee74e5ac992"
+        },
+        {
+          "path": "newtonsoft-json/grepai/repeat-1/newtonsoft-json-serializer-settings.json",
+          "sha256": "d726635e8cce99f3cfda59697986671c1f55b5a0bb0e76c92fb78dd3f241b35d"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-camel-case-naming-definition.json",
+          "sha256": "952323b09de476c3b8a030ee810f37828dfcac407b6ee1b2397e1da6f015e860"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-conceptual.json",
+          "sha256": "59b5db2be6ab1255436476edff7f5a4170ef32dd2a76f680a8646e0c29eba9c5"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-contract-keywords.json",
+          "sha256": "31a0d2331797f628b2db76acfb26a0a3cb582fa3d4d28c097ee0a0dd9516f588"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-contract-resolver-keyword-heavy.json",
+          "sha256": "16c8f98dd8a6a08c7154614abcb1d1594f205168e3309e8e07302f956d166b53"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-converter-implementation.json",
+          "sha256": "0ae14bcb3cf88c3826579d75b1b5f8efbb489bbba65d424b7a77802af8f3bc94"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-converter-keywords.json",
+          "sha256": "b9339ac5695d11b71db702c4dcb06d7ed0f08d0d8382e8c0a6ad10a1a700cf8a"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-default-contract-resolver.json",
+          "sha256": "0d76735f498ed87e2206a46719e07947b51aac985293cd32c20e5e7a13df0dbb"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-default-json-name-table.json",
+          "sha256": "48065a26574adbbd05e9eebbc7158c51fab9f7edd855b10ce2143196fd1fa48e"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-implementation-intent.json",
+          "sha256": "6960df51b605a50355d177cab46a8b95fd6bd0c0d0687eadff41ac2d2c64450f"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-contract-definition.json",
+          "sha256": "98889b29c28620f2a303a47e5f6cc9fd5d54ce0328ca290b19f919f3f50e5160"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-converter-definition.json",
+          "sha256": "402374fbd384e5d83df89c36f6d1b58193ea45cf105057320d2acec4289c3d65"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-exception-definition.json",
+          "sha256": "c504a63757af8ee9450e42ffa4a7d727126c3d6536c07ca392dde382eb57f222"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-reader-concept.json",
+          "sha256": "c917693116724a5e4e18b71f347bdc352d795e9f7841e2664b85601d2e672b1a"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-serializer.json",
+          "sha256": "911c3eefa1706f4d466394cc9483b8ab73fe11275817cb07539b61f08c5f6d33"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-json-text-reader.json",
+          "sha256": "84cbdf7b8d492b87acc07f32cf9c064af9d2b32f3d48eb5406425c990431c13b"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-jsonconvert-keyword-heavy.json",
+          "sha256": "5a1f6833cc5a8e7ddc3bc81bd55ced002f13da6d3dc62e6f252adf1c0371aded"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-metadata-concept.json",
+          "sha256": "18b60b9307bb02c44844e5f05a254aa60aa4cf63fb8dd24361d766e5f4ea0125"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-hybrid/repeat-1/newtonsoft-json-serializer-settings.json",
+          "sha256": "aa24ba6d1ebc0a9382df097f3bdffe0bda16aacc7c151b5e81f8b4c0c0c20563"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-camel-case-naming-definition.json",
+          "sha256": "2ba7925a1ae95b6f45bb347976e98d101f30a70fb793f447f0de8e37299fa0bd"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-conceptual.json",
+          "sha256": "fdfe6f310fdd8fbc7ebd121c030f0bd4bc13800dd9e6872239cc10f911eddb98"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-contract-keywords.json",
+          "sha256": "e12f409224717f52ec491b634b7704cb785f2b4a9876717586ab1403573d7fb8"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-contract-resolver-keyword-heavy.json",
+          "sha256": "2798a248cb6bc648d4b366bfb7486c55955443b7dbd0cdc082879b7b7fc6e8c0"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-converter-implementation.json",
+          "sha256": "7ab91d61c3e68db4cc963c64b68277b6d4eafd0aa327e89c34545fb033616610"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-converter-keywords.json",
+          "sha256": "c6b899c857533618fcf74c73f00c9c3de4e0282e7164cac366e8f5a3e55064a4"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-default-contract-resolver.json",
+          "sha256": "552528f27941b4ce476097f59521ae98205ab44b3821e327d19051766e4b42bd"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-default-json-name-table.json",
+          "sha256": "e19c4192b27c879433810a208a2f21cf8c17634c02f1e110b2cda6a1de15f2b3"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-implementation-intent.json",
+          "sha256": "8552201fca7e32c02109d6c1602dc2013c8b871a4ac4361b7088f0e7387868aa"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-contract-definition.json",
+          "sha256": "c1a337dc5643b3fea84c0edb12eee3c588970853a806dbabe0f0e6fba7d99020"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-converter-definition.json",
+          "sha256": "4d71a4ed3697b6d691977d05631fccbd74b5e68efc4b64e72d23250996d43400"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-exception-definition.json",
+          "sha256": "8bf7435254670bfc779080428bc2ceb0e0a067dd14ec577f3fe9cd75d615ad12"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-reader-concept.json",
+          "sha256": "18dcd6d03a764a81eb19b124d5582cc0f29e52d7e0d54d99de0e17dcd5b69292"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-serializer.json",
+          "sha256": "e1e049cb1c1fc7fff73a1fe2f64968132cf8d3c28b91460b3d63e229571de4c6"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-json-text-reader.json",
+          "sha256": "ce2691e4920014d9e0042677d223a6c8616923ed9db1f14393f6d53a42662143"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-jsonconvert-keyword-heavy.json",
+          "sha256": "674fb4067c702417c3adc3b100de764e93cb89d09bacb063f32846b5392e2805"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-metadata-concept.json",
+          "sha256": "dcd44eab4f2b5cae89c34e7fa2d66ea5ee6872395d65724f19b04bb5e72164cf"
+        },
+        {
+          "path": "newtonsoft-json/ocbi-structural/repeat-1/newtonsoft-json-serializer-settings.json",
+          "sha256": "a4e0e2652ae8a0894dfa5108475310468f01554bdc208552ba3f4ba807afcf36"
+        }
+      ]
+    },
+    {
+      "runRoot": "symfony-console-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "fd7678225df09efb4790d18c4a3442f64fa23cc72c5551d28c4741c1b9b70742"
+        },
+        {
+          "path": "symfony-console/inputs.json",
+          "sha256": "b7fa2cdf1a3b048f99cd2cdaf0c8fc560e877fa1cf4aae06227ac5fa10fc9afa"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-application-definition.json",
+          "sha256": "b868001473bd6787b692462339ea4e647e32c6f30235044cdba4f99aa4ebf04f"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-argument-parsing-keywords.json",
+          "sha256": "8ee84204f432223e3cd59c89b87dbbcf7a936cce550b2b90b1a8d3383992ae1d"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-argv-input-definition.json",
+          "sha256": "b33012eb23fbd7bb9d76e24725438bb9d7b7262dabae0ea9ff2e1aabcebd25ba"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-command-definition.json",
+          "sha256": "2506bef710eae88eee15699267041bc401f4ec4c36db657c1bd138a2c73e9344"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-command-dispatch-keywords.json",
+          "sha256": "3448ea1fbf1d3587ec4cecf13c5344d904d236fb5ed353f02b92dba656863467"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-execution-implementation.json",
+          "sha256": "ab96c63516458fc3ea3dd08a690e3a7ecc541f7799a8bccc4b9fcef913453e19"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-input-definition-definition.json",
+          "sha256": "f63b2c870bcb059cd3c2ee91be671ce209eb5bc44f59123a10834b720c735b20"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-interaction-concept.json",
+          "sha256": "fb74cb153bc20fbe0bd3b99bd6bf76c7a40d489f804c984cc625b7197b7ff2f6"
+        },
+        {
+          "path": "symfony-console/codebase-memory/repeat-1/symfony-console-question-helper-definition.json",
+          "sha256": "ec9d190dfbc5578c1e2eddd57fa3e19488bf9216fa947b7f8b849ef44d030ee2"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-application-definition.json",
+          "sha256": "bcf9de96660883f38887c63706fc5a02e45dd2870a6e153086d2def3ab092a5e"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-argument-parsing-keywords.json",
+          "sha256": "dfd0b9a0d09ab39422ebbd380b4af42899d07179798781788ecebe63598a84f8"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-argv-input-definition.json",
+          "sha256": "438ee69a5110cb4a8d0f7ec3359fa6382c53bb3421b69bc4949de53842e1e8a9"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-command-definition.json",
+          "sha256": "4a3e0c9689cd9d24820f41b42d6e2071b4ce31f20ebd547ebab9798f19fc4160"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-command-dispatch-keywords.json",
+          "sha256": "996053679953af1251e53c9f52f8b3bf3e05096573d1b4586d994309b2b56cdc"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-execution-implementation.json",
+          "sha256": "bd29db6274e38ab7242cedb5d2052b27739aebc172ca9c195dd5a4b8d2e1f655"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-input-definition-definition.json",
+          "sha256": "a571f629f3309e0a85b946b61ae6dc5cc55679c1d14dbb0c9dd11bacb4d9d8f8"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-interaction-concept.json",
+          "sha256": "0aa465daa482b1dd9da774459360d5980654971ef669f50f890818e379b1254e"
+        },
+        {
+          "path": "symfony-console/codegraph/repeat-1/symfony-console-question-helper-definition.json",
+          "sha256": "245429fadec3f12a0d8b50b109339c38f26dee27202e6c47b6f4cfd71500f7d1"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-application-definition.json",
+          "sha256": "db07e89f94fe24f0ad4116ac438bdfd7dbdd8b6fdb37c4f22e590e3670cef583"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-argument-parsing-keywords.json",
+          "sha256": "46971f4cb050491451b03a0fb88553e000065a2f5e4dc1590e197754f06eea6e"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-argv-input-definition.json",
+          "sha256": "d8964342f3644982f6b22bbf78f2f3fad67e5cefec7713ee46e3bc015f5c5a61"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-command-definition.json",
+          "sha256": "e0ecfb65c355c494d4ae6b27b4934fb9b4ab51e1d5b5f2257eb45ae022750ccd"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-command-dispatch-keywords.json",
+          "sha256": "c6dd17e302eca6d6e0f8a5a8b926735c55afb69420391ff79001b6dbdac6da60"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-execution-implementation.json",
+          "sha256": "eea35042707035ee6467aa658f620ca2cb6bdf59f1da2150d38c8e5f334db46e"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-input-definition-definition.json",
+          "sha256": "c6490ab05825435e97291f3e3f895777876907b70ca5421b9bd957bf15e0be25"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-interaction-concept.json",
+          "sha256": "efcd2056d168a317ad948a55f2f026b92ddb95e0a666d4c3fe63e22f72c36863"
+        },
+        {
+          "path": "symfony-console/grepai/repeat-1/symfony-console-question-helper-definition.json",
+          "sha256": "5705e106dfd01f3de084ebf48ae05cdfd49cd9d56796c27c1fdaa6fd0a5e2f18"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-application-definition.json",
+          "sha256": "615c77a393575c8b47dd8181e00b18dd4eec3b164cc1b59ac86b4b53c62a5e38"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-argument-parsing-keywords.json",
+          "sha256": "f3bb35ed58b18be357eb894b804fdc8a8e171c1ec424507a26d7ddf5de4ecc6a"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-argv-input-definition.json",
+          "sha256": "63733916de0211722a21a4efb5ac9668c430bc3e891d8d8199aec6038bb9473d"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-command-definition.json",
+          "sha256": "a08209c207484078ee1d4b17c9aca041b07b88c6fe34871c949e06395e516fdc"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-command-dispatch-keywords.json",
+          "sha256": "1c79416a3e5447330162971c8b9ca2d5974b19123b95719823e172fbdebdbdcc"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-execution-implementation.json",
+          "sha256": "df5b54a06db0405a49fe6397beebf09e90dbb0e2bbb7160b824779c936ec1c10"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-input-definition-definition.json",
+          "sha256": "fe82e214e7e8abab756cf89624f1fd4cdbb0b5dc2ec7935afa13283ff780d54e"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-interaction-concept.json",
+          "sha256": "72dff0a280b8576d75f1319a44f717322b9c7f5b5d1ee941331770729f37803b"
+        },
+        {
+          "path": "symfony-console/ocbi-hybrid/repeat-1/symfony-console-question-helper-definition.json",
+          "sha256": "f06a131d21ce93dcbc7d7ba1a4b5b076f8bd2257bffea7521e068df166000791"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-application-definition.json",
+          "sha256": "e3e090ffd7719aaaa53df214b303f2841b1a1a49aeae757fce31db340f65f167"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-argument-parsing-keywords.json",
+          "sha256": "3eaf611490724ec8b1cf345c80ac95d687cdbcd9d3f9234b53663b22b5bca96c"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-argv-input-definition.json",
+          "sha256": "07e7ff14160da66914e094951d0f1246f7a0db0bd39590f054c2f2ea0b833cb9"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-command-definition.json",
+          "sha256": "f8c12e1c653231f42f3bd726ac6bbf98fdc178996a4ed89ca14f26fb393b8cb7"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-command-dispatch-keywords.json",
+          "sha256": "c03b2aa063a33ad1e5cfd079c377682054690f530e29a9cb247ce60921d2869f"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-execution-implementation.json",
+          "sha256": "7ba1848eabb52b8653a992a38120d876d15d6691284ac94f0414708fee8de85c"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-input-definition-definition.json",
+          "sha256": "1ace6bb39c4227a7535649ea1f801fa90900de29a2f0c86d48c7fd031d6ff849"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-interaction-concept.json",
+          "sha256": "65420596da31f3da486248e6cfd2db71c855a0d96d63bb120b61fbec2aaaec34"
+        },
+        {
+          "path": "symfony-console/ocbi-structural/repeat-1/symfony-console-question-helper-definition.json",
+          "sha256": "3a2c07cc1977255fc997e80d9686c356a4f6857c9eab0cbfcbfdbd747c39365a"
+        }
+      ]
+    },
+    {
+      "runRoot": "sinatra-run",
+      "files": [
+        {
+          "path": "run.json",
+          "sha256": "fcde03f54b9ff2c3d1c24bc4f3fad128225eabf84786328a64dba27db1d612b7"
+        },
+        {
+          "path": "sinatra/inputs.json",
+          "sha256": "914926763e1c61ba672fcdfba7264d1e08a85583e1fdf24ccfed20c656cb7a85"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-content-security-policy-definition.json",
+          "sha256": "14218e3545108ae2e61ad8467c91e961e0a630a9277386d68643e18e82375cdb"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-development-errors-concept.json",
+          "sha256": "de3868c0bf35e6c7007c0c703f8f8d90bf7e8ee49a141cf4dbdb96957df916fc"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-frame-options-definition.json",
+          "sha256": "513808aff9abf2902c9e771bb520403ce611aa76686ff03e22c660aa15df6754"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-host-authorization-definition.json",
+          "sha256": "f8aa34a12903a691ba4d3cb1643ff5e3ff9d09e816c5309fcb5dcbc0a949775e"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-indifferent-hash-definition.json",
+          "sha256": "912dfd9a8917d93da5fb7ac74c9affd228360fff83ef1aab37121a26328cf2fb"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-not-found-definition.json",
+          "sha256": "064732233cd74df81c3cd473e230e4c8e6a839c4409f2c6a16dfbf6282238166"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-protection-concept.json",
+          "sha256": "df12aa131d8df93cc809ae725663288c4ef25bf9a4f7d19d46fb2f3b4c58adbd"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-protection-headers-keywords.json",
+          "sha256": "8e4911c81f4c7a3d78eef9545d1d7cd5d484ba5fa971ed0eff30d2e0269d8c75"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-reloader-implementation.json",
+          "sha256": "2c3a7f6abdfda916f8370874c51641bd7690319edde3a77ee30698c77778887e"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-reloader-keywords.json",
+          "sha256": "f07d7c55a300600aa27bc29c24b87623de06fe6e57ee2965118c98afba9d5991"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-reloader-watcher-definition.json",
+          "sha256": "230c03a6fae26eee154594e8516e436e57f48cef05b8af872fe64cfabea1ced9"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-response-rendering-keywords.json",
+          "sha256": "cae5fa3ece6321e9c64da400a601ef777548cdd0d2405f785188d7d5453771b5"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-route-dispatch-keywords.json",
+          "sha256": "7d794483b62b0a6ecfe8a3ca22ffd2535d84260a7ab3cfe4a5ec8875cb6f5b50"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-route-request-implementation.json",
+          "sha256": "de73f722791675cb9693eae0a29125475235d89b4a3d8e1a69802d9fb3251e77"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-runner-definition.json",
+          "sha256": "21a3893e5e23c2ef0914668a4320f90f9ae6c500ab9f66d80699f6d6751703f0"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-session-hijacking-definition.json",
+          "sha256": "8dca9dd0ffda55a7f56bc23d7ed8008a4294d35a6eb7d68fe234c66f47af7b3c"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-session-security-concept.json",
+          "sha256": "79fe3f39490c1a1821aba841149e9cfe501c4caeabe428b391e6cb514c8b83b2"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-show-exceptions-definition.json",
+          "sha256": "04110115d38fee83e803bd6a00458c8d1247b6b5dfce745699a77bd179c02e14"
+        },
+        {
+          "path": "sinatra/codebase-memory/repeat-1/sinatra-templates-definition.json",
+          "sha256": "fe19a7b0ba591553caba42cf80827d7a97d1f006333f88345428c5a1d019ffc4"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-content-security-policy-definition.json",
+          "sha256": "a87c7925a7161635666765ceaaf97ff488808e3096e73b781b68965e1473c4f5"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-development-errors-concept.json",
+          "sha256": "86ff51d9eebbe52a0b4e3fca31ac2e485cc10d05080041a90bdb3d21de937174"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-frame-options-definition.json",
+          "sha256": "2d14515ca7d11b987e610373eacfc78a93459e7f006020e6e3b1d3d3629b506a"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-host-authorization-definition.json",
+          "sha256": "543e2e042882f05792b56c12bd4a5f926fb70283284d9a01d2a00baa8e14ae42"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-indifferent-hash-definition.json",
+          "sha256": "9f93b0e010066cf3fc41b1909ae917ecdcc2457e6d7ea7746ede068e413cf96d"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-not-found-definition.json",
+          "sha256": "6d9966622c8687ad8fd75c50cf2ac30daaace227bcac1310eda309621b7ad058"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-protection-concept.json",
+          "sha256": "921b4d6eaa7f04e758ae2cbc7a011caee382409b1833c3ed09f70d06bb2da5b9"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-protection-headers-keywords.json",
+          "sha256": "94f7bfcad3618f5760a2704f926ee4d605af18f46dac2576c76802307f89a2bb"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-reloader-implementation.json",
+          "sha256": "38f89c446aea438022e3769bc2722952b0b371a8ddbc8d3fd15eac1e434f8fc8"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-reloader-keywords.json",
+          "sha256": "b37416247fea714434eb9704d1b83130361174ec88af687d036687f31c0569a0"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-reloader-watcher-definition.json",
+          "sha256": "6667ec8b2c9c5bdf224bebda31095c223d5f4c5250ee08706d9d512447acde74"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-response-rendering-keywords.json",
+          "sha256": "6f7a5d700a90f1fbdd3d913bebccc1644145a86845be9908779ba1249d6a08e5"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-route-dispatch-keywords.json",
+          "sha256": "b22726e5af00cfa6cdf4e6f7fffec21f8a35a2e3b350549b8f1c86aba37d82c1"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-route-request-implementation.json",
+          "sha256": "ab2c9fe88197752325d550c464d2f7d73e4080bc30c79e5adb37d4b18837bd51"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-runner-definition.json",
+          "sha256": "be0a00453533b94dc6507f23db07889c50c2c3414c55513f49fce25058a6d267"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-session-hijacking-definition.json",
+          "sha256": "c1b2b92e40ae08a26fcd7bd90d4dfc7377d15d0041948cabaac37d3133da202f"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-session-security-concept.json",
+          "sha256": "f2587012764881b1f9e518b83568eb2c207bfc1a617528a8d0ed63e75df33052"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-show-exceptions-definition.json",
+          "sha256": "f2a482e8a9a22f73c891bc1227a0e224a1c689fc157993fa760a6bd8c0f344b3"
+        },
+        {
+          "path": "sinatra/codegraph/repeat-1/sinatra-templates-definition.json",
+          "sha256": "431bb752bc4a06b9e66e620a29e43bc5681f1d0b66898f2e8323b01733acca77"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-content-security-policy-definition.json",
+          "sha256": "e0ad935f68d130b0efde08c0250477dcd51d18dd06057185b1c509a1a6668699"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-development-errors-concept.json",
+          "sha256": "22855fd9745e9b40844efaf5fbfe4de519e24e3680fec4a21d4f71f78c67cec6"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-frame-options-definition.json",
+          "sha256": "e42368ba37a40ab8f81534d2c85f4099e2244e0320ea74a62d3376a1e59c0a43"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-host-authorization-definition.json",
+          "sha256": "6753264beaa496cb3a115188bd01e79d694cebbba3b5871e2f6d0c4492a6feb8"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-indifferent-hash-definition.json",
+          "sha256": "5d16902ccd279ac7fdbb973fae719b2bff91f85ddf1456ad23cb03af081bda32"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-not-found-definition.json",
+          "sha256": "7e563eae50a3d7b077522926b4f6d071087778af3f884e18d7e51324302cb6bf"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-protection-concept.json",
+          "sha256": "002f2cb37fa2e805f51ca9f32411120942172740a1e662718fb82fea76606419"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-protection-headers-keywords.json",
+          "sha256": "5e2f56a022199b5554b6cdccb1b5fc07a3c57bbdd721c31a963d860ef4265270"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-reloader-implementation.json",
+          "sha256": "9cdaa4cbf03407b701336211135b17b28d49d1b2a194c65253594f9af73270d1"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-reloader-keywords.json",
+          "sha256": "6f0bbdbe0245939f5bb73f767a6a9b6d9000f77bc90eb1a6e12764455713d86f"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-reloader-watcher-definition.json",
+          "sha256": "99824c41fb6935702bdb5ce2676e76177d859ff346c9f6245fd720c8e67832d2"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-response-rendering-keywords.json",
+          "sha256": "fd4fc7318885dbfd0d59a9540b8973b37ad59c8fa53c36f81bc5ec6ebca99000"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-route-dispatch-keywords.json",
+          "sha256": "04c58931dcbf2fa732f9fecdc76c009c0a2442c7fc25f1b2c74a93bdfd615beb"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-route-request-implementation.json",
+          "sha256": "15098dd7d6438ed133fab4b6594085a16b4c2b50dbe5c54512d5e7e301fdb808"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-runner-definition.json",
+          "sha256": "d07c6019be6ed74ab946f60e2efed948644e1f6ec033d393670cfeeea83a3d8d"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-session-hijacking-definition.json",
+          "sha256": "9edac9bdf6ecf74c8181300e4d50039aa10738e60c2fa2f69706fa98b69b77a5"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-session-security-concept.json",
+          "sha256": "e41cbd2d46953a3201690330ab929a207eebe07f425b8ca39c2d0b968b491ea9"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-show-exceptions-definition.json",
+          "sha256": "80de32de2ea7fc55a239096ac5b67622885394d47ee05e6798baeb1e5d38021c"
+        },
+        {
+          "path": "sinatra/grepai/repeat-1/sinatra-templates-definition.json",
+          "sha256": "8e7434e961023dc5a215d3429047928926f77759bd0004219178b2779328073f"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-content-security-policy-definition.json",
+          "sha256": "4cd49b0bbe38e34e33a3fad90970c94caeb4336a0c54ccfbb2d2b3df016a3764"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-development-errors-concept.json",
+          "sha256": "25803102539e2c2177bd616d61231439d15a0d353e03642315d7b31ea83752df"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-frame-options-definition.json",
+          "sha256": "bd8c440cba5139b5194eff619478bdfe9e85f953aec5a649cc74c99384aa168e"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-host-authorization-definition.json",
+          "sha256": "640ea0e5766de07a534b07bd077bf94d8139ba458c10032632d2e2559637fd49"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-indifferent-hash-definition.json",
+          "sha256": "76083dd8de64ba4396128da93bb4693ea6ad2bd83030ea10b3bc27e5a3844e30"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-not-found-definition.json",
+          "sha256": "567d9313c28086cc392eaa33b732b955a9e8822f5ae8bbc3fc766c5a6ea25bc0"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-protection-concept.json",
+          "sha256": "25f1294a968b1660aee11646798d23f31eaa221f671a82d2157a87440b48fedc"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-protection-headers-keywords.json",
+          "sha256": "2b4ee9cd7d67848a930d5c11b024c7210555d61aac8d3d411ce26288dae66311"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-reloader-implementation.json",
+          "sha256": "6f3d04bf0fe606db80b91bee3774c7522dc22c28b5bad008c7970e7b017a17a2"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-reloader-keywords.json",
+          "sha256": "0b52dab73ddf527870bd9c34075c1a98c9375861bd721072e83f706b7bb25e74"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-reloader-watcher-definition.json",
+          "sha256": "a2a806f6e7762f255e39db29df25c1c04f755a52018dd696ccbc26022c533ebb"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-response-rendering-keywords.json",
+          "sha256": "fe383a31cac20b11ac838c7b08ab456230ece7b010ce165c038d1f45e4ba50ce"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-route-dispatch-keywords.json",
+          "sha256": "caef9e6135d7f4f337b7c5693bc11ca74ac8cd7e5eb78f6d4d9d239c0170773a"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-route-request-implementation.json",
+          "sha256": "3baf8a72fcbb08beb8a54cc18fc4a7688259673c8b1bd89aba8508527371497c"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-runner-definition.json",
+          "sha256": "d90e9c5f3794c69b0b8bf3379b3a4505c890b1c5a7fff8be2f3afa2b3e869ba0"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-session-hijacking-definition.json",
+          "sha256": "ee1907331db2f0024a43c0dd3c748a4118995f47b78a7fd071a380d7945a5739"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-session-security-concept.json",
+          "sha256": "c9cb3b8d7406d5745875183a72ccf74b2e71203a5a7f2100ce133079437613f5"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-show-exceptions-definition.json",
+          "sha256": "47ad6d917a5487ef529abf45a34f7e963ba93549fe49700990e399deb1ee1248"
+        },
+        {
+          "path": "sinatra/ocbi-hybrid/repeat-1/sinatra-templates-definition.json",
+          "sha256": "c17fcd2cc92c3fc078c8f4294b16f4fedab5bba4073e8a2709da7578152aaf3c"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-content-security-policy-definition.json",
+          "sha256": "b6ee2d0ff7975bc18c90cbf9f8a92b4a97b74b59638e785b3cc304e1708b5ef3"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-development-errors-concept.json",
+          "sha256": "2da5de9657ccbf5489115858935f319abc5d288c7c70ab63586d06e042d0efbf"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-frame-options-definition.json",
+          "sha256": "2ffff1d93e8bf6e0f8db8283c5240f0fb5fd7d8defa2bc62860a57342a42b31f"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-host-authorization-definition.json",
+          "sha256": "b7b4998bad96ed1415e6d6cb93f17dee580e01679b6c83a053a04f3d0664895e"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-indifferent-hash-definition.json",
+          "sha256": "623269d432e058a92e6608c4b7b43b5aba660af154de703bb811f69ae4e53c71"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-not-found-definition.json",
+          "sha256": "cc9f768838838bb1bdeb0ada46d840fe835dba38e25902c4c9fefc93208df3d5"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-protection-concept.json",
+          "sha256": "44c223bd6285d821f7007f1e20545ead53d35c777cbb655be52c8debe4df4245"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-protection-headers-keywords.json",
+          "sha256": "3f7a3a4745c449c19dcbf1014533ec6a4bec678d0b1b764eafaeabc3813fb710"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-reloader-implementation.json",
+          "sha256": "92561801b5083e05b15b655af5cb5e3b512bd99f55d024f81c465adf620a07f6"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-reloader-keywords.json",
+          "sha256": "13d88ddf1bc555d87fb028bf2b5e506124fff946fe3160270d9dec4f89f128ca"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-reloader-watcher-definition.json",
+          "sha256": "85b8f19025817b851bb8e900df6564901cd09e4d8bc4b1282b037b5934ded217"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-response-rendering-keywords.json",
+          "sha256": "62f3d11deab9b46cceab6dcbf7f080da93d3bf95177da72981b26c5f15c654e5"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-route-dispatch-keywords.json",
+          "sha256": "fd1609a526ce826587127428f9881b6935fedc13aa435ddcb71da7542f8e8cff"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-route-request-implementation.json",
+          "sha256": "847bca6fee80fdfca326cd5de21217b2cd53b80bd1e9ea0bdda3ed6bec61f668"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-runner-definition.json",
+          "sha256": "792ce6b7362430f009bd095997420a0df41e2138522618740dd5a62ff453b0a5"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-session-hijacking-definition.json",
+          "sha256": "ff5c666594dd6a0c7d35d4a473df8f98e56d8c0be31949a9a8a6f701b48b27b1"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-session-security-concept.json",
+          "sha256": "c95b1ae24a875638ac2540ca8f1f39fdd8cca4d47df1ab1b8f0d01c764588d73"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-show-exceptions-definition.json",
+          "sha256": "3bdfd5560355a4e96476a61f180126d0543f002f708ad6e6113c07962f598c03"
+        },
+        {
+          "path": "sinatra/ocbi-structural/repeat-1/sinatra-templates-definition.json",
+          "sha256": "55bf80a24beb4f4dacc65a4d514e86b514772f3f24d89deaf41cf99b3b86b74b"
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "Development cohort previously exposed to tuning; not a blind holdout.",
+    "No new retrieval, indexing, or model run; source artifacts and older participant versions reused.",
+    "Updated advertised rival versions were inspected, not evaluated.",
+    "Original corrected codebase-memory parsing artifacts reused uniformly across nine repositories.",
+    "Original startup/interface latency mismatch and failed coding pilot remain unresolved.",
+    "Raw artifacts remain in the preserved local study root; hashes alone do not replace those artifacts."
+  ],
+  "verification": {
+    "targetedTests": "39 passed across competitive-report and validate-cross-repo-cohort",
+    "targetedEslint": "passed",
+    "repositoryTypecheck": "passed",
+    "expandedScriptsTypecheck": "blocked by three TS2740 errors in unchanged scripts/cross-repo-benchmark.ts at 755, 1820, 1882",
+    "unchangedCrossRepoBenchmarkSha256": "2826668029d1148468bea8263abe10663ee1506dd29eeaa22c3fe3e091e02e8a"
+  },
+  "syntheticGateSmoke": {
+    "notice": "Synthetic local fixture and approval exercise software integrity only; not independent audit evidence.",
+    "oldValidatorSourceCommit": "261f5d0a9ac9b4ebb758326136aed0737b36b372",
+    "oldValidatorSha256": "49c15c5264b2421d1696b705ab5ff795382999df1db2edfad0477db0613a5394",
+    "finalValidatorSha256": "21573ac7331ef3422a50814f4eef00624a82938c74cdc636cc667e5e8b191667",
+    "results": [
+      {
+        "case": "before-initial-verifier-no-op",
+        "command": [
+          "node_modules/.bin/tsx",
+          "${SMOKE}/old/validator.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json",
+          "--work-dir",
+          "${SMOKE}/before-tampered-work"
+        ],
+        "exit": 0,
+        "stdout": "",
+        "stderr": "",
+        "workExistsAfter": false,
+        "verifierError": "macOS /tmp symlink path did not satisfy historical import.meta entry-point guard; exit0 alone was not acceptance proof."
+      },
+      {
+        "case": "after-tampered",
+        "command": [
+          "node_modules/.bin/tsx",
+          "scripts/validate-cross-repo-cohort.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json",
+          "--work-dir",
+          "${SMOKE}/after-tampered-work",
+          "--novelty-evidence",
+          "${SMOKE}/cohort/evidence.txt"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Cross-repo source evidence validation failed\nCohort: \nChecked repositories: 0\n  [fail] bootstrap\n    - Study source acquisition blocked: evidenceSha256 does not match novelty evidence\n",
+        "workExistsAfter": false
+      },
+      {
+        "case": "before-tampered-corrected-verifier",
+        "command": [
+          "node_modules/.bin/tsx",
+          "${SMOKE_REALPATH}/old/validator.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json",
+          "--work-dir",
+          "${SMOKE}/before-tampered-work"
+        ],
+        "exit": 0,
+        "stdout": "Cross-repo source evidence validation complete: 1/1 repositories passed.\nAll repository definition symbol checks passed.\n",
+        "stderr": "",
+        "workExistsAfter": true
+      },
+      {
+        "case": "after-valid-exact-bytes",
+        "command": [
+          "node_modules/.bin/tsx",
+          "scripts/validate-cross-repo-cohort.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json",
+          "--work-dir",
+          "${SMOKE}/after-valid-work",
+          "--novelty-evidence",
+          "${SMOKE}/cohort/evidence.txt"
+        ],
+        "exit": 0,
+        "stdout": "Cross-repo source evidence validation complete: 1/1 repositories passed.\nAll repository definition symbol checks passed.\n",
+        "stderr": "",
+        "workExistsAfter": true
+      },
+      {
+        "case": "after-unreadable",
+        "command": [
+          "node_modules/.bin/tsx",
+          "scripts/validate-cross-repo-cohort.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--work-dir",
+          "${SMOKE}/after-unreadable-work",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json",
+          "--novelty-evidence",
+          "${SMOKE}/cohort"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Cross-repo source evidence validation failed\nCohort: \nChecked repositories: 0\n  [fail] bootstrap\n    - Cannot read novelty evidence ${SMOKE}/cohort: EISDIR: illegal operation on a directory, read\n",
+        "workExistsAfter": false
+      },
+      {
+        "case": "after-unpaired",
+        "command": [
+          "node_modules/.bin/tsx",
+          "scripts/validate-cross-repo-cohort.ts",
+          "--cohort-dir",
+          "${SMOKE}/cohort",
+          "--work-dir",
+          "${SMOKE}/after-unpaired-work",
+          "--study-approval",
+          "${SMOKE}/cohort/approval.json"
+        ],
+        "exit": 1,
+        "stdout": "",
+        "stderr": "Cross-repo source evidence validation failed\nCohort: \nChecked repositories: 0\n  [fail] bootstrap\n    - --study-approval requires --novelty-evidence\n",
+        "workExistsAfter": false
+      }
+    ]
+  },
+  "pathNormalization": {
+    "notice": "Recorded commands and stderr are path-normalized representations of actual executions, not new executions. Content digests refer to original unmodified artifacts.",
+    "repositoryPaths": "Relative to repository root.",
+    "STUDY": "Absolute path to the preserved September study directory; results-corrected is beneath it.",
+    "SMOKE": "Original temporary smoke workspace path; removed after verification.",
+    "SMOKE_REALPATH": "Canonical macOS realpath of SMOKE, retaining the distinction needed to explain the initial entry-point no-op."
+  }
+}

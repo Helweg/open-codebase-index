@@ -120,6 +120,174 @@ describe("competitive report", () => {
     });
   });
 
+  it("exposes per-task wins, losses, ties, paths, and all existing metric deltas on both tracks", () => {
+    const rows = completeRows();
+    for (const candidate of [...rows]) {
+      const queryId = `natural-${candidate.queryId}`;
+      rows.push({
+        ...candidate,
+        queryId,
+        track: "natural-language",
+        score: { ...candidate.score, queryId },
+      });
+    }
+    rows[0].score.rankedPaths = ["src/baseline.ts", "src/shared.ts"];
+    rows[0].score.metrics = { hitAt1: 0, hitAt5: 1, mrrAt10: 0.5, ndcgAt10: 0.75 };
+    rows[3].score.rankedPaths = ["src/rival.ts"];
+    const report = buildCompetitiveReport(rows, reportOptions(rows, 10));
+    const reversed = buildCompetitiveReport([...rows].reverse(), reportOptions(rows, 10));
+    expect(reversed.taskComparisons).toEqual(report.taskComparisons);
+    expect(reversed.comparisonCounts).toEqual(report.comparisonCounts);
+
+    for (const rival of rivals) {
+      for (const track of ["explicit-symbol", "natural-language"] as const) {
+        const comparisons = report.taskComparisons.filter((comparison) => comparison.rival === rival && comparison.track === track);
+        expect(comparisons.map((comparison) => comparison.hitAt5Outcome)).toEqual(["win", "tie", "loss"]);
+        expect(report.comparisonCounts.find((counts) => counts.rival === rival && counts.track === track)).toMatchObject({
+          queryCount: 3, supportedPairedCount: 3, winCount: 1, lossCount: 1, tieCount: 1, unsupportedCount: 0,
+          baselineErrorCount: 0, rivalErrorCount: 0, operationalErrorPairCount: 0,
+        });
+      }
+    }
+    expect(report.taskComparisons.find((comparison) => comparison.rival === "codegraph" && comparison.queryId === "q1")).toEqual({
+      repository: "repo-a",
+      queryId: "q1",
+      track: "explicit-symbol",
+      baseline: "ocbi-hybrid",
+      rival: "codegraph",
+      baselineResult: {
+        status: "success", rankedPaths: ["src/baseline.ts", "src/shared.ts"],
+        metrics: { hitAt1: 0, hitAt5: 1, mrrAt10: 0.5, ndcgAt10: 0.75 }, retrievalOutcome: "hit-at-5",
+      },
+      rivalResult: {
+        status: "success", rankedPaths: ["src/rival.ts"],
+        metrics: { hitAt1: 0, hitAt5: 0, mrrAt10: 0, ndcgAt10: 0 }, retrievalOutcome: "miss-at-5",
+      },
+      metricDeltas: { hitAt1: 0, hitAt5: 1, mrrAt10: 0.5, ndcgAt10: 0.75 },
+      hitAt5Outcome: "win",
+    });
+  });
+
+  it("separates unsupported pairs and operational errors from successful misses", () => {
+    const rows = completeRows();
+    const tasks = [
+      { id: "baseline-unsupported", baseline: "unsupported", rival: "success", baselineHit: 0, rivalHit: 1 },
+      { id: "rival-unsupported", baseline: "success", rival: "unsupported", baselineHit: 1, rivalHit: 0 },
+      { id: "error-vs-miss", baseline: "error", rival: "success", baselineHit: 0, rivalHit: 0 },
+      { id: "hit-vs-error", baseline: "success", rival: "error", baselineHit: 1, rivalHit: 0 },
+      { id: "error-vs-hit", baseline: "error", rival: "success", baselineHit: 0, rivalHit: 1 },
+      { id: "unsupported-vs-error", baseline: "unsupported", rival: "error", baselineHit: 0, rivalHit: 0 },
+    ] as const;
+    for (const task of tasks) {
+      rows.push(row("repo-a", "ocbi-hybrid", task.id, task.baselineHit, "natural-language", task.baseline));
+      for (const rival of rivals) {
+        rows.push(row("repo-a", rival, task.id, task.rivalHit, "natural-language", task.rival));
+      }
+    }
+    const report = buildCompetitiveReport(rows, reportOptions(rows, 10));
+    const comparisons = new Map(report.taskComparisons
+      .filter((comparison) => comparison.rival === "codegraph" && comparison.track === "natural-language")
+      .map((comparison) => [comparison.queryId, comparison]));
+
+    expect(comparisons.get("baseline-unsupported")).toMatchObject({
+      hitAt5Outcome: "unsupported", metricDeltas: null,
+      baselineResult: { status: "unsupported", metrics: null, retrievalOutcome: "unsupported" },
+      rivalResult: { status: "success", metrics: { hitAt5: 1 }, retrievalOutcome: "hit-at-5" },
+    });
+    expect(comparisons.get("rival-unsupported")).toMatchObject({
+      hitAt5Outcome: "unsupported", metricDeltas: null,
+      baselineResult: { status: "success", metrics: { hitAt5: 1 } }, rivalResult: { status: "unsupported", metrics: null },
+    });
+    expect(comparisons.get("error-vs-miss")).toMatchObject({
+      hitAt5Outcome: "tie", metricDeltas: { hitAt5: 0 },
+      baselineResult: { status: "error", metrics: { hitAt5: 0 }, retrievalOutcome: "operational-error" },
+      rivalResult: { status: "success", metrics: { hitAt5: 0 }, retrievalOutcome: "miss-at-5" },
+    });
+    expect(comparisons.get("hit-vs-error")).toMatchObject({
+      hitAt5Outcome: "win", rivalResult: { status: "error", retrievalOutcome: "operational-error" },
+    });
+    expect(comparisons.get("error-vs-hit")).toMatchObject({
+      hitAt5Outcome: "loss", baselineResult: { status: "error", retrievalOutcome: "operational-error" },
+    });
+    expect(comparisons.get("unsupported-vs-error")).toMatchObject({
+      hitAt5Outcome: "unsupported", metricDeltas: null, rivalResult: { status: "error", retrievalOutcome: "operational-error" },
+    });
+    expect(report.comparisonCounts.filter((counts) => counts.track === "natural-language")).toEqual(
+      [...rivals].sort().map((rival) => ({
+        baseline: "ocbi-hybrid", rival, track: "natural-language",
+        queryCount: 6, supportedPairedCount: 3, winCount: 1, lossCount: 1, tieCount: 1, unsupportedCount: 3,
+        baselineErrorCount: 2, rivalErrorCount: 2, operationalErrorPairCount: 4,
+      })),
+    );
+  });
+
+  it("keeps explicit-symbol operational errors in supported comparisons without calling them retrieval misses", () => {
+    const rows = completeRows();
+    rows[0].score = score("q1", 0, "error");
+    const report = buildCompetitiveReport(rows, reportOptions(rows, 10));
+    expect(report.taskComparisons.find((comparison) => comparison.rival === "codegraph" && comparison.queryId === "q1")).toMatchObject({
+      hitAt5Outcome: "tie", baselineResult: { status: "error", retrievalOutcome: "operational-error" },
+      rivalResult: { status: "success", retrievalOutcome: "miss-at-5" },
+    });
+    expect(report.comparisonCounts.find((counts) => counts.rival === "codegraph" && counts.track === "explicit-symbol")).toMatchObject({
+      supportedPairedCount: 3, winCount: 0, lossCount: 1, tieCount: 2, unsupportedCount: 0, operationalErrorPairCount: 1,
+    });
+    expect(report.primaryPairs[0].queryCount).toBe(3);
+    expect(report.primaryPairs[0].queryWeightedHitAt5Delta).toBe(-1 / 3);
+  });
+
+  it("pairs the same query ID separately in different repositories and sorts diagnostics independently of input order", () => {
+    const rows = completeRows().map((candidate) => candidate.queryId === "q3"
+      ? { ...candidate, queryId: "q1", score: { ...candidate.score, queryId: "q1" } }
+      : candidate);
+    const options = reportOptions(rows, 10);
+    const report = buildCompetitiveReport(rows, options);
+    const reversed = buildCompetitiveReport([...rows].reverse(), { ...options,
+      expectedTasks: [...options.expectedTasks].reverse(), conditions: [...options.conditions].reverse() });
+
+    expect(reversed.taskComparisons).toEqual(report.taskComparisons);
+    expect(reversed.comparisonCounts).toEqual(report.comparisonCounts);
+    expect(report.taskComparisons.filter((comparison) => comparison.rival === "codegraph" && comparison.queryId === "q1")
+      .map(({ repository, hitAt5Outcome }) => ({ repository, hitAt5Outcome }))).toEqual([
+      { repository: "repo-a", hitAt5Outcome: "win" }, { repository: "repo-b", hitAt5Outcome: "loss" },
+    ]);
+    expect(report.taskComparisons.map(({ rival, repository, queryId }) => `${rival}/${repository}/${queryId}`)).toEqual([
+      "codebase-memory/repo-a/q1", "codebase-memory/repo-a/q2", "codebase-memory/repo-b/q1",
+      "codegraph/repo-a/q1", "codegraph/repo-a/q2", "codegraph/repo-b/q1",
+      "grepai/repo-a/q1", "grepai/repo-a/q2", "grepai/repo-b/q1",
+    ]);
+  });
+
+  it.each(["success", "error"] as const)("rejects missing metrics for supported %s rows instead of fabricating ties", (status) => {
+    const rows = completeRows();
+    rows[0].score = { queryId: "q1", status, rankedPaths: [] };
+    expect(() => buildCompetitiveReport(rows, reportOptions(rows, 10))).toThrow(/Missing supported benchmark metrics/);
+  });
+
+  it.each([
+    { metric: "hitAt5", value: undefined },
+    { metric: "hitAt1", value: 0.5 },
+    { metric: "mrrAt10", value: Number.NaN },
+    { metric: "ndcgAt10", value: Number.POSITIVE_INFINITY },
+    { metric: "ndcgAt10", value: -0.1 },
+  ] as const)("rejects malformed consumed $metric metrics", ({ metric, value }) => {
+    const rows = completeRows();
+    rows[0].score.metrics = { ...rows[0].score.metrics!, [metric]: value } as NonNullable<CompetitiveQueryScore["metrics"]>;
+    expect(() => buildCompetitiveReport(rows, reportOptions(rows, 10))).toThrow(/Invalid benchmark metric/);
+  });
+
+  it("rejects nonzero error metrics rather than presenting an operational failure as a retrieval hit", () => {
+    const rows = completeRows();
+    rows[0].score = score("q1", 1, "error");
+    expect(() => buildCompetitiveReport(rows, reportOptions(rows, 10))).toThrow(/Invalid benchmark metric/);
+  });
+
+  it("rejects unsupported explicit-symbol primary rows instead of silently changing the frozen paired denominator", () => {
+    const rows = completeRows();
+    rows[0].score = score("q1", 0, "unsupported");
+    expect(() => buildCompetitiveReport(rows, reportOptions(rows, 10))).toThrow(/Unsupported row in frozen explicit-symbol primary track/);
+  });
+
   it("produces zero-width intervals when every paired result is tied", () => {
     const tied = [
       { repository: "a", delta: 0 },
