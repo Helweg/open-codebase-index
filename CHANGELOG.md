@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fresh-study evidence integrity**: Require paired study-approval and novelty-evidence paths, and verify the evidence file's exact-byte SHA-256 before creating a workspace or acquiring source. Preserve underlying errors when validation fails.
 - **Competitive CBM conformance**: Explicitly request JSON snippet output before parsing it, preserving exact symbol/path/source identity checks. Retain the original calibration failure and a separate corrected native-API smoke.
+- **Production source discovery**: Preserve legitimate builder/rebuild source directories and build-script filenames instead of excluding every path containing `build`. Keep delimited generated-build directories, dependency/cache/hidden guards, Git-ignore rules and explicit exclusions effective across indexing and watcher filters.
+- **Go receiver-method definitions**: Extract actual method names for value, pointer and generic receivers instead of return-type names or missing declarations. Upgrade the symbol-extractor marker so ordinary indexing repairs unchanged cached symbol/chunk catalogs without a forced rebuild.
 
 ## [0.35.3] - 2026-10-06
 

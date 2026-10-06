@@ -22,16 +22,27 @@ describe("path helpers", () => {
     expect(isHiddenPathSegment("src")).toBe(false);
   });
 
-  it("detects build path segments", () => {
-    expect(isBuildPathSegment("build")).toBe(true);
-    expect(isBuildPathSegment("cmake-build-debug")).toBe(true);
-    expect(isBuildPathSegment("src")).toBe(false);
+  it.each([
+    "build", "build-debug", "build_debug", "app-build", "_build",
+    "cmake-build-debug", "app-build_debug", "app_build-debug", "app_build_debug",
+    "BUILD", "CMake-BUILD-Debug",
+  ])("detects delimited build path segment %s", (segment) => {
+    expect(isBuildPathSegment(segment)).toBe(true);
+  });
+
+  it.each([
+    "src", "clap_builder", "builder", "rebuilding", "rebuild",
+    "build.gradle", "build.rs", "rebuild.ts", "app.build", "buildcache", "AppBuild",
+  ])("preserves non-build path segment %s", (segment) => {
+    expect(isBuildPathSegment(segment)).toBe(false);
   });
 
   it("detects filtered segments across a relative path", () => {
     expect(hasFilteredPathSegment(`src${path.sep}.git${path.sep}config`)).toBe(true);
     expect(hasFilteredPathSegment(`src${path.sep}cmake-build-debug${path.sep}index.ts`)).toBe(true);
     expect(hasFilteredPathSegment(`src${path.sep}watcher${path.sep}index.ts`)).toBe(false);
+    expect(hasFilteredPathSegment("clap_builder/src/build.rs", "/")).toBe(false);
+    expect(hasFilteredPathSegment("rebuild/build.gradle", "/")).toBe(false);
   });
 
   it("detects restricted OS directories in first path segment", () => {

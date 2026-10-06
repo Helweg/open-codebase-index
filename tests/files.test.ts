@@ -64,7 +64,7 @@ describe("files utilities", () => {
         includePatterns,
         excludePatterns,
         filter,
-      )).toBe(false);
+      )).toBe(true);
     });
 
     it("should exclude files matching exclude patterns", () => {
@@ -319,6 +319,89 @@ describe("files utilities", () => {
   });
 
   describe("collectFiles", () => {
+    it("preserves builder and rebuild sources under defaults without admitting generated or ignored directories", async () => {
+      const sources = [
+        "build.rs",
+        "build.gradle",
+        "clap_builder/src/lib.rs",
+        "packages/clap_builder/src/build.rs",
+        "builder/index.ts",
+        "rebuilding/index.ts",
+        "rebuild/index.ts",
+        "packages/rebuild/index.ts",
+      ];
+      const blockedDirectories = [
+        "build", "build-debug", "build_debug", "app-build", "_build",
+        "cmake-build-debug", "app-build_debug", "app_build-debug", "app_build_debug",
+        "packages/build", "packages/cmake-build-debug", "packages/BUILD_debug",
+        "node_modules/pkg", "vendor/pkg", "target", "dist", "coverage",
+        "__pycache__", ".next", ".hidden", "packages/.cache",
+      ];
+      const ignoredSource = "clap_builder/ignored-production/index.ts";
+      for (const relativePath of [
+        ...sources,
+        ...blockedDirectories.map((directory) => `${directory}/nested/output.ts`),
+        ignoredSource,
+      ]) {
+        const filePath = path.join(tempDir, relativePath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, "source");
+      }
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "clap_builder/ignored-production/\n");
+      const includePatterns = [...DEFAULT_INCLUDE, "**/*.gradle"];
+
+      const result = await collectFiles(tempDir, includePatterns, DEFAULT_EXCLUDE, 1048576);
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        sources.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+
+      const includeIgnoredResult = await collectFiles(
+        tempDir, includePatterns, DEFAULT_EXCLUDE, 1048576,
+        undefined, undefined, blockedDirectories.map((directory) => `${directory}/**`),
+      );
+      expect(includeIgnoredResult.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        sources.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+    });
+
+    it("shares builder and generated-directory eligibility between indexing and watching", () => {
+      fs.writeFileSync(path.join(tempDir, ".gitignore"), "clap_builder/ignored-production/\n");
+      const filter = createIgnoreFilter(tempDir);
+      const gitFilter = createGitIgnoreFilter(tempDir);
+      for (const purpose of ["index", "watch"] as const) {
+        for (const directory of ["clap_builder/src", "packages/builder", "rebuilding", "rebuild"]) {
+          expect(shouldTraverseDirectory(
+            path.join(tempDir, directory), tempDir, DEFAULT_EXCLUDE, filter, [], gitFilter, { purpose },
+          )).toBe(true);
+          expect(shouldIncludeFile(
+            path.join(tempDir, directory, "build.rs"), tempDir, DEFAULT_INCLUDE,
+            DEFAULT_EXCLUDE, filter, [], gitFilter, { purpose },
+          )).toBe(true);
+        }
+        for (const directory of [
+          "build", "build_debug", "app-build", "packages/cmake-build-debug",
+          "packages/app-build_debug", "packages/app_build-debug", "packages/app_build_debug",
+          "packages/BUILD_debug", "node_modules/pkg", "vendor/pkg", ".hidden", "packages/.cache",
+        ]) {
+          expect(shouldTraverseDirectory(
+            path.join(tempDir, directory), tempDir, DEFAULT_EXCLUDE, filter, ["**"], gitFilter, { purpose },
+          )).toBe(false);
+          expect(shouldIncludeFile(
+            path.join(tempDir, directory, "index.ts"), tempDir, DEFAULT_INCLUDE,
+            DEFAULT_EXCLUDE, filter, ["**"], gitFilter, { purpose },
+          )).toBe(false);
+        }
+        expect(shouldIncludeFile(
+          path.join(tempDir, "clap_builder/ignored-production/index.ts"), tempDir,
+          DEFAULT_INCLUDE, DEFAULT_EXCLUDE, filter, [], gitFilter, { purpose },
+        )).toBe(false);
+        expect(shouldIncludeFile(
+          path.join(tempDir, "rebuild/index.ts"), tempDir, DEFAULT_INCLUDE,
+          [...DEFAULT_EXCLUDE, "**/rebuild/**"], filter, ["**"], gitFilter, { purpose },
+        )).toBe(false);
+      }
+    });
+
     it("should discover root and nested reStructuredText files by default without weakening filters", async () => {
       fs.mkdirSync(path.join(tempDir, "docs", "nested"), { recursive: true });
       fs.mkdirSync(path.join(tempDir, "docs", "drafts"), { recursive: true });
@@ -632,11 +715,11 @@ describe("files utilities", () => {
     });
 
     it("collects selected build, vendor, hidden, and minified paths without their siblings", async () => {
-      for (const directory of ["AppBuild/src", "vendor", ".hidden"]) {
+      for (const directory of ["App-Build/src", "vendor", ".hidden"]) {
         fs.mkdirSync(path.join(tempDir, directory), { recursive: true });
       }
       const selected = [
-        "AppBuild/src/selected.ts",
+        "App-Build/src/selected.ts",
         "vendor/selected.ts",
         ".hidden/selected.ts",
         "selected.min.js",
@@ -645,7 +728,7 @@ describe("files utilities", () => {
         fs.writeFileSync(path.join(tempDir, relativePath), "selected");
       }
       for (const relativePath of [
-        "AppBuild/src/sibling.ts",
+        "App-Build/src/sibling.ts",
         "vendor/sibling.ts",
         ".hidden/sibling.ts",
         "sibling.min.js",

@@ -1004,6 +1004,7 @@ fn extract_name(
             || kind == "property_identifier"
             || kind == "property_name"
             || kind == "type_identifier"
+            || (kind == "field_identifier" && *language == Language::Go)
             || (kind == "constant" && *language == Language::Ruby)
             || kind == "namespace_identifier"
             || kind == "custom_operator"
