@@ -1,0 +1,880 @@
+{
+  "schemaVersion": 1,
+  "recordedAt": "2026-10-06T10:21:43.612913+00:00",
+  "classification": "development-only adapter-correction smoke; not scored comparative evidence",
+  "participant": "codebase-memory-mcp@0.11.0",
+  "change": "get_code_snippet explicitly requests format=json; exact identity/content validation unchanged",
+  "originalCalibrationArtifact": "current-participant-calibration.json",
+  "originalCalibrationArtifactSha256": "db88c314a7feeb8803183ccf26dad896eab079706163a1899e81c9c479ef47ce",
+  "beforeSourceCommit": "139608270fbb327e4dd56a0617dfda46cb1ba655",
+  "beforeSourceSha256": "6c37d89972c028e4e13ef62d63f006ee59a708a41db40e14c504c5fd676842f3",
+  "afterSourceSha256": "b647212bf1950b6aa64adcc10fa26ca0817822a8ad00e413369b44132e8feeb7",
+  "normalization": {
+    "notice": "Commands, nested API JSON strings and generated project identifiers are presentation-normalized; original-byte hashes refer to unmodified evidence.",
+    "WORK": "Owned temporary root, removed after capture.",
+    "PROJECT": "Repository checkout.",
+    "CBM_PROJECT": "Actual project identifier returned by index_repository; not a literal API input.",
+    "USER_HOME": "Host user home, including inherited PATH entries; not a literal API input."
+  },
+  "command": [
+    "${PROJECT}/node_modules/.bin/tsx",
+    "${WORK}/probe.mjs"
+  ],
+  "exit": 0,
+  "stderr": "",
+  "fixture": {
+    "package.json": "{\"name\":\"owned-calibration-fixture\",\"version\":\"1.0.0\",\"type\":\"module\",\"private\":true}",
+    ".gitignore": ".codegraph/\n.grepai/\n.opencode/\n",
+    "src/leaf.js": "export function calibrationLeaf(value) { return value + 7; }\n",
+    "src/entry.js": "import { calibrationLeaf } from './leaf.js';\nexport function calibrationEntry(value) { return calibrationLeaf(value); }\n",
+    "python_ops.py": "def calibrationPythonLeaf(value):\n    return value * 3\n\ndef calibrationPythonEntry(value):\n    return calibrationPythonLeaf(value)\n"
+  },
+  "attempts": 1,
+  "observations": {
+    "index": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"project\":\"${CBM_PROJECT}\",\"not_indexed_files_count\":0,\"skipped_count\":0,\"parse_partial_count\":0,\"parse_unusable_count\":0,\"nodes\":25,\"edges\":27,\"expected_nodes\":25,\"expected_edges\":27,\"adr_present\":false,\"adr_hint\":\"Project indexed. Consider creating an Architecture Decision Record: explore the codebase with get_architecture(aspects=['all']), then use manage_adr(mode='update') to persist architectural insights across sessions.\",\"artifact_present\":false,\"status\":\"indexed\"}"
+        }
+      ],
+      "structuredContent": {
+        "project": "${CBM_PROJECT}",
+        "not_indexed_files_count": 0,
+        "skipped_count": 0,
+        "parse_partial_count": 0,
+        "parse_unusable_count": 0,
+        "nodes": 25,
+        "edges": 27,
+        "expected_nodes": 25,
+        "expected_edges": 27,
+        "adr_present": false,
+        "adr_hint": "Project indexed. Consider creating an Architecture Decision Record: explore the codebase with get_architecture(aspects=['all']), then use manage_adr(mode='update') to persist architectural insights across sessions.",
+        "artifact_present": false,
+        "status": "indexed"
+      },
+      "isError": false
+    },
+    "results": [
+      {
+        "request": {
+          "operation": "definitions",
+          "subject": {
+            "path": "src/leaf.js",
+            "symbol": "calibrationLeaf"
+          },
+          "limit": 50
+        },
+        "response": {
+          "status": "success",
+          "raw": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"file\":\"src/leaf.js\",\"rows\":[[\"calibrationLeaf\",\"Function\",\"1-1\",1,0]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+              }
+            ],
+            "structuredContent": {
+              "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+              "cols": [
+                "name",
+                "label",
+                "lines",
+                "in",
+                "out"
+              ],
+              "groups": [
+                {
+                  "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                  "file": "src/leaf.js",
+                  "rows": [
+                    [
+                      "calibrationLeaf",
+                      "Function",
+                      "1-1",
+                      1,
+                      0
+                    ]
+                  ]
+                }
+              ],
+              "total": 1,
+              "returned": 1,
+              "count": 1,
+              "has_more": false,
+              "truncated": false
+            },
+            "isError": false
+          },
+          "normalized": {
+            "definitions": [
+              {
+                "path": "src/leaf.js",
+                "symbol": "calibrationLeaf",
+                "content": "export function calibrationLeaf(value) { return value + 7; }\n"
+              }
+            ]
+          },
+          "provenance": [
+            {
+              "operation": "search_graph",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"file\":\"src/leaf.js\",\"rows\":[[\"calibrationLeaf\",\"Function\",\"1-1\",1,0]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [
+                    {
+                      "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                      "file": "src/leaf.js",
+                      "rows": [
+                        [
+                          "calibrationLeaf",
+                          "Function",
+                          "1-1",
+                          1,
+                          0
+                        ]
+                      ]
+                    }
+                  ],
+                  "total": 1,
+                  "returned": 1,
+                  "count": 1,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            },
+            {
+              "operation": "get_code_snippet",
+              "qualifiedName": "${CBM_PROJECT}.src.leaf.calibrationLeaf",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"name\":\"calibrationLeaf\",\"qualified_name\":\"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\"label\":\"Function\",\"file_path\":\"${WORK}/cell/source/src/leaf.js\",\"start_line\":1,\"end_line\":1,\"source_mode\":\"full\",\"source\":\"export function calibrationLeaf(value) { return value + 7; }\\n\",\"callers\":1,\"callees\":0}"
+                  }
+                ],
+                "structuredContent": {
+                  "name": "calibrationLeaf",
+                  "qualified_name": "${CBM_PROJECT}.src.leaf.calibrationLeaf",
+                  "label": "Function",
+                  "file_path": "${WORK}/cell/source/src/leaf.js",
+                  "start_line": 1,
+                  "end_line": 1,
+                  "source_mode": "full",
+                  "source": "export function calibrationLeaf(value) { return value + 7; }\n",
+                  "callers": 1,
+                  "callees": 0
+                },
+                "isError": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "request": {
+          "operation": "direct-callers",
+          "subject": {
+            "path": "src/leaf.js",
+            "symbol": "calibrationLeaf"
+          },
+          "limit": 50
+        },
+        "response": {
+          "status": "success",
+          "raw": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"function\":\"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\"direction\":\"inbound\",\"callers_total\":1,\"callers_total_relation\":\"eq\",\"callers\":{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"hop\",\"test\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.entry\",\"rows\":[[\"calibrationEntry\",1,false]]}]}}"
+              }
+            ],
+            "structuredContent": {
+              "function": "${CBM_PROJECT}.src.leaf.calibrationLeaf",
+              "direction": "inbound",
+              "callers_total": 1,
+              "callers_total_relation": "eq",
+              "callers": {
+                "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                "cols": [
+                  "name",
+                  "hop",
+                  "test"
+                ],
+                "groups": [
+                  {
+                    "qn_prefix": "${CBM_PROJECT}.src.entry",
+                    "rows": [
+                      [
+                        "calibrationEntry",
+                        1,
+                        false
+                      ]
+                    ]
+                  }
+                ]
+              }
+            },
+            "isError": false
+          },
+          "normalized": {
+            "edges": [
+              {
+                "fromPath": "src/entry.js",
+                "fromSymbol": "calibrationEntry",
+                "toPath": "src/leaf.js",
+                "toSymbol": "calibrationLeaf",
+                "relationship": "call"
+              }
+            ]
+          },
+          "provenance": [
+            {
+              "operation": "search_graph",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"file\":\"src/leaf.js\",\"rows\":[[\"calibrationLeaf\",\"Function\",\"1-1\",1,0]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [
+                    {
+                      "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                      "file": "src/leaf.js",
+                      "rows": [
+                        [
+                          "calibrationLeaf",
+                          "Function",
+                          "1-1",
+                          1,
+                          0
+                        ]
+                      ]
+                    }
+                  ],
+                  "total": 1,
+                  "returned": 1,
+                  "count": 1,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            },
+            {
+              "operation": "search_graph",
+              "qualifiedName": "${CBM_PROJECT}.src.entry.calibrationEntry",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.entry\",\"file\":\"src/entry.js\",\"rows\":[[\"calibrationEntry\",\"Function\",\"2-2\",0,1]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [
+                    {
+                      "qn_prefix": "${CBM_PROJECT}.src.entry",
+                      "file": "src/entry.js",
+                      "rows": [
+                        [
+                          "calibrationEntry",
+                          "Function",
+                          "2-2",
+                          0,
+                          1
+                        ]
+                      ]
+                    }
+                  ],
+                  "total": 1,
+                  "returned": 1,
+                  "count": 1,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "request": {
+          "operation": "direct-callees",
+          "subject": {
+            "path": "src/entry.js",
+            "symbol": "calibrationEntry"
+          },
+          "limit": 50
+        },
+        "response": {
+          "status": "success",
+          "raw": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"function\":\"${CBM_PROJECT}.src.entry.calibrationEntry\",\"direction\":\"outbound\",\"callees_total\":1,\"callees_total_relation\":\"eq\",\"callees\":{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"hop\",\"test\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"rows\":[[\"calibrationLeaf\",1,false]]}]}}"
+              }
+            ],
+            "structuredContent": {
+              "function": "${CBM_PROJECT}.src.entry.calibrationEntry",
+              "direction": "outbound",
+              "callees_total": 1,
+              "callees_total_relation": "eq",
+              "callees": {
+                "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                "cols": [
+                  "name",
+                  "hop",
+                  "test"
+                ],
+                "groups": [
+                  {
+                    "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                    "rows": [
+                      [
+                        "calibrationLeaf",
+                        1,
+                        false
+                      ]
+                    ]
+                  }
+                ]
+              }
+            },
+            "isError": false
+          },
+          "normalized": {
+            "edges": [
+              {
+                "fromPath": "src/entry.js",
+                "fromSymbol": "calibrationEntry",
+                "toPath": "src/leaf.js",
+                "toSymbol": "calibrationLeaf",
+                "relationship": "call"
+              }
+            ]
+          },
+          "provenance": [
+            {
+              "operation": "search_graph",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.entry\",\"file\":\"src/entry.js\",\"rows\":[[\"calibrationEntry\",\"Function\",\"2-2\",0,1]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [
+                    {
+                      "qn_prefix": "${CBM_PROJECT}.src.entry",
+                      "file": "src/entry.js",
+                      "rows": [
+                        [
+                          "calibrationEntry",
+                          "Function",
+                          "2-2",
+                          0,
+                          1
+                        ]
+                      ]
+                    }
+                  ],
+                  "total": 1,
+                  "returned": 1,
+                  "count": 1,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            },
+            {
+              "operation": "search_graph",
+              "qualifiedName": "${CBM_PROJECT}.src.leaf.calibrationLeaf",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"file\":\"src/leaf.js\",\"rows\":[[\"calibrationLeaf\",\"Function\",\"1-1\",1,0]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [
+                    {
+                      "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                      "file": "src/leaf.js",
+                      "rows": [
+                        [
+                          "calibrationLeaf",
+                          "Function",
+                          "1-1",
+                          1,
+                          0
+                        ]
+                      ]
+                    }
+                  ],
+                  "total": 1,
+                  "returned": 1,
+                  "count": 1,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            }
+          ]
+        }
+      },
+      {
+        "request": {
+          "operation": "shortest-path",
+          "from": {
+            "path": "src/entry.js",
+            "symbol": "calibrationEntry"
+          },
+          "to": {
+            "path": "src/leaf.js",
+            "symbol": "calibrationLeaf"
+          },
+          "limit": 50
+        },
+        "response": {
+          "status": "success",
+          "raw": [
+            {
+              "request": {
+                "operation": "direct-callees",
+                "subject": {
+                  "path": "src/entry.js",
+                  "symbol": "calibrationEntry"
+                },
+                "limit": 50
+              },
+              "result": {
+                "status": "success",
+                "raw": {
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "{\"function\":\"${CBM_PROJECT}.src.entry.calibrationEntry\",\"direction\":\"outbound\",\"callees_total\":1,\"callees_total_relation\":\"eq\",\"callees\":{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"hop\",\"test\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"rows\":[[\"calibrationLeaf\",1,false]]}]}}"
+                    }
+                  ],
+                  "structuredContent": {
+                    "function": "${CBM_PROJECT}.src.entry.calibrationEntry",
+                    "direction": "outbound",
+                    "callees_total": 1,
+                    "callees_total_relation": "eq",
+                    "callees": {
+                      "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                      "cols": [
+                        "name",
+                        "hop",
+                        "test"
+                      ],
+                      "groups": [
+                        {
+                          "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                          "rows": [
+                            [
+                              "calibrationLeaf",
+                              1,
+                              false
+                            ]
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "isError": false
+                },
+                "normalized": {
+                  "edges": [
+                    {
+                      "fromPath": "src/entry.js",
+                      "fromSymbol": "calibrationEntry",
+                      "toPath": "src/leaf.js",
+                      "toSymbol": "calibrationLeaf",
+                      "relationship": "call"
+                    }
+                  ]
+                },
+                "provenance": [
+                  {
+                    "operation": "search_graph",
+                    "raw": {
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.entry\",\"file\":\"src/entry.js\",\"rows\":[[\"calibrationEntry\",\"Function\",\"2-2\",0,1]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                        }
+                      ],
+                      "structuredContent": {
+                        "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                        "cols": [
+                          "name",
+                          "label",
+                          "lines",
+                          "in",
+                          "out"
+                        ],
+                        "groups": [
+                          {
+                            "qn_prefix": "${CBM_PROJECT}.src.entry",
+                            "file": "src/entry.js",
+                            "rows": [
+                              [
+                                "calibrationEntry",
+                                "Function",
+                                "2-2",
+                                0,
+                                1
+                              ]
+                            ]
+                          }
+                        ],
+                        "total": 1,
+                        "returned": 1,
+                        "count": 1,
+                        "has_more": false,
+                        "truncated": false
+                      },
+                      "isError": false
+                    }
+                  },
+                  {
+                    "operation": "search_graph",
+                    "qualifiedName": "${CBM_PROJECT}.src.leaf.calibrationLeaf",
+                    "raw": {
+                      "content": [
+                        {
+                          "type": "text",
+                          "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[{\"qn_prefix\":\"${CBM_PROJECT}.src.leaf\",\"file\":\"src/leaf.js\",\"rows\":[[\"calibrationLeaf\",\"Function\",\"1-1\",1,0]]}],\"total\":1,\"returned\":1,\"count\":1,\"has_more\":false,\"truncated\":false}"
+                        }
+                      ],
+                      "structuredContent": {
+                        "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                        "cols": [
+                          "name",
+                          "label",
+                          "lines",
+                          "in",
+                          "out"
+                        ],
+                        "groups": [
+                          {
+                            "qn_prefix": "${CBM_PROJECT}.src.leaf",
+                            "file": "src/leaf.js",
+                            "rows": [
+                              [
+                                "calibrationLeaf",
+                                "Function",
+                                "1-1",
+                                1,
+                                0
+                              ]
+                            ]
+                          }
+                        ],
+                        "total": 1,
+                        "returned": 1,
+                        "count": 1,
+                        "has_more": false,
+                        "truncated": false
+                      },
+                      "isError": false
+                    }
+                  }
+                ]
+              }
+            }
+          ],
+          "normalized": {
+            "paths": [
+              [
+                {
+                  "path": "src/entry.js",
+                  "symbol": "calibrationEntry"
+                },
+                {
+                  "path": "src/leaf.js",
+                  "symbol": "calibrationLeaf"
+                }
+              ]
+            ]
+          },
+          "provenance": [
+            {
+              "method": "bounded BFS on public direct-callee responses",
+              "maxDepth": 10,
+              "maxNodes": 50
+            }
+          ]
+        }
+      },
+      {
+        "request": {
+          "operation": "definitions",
+          "subject": {
+            "path": "src/leaf.js",
+            "symbol": "calibrationDefinitelyAbsent"
+          },
+          "limit": 50
+        },
+        "response": {
+          "status": "success",
+          "raw": {
+            "content": [
+              {
+                "type": "text",
+                "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[],\"hint\":\"No nodes match; check spelling or broaden the regex.\",\"total\":0,\"returned\":0,\"count\":0,\"has_more\":false,\"truncated\":false}"
+              }
+            ],
+            "structuredContent": {
+              "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+              "cols": [
+                "name",
+                "label",
+                "lines",
+                "in",
+                "out"
+              ],
+              "groups": [],
+              "hint": "No nodes match; check spelling or broaden the regex.",
+              "total": 0,
+              "returned": 0,
+              "count": 0,
+              "has_more": false,
+              "truncated": false
+            },
+            "isError": false
+          },
+          "normalized": {
+            "definitions": []
+          },
+          "provenance": [
+            {
+              "operation": "search_graph",
+              "raw": {
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "{\"qn_rule\":\"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\"cols\":[\"name\",\"label\",\"lines\",\"in\",\"out\"],\"groups\":[],\"hint\":\"No nodes match; check spelling or broaden the regex.\",\"total\":0,\"returned\":0,\"count\":0,\"has_more\":false,\"truncated\":false}"
+                  }
+                ],
+                "structuredContent": {
+                  "qn_rule": "qn = qn_prefix == \"\" ? name : qn_prefix + \".\" + name",
+                  "cols": [
+                    "name",
+                    "label",
+                    "lines",
+                    "in",
+                    "out"
+                  ],
+                  "groups": [],
+                  "hint": "No nodes match; check spelling or broaden the regex.",
+                  "total": 0,
+                  "returned": 0,
+                  "count": 0,
+                  "has_more": false,
+                  "truncated": false
+                },
+                "isError": false
+              }
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "executedHarnessSource": "import * as fs from \"node:fs/promises\";\nimport * as path from \"node:path\";\nimport { pathToFileURL } from \"node:url\";\nconst { createConformanceDriver } = await import(pathToFileURL(path.join(process.env.REPO, \"scripts/competitive-conformance.ts\")).href);\nconst context = {projectRoot:process.env.REPO, toolsRoot:path.join(process.env.OWNED,\"tools\"),artifactDir:path.join(process.env.OWNED,\"cell\"),sourceRoot:path.join(process.env.OWNED,\"cell/source\"),configPath:path.join(process.env.OWNED,\"cell/config.json\"),timeoutMs:60000};\nconst driver=createConformanceDriver(\"codebase-memory\",context);\nconst requests=[\n {operation:\"definitions\",subject:{path:\"src/leaf.js\",symbol:\"calibrationLeaf\"},limit:50},\n {operation:\"direct-callers\",subject:{path:\"src/leaf.js\",symbol:\"calibrationLeaf\"},limit:50},\n {operation:\"direct-callees\",subject:{path:\"src/entry.js\",symbol:\"calibrationEntry\"},limit:50},\n {operation:\"shortest-path\",from:{path:\"src/entry.js\",symbol:\"calibrationEntry\"},to:{path:\"src/leaf.js\",symbol:\"calibrationLeaf\"},limit:50},\n {operation:\"definitions\",subject:{path:\"src/leaf.js\",symbol:\"calibrationDefinitelyAbsent\"},limit:50}\n];\ntry {\n const index=await driver.index();\n const results=[];\n for(const request of requests)results.push({request,response:await driver.request(request)});\n const first=results[0].response;\n const expected=await fs.readFile(path.join(context.sourceRoot,\"src/leaf.js\"),\"utf8\");\n if(first.status!==\"success\"||first.normalized.definitions?.length!==1||first.normalized.definitions[0].path!==\"src/leaf.js\"||first.normalized.definitions[0].symbol!==\"calibrationLeaf\"||first.normalized.definitions[0].content!==expected)throw new Error(\"Real CBM returned incorrect leaf identity/body\");\n if(results[4].response.status!==\"success\"||results[4].response.normalized.definitions?.length!==0)throw new Error(\"Absent definition did not remain absent\");\n console.log(JSON.stringify({index,results},null,2));\n}finally{await driver.close();}\n",
+  "commandEvidenceFiles": [
+    {
+      "path": "${WORK}/cell/public-commands/29525-1.json",
+      "originalSha256": "d67b943fbccacb9a21e72a52a9a7796740bf1750eee9c2ae33d2d347d6ffea0f",
+      "normalizedSha256": "373b38dd9332dc12f6693b43278f1eb3f843e55c6a2360f2c03e5f99d01e216a",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:27.594Z\",\n  \"phase\": \"mcp-start\",\n  \"command\": \"${WORK}/tools/npm/node_modules/codebase-memory-mcp/bin/codebase-memory-mcp\",\n  \"args\": [],\n  \"cwd\": \"${WORK}/cell/source\",\n  \"env\": {\n    \"PATH\": \"${USER_HOME}/.pyenv/versions/3.12.8/bin:${USER_HOME}/.pyenv/libexec:${USER_HOME}/.pyenv/plugins/python-build/bin:${USER_HOME}/.pyenv/plugins/pyenv-virtualenv/bin:${USER_HOME}/.pyenv/plugins/pyenv-update/bin:${USER_HOME}/.pyenv/plugins/pyenv-installer/bin:${USER_HOME}/.pyenv/plugins/pyenv-doctor/bin:${USER_HOME}/.local/bin:/opt/homebrew/bin:/opt/homebrew/sbin:${USER_HOME}/.local/bin:${USER_HOME}/.opencode/bin:${USER_HOME}/.omlx/bin:${USER_HOME}/.lmstudio/bin:${USER_HOME}/.bash-my-aws/bin:${USER_HOME}/.bun/bin:${USER_HOME}/Library/pnpm:${USER_HOME}/.pyenv/bin:${USER_HOME}/.pyenv/shims:${USER_HOME}/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/Applications/Orca.app/Contents/Resources/bin:${USER_HOME}/.deno/bin:${USER_HOME}/.cargo/bin:${USER_HOME}/.nvm/versions/node/v22.21.1/bin:${USER_HOME}/.volta/bin:${USER_HOME}/.asdf/shims:${USER_HOME}/.fnm/aliases/default/bin:${USER_HOME}/.local/share/mise/shims:${USER_HOME}/.yarn/bin:/usr/local/sbin:${USER_HOME}/bin:${USER_HOME}/.vite-plus/bin\",\n    \"HOME\": \"${WORK}/cell/home\",\n    \"XDG_CACHE_HOME\": \"${WORK}/cell/home/.cache\",\n    \"XDG_CONFIG_HOME\": \"${WORK}/cell/home/.config\",\n    \"XDG_STATE_HOME\": \"${WORK}/cell/home/.state\",\n    \"XDG_DATA_HOME\": \"${WORK}/cell/home/.local/share\",\n    \"TMPDIR\": \"${WORK}/cell/tmp\",\n    \"CBM_CACHE_DIR\": \"${WORK}/cell/cbm-cache\",\n    \"LANG\": \"C.UTF-8\",\n    \"LC_ALL\": \"C.UTF-8\"\n  },\n  \"executableSha256\": \"a67b7ccead5d2ca852051f8619458ab96af41393257b56fb36e523a110265d48\"\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-10.json",
+      "originalSha256": "05357682d03c48d31a88e1841f636e52c1e4c48bd9bbaf53db334a45da7b9c8e",
+      "normalizedSha256": "b0be09f0ef4b3b693cb809c821e6ee234c55ce8c59af684c1eef362f3d00168b",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.045Z\",\n  \"request\": {\n    \"name\": \"trace_path\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"function_name\": \"${CBM_PROJECT}.src.entry.calibrationEntry\",\n      \"direction\": \"outbound\",\n      \"depth\": 1,\n      \"limit\": 50,\n      \"format\": \"json\",\n      \"include_tests\": true\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"function\\\":\\\"${CBM_PROJECT}.src.entry.calibrationEntry\\\",\\\"direction\\\":\\\"outbound\\\",\\\"callees_total\\\":1,\\\"callees_total_relation\\\":\\\"eq\\\",\\\"callees\\\":{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"hop\\\",\\\"test\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",1,false]]}]}}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"function\": \"${CBM_PROJECT}.src.entry.calibrationEntry\",\n      \"direction\": \"outbound\",\n      \"callees_total\": 1,\n      \"callees_total_relation\": \"eq\",\n      \"callees\": {\n        \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n        \"cols\": [\n          \"name\",\n          \"hop\",\n          \"test\"\n        ],\n        \"groups\": [\n          {\n            \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n            \"rows\": [\n              [\n                \"calibrationLeaf\",\n                1,\n                false\n              ]\n            ]\n          }\n        ]\n      }\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-11.json",
+      "originalSha256": "c4f84c061d03542ddc56c802a6ab29fe5e79b3c74f2c92abedce4e2f754813f3",
+      "normalizedSha256": "d8d6a05aab0a0679360a7a8c085c973ea2af31ca858ee2875994142679cb8ffd",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.057Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationLeaf$\",\n      \"qn_pattern\": \"^private-tmp-ocbi-cbm-format-smoke\\\\.XNsAdi-cell-source\\\\.src\\\\.leaf\\\\.calibrationLeaf$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"file\\\":\\\"src/leaf.js\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",\\\"Function\\\",\\\"1-1\\\",1,0]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n          \"file\": \"src/leaf.js\",\n          \"rows\": [\n            [\n              \"calibrationLeaf\",\n              \"Function\",\n              \"1-1\",\n              1,\n              0\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-12.json",
+      "originalSha256": "ecd3b989dbdf8ca0d175edd2360a9e60065a4994219f78d81a8763aa234be612",
+      "normalizedSha256": "485948d3a67a09718f4f11032f781169753f06f626a693793f6f85682c6ce675",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.073Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationEntry$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.entry\\\",\\\"file\\\":\\\"src/entry.js\\\",\\\"rows\\\":[[\\\"calibrationEntry\\\",\\\"Function\\\",\\\"2-2\\\",0,1]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.entry\",\n          \"file\": \"src/entry.js\",\n          \"rows\": [\n            [\n              \"calibrationEntry\",\n              \"Function\",\n              \"2-2\",\n              0,\n              1\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-13.json",
+      "originalSha256": "fc38ff98a31149fd854407e3c701f91677b897e2319c99786c71e0d656ca9d01",
+      "normalizedSha256": "0da7a955f09b9ed1908ae88eb5b5e01be3d8c2932efa6f83232fdd6b57da2b7e",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.086Z\",\n  \"request\": {\n    \"name\": \"trace_path\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"function_name\": \"${CBM_PROJECT}.src.entry.calibrationEntry\",\n      \"direction\": \"outbound\",\n      \"depth\": 1,\n      \"limit\": 50,\n      \"format\": \"json\",\n      \"include_tests\": true\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"function\\\":\\\"${CBM_PROJECT}.src.entry.calibrationEntry\\\",\\\"direction\\\":\\\"outbound\\\",\\\"callees_total\\\":1,\\\"callees_total_relation\\\":\\\"eq\\\",\\\"callees\\\":{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"hop\\\",\\\"test\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",1,false]]}]}}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"function\": \"${CBM_PROJECT}.src.entry.calibrationEntry\",\n      \"direction\": \"outbound\",\n      \"callees_total\": 1,\n      \"callees_total_relation\": \"eq\",\n      \"callees\": {\n        \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n        \"cols\": [\n          \"name\",\n          \"hop\",\n          \"test\"\n        ],\n        \"groups\": [\n          {\n            \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n            \"rows\": [\n              [\n                \"calibrationLeaf\",\n                1,\n                false\n              ]\n            ]\n          }\n        ]\n      }\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-14.json",
+      "originalSha256": "e12fb92cd67ad031ac4e6501e2a8339ba0d496ade8371ce3c5b32524508b5b9d",
+      "normalizedSha256": "d59062b70d72833cadf4d4d8fb0b7f97136348439954b7e9d960b01813cfd36b",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.099Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationLeaf$\",\n      \"qn_pattern\": \"^private-tmp-ocbi-cbm-format-smoke\\\\.XNsAdi-cell-source\\\\.src\\\\.leaf\\\\.calibrationLeaf$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"file\\\":\\\"src/leaf.js\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",\\\"Function\\\",\\\"1-1\\\",1,0]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n          \"file\": \"src/leaf.js\",\n          \"rows\": [\n            [\n              \"calibrationLeaf\",\n              \"Function\",\n              \"1-1\",\n              1,\n              0\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-15.json",
+      "originalSha256": "f2cce85f478a4b87097ed157b80210ff09c1a539d981b5fb76a355172b045309",
+      "normalizedSha256": "517ef7638953c77a7ee8ab9b8f8e8c046a8e990edd27f35cf5f7311d53e773e5",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.112Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationDefinitelyAbsent$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[],\\\"hint\\\":\\\"No nodes match; check spelling or broaden the regex.\\\",\\\"total\\\":0,\\\"returned\\\":0,\\\"count\\\":0,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [],\n      \"hint\": \"No nodes match; check spelling or broaden the regex.\",\n      \"total\": 0,\n      \"returned\": 0,\n      \"count\": 0,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-16.json",
+      "originalSha256": "9584f7abc48c777b7aa297de244727b75efeb2bc8236632059a7eeacfa3a026e",
+      "normalizedSha256": "9584f7abc48c777b7aa297de244727b75efeb2bc8236632059a7eeacfa3a026e",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.293Z\",\n  \"phase\": \"mcp-close\",\n  \"stderr\": \"\"\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-2.json",
+      "originalSha256": "78cee07d5245b59f810e2c522277f86d2cc9b5efd37b82edb06176ea6511aeb5",
+      "normalizedSha256": "78cee07d5245b59f810e2c522277f86d2cc9b5efd37b82edb06176ea6511aeb5",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:38.226Z\",\n  \"phase\": \"mcp-list-tools\",\n  \"response\": {\n    \"tools\": [\n      {\n        \"name\": \"index_repository\",\n        \"description\": \"Index a repository. full/moderate add semantics; fast omits them; cross-repo-intelligence links services. Reports coverage gaps.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"repo_path\": {\n              \"type\": \"string\",\n              \"description\": \"Repository path\"\n            },\n            \"mode\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"full\",\n                \"moderate\",\n                \"fast\",\n                \"cross-repo-intelligence\"\n              ],\n              \"default\": \"full\",\n              \"description\": \"full: all+semantic; moderate: filtered+semantic; fast: filtered only; cross-repo-intelligence: link services.\"\n            },\n            \"target_projects\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              },\n              \"description\": \"Cross-repo targets; [\\\"*\\\"] means all.\"\n            },\n            \"name\": {\n              \"type\": \"string\",\n              \"description\": \"Name override; Non-ASCII bytes are encoded; unsafe characters normalized.\"\n            },\n            \"persistence\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Write .codebase-memory/graph.db.zst.\"\n            }\n          },\n          \"required\": [\n            \"repo_path\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": false,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"search_graph\",\n        \"description\": \"Find symbols via BM25 query, regex name/qn filters, or semantic_query. Rows keep qn/file/lines and in/out over CALLS/USAGE/CALL_REFERENCE/INHERITS/IMPLEMENTS.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"query\": {\n              \"type\": \"string\"\n            },\n            \"label\": {\n              \"type\": \"string\"\n            },\n            \"name_pattern\": {\n              \"type\": \"string\"\n            },\n            \"qn_pattern\": {\n              \"type\": \"string\"\n            },\n            \"file_pattern\": {\n              \"type\": \"string\"\n            },\n            \"relationship\": {\n              \"type\": \"string\"\n            },\n            \"min_degree\": {\n              \"type\": \"integer\"\n            },\n            \"max_degree\": {\n              \"type\": \"integer\"\n            },\n            \"exclude_entry_points\": {\n              \"type\": \"boolean\"\n            },\n            \"include_connected\": {\n              \"type\": \"boolean\"\n            },\n            \"semantic_query\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              },\n              \"description\": \"Not with query.\"\n            },\n            \"semantic_limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 0,\n              \"maximum\": 500\n            },\n            \"semantic_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0,\n              \"maximum\": 99998\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"default\": 3200,\n              \"minimum\": 128,\n              \"maximum\": 1000000\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            },\n            \"fields\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              }\n            },\n            \"detail\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"ids\",\n                \"default\"\n              ],\n              \"default\": \"default\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"query_graph\",\n        \"description\": \"Read-only Cypher for multi-hop, aggregation, complexity, or cross-service analysis. Default: 200 visible rows with exact/lower-bound totals and truncation; continue safely with next_cursor. graph=missed is a file tree of flagged coverage gaps; absence is not proof of completeness. Use get_graph_schema(diagnostics=full) for properties.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"query\": {\n              \"type\": \"string\",\n              \"description\": \"Cypher query\"\n            },\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"graph\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"code\",\n                \"missed\"\n              ],\n              \"default\": \"code\",\n              \"description\": \"code graph (default) or missed coverage-gap file tree.\"\n            },\n            \"max_rows\": {\n              \"type\": \"integer\",\n              \"description\": \"Visible rows (default 200; max 99998); 0 uses the legacy maximum. Evaluation is unchanged.\",\n              \"minimum\": 0,\n              \"default\": 200\n            },\n            \"offset\": {\n              \"type\": \"integer\",\n              \"minimum\": 0,\n              \"default\": 0,\n              \"description\": \"Live compatibility paging; cannot be combined with cursor.\"\n            },\n            \"cursor\": {\n              \"type\": \"string\",\n              \"description\": \"Snapshot continuation; keep query/project/graph. Format, budget, and max_rows may change.\"\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"minimum\": 128,\n              \"maximum\": 1000000,\n              \"description\": \"Sizing hint; hard ceiling is 4 UTF-8 bytes/token. Rows stay whole.\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\",\n              \"description\": \"tree may use local @N+suffix prefix refs; json uses direct strings.\"\n            }\n          },\n          \"required\": [\n            \"query\",\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"trace_path\",\n        \"description\": \"Trace callers/callees, data flow, or cross-service paths. Defaults exclude tests and resolver evidence. Rows keep qn/hop with explicit totals, relations, and continuations.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"function_name\": {\n              \"type\": \"string\"\n            },\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"direction\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"inbound\",\n                \"outbound\",\n                \"both\"\n              ],\n              \"default\": \"both\"\n            },\n            \"depth\": {\n              \"type\": \"integer\",\n              \"default\": 3,\n              \"minimum\": 1,\n              \"maximum\": 15\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 100,\n              \"minimum\": 1,\n              \"maximum\": 5000,\n              \"description\": \"Rows/page; gte flags the 5000-node engine ceiling.\"\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"default\": 3200,\n              \"minimum\": 128,\n              \"maximum\": 1000000,\n              \"description\": \"Sizing hint; hard ceiling is 4 UTF-8 bytes/token. Evidence/args yield before nearest graph rows.\"\n            },\n            \"cursor\": {\n              \"type\": \"string\",\n              \"description\": \"Pass next/next_cursor with traversal args unchanged; budget may increase.\"\n            },\n            \"mode\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"calls\",\n                \"data_flow\",\n                \"cross_service\"\n              ],\n              \"default\": \"calls\",\n              \"description\": \"calls, argument-aware data_flow, or service edges.\"\n            },\n            \"parameter_name\": {\n              \"type\": \"string\",\n              \"description\": \"data_flow parameter filter.\"\n            },\n            \"edge_types\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              }\n            },\n            \"risk_labels\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Add hop-risk labels.\"\n            },\n            \"include_tests\": {\n              \"type\": \"boolean\",\n              \"default\": false\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\",\n              \"description\": \"tree chooses smaller complete direct/grouped output; json uses stable grouped tables.\"\n            },\n            \"include_evidence\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Add resolver class and confidence.\"\n            }\n          },\n          \"required\": [\n            \"function_name\",\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"get_code_snippet\",\n        \"description\": \"Read a search_graph symbol. auto bounds source and outlines large containers; full restores up to 500 lines. Source/outline pages continue; coverage_note marks gaps.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"qualified_name\": {\n              \"type\": \"string\",\n              \"description\": \"search_graph qn, or short name.\"\n            },\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"include_neighbors\": {\n              \"type\": \"boolean\",\n              \"default\": false\n            },\n            \"source_mode\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"auto\",\n                \"full\",\n                \"outline\"\n              ],\n              \"default\": \"auto\",\n              \"description\": \"auto outlines 200+ line containers; full returns source; outline lists members.\"\n            },\n            \"member_limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"member_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"start_line\": {\n              \"type\": \"integer\",\n              \"minimum\": 1\n            },\n            \"max_lines\": {\n              \"type\": \"integer\",\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"minimum\": 128,\n              \"maximum\": 1000000,\n              \"description\": \"auto/outline sizing hint (default 2500), hard ceiling 4 UTF-8 bytes/token. Lines stay whole; explicit full is uncapped unless set.\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"qualified_name\",\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"get_file_outline\",\n        \"description\": \"Declaration outline of one exact repository-relative file: optional exact label filter, source order, exact total/offset/limit paging; file/folder/container nodes excluded.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"file_path\": {\n              \"type\": \"string\",\n              \"description\": \"Exact repository-relative file path\"\n            },\n            \"labels\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              },\n              \"maxItems\": 16,\n              \"description\": \"Optional exact node-label filter\"\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"minimum\": 1,\n              \"maximum\": 200,\n              \"default\": 100\n            },\n            \"offset\": {\n              \"type\": \"integer\",\n              \"minimum\": 0,\n              \"default\": 0\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\",\n            \"file_path\"\n          ],\n          \"additionalProperties\": false\n        },\n        \"annotations\": {\n          \"readOnlyHint\": false,\n          \"destructiveHint\": true,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"get_graph_schema\",\n        \"description\": \"Get node-label and edge-type counts. diagnostics=full also lists queryable properties.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            },\n            \"diagnostics\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"none\",\n                \"full\"\n              ],\n              \"default\": \"none\"\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"compare_graphs\",\n        \"description\": \"Compare two indexed snapshots: deterministic target-only additions and base-only removals of stable node/edge identities; each set capped by limit and a 512 KiB budget with exact totals and truncation reasons.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"base_project\": {\n              \"type\": \"string\",\n              \"minLength\": 1\n            },\n            \"target_project\": {\n              \"type\": \"string\",\n              \"minLength\": 1\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"minimum\": 1,\n              \"maximum\": 1000,\n              \"default\": 200\n            },\n            \"scan_limit\": {\n              \"type\": \"integer\",\n              \"minimum\": 1,\n              \"maximum\": 10000000,\n              \"default\": 2000000\n            }\n          },\n          \"required\": [\n            \"base_project\",\n            \"target_project\"\n          ],\n          \"additionalProperties\": false\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"get_architecture\",\n        \"description\": \"Compact counts, languages, packages, entry points. Request structure, dependencies, routes, hotspots, boundaries, layers, clusters, cycles, or file_tree; path scopes a directory.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"path\": {\n              \"type\": \"string\",\n              \"description\": \"Directory prefix (for example apps/hoa).\"\n            },\n            \"aspects\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\",\n                \"enum\": [\n                  \"all\",\n                  \"overview\",\n                  \"structure\",\n                  \"dependencies\",\n                  \"routes\",\n                  \"languages\",\n                  \"packages\",\n                  \"entry_points\",\n                  \"hotspots\",\n                  \"boundaries\",\n                  \"layers\",\n                  \"file_tree\",\n                  \"clusters\",\n                  \"cycles\"\n                ]\n              },\n              \"description\": \"all=everything; overview=compact except file_tree; omitted=languages/packages/entry_points; cycles is opt-in.\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"search_code\",\n        \"description\": \"Graph-ranked text search: compact symbols, full bounded source, or file paths.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"pattern\": {\n              \"type\": \"string\"\n            },\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"file_pattern\": {\n              \"type\": \"string\"\n            },\n            \"path_filter\": {\n              \"type\": \"string\"\n            },\n            \"mode\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"compact\",\n                \"full\",\n                \"files\"\n              ],\n              \"default\": \"compact\"\n            },\n            \"context\": {\n              \"type\": \"integer\"\n            },\n            \"regex\": {\n              \"type\": \"boolean\",\n              \"default\": false\n            },\n            \"debug\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Add scope_ms/scan_ms/enrich_ms phase timings.\"\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 10,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"result_limit\": {\n              \"type\": \"integer\",\n              \"default\": 10,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"result_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"raw_limit\": {\n              \"type\": \"integer\",\n              \"default\": 5,\n              \"minimum\": 0,\n              \"maximum\": 100\n            },\n            \"raw_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"raw_content_offset\": {\n              \"type\": \"integer\",\n              \"minimum\": 0,\n              \"description\": \"Raw-line byte offset; omit for match-centered preview.\"\n            },\n            \"directory_limit\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 0,\n              \"maximum\": 64\n            },\n            \"directory_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"match_limit\": {\n              \"type\": \"integer\",\n              \"default\": 8,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"source_max_lines\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 1,\n              \"maximum\": 200\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"minimum\": 128,\n              \"maximum\": 1000000\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"pattern\",\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"list_projects\",\n        \"description\": \"List projects with stable paging. Identity is lean; stats adds graph sizes.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            },\n            \"detail\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"identity\",\n                \"stats\"\n              ],\n              \"default\": \"identity\",\n              \"description\": \"stats adds node/edge/database-size counts.\"\n            },\n            \"include_details\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Alias for detail=stats: include branch, node/edge counts and database size. Slower.\"\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"metadata_only\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Compatibility: omit counts, size, and branch.\"\n            }\n          }\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"delete_project\",\n        \"description\": \"Delete a project from the index\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": false,\n          \"destructiveHint\": true,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"index_status\",\n        \"description\": \"Project readiness, counts, root, and coverage gaps. diagnostics adds coverage rows; verbose adds Git paths. Best-effort only; verify cited paths with check_index_coverage.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"verbose\": {\n              \"type\": \"boolean\",\n              \"default\": false,\n              \"description\": \"Add worktree/shadow Git paths for index-location debugging.\"\n            },\n            \"diagnostics\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"none\",\n                \"summary\",\n                \"full\"\n              ],\n              \"default\": \"none\",\n              \"description\": \"Coverage rows: counts, five samples, or up to 500.\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"check_index_coverage\",\n        \"description\": \"Best-effort exact-path/scope coverage and freshness, paged separately. full diagnostics adds raw detail. Clean is not proof of completeness.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"paths\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              },\n              \"maxItems\": 128\n            },\n            \"path_limit\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 1,\n              \"maximum\": 128\n            },\n            \"path_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"scopes\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"string\"\n              },\n              \"maxItems\": 32\n            },\n            \"scope_limit\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 1,\n              \"maximum\": 1000\n            },\n            \"scope_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"diagnostics\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"none\",\n                \"full\"\n              ],\n              \"default\": \"none\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"detect_changes\",\n        \"description\": \"Map a Git diff to files and impact. Page with snapshot cursors.\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"scope\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"files\",\n                \"impact\"\n              ],\n              \"default\": \"impact\"\n            },\n            \"direction\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"inbound\",\n                \"outbound\",\n                \"both\"\n              ],\n              \"default\": \"inbound\",\n              \"description\": \"inbound=callers; outbound=dependencies; both=union.\"\n            },\n            \"depth\": {\n              \"type\": \"integer\",\n              \"default\": 2\n            },\n            \"limit\": {\n              \"type\": \"integer\",\n              \"default\": 200,\n              \"maximum\": 5000\n            },\n            \"impact_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"impact_cursor\": {\n              \"type\": \"string\"\n            },\n            \"changed_limit\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 0,\n              \"maximum\": 5000\n            },\n            \"changed_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"changed_cursor\": {\n              \"type\": \"string\"\n            },\n            \"module_limit\": {\n              \"type\": \"integer\",\n              \"default\": 20,\n              \"minimum\": 0,\n              \"maximum\": 256\n            },\n            \"module_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"module_cursor\": {\n              \"type\": \"string\"\n            },\n            \"max_output_tokens\": {\n              \"type\": \"integer\",\n              \"default\": 3200,\n              \"minimum\": 128,\n              \"maximum\": 1000000,\n              \"description\": \"Sizing hint; hard ceiling is 4 UTF-8 bytes/token.\"\n            },\n            \"base_branch\": {\n              \"type\": \"string\",\n              \"default\": \"main\"\n            },\n            \"since\": {\n              \"type\": \"string\"\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": true,\n          \"destructiveHint\": false,\n          \"idempotentHint\": true,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"manage_adr\",\n        \"description\": \"Outline an ADR by default; get reads it; update replaces it\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"project\": {\n              \"type\": \"string\"\n            },\n            \"mode\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"outline\",\n                \"get\",\n                \"update\",\n                \"set_sections\",\n                \"sections\"\n              ],\n              \"default\": \"outline\",\n              \"description\": \"outline pages headings; get reads; update replaces the whole document; set_sections rewrites only the named sections and leaves every other byte untouched (an identical repeated write is byte-identical, so retrying is safe); sections is legacy.\"\n            },\n            \"content\": {\n              \"type\": \"string\",\n              \"description\": \"Whole document for update\"\n            },\n            \"section_updates\": {\n              \"type\": \"object\",\n              \"description\": \"set_sections: section name -> new body. Any heading name works; names match exactly, including case.\",\n              \"additionalProperties\": {\n                \"type\": \"string\"\n              }\n            },\n            \"section_limit\": {\n              \"type\": \"integer\",\n              \"default\": 50,\n              \"minimum\": 1,\n              \"maximum\": 500\n            },\n            \"section_offset\": {\n              \"type\": \"integer\",\n              \"default\": 0,\n              \"minimum\": 0\n            },\n            \"format\": {\n              \"type\": \"string\",\n              \"enum\": [\n                \"tree\",\n                \"json\"\n              ],\n              \"default\": \"tree\"\n            }\n          },\n          \"required\": [\n            \"project\"\n          ],\n          \"additionalProperties\": false\n        },\n        \"annotations\": {\n          \"readOnlyHint\": false,\n          \"destructiveHint\": true,\n          \"idempotentHint\": false,\n          \"openWorldHint\": false\n        }\n      },\n      {\n        \"name\": \"ingest_traces\",\n        \"description\": \"Validate and count traces; graph edge creation is not implemented\",\n        \"inputSchema\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"traces\": {\n              \"type\": \"array\",\n              \"items\": {\n                \"type\": \"object\",\n                \"properties\": {\n                  \"caller\": {\n                    \"type\": \"string\"\n                  },\n                  \"callee\": {\n                    \"type\": \"string\"\n                  },\n                  \"count\": {\n                    \"type\": \"integer\"\n                  }\n                },\n                \"additionalProperties\": false\n              }\n            },\n            \"project\": {\n              \"type\": \"string\"\n            }\n          },\n          \"required\": [\n            \"traces\",\n            \"project\"\n          ]\n        },\n        \"annotations\": {\n          \"readOnlyHint\": false,\n          \"destructiveHint\": false,\n          \"idempotentHint\": false,\n          \"openWorldHint\": false\n        }\n      }\n    ]\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-3.json",
+      "originalSha256": "2d380a7fcdad6482a7f5b8145de92c7e8e7b2cb21ad415a3f18e0c8595edfc79",
+      "normalizedSha256": "994878af5ae948e535e4b977b62a7975443f51cd1c75ea1d2ec73638a6b94cb8",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:41.943Z\",\n  \"request\": {\n    \"name\": \"index_repository\",\n    \"arguments\": {\n      \"repo_path\": \"${WORK}/cell/source\",\n      \"mode\": \"full\",\n      \"persistence\": false\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"project\\\":\\\"${CBM_PROJECT}\\\",\\\"not_indexed_files_count\\\":0,\\\"skipped_count\\\":0,\\\"parse_partial_count\\\":0,\\\"parse_unusable_count\\\":0,\\\"nodes\\\":25,\\\"edges\\\":27,\\\"expected_nodes\\\":25,\\\"expected_edges\\\":27,\\\"adr_present\\\":false,\\\"adr_hint\\\":\\\"Project indexed. Consider creating an Architecture Decision Record: explore the codebase with get_architecture(aspects=['all']), then use manage_adr(mode='update') to persist architectural insights across sessions.\\\",\\\"artifact_present\\\":false,\\\"status\\\":\\\"indexed\\\"}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"not_indexed_files_count\": 0,\n      \"skipped_count\": 0,\n      \"parse_partial_count\": 0,\n      \"parse_unusable_count\": 0,\n      \"nodes\": 25,\n      \"edges\": 27,\n      \"expected_nodes\": 25,\n      \"expected_edges\": 27,\n      \"adr_present\": false,\n      \"adr_hint\": \"Project indexed. Consider creating an Architecture Decision Record: explore the codebase with get_architecture(aspects=['all']), then use manage_adr(mode='update') to persist architectural insights across sessions.\",\n      \"artifact_present\": false,\n      \"status\": \"indexed\"\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-4.json",
+      "originalSha256": "b0fedfe778d5ec95bda733749977db58d957a0214157a3aa2e3172beb09d0379",
+      "normalizedSha256": "1eb1733d0c60112e12be3901ab14a9600cdce2b9f7060b0e0ba820da0b0f46ca",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:41.958Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationLeaf$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"file\\\":\\\"src/leaf.js\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",\\\"Function\\\",\\\"1-1\\\",1,0]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n          \"file\": \"src/leaf.js\",\n          \"rows\": [\n            [\n              \"calibrationLeaf\",\n              \"Function\",\n              \"1-1\",\n              1,\n              0\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-5.json",
+      "originalSha256": "4740e928b1340bea93f05193810137ce868b637c2e6df4ec30513b1c247c722f",
+      "normalizedSha256": "1b43006d59886a6aa10c2b937e74e3a4a3332d5667c75b1314c5543523d488ae",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:41.974Z\",\n  \"request\": {\n    \"name\": \"get_code_snippet\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"qualified_name\": \"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"name\\\":\\\"calibrationLeaf\\\",\\\"qualified_name\\\":\\\"${CBM_PROJECT}.src.leaf.calibrationLeaf\\\",\\\"label\\\":\\\"Function\\\",\\\"file_path\\\":\\\"${WORK}/cell/source/src/leaf.js\\\",\\\"start_line\\\":1,\\\"end_line\\\":1,\\\"source_mode\\\":\\\"full\\\",\\\"source\\\":\\\"export function calibrationLeaf(value) { return value + 7; }\\\\n\\\",\\\"callers\\\":1,\\\"callees\\\":0}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"name\": \"calibrationLeaf\",\n      \"qualified_name\": \"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\n      \"label\": \"Function\",\n      \"file_path\": \"${WORK}/cell/source/src/leaf.js\",\n      \"start_line\": 1,\n      \"end_line\": 1,\n      \"source_mode\": \"full\",\n      \"source\": \"export function calibrationLeaf(value) { return value + 7; }\\n\",\n      \"callers\": 1,\n      \"callees\": 0\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-6.json",
+      "originalSha256": "d0bf4361d33659e3f84dc51cc567b94269ae014e73943960194d48443233a40a",
+      "normalizedSha256": "950557983d56a80e39a04c9c18c9344887be01f37f4fd46326be8e218629bb0f",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:41.986Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationLeaf$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.leaf\\\",\\\"file\\\":\\\"src/leaf.js\\\",\\\"rows\\\":[[\\\"calibrationLeaf\\\",\\\"Function\\\",\\\"1-1\\\",1,0]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.leaf\",\n          \"file\": \"src/leaf.js\",\n          \"rows\": [\n            [\n              \"calibrationLeaf\",\n              \"Function\",\n              \"1-1\",\n              1,\n              0\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-7.json",
+      "originalSha256": "4b5f8747d21ec53a1ab167a7004c84f3e3fdcd0af2a0a23f4dead1d1221fa9e4",
+      "normalizedSha256": "a79e35be3bb870002d8c845ab5968c82e5707f5dbd39f7e7b2fab9669f4a3615",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.001Z\",\n  \"request\": {\n    \"name\": \"trace_path\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"function_name\": \"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\n      \"direction\": \"inbound\",\n      \"depth\": 1,\n      \"limit\": 50,\n      \"format\": \"json\",\n      \"include_tests\": true\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"function\\\":\\\"${CBM_PROJECT}.src.leaf.calibrationLeaf\\\",\\\"direction\\\":\\\"inbound\\\",\\\"callers_total\\\":1,\\\"callers_total_relation\\\":\\\"eq\\\",\\\"callers\\\":{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"hop\\\",\\\"test\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.entry\\\",\\\"rows\\\":[[\\\"calibrationEntry\\\",1,false]]}]}}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"function\": \"${CBM_PROJECT}.src.leaf.calibrationLeaf\",\n      \"direction\": \"inbound\",\n      \"callers_total\": 1,\n      \"callers_total_relation\": \"eq\",\n      \"callers\": {\n        \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n        \"cols\": [\n          \"name\",\n          \"hop\",\n          \"test\"\n        ],\n        \"groups\": [\n          {\n            \"qn_prefix\": \"${CBM_PROJECT}.src.entry\",\n            \"rows\": [\n              [\n                \"calibrationEntry\",\n                1,\n                false\n              ]\n            ]\n          }\n        ]\n      }\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-8.json",
+      "originalSha256": "9233d8ae0169dce0e886ad60dea0f3b96583f83fdfc32833aa311fbedf3bfbd5",
+      "normalizedSha256": "444f09385a85e96a34babefd458c35d662275304d590430e517cbe606c08d681",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.017Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationEntry$\",\n      \"qn_pattern\": \"^private-tmp-ocbi-cbm-format-smoke\\\\.XNsAdi-cell-source\\\\.src\\\\.entry\\\\.calibrationEntry$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.entry\\\",\\\"file\\\":\\\"src/entry.js\\\",\\\"rows\\\":[[\\\"calibrationEntry\\\",\\\"Function\\\",\\\"2-2\\\",0,1]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.entry\",\n          \"file\": \"src/entry.js\",\n          \"rows\": [\n            [\n              \"calibrationEntry\",\n              \"Function\",\n              \"2-2\",\n              0,\n              1\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    },
+    {
+      "path": "${WORK}/cell/public-commands/29525-9.json",
+      "originalSha256": "9359cae943fe81a01bbbad902c6303a2b4eaf3b3b332ad68397222d71fc72c9f",
+      "normalizedSha256": "619a7c8352f618f8a5f4da8b00721b706de69b81e7a4dddfbf4e95de5419e6f4",
+      "content": "{\n  \"recordedAt\": \"2026-10-06T10:20:42.033Z\",\n  \"request\": {\n    \"name\": \"search_graph\",\n    \"arguments\": {\n      \"project\": \"${CBM_PROJECT}\",\n      \"name_pattern\": \"^calibrationEntry$\",\n      \"limit\": 50,\n      \"format\": \"json\"\n    }\n  },\n  \"raw\": {\n    \"content\": [\n      {\n        \"type\": \"text\",\n        \"text\": \"{\\\"qn_rule\\\":\\\"qn = qn_prefix == \\\\\\\"\\\\\\\" ? name : qn_prefix + \\\\\\\".\\\\\\\" + name\\\",\\\"cols\\\":[\\\"name\\\",\\\"label\\\",\\\"lines\\\",\\\"in\\\",\\\"out\\\"],\\\"groups\\\":[{\\\"qn_prefix\\\":\\\"${CBM_PROJECT}.src.entry\\\",\\\"file\\\":\\\"src/entry.js\\\",\\\"rows\\\":[[\\\"calibrationEntry\\\",\\\"Function\\\",\\\"2-2\\\",0,1]]}],\\\"total\\\":1,\\\"returned\\\":1,\\\"count\\\":1,\\\"has_more\\\":false,\\\"truncated\\\":false}\"\n      }\n    ],\n    \"structuredContent\": {\n      \"qn_rule\": \"qn = qn_prefix == \\\"\\\" ? name : qn_prefix + \\\".\\\" + name\",\n      \"cols\": [\n        \"name\",\n        \"label\",\n        \"lines\",\n        \"in\",\n        \"out\"\n      ],\n      \"groups\": [\n        {\n          \"qn_prefix\": \"${CBM_PROJECT}.src.entry\",\n          \"file\": \"src/entry.js\",\n          \"rows\": [\n            [\n              \"calibrationEntry\",\n              \"Function\",\n              \"2-2\",\n              0,\n              1\n            ]\n          ]\n        }\n      ],\n      \"total\": 1,\n      \"returned\": 1,\n      \"count\": 1,\n      \"has_more\": false,\n      \"truncated\": false\n    },\n    \"isError\": false\n  }\n}\n"
+    }
+  ],
+  "packageLock": {
+    "name": "npm",
+    "lockfileVersion": 3,
+    "requires": true,
+    "packages": {
+      "": {
+        "dependencies": {
+          "codebase-memory-mcp": "0.11.0"
+        }
+      },
+      "node_modules/codebase-memory-mcp": {
+        "version": "0.11.0",
+        "resolved": "https://registry.npmjs.org/codebase-memory-mcp/-/codebase-memory-mcp-0.11.0.tgz",
+        "integrity": "sha512-BXPeAIQQOH2iKPYMcNOiRezj1BeBGkIfAAQ99GWSRMsvHxMUrGiuJqhJH1uTdN4hs6kRkqPnmpjCfy05hANKIg==",
+        "cpu": [
+          "x64",
+          "arm64"
+        ],
+        "hasInstallScript": true,
+        "license": "MIT",
+        "os": [
+          "linux",
+          "darwin",
+          "win32"
+        ],
+        "bin": {
+          "codebase-memory-mcp": "bin.js"
+        },
+        "engines": {
+          "node": ">=18"
+        }
+      }
+    }
+  },
+  "limitations": [
+    "Same existing synthetic fixture and five original graph request families; one fresh index and one attempt after a documented adapter correction.",
+    "Original failed calibration is retained unchanged; no scored study result was retried or replaced.",
+    "No real-repository quality, latency, duplicate-definition, refresh, or model-repair claim."
+  ]
+}

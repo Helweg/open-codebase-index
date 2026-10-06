@@ -135,6 +135,52 @@ describe("calibrated public graph normalization", () => {
   });
 });
 
+describe("CBM definition-body decoding", () => {
+  it.each(["alpha.py", "different.py"])("decodes indexed source and preserves file identity (%s)", async (snippetPath) => {
+    const artifactDir = await temp(), sourceRoot = path.join(artifactDir, "source"), toolsRoot = path.join(artifactDir, "tools");
+    await fs.mkdir(sourceRoot);
+    const binary = path.join(toolsRoot, "npm/node_modules/codebase-memory-mcp/bin/codebase-memory-mcp");
+    await fs.mkdir(path.dirname(binary), { recursive: true });
+    const body = "def middle(value):\n    return value + 7\n";
+    // Protocol fixture models the observed upstream tree default and JSON opt-in.
+    // Assertions cover decoded evidence and identity, not forwarded request fields.
+    await fs.writeFile(binary, `#!${process.execPath}
+const readline = require("node:readline");
+const snippet = { qualified_name: "fixture.alpha.middle", file_path: ${JSON.stringify(snippetPath)}, source: ${JSON.stringify(body)} };
+const envelope = value => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], isError: false });
+readline.createInterface({ input: process.stdin }).on("line", line => {
+  const message = JSON.parse(line);
+  if (message.id === undefined) return;
+  let result;
+  if (message.method === "initialize") {
+    result = { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "cbm-format-fixture", version: "1" } };
+  } else if (message.method === "tools/list") {
+    result = { tools: ["index_repository", "search_graph", "get_code_snippet"].map(name => ({ name, inputSchema: { type: "object" } })) };
+  } else if (message.method === "tools/call") {
+    const { name, arguments: args } = message.params;
+    if (name === "index_repository") result = envelope({ project: "fixture" });
+    else if (name === "search_graph") result = envelope({ cols: ["label", "name", "lines"], groups: [{ qn_prefix: "fixture.alpha", file: "alpha.py", rows: [["Function", "middle", "1-2"]] }], has_more: false });
+    else if (name === "get_code_snippet") result = envelope(args.format === "json" ? snippet : "name: middle\\nsource: |\\n  def middle(value):\\n    return value + 7");
+  }
+  if (result === undefined) throw new Error("Unexpected protocol request: " + message.method);
+  process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }) + "\\n");
+});
+`, { mode: 0o755 });
+    const driver = createConformanceDriver("codebase-memory", { artifactDir, sourceRoot, toolsRoot, projectRoot, configPath: "", timeoutMs: 5000 });
+    try {
+      await driver.index();
+      const result = await driver.request({ operation: "definitions", subject: { path: "alpha.py", symbol: "middle" }, limit: 50 });
+      if (snippetPath === "alpha.py") {
+        expect(result.status).toBe("success");
+        expect(result.normalized.definitions).toEqual([{ path: "alpha.py", symbol: "middle", content: body }]);
+      } else {
+        expect(result.status).toBe("manual-adjudication-required");
+        expect(result.normalized.definitions).toBeUndefined();
+      }
+    } finally { await driver.close(); }
+  });
+});
+
 describe("mandatory subprocess isolation", () => {
   it("creates isolated HOME/XDG/TMPDIR and rejects the real repo or a symlink to it", async () => {
     const artifactDir = await temp(), sourceRoot = path.join(artifactDir, "source"); await fs.mkdir(sourceRoot);

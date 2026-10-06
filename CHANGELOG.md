@@ -10,10 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Competitive evaluation diagnostics**: Report per-task wins, losses, ties, metric deltas, ranked paths, operational failures and unsupported interfaces. Publish a dated historical replay and fresh-study protocol without treating development data as a blind holdout or claiming SOTA.
+- **Study preparation evidence**: Publish a sanitized maintainer exposure register, current-version public-interface calibration and isolated broker/evaluator feasibility observations. Distinguish passing infrastructure controls from the failed bounded model repair attempt.
 
 ### Fixed
 
 - **Fresh-study evidence integrity**: Require paired study-approval and novelty-evidence paths, and verify the evidence file's exact-byte SHA-256 before creating a workspace or acquiring source. Preserve underlying errors when validation fails.
+- **Competitive CBM conformance**: Explicitly request JSON snippet output before parsing it, preserving exact symbol/path/source identity checks. Retain the original calibration failure and a separate corrected native-API smoke.
 
 ## [0.35.3] - 2026-10-06
 
