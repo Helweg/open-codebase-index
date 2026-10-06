@@ -2,7 +2,7 @@
 
 ## Status and audit limits
 
-This is a **partial, evidence-backed disclosure of development exposure**, supplied for the independent review request in [issue #420](https://github.com/Helweg/open-codebase-index/issues/420). It is not an independent novelty audit, approval or exhaustive account of all developer/model history. Unknown exposure must remain unknown, not be converted into a novel/held-out decision.
+This is a **partial, evidence-backed disclosure of development exposure**, originally supplied for the independent review request in [issue #420](https://github.com/Helweg/open-codebase-index/issues/420), which was withdrawn at the maintainer's direction. It also records the separate assistant-run exploratory study. It is not an independent novelty audit, approval or exhaustive account of all developer/model history. Unknown exposure must remain unknown, not be converted into a novel/held-out decision.
 
 The registry covers currently inspected repository fixtures, published benchmark reports and a recovered maintainer experiment record. It does not claim to inspect every private session, deleted scratch experiment, contributor environment, upstream model-training dataset or repository fork/shared ancestry. No private prompt transcripts, local absolute paths, credentials or user indexes are published here.
 
@@ -32,6 +32,15 @@ Evidence:
 
 OCBI's own repository is also development-exposed: it is the implementation under active development and supplies local retrieval/evidence fixtures. Do not treat its source as a fresh independent repository.
 
+## Assistant-run exploratory cohort exposure
+
+The [self-curated comparison](2026-10-06-self-curated-study.md) acquired and source-inspected **fastify, hono, typer, gin, clap, moshi, csvhelper, monolog and rack** at the exact pins recorded there before participant scoring. The original source-lock SHA-256 is `2a024bf74df0ee8b95dadaeedc76a3afd299d5ae267205e1e931fb86dc1916e5`; its datasets, source manifests and internal annotations are bound in the [preregistration archive](../../benchmarks/results/self-curated-2026-10-06/preregistration.json.gz).
+
+These repositories and tasks are now visible to the development assistant and must not be reused as untouched evidence for a subsequently tuned candidate. Different repository identities from September do not certify new code: **Typer bundles Click and selected Typer code has Click-adaptation attribution**, a concrete shared-code risk involving the known exposed Click repository. No exhaustive shared-ancestry/history/training audit or independent novelty acceptance is claimed.
+
+Scoring is complete: 63 cells, 700 first-pass outcomes and 2,100 query-pass records were inspected. The [completed report](../../benchmarks/results/self-curated-2026-10-06/report.json) preserves unfavorable OCBI results and post-score coverage diagnoses. These tasks are development evidence only for any later candidate changes; no score-driven retries or production fixes were made in this study.
+
+
 ## Confirmed local and synthetic fixture exposure
 
 Treat these existing inputs as development/calibration data:
@@ -55,6 +64,7 @@ SHA-256 values identify inspected bytes, not reviewer endorsement. Later fixture
 | `benchmarks/competitive/2026-09-10/conformance.json` | `5efc78b9d136c6843f4349318d05a630d453fbf172f4da296cf522bd7c18f979` |
 | `benchmarks/golden/representative.json` | `6598ad4a41f07e63a21c47e498740773849f72d445f168fd97ee50f86122a90e` |
 | `benchmarks/golden/agent-context.json` | `9ff9622181eca3063b9fbfe996681f74bde326412866495622d638f3e1480b02` |
+| `benchmarks/results/self-curated-2026-10-06/preregistration.json.gz` | `7be6e9854a882b294bedaecab35daeec6ea35ad5386f533899b43fee0f8f4ba2` |
 
 ## Required reviewer work
 

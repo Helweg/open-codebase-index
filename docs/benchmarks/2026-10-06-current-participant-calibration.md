@@ -1,6 +1,6 @@
 # Current participant public-interface calibration, 2026-10-06
 
-Status: **development-only calibration, not a competitive result**. This completes current-version initialization/readiness/query checks on an owned synthetic fixture. It does not acquire a participant study cohort, supply an independent approval, establish held-out quality, compare speed, or demonstrate coding productivity. The [dated evidence plan](2026-10-06-competitive-evidence-plan.md) remains the governing protocol.
+Status: **development-only calibration, not a competitive result**. This completes current-version initialization/readiness/query checks on an owned synthetic fixture. It does not acquire a participant study cohort, supply an independent approval, establish held-out quality, compare speed, or demonstrate coding productivity. The [dated evidence plan](2026-10-06-competitive-evidence-plan.md) governs the independent confirmatory route; the later [assistant-run self-curated comparison](2026-10-06-self-curated-study.md) uses a separate exploratory protocol without outside recruitment.
 
 ## Exact inventory and isolation
 
