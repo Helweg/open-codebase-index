@@ -1,3 +1,5 @@
+import { BUILD_DIRECTORY_PATTERNS } from "../utils/paths.js";
+
 export const DEFAULT_INCLUDE = [
   "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}",
   "**/*.{py,pyi}",
@@ -20,8 +22,7 @@ export const DEFAULT_EXCLUDE = [
   "**/node_modules/**",
   "**/.git/**",
   "**/dist/**",
-  "**/build/**",
-  "**/*build*/**",
+  ...BUILD_DIRECTORY_PATTERNS.map((pattern) => `**/${pattern}/**`),
   "**/*.min.js",
   "**/*.bundle.js",
   "**/vendor/**",

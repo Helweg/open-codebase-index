@@ -1,5 +1,20 @@
 import * as path from "path";
 
+// Bare directory patterns supported by both gitignore and the exclude glob matcher.
+export const BUILD_DIRECTORY_PATTERNS = [
+  "build",
+  "build-*",
+  "build_*",
+  "*-build",
+  "*_build",
+  "*-build-*",
+  "*-build_*",
+  "*_build-*",
+  "*_build_*",
+] as const;
+
+const BUILD_PATH_SEGMENT = /(?:^|[-_])build(?:$|[-_])/i;
+
 export function normalizePathSeparators(value: string): string {
   return value.replace(/\\/g, "/");
 }
@@ -9,7 +24,7 @@ export function isHiddenPathSegment(part: string): boolean {
 }
 
 export function isBuildPathSegment(part: string): boolean {
-  return part.toLowerCase().includes("build");
+  return BUILD_PATH_SEGMENT.test(part);
 }
 
 export function hasFilteredPathSegment(

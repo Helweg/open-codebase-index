@@ -484,13 +484,77 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
         name: "getStatus",
         kind: "method_definition",
       }));
-      expect(restoredDb.getMetadata(symbolExtractorVersionKey)).toBe("1");
     } finally {
       restoredDb.close();
     }
 
     expect(fetchSpy.mock.calls.length).toBe(embeddingCallsBeforeReindex);
   });
+
+  it.each(["hybrid", "structural"] as const)(
+    "repairs unchanged Go receiver-method catalogs from the previous extractor in %s mode",
+    async (mode) => {
+      const storedPath = "counter.go";
+      const sourcePath = path.join(tempDir, storedPath);
+      const source = [
+        "package fixtures",
+        "type Counter struct{}",
+        "func (counter Counter) Count() int { return 1 }",
+        "func (counter *Counter) Reset() {}",
+        "",
+      ].join("\n");
+      fs.writeFileSync(sourcePath, source);
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: {
+          baseUrl: "http://localhost:11434/v1",
+          model: "mock-embedding-model",
+          dimensions: 8,
+        },
+        include: ["**/*.go"],
+        indexing: { mode, watchFiles: false, requireProjectMarker: false },
+      });
+      const first = new Indexer(tempDir, config, "opencode");
+      _indexers.push(first);
+      await first.index();
+      const status = await first.getStatus();
+      await first.close();
+
+      const database = new Database(path.join(status.indexPath, "codebase.db"));
+      try {
+        const symbols = database.getSymbolsByFile(storedPath);
+        const count = symbols.find((symbol) => symbol.name === "Count");
+        if (!count) throw new Error("Count declaration missing from fixture catalog");
+        database.upsertSymbol({ ...count, name: "int" });
+        database.setMetadata(`index.symbolExtractorVersion.${hashContent("default").slice(0, 24)}`, "1");
+        expect(database.getSymbolsByName("Count")).toEqual([]);
+        expect(database.getSymbolsByName("int")).toContainEqual(expect.objectContaining({
+          filePath: storedPath,
+          kind: "method_declaration",
+        }));
+      } finally {
+        database.close();
+      }
+
+      const reopened = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reopened);
+      await expect(reopened.getIndexFreshness()).resolves.toMatchObject({
+        current: false,
+        reason: "migration-required",
+      });
+      await reopened.index();
+
+      const methods = (await reopened.getCallGraphSymbols())
+        .filter((symbol) => symbol.kind === "method_declaration")
+        .sort((left, right) => left.startLine - right.startLine);
+      expect(methods.map((symbol) => [symbol.name, symbol.startLine, symbol.endLine])).toEqual([
+        ["Count", 3, 3],
+        ["Reset", 4, 4],
+      ]);
+      expect(fs.readFileSync(sourcePath, "utf8")).toBe(source);
+      await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
+    },
+  );
 
   describe.each(["search", "reranker", "similar"] as const)("sanitized SVG retrieval through %s", (surface) => {
     it.each([

@@ -84,6 +84,48 @@ class Streams {
       },
     );
 
+    it.each([
+      ["Reset", "func (receiver Receiver) Reset()", "  receiver.values = nil"],
+      ["Clear", "func (receiver *Receiver) Clear()", "  receiver.values = nil"],
+      ["Count", "func (receiver Receiver) Count() int", "  count := len(receiver.values)\n  return count"],
+      ["Ready", "func (receiver *Receiver) Ready() bool", "  ready := len(receiver.values) > 0\n  return ready"],
+      ["Validate", "func (receiver Receiver) Validate() error", "  var validationError error\n  return validationError"],
+      ["Values", "func (receiver *Receiver) Values() []string", "  values := receiver.values\n  return values"],
+      ["Snapshot", "func (receiver Receiver) Snapshot() map[string][]string", "  return map[string][]string{\"values\": receiver.values}"],
+      ["Lookup", "func (receiver *Receiver) Lookup() (value string, found bool)", "  value = \"selected\"\n  found = true\n  return"],
+      ["Get", "func (receiver Box[T]) Get() T", "  selected := receiver.value\n  return selected"],
+      ["Replace", "func (receiver *Box[T]) Replace(value T) T", "  previous := receiver.value\n  receiver.value = value\n  return previous"],
+    ])("uses the declaration name and range for Go receiver method %s", (name, signature, body) => {
+      const prefix = "package fixtures\n\ntype Receiver struct { values []string }\ntype Box[T any] struct { value T }\n\n";
+      const declaration = `${signature} {\n${body}\n}`;
+      const content = prefix + declaration;
+      const startLine = prefix.split("\n").length;
+      const endLine = content.split("\n").length;
+      const [result] = parseFiles([{ path: "receiver_methods.go", content }]);
+
+      // Exact catalog equality rejects receiver, type, and return names as method symbols.
+      expect(result.symbols.filter((symbol) => symbol.kind === "method_declaration")).toEqual([{
+        name,
+        kind: "method_declaration",
+        startLine,
+        startCol: 0,
+        endLine,
+        endCol: 1,
+        language: "go",
+      }]);
+      const chunk = result.chunks.find((candidate) => candidate.name === name);
+      expect(chunk).toMatchObject({
+        name,
+        chunkType: "method_declaration",
+        content: declaration,
+        startLine,
+        startCol: 0,
+        endLine,
+        endCol: 1,
+        language: "go",
+      });
+    });
+
     it("should parse TypeScript functions", () => {
       const content = `
 export function validateEmail(email: string): boolean {

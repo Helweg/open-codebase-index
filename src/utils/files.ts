@@ -3,7 +3,7 @@ import { existsSync, readFileSync, realpathSync, promises as fsPromises } from "
 import * as path from "path";
 
 import { isDefaultExcludePatterns } from "../config/exclusions.js";
-import { hasFilteredPathSegment, isBuildPathSegment, isHiddenPathSegment, isRestrictedDirectory } from "./paths.js";
+import { BUILD_DIRECTORY_PATTERNS, hasFilteredPathSegment, isBuildPathSegment, isHiddenPathSegment, isRestrictedDirectory } from "./paths.js";
 import {
   isOperationInterruption,
   throwIfOperationAborted,
@@ -48,8 +48,7 @@ const DEFAULT_IGNORES = [
     "node_modules",
     ".git",
     "dist",
-    "build",
-    "**/*build*/**",
+    ...BUILD_DIRECTORY_PATTERNS.map((pattern) => `${pattern}/`),
     ".next",
     ".nuxt",
     "coverage",

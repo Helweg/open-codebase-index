@@ -769,7 +769,7 @@ const JAVASCRIPT_PARSER_VERSION = "1";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const MARKUP_PARSER_VERSION = "1";
-const SYMBOL_EXTRACTOR_VERSION = "1";
+const SYMBOL_EXTRACTOR_VERSION = "2";
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
   const normalizedFilePath = path.resolve(filePath);

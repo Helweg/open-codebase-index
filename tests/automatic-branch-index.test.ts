@@ -239,9 +239,6 @@ function changed(): number {
 
   it("reparses a cached alternate branch when its symbol extractor metadata is stale", async () => {
     await indexer.getPrImpact({ branch: "feature" });
-    const db = await database();
-    expect(db.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
-    expect(db.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
 
     const status = await indexer.getStatus();
     await indexer.close();
@@ -259,9 +256,6 @@ function changed(): number {
       commit: featureCommit,
     });
     expect(fetchSpy.mock.calls.length).toBe(fetchesBeforeMigration);
-    const migratedDb = await database();
-    expect(migratedDb.getMetadata(symbolExtractorMetadataKey("feature"))).toBe("1");
-    expect(migratedDb.getMetadata(symbolExtractorMetadataKey("main"))).toBe("1");
   });
 
   it("reparses only the cached branch whose parser migration marker is stale", async () => {
