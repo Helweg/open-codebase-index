@@ -293,7 +293,7 @@ describe("eval runner", () => {
       .toContain("Graph-neighbor recall");
   });
 
-  it.each(["checkout", "snapshot", "tests", "docs"])("grades published edit-context evidence relative to a %s project root", async (rootName) => {
+  it.each(["checkout", "snapshot", "tests", "docs", `long-${"nested-".repeat(20)}`])("grades published edit-context evidence relative to a %s project root", async (rootName) => {
     const projectRoot = path.join(tempDir, rootName);
     cpSync(path.join(tempDir, "src"), path.join(projectRoot, "src"), { recursive: true });
     cpSync(path.join(tempDir, ".opencode"), path.join(projectRoot, ".opencode"), { recursive: true });
@@ -354,6 +354,71 @@ describe("eval runner", () => {
     } finally {
       searchSpy.mockRestore();
     }
+  });
+
+  it("does not grade a location echoed in a risk message when evidence is omitted by the final budget", async () => {
+    const filePath = path.join(tempDir, "src", "indexer", "index.ts");
+    const symbol = `${filePath}:1-1 ${"unknown ".repeat(200)}`;
+    writeFileSync(path.join(tempDir, "benchmarks", "golden", "edit-budget.json"), JSON.stringify({
+      version: "1.0.0",
+      name: "edit-budget",
+      queries: [128, 4000].map((tokenBudget) => ({
+        id: `budget-${tokenBudget}`,
+        query: "assemble code evidence before editing",
+        queryType: "definition",
+        retrievalMode: "edit-context",
+        args: { symbol, tokenBudget },
+        expected: { filePath: "src/indexer/index.ts", symbol: "rankHybridResults" },
+      })),
+    }));
+    const searchSpy = vi.spyOn(Indexer.prototype, "search").mockResolvedValue([{
+      filePath, startLine: 1, endLine: 1, score: 1,
+      chunkType: "function_declaration", name: "rankHybridResults",
+      content: "function rankHybridResults() { return true; }",
+    }]);
+    try {
+      const result = await runEvaluation({
+        projectRoot: tempDir, datasetPath: "benchmarks/golden/edit-budget.json",
+        outputRoot: "benchmarks/results", reindex: false,
+      });
+      expect(result.perQuery[0]).toMatchObject({ hitAt1: false, results: [] });
+      expect(result.perQuery[0].responseTokens).toBeLessThanOrEqual(128);
+      expect(result.perQuery[1]).toMatchObject({ hitAt1: true, reciprocalRankAt10: 1 });
+      expect(result.perQuery[1].results.map((item) => item.name)).toEqual(["rankHybridResults"]);
+    } finally {
+      searchSpy.mockRestore();
+    }
+  });
+
+  it("grades only graph neighbors retained after the final source and graph budget", async () => {
+    writeFileSync(path.join(tempDir, "src", "indexer", "index.ts"), [
+      `export function rankHybridResults(query: string) { /* ${"ranking ".repeat(250)} */ return query.length; }`,
+      "export function evaluateRanking() { return rankHybridResults('query'); }",
+    ].join("\n"));
+    writeFileSync(path.join(tempDir, "benchmarks", "golden", "edit-graph-budget.json"), JSON.stringify({
+      version: "1.0.0", name: "edit-graph-budget",
+      queries: [128, 4000].map((tokenBudget) => ({
+        id: `graph-budget-${tokenBudget}`,
+        query: "review ranking before editing",
+        queryType: "definition", retrievalMode: "edit-context",
+        args: { symbol: "rankHybridResults", tokenBudget },
+        expected: {
+          filePath: "src/indexer/index.ts", symbol: "rankHybridResults",
+          graphNeighbor: { direction: "caller", filePath: "src/indexer/index.ts", symbol: "evaluateRanking" },
+        },
+      })),
+    }));
+    const result = await runEvaluation({
+      projectRoot: tempDir, datasetPath: "benchmarks/golden/edit-graph-budget.json",
+      outputRoot: "benchmarks/results", reindex: false,
+    });
+    expect(result.perQuery[0]).toMatchObject({ hitAt1: true, graphNeighborMatched: false });
+    expect(result.perQuery[0].results.map((item) => item.name)).toEqual(["rankHybridResults"]);
+    expect(result.perQuery[0].responseTokens).toBeLessThanOrEqual(128);
+    expect(result.perQuery[1]).toMatchObject({ hitAt1: true, graphNeighborMatched: true });
+    expect(result.perQuery[1].results).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: "evaluateRanking", graphDirection: "caller" }),
+    ]));
   });
 
   it("fails fast when reindexing produces no searchable vectors", async () => {

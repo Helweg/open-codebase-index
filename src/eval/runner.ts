@@ -5,14 +5,12 @@ import { performance } from "perf_hooks";
 
 import { Indexer, type SearchResult } from "../indexer/index.js";
 import type { CallEdgeData, SymbolData } from "../native/index.js";
-import { DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT } from "../tools/contracts.js";
 import { resolveSearchContext } from "../tools/context.js";
-import { resolveCodebaseEditContextWithDependencies } from "../tools/edit-context.js";
+import { resolveCodebaseEditContextWithDependencies, type CodebaseEditContextEvidence } from "../tools/edit-context.js";
 import {
   getCallGraphDataForIndexer,
   getArchitectureContextForIndexer,
   type CallGraphDataResult,
-  type CallGraphSymbolResolution,
 } from "../tools/operations.js";
 import { DEFAULT_CONTEXT_PACK_TOKEN_BUDGET } from "../tools/utils.js";
 
@@ -79,14 +77,6 @@ function normalizedPath(value: string): string {
   return value.replaceAll("\\", "/").replace(/^\.\//, "");
 }
 
-function pathsMatch(left: string, right: string): boolean {
-  const normalizedLeft = normalizedPath(left);
-  const normalizedRight = normalizedPath(right);
-  return normalizedLeft === normalizedRight
-    || normalizedLeft.endsWith(`/${normalizedRight}`)
-    || normalizedRight.endsWith(`/${normalizedLeft}`);
-}
-
 function toEvalSearchResult(result: SearchResult): EvalSearchResult {
   return {
     filePath: result.filePath,
@@ -96,19 +86,6 @@ function toEvalSearchResult(result: SearchResult): EvalSearchResult {
     chunkType: result.chunkType,
     name: result.name,
   };
-}
-
-function selectResolvedTarget(
-  definitions: SearchResult[],
-  resolution: CallGraphSymbolResolution | undefined,
-): SearchResult | undefined {
-  if (resolution?.status !== "resolved") return definitions[0];
-  return definitions.find((result) => pathsMatch(result.filePath, resolution.filePath)
-    && result.startLine <= resolution.startLine
-    && result.endLine >= resolution.startLine)
-    ?? definitions.find((result) => pathsMatch(result.filePath, resolution.filePath)
-      && result.name === resolution.name)
-    ?? definitions[0];
 }
 
 function callerResult(edge: CallEdgeData): EvalSearchResult | undefined {
@@ -243,10 +220,8 @@ async function runEditContextQuery(
     omittedCount: number;
   };
 }> {
-  let definitions: SearchResult[] = [];
-  let conceptual: SearchResult[] = [];
+  let selectedEvidence: CodebaseEditContextEvidence = { sources: [], callers: [], callees: [] };
   let callers: CallGraphDataResult | undefined;
-  let callees: CallGraphDataResult | undefined;
 
   const editContext = await resolveCodebaseEditContextWithDependencies({
     query: query.query,
@@ -257,57 +232,29 @@ async function runEditContextQuery(
     tokenBudget: query.args?.tokenBudget,
   }, {
     projectRoot,
-    searchCodebase: async (searchQuery, options) => {
-      conceptual = await indexer.search(searchQuery, options?.limit, {
-        filterByBranch: !!query.expected.branch,
-      });
-      return conceptual;
-    },
-    implementationLookup: async (symbol, options) => {
-      definitions = await indexer.search(symbol, options?.limit, {
-        filterByBranch: !!query.expected.branch,
-        definitionIntent: true,
-      });
-      return definitions;
-    },
+    onSelectedEvidence: (evidence) => { selectedEvidence = evidence; },
+    searchCodebase: (searchQuery, options) => indexer.search(searchQuery, options?.limit, {
+      filterByBranch: !!query.expected.branch,
+    }),
+    implementationLookup: (symbol, options) => indexer.search(symbol, options?.limit, {
+      filterByBranch: !!query.expected.branch,
+      definitionIntent: true,
+    }),
     getCallGraphData: async (params) => {
       const result = await getCallGraphDataForIndexer(indexer, projectRoot, params);
       if (params.direction === "callers") callers = result;
-      else callees = result;
       return result;
     },
   });
 
   const resolution = callers?.resolution;
-  const target = selectResolvedTarget(definitions, resolution);
-  const targetCandidates = target ? [target] : [...definitions, ...conceptual];
-  const results = targetCandidates
-    .map((candidate) => ({
-      candidate,
-      position: resolution?.status !== "resolved" || editContext.details.sourceIncluded
-        ? editContext.text.indexOf(`${candidate.filePath}:${candidate.startLine}-${candidate.endLine}`)
-        : -1,
-    }))
-    .filter(({ position }) => position >= 0)
-    .sort((left, right) => left.position - right.position)
-    .map(({ candidate }) => toEvalSearchResult(candidate));
+  const results = selectedEvidence.sources.map(toEvalSearchResult);
 
   if (query.expected.graphNeighbor) {
     const symbols = await indexer.getCallGraphSymbols();
-    const callerLimit = query.args?.callerLimit ?? DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT;
-    const calleeLimit = query.args?.calleeLimit ?? DEFAULT_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT;
-    const publishedCallers = (callers?.callers ?? []).slice(0, callerLimit).filter((edge) =>
-      editContext.text.includes(
-        `${edge.fromSymbolName ?? "<unknown>"} at ${edge.fromSymbolFilePath ?? "<unknown file>"}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`,
-      ));
-    const publishedCallees = (callees?.callees ?? []).slice(0, calleeLimit).filter((edge) =>
-      resolution?.status === "resolved"
-      && editContext.text.includes(
-        `${edge.targetName} from ${resolution.filePath}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`,
-      ));
     results.push(
-      ...publishedCallers.map(callerResult).filter((item): item is EvalSearchResult => item !== undefined),
-      ...publishedCallees.map((edge) => calleeResult(edge, symbols)).filter((item): item is EvalSearchResult => item !== undefined),
+      ...selectedEvidence.callers.map(callerResult).filter((item): item is EvalSearchResult => item !== undefined),
+      ...selectedEvidence.callees.map((edge) => calleeResult(edge, symbols)).filter((item): item is EvalSearchResult => item !== undefined),
     );
   }
 

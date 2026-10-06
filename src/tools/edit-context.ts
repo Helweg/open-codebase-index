@@ -43,8 +43,16 @@ export interface CodebaseEditContextResult {
   };
 }
 
+export interface CodebaseEditContextEvidence {
+  sources: SearchResult[];
+  callers: CallEdgeData[];
+  callees: CallEdgeData[];
+}
+
 export interface CodebaseEditContextDependencies {
   projectRoot: string | undefined;
+  /** Observes only evidence retained after every response-budget fit. */
+  onSelectedEvidence?: (evidence: CodebaseEditContextEvidence) => void;
   searchCodebase: (
     query: string,
     options?: { limit?: number },
@@ -106,33 +114,41 @@ function targetSource(
   });
 }
 
-function formatSource(result: SearchResult): string {
+function formatSource(result: SearchResult, onHeader?: (endOffset: number) => void): string {
   const name = result.name ? ` ${result.name}` : "";
-  return [
-    "## Target implementation",
-    `${result.filePath}:${result.startLine}-${result.endLine} (${result.chunkType}${name})`,
-    "```",
-    result.content,
-    "```",
-  ].join("\n");
+  const header = `## Target implementation\n${result.filePath}:${result.startLine}-${result.endLine} (${result.chunkType}${name})`;
+  onHeader?.(header.length);
+  return [header, "```", result.content, "```"].join("\n");
 }
 
-function formatCallers(edges: CallEdgeData[]): string {
-  if (edges.length === 0) return "## Direct callers\nNone found.";
-  return [
-    "## Direct callers",
-    ...edges.map((edge) =>
-      `- ${edge.fromSymbolName ?? "<unknown>"} at ${edge.fromSymbolFilePath ?? "<unknown file>"}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`),
-  ].join("\n");
+function formatEdges(
+  heading: string,
+  edges: CallEdgeData[],
+  format: (edge: CallEdgeData) => string,
+  onEdge?: (endOffset: number) => void,
+): string {
+  if (edges.length === 0) return `${heading}\nNone found.`;
+  let offset = heading.length + 1;
+  const lines = edges.map((edge) => {
+    const line = format(edge);
+    if (onEdge) {
+      offset += line.length;
+      onEdge(offset);
+      offset += 1;
+    }
+    return line;
+  });
+  return [heading, ...lines].join("\n");
 }
 
-function formatCallees(edges: CallEdgeData[], sourceFilePath: string): string {
-  if (edges.length === 0) return "## Direct callees\nNone found.";
-  return [
-    "## Direct callees",
-    ...edges.map((edge) =>
-      `- ${edge.targetName} from ${sourceFilePath}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`),
-  ].join("\n");
+function formatCallers(edges: CallEdgeData[], onEdge?: (endOffset: number) => void): string {
+  return formatEdges("## Direct callers", edges, (edge) =>
+    `- ${edge.fromSymbolName ?? "<unknown>"} at ${edge.fromSymbolFilePath ?? "<unknown file>"}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`, onEdge);
+}
+
+function formatCallees(edges: CallEdgeData[], sourceFilePath: string, onEdge?: (endOffset: number) => void): string {
+  return formatEdges("## Direct callees", edges, (edge) =>
+    `- ${edge.targetName} from ${sourceFilePath}:${edge.line} (${edge.callType}, ${edge.isResolved ? "resolved" : "unresolved"})`, onEdge);
 }
 
 function formatResolutionRisk(resolution: Exclude<CallGraphSymbolResolution, { status: "resolved" }>): string {
@@ -160,6 +176,7 @@ async function fallbackPack(
   throwIfOperationAborted(control?.signal);
   const conceptual = await dependencies.searchCodebase(query, { limit: 5 }, control);
   throwIfOperationAborted(control?.signal);
+  let selectedEvidence: Array<{ result: SearchResult; endOffset: number }> | undefined;
   const pack = buildContextPack([...candidateSource, ...conceptual], {
     tokenBudget: tokenBudget ?? undefined,
     heading: "## Conceptual evidence",
@@ -167,8 +184,16 @@ async function fallbackPack(
     includeExactSearchHandoff: false,
     preferImplementationPaths: true,
     projectRoot: dependencies.projectRoot,
+    onSelectedEvidence: dependencies.onSelectedEvidence ? (evidence) => { selectedEvidence = evidence; } : undefined,
   });
   const fitted = fitTextToContextBudget(`${risk}\n\n${pack.text}`, tokenBudget ?? undefined);
+  dependencies.onSelectedEvidence?.({
+    sources: (selectedEvidence ?? [])
+      .filter((entry) => risk.length + 2 + entry.endOffset <= fitted.retainedLength)
+      .map((entry) => entry.result),
+    callers: [],
+    callees: [],
+  });
   return {
     text: fitted.text,
     details: {
@@ -267,9 +292,14 @@ export async function resolveCodebaseEditContextWithDependencies(
     MIN_CONTEXT_PACK_TOKEN_BUDGET,
     Math.floor((input.tokenBudget ?? DEFAULT_CONTEXT_PACK_TOKEN_BUDGET) * 0.6),
   );
-  const sourceText = source
-    ? fitTextToContextBudget(formatSource(source), sourceBudget).text
-    : `## Target implementation\nRisk: no implementation source matched the resolved target at ${resolution.filePath}:${resolution.startLine}.`;
+  let sourceHeaderEnd = Infinity;
+  const sourceFit = source
+    ? fitTextToContextBudget(formatSource(source, dependencies.onSelectedEvidence
+      ? (endOffset) => { sourceHeaderEnd = endOffset; }
+      : undefined), sourceBudget)
+    : undefined;
+  const sourceText = sourceFit?.text
+    ?? `## Target implementation\nRisk: no implementation source matched the resolved target at ${resolution.filePath}:${resolution.startLine}.`;
   let apiImpact: ApiImpactEvidence | undefined;
   if (input.includeApiImpact && dependencies.getApiImpactEvidence) {
     try {
@@ -291,15 +321,28 @@ export async function resolveCodebaseEditContextWithDependencies(
       };
     }
   }
-  const precedingText = [
-    `# Pre-edit context for ${resolution.name}`,
-    graphRisk,
-    sourceText,
-    formatCallers(callers),
-    formatCallees(callees, resolution.filePath),
-  ].filter((section) => section !== undefined).join("\n\n");
+  const header = [`# Pre-edit context for ${resolution.name}`, graphRisk]
+    .filter((section) => section !== undefined).join("\n\n");
+  const sourceOffset = header.length + 2;
+  const callerOffset = sourceOffset + sourceText.length + 2;
+  const callerEnds: number[] | undefined = dependencies.onSelectedEvidence ? [] : undefined;
+  const callerText = formatCallers(callers, callerEnds
+    ? (endOffset) => { callerEnds.push(callerOffset + endOffset); }
+    : undefined);
+  const calleeOffset = callerOffset + callerText.length + 2;
+  const calleeEnds: number[] | undefined = dependencies.onSelectedEvidence ? [] : undefined;
+  const calleeText = formatCallees(callees, resolution.filePath, calleeEnds
+    ? (endOffset) => { calleeEnds.push(calleeOffset + endOffset); }
+    : undefined);
+  const precedingText = [header, sourceText, callerText, calleeText].join("\n\n");
   const completeText = apiImpact ? `${precedingText}\n\n${apiImpact.text}` : precedingText;
   const fitted = fitTextToContextBudget(completeText, input.tokenBudget ?? undefined);
+  dependencies.onSelectedEvidence?.({
+    sources: source && sourceHeaderEnd <= (sourceFit?.retainedLength ?? 0)
+      && sourceOffset + sourceHeaderEnd <= fitted.retainedLength ? [source] : [],
+    callers: callers.filter((_edge, index) => (callerEnds?.[index] ?? Infinity) <= fitted.retainedLength),
+    callees: callees.filter((_edge, index) => (calleeEnds?.[index] ?? Infinity) <= fitted.retainedLength),
+  });
   const apiImpactOffset = Array.from(`${precedingText}\n\n`).length;
   const renderedApiTail = Array.from(fitted.text).slice(apiImpactOffset).join("");
   const apiImpactRendered = apiImpact ? renderedApiTail.startsWith("## API impact evidence") : false;
