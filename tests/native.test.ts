@@ -175,7 +175,7 @@ describe("native module", () => {
     );
 
     it.each(["bindings.js", "bindings.tsx"])(
-      "names generator expressions and preserves generator method kinds in %s",
+      "uses explicit generator names while preserving anonymous bindings and method kinds in %s",
       (filePath) => {
         const [result] = parseFiles([{ path: filePath, content: `const boundItems = function* internalItems() {
   yield loadBound();
@@ -188,7 +188,7 @@ class Streams {
   async *asyncItems() { yield await loadAsyncMethod(); }
 }` }]);
         expect(result.symbols.map((symbol) => [symbol.name, symbol.kind])).toEqual([
-          ["boundItems", "function"],
+          ["internalItems", "function"],
           ["asyncBoundItems", "function"],
           ["Streams", "class_declaration"],
           ["items", "method_definition"],
@@ -1398,6 +1398,69 @@ end
       expect(results[0].path).toBe("a.ts");
       expect(results[1].path).toBe("b.ts");
     });
+
+    it.each(["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"])(
+      "extracts named function-expression declarations and canonical chunks in %s",
+      (extension) => {
+        const content = [
+          "module.exports = function getCallers () {",
+          "  return ['caller'];",
+          "};",
+          "exports.load = async function loadNamed () { return 1; };",
+          "object.items = function* iterateNamed () { yield 1; };",
+          "const bound = function innerNamed () { return 2; };",
+          "const generators = function* innerGenerator () { yield 2; };",
+          "const object = { handle: function propertyNamed () { return 3; } };",
+          "exports.stream = async function* streamNamed () { yield 4; };",
+          "exports.λ = function unicodeNamed () { return 5; };",
+          "module.exports = function (input) { return input; };",
+          "exports.anonymous = function* (input) { yield input; };",
+          "const anonymous = function (argument) { return argument; };",
+          "const arrow = value => value;",
+          "export class Service { method () { return 'preserved-class-body'; } }",
+        ].join("\n");
+        const filePath = `expressions.${extension}`;
+        const [result] = parseFiles([{ path: filePath, content }]);
+        const names = [
+          "getCallers", "loadNamed", "iterateNamed", "innerNamed",
+          "innerGenerator", "propertyNamed", "streamNamed", "unicodeNamed",
+        ];
+        const expressions = result.symbols.filter((symbol) => symbol.kind === "function");
+        expect(expressions.map((symbol) => symbol.name)).toEqual(names);
+        const chunks = result.chunks.filter((chunk) => chunk.chunkType === "function");
+        expect(chunks.map((chunk) => chunk.name)).toEqual(names);
+        expect(parseFile(filePath, content)).toEqual(result.chunks);
+        expect(expressions[0]).toMatchObject({
+          startLine: 1, startCol: 17, endLine: 3, endCol: 1,
+        });
+        for (const [index, symbol] of expressions.entries()) {
+          const chunk = chunks[index];
+          expect(chunk).toMatchObject({
+            startLine: symbol.startLine, startCol: symbol.startCol,
+            endLine: symbol.endLine, endCol: symbol.endCol,
+          });
+          const lines = content.split("\n").slice(symbol.startLine - 1, symbol.endLine);
+          const bytes = lines.map((line) => Buffer.from(line));
+          bytes[bytes.length - 1] = bytes[bytes.length - 1].subarray(0, symbol.endCol);
+          bytes[0] = bytes[0].subarray(symbol.startCol);
+          expect(chunk.content).toBe(bytes.map((line) => line.toString()).join("\n"));
+        }
+        expect(result.chunks).toContainEqual(expect.objectContaining({
+          chunkType: "expression_statement",
+          content: "module.exports = function getCallers () {\n  return ['caller'];\n};",
+        }));
+        expect(result.symbols).toContainEqual(expect.objectContaining({
+          name: "arrow", kind: "arrow_function",
+        }));
+        expect(result.symbols).toContainEqual(expect.objectContaining({
+          name: "Service", kind: "class_declaration",
+        }));
+        expect(result.symbols).toContainEqual(expect.objectContaining({
+          name: "method", kind: "method_definition",
+        }));
+        expect(result.chunks.some((chunk) => chunk.name === "method")).toBe(false);
+      },
+    );
 
     it("extracts nested class methods as symbols without changing semantic chunks", () => {
       const [result] = parseFiles([{

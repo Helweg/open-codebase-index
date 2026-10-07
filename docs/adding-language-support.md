@@ -95,6 +95,12 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 
 - `README.md` — supported-language claims
 
+## JavaScript-family declaration maintenance
+
+Named function expressions use the grammar's explicit `name` field, including normal, async, generator and async-generator expressions. They produce canonical `function` symbols and chunks even inside assignments, exports, object properties and enclosing declarations; existing container chunks remain available. Named expressions do not take an assignment target's name. Anonymous normal expressions do not borrow parameter, property or body identifiers; anonymous generators retain legitimate variable bindings.
+
+Parser version `2` uses the existing branch-scoped JavaScript migration marker. Ordinary non-forced indexing reparses unchanged `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts` files to repair persisted symbols and chunks. Unrelated language catalogs and cached embeddings are retained; the global symbol-extractor version is unchanged.
+
 ## Kotlin implementation notes
 
 Both `.kt` and `.kts` use semantic parsing, declaration persistence, and syntax-based call extraction. Named objects and companions use class declarations; constructor `val`/`var` parameters and regular properties remain navigable property declarations. Local properties do not become caller scopes. Incremental indexing reparses unchanged Kotlin files once per branch to replace legacy text chunks, symbols, and edges; unrelated files retain their cached embeddings.
