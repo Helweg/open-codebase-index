@@ -116,6 +116,20 @@ const IMPLEMENTATION_FILE_EXTENSIONS = new Set([
   "tsx", "zig", "zsh",
 ]);
 
+const FILE_PATH_HINT_EXTENSIONS = [
+  "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
+  "py", "rs", "go", "java", "kt", "kts", "swift", "rb", "php",
+  "c", "h", "cc", "cpp", "cxx", "hpp", "cs", "scala", "lua",
+  "sh", "bash", "zsh", "json", "yaml", "yml", "toml",
+];
+
+const FILE_PATH_HINT_SUFFIX_REGEX = new RegExp(
+  "\\s+\\bin\\s+[\"'`]?((?:\\.\\/)?(?:[A-Za-z0-9._-]+\\/)+[A-Za-z0-9._-]+\\.(?:" +
+  FILE_PATH_HINT_EXTENSIONS.join("|") +
+  "))[\"'`]?[\\])}>.,;!?]*\\s*$",
+  "i"
+);
+
 function normalizePath(filePath: string): string {
   return normalizeRankingText(filePath).replace(/\\/g, "/");
 }
@@ -138,11 +152,26 @@ function identifierTokens(value: string): string[] {
 }
 
 function queryWords(query: string): string[] {
-  return query.normalize("NFKC").match(/[\p{L}_$][\p{L}\p{N}_$-]*/gu) ?? [];
+  return stripFilePathHint(query).normalize("NFKC").match(/[\p{L}_$][\p{L}\p{N}_$-]*/gu) ?? [];
 }
 
 function hasCodeShape(value: string): boolean {
   return /[_$]/u.test(value) || /[\p{Ll}\p{N}][\p{Lu}]/u.test(value);
+}
+
+export function extractFilePathHint(query: string): string | null {
+  const match = query.match(FILE_PATH_HINT_SUFFIX_REGEX);
+  const rawPath = match?.[1];
+  if (!rawPath) {
+    return null;
+  }
+
+  return rawPath.replace(/^\.\//, "");
+}
+
+export function stripFilePathHint(query: string): string {
+  const stripped = query.replace(FILE_PATH_HINT_SUFFIX_REGEX, "").trim();
+  return stripped.length > 0 ? stripped : query;
 }
 
 export function extractIntentIdentifierHints(query: string): string[] {
@@ -156,11 +185,8 @@ export function extractIntentIdentifierHints(query: string): string[] {
   });
 
   const explicitlyCodeShaped = contentWords.filter(hasCodeShape);
-  const hasDefinitionWording = /\b(?:defined|definition|declaration|implemented|implementation|symbol)\b/iu.test(query) ||
-    /\bwhere\s+is\b/iu.test(query);
   const singleContentHint = contentWords.length === 1 ? contentWords : [];
-  const intentAnchoredHints = hasDefinitionWording ? contentWords.slice(0, 3) : [];
-  const candidates = [...quoted, ...explicitlyCodeShaped, ...singleContentHint, ...intentAnchoredHints];
+  const candidates = [...quoted, ...explicitlyCodeShaped, ...singleContentHint];
 
   const seen = new Set<string>();
   const hints: string[] = [];
@@ -219,9 +245,6 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
 
 export function isExplicitIdentifierLookup(query: string): boolean {
   const intent = analyzeQueryIntent(query);
-  if (intent.primary === "definition" || intent.primary === "implementation") {
-    return true;
-  }
   const contentWords = queryWords(query).filter((word) => {
     const normalized = normalizeRankingText(word);
     return normalized.length >= 2 && !STOPWORDS.has(normalized) && !INTENT_WORDS.has(normalized);

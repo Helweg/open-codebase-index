@@ -131,3 +131,41 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## tree-sitter-kotlin-ng 1.1.0
+
+- Project: [tree-sitter-grammars/tree-sitter-kotlin](https://github.com/tree-sitter-grammars/tree-sitter-kotlin)
+- Source: [crate 1.1.0](https://crates.io/crates/tree-sitter-kotlin-ng/1.1.0)
+- License: MIT
+- Notice: [upstream LICENSE at the crate's VCS revision 77dd60ea0a9003ce062c9728a513ffe1aaff8c82](https://github.com/tree-sitter-grammars/tree-sitter-kotlin/blob/77dd60ea0a9003ce062c9728a513ffe1aaff8c82/LICENSE)
+- Local patch: `native/vendor/tree-sitter-kotlin-ng` retains the generated parser,
+  grammar, node metadata, Rust binding/build script, and parser header from that
+  exact crate/revision. Only the external scanner is changed to emit a
+  zero-width member separator before a same-line closing `}`, preventing nested
+  class/companion bodies from turning following declarations into ERROR nodes.
+  The local Cargo manifest retains the upstream runtime/build dependency
+  requirements and omits unused upstream development/distribution metadata.
+
+```text
+The MIT License (MIT)
+
+Copyright (c) 2024 Amaan Qureshi <amaanq12@gmail.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

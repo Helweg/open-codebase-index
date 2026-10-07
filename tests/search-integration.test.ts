@@ -556,6 +556,115 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
     },
   );
 
+  it.each(["hybrid", "structural"] as const)(
+    "upgrades unchanged Kotlin text caches into declarations and call edges in %s mode",
+    async (mode) => {
+      const sources = [
+        { path: "CacheProbe.kt", content: "class CacheProbe {\n  val generation = 7\n  fun refreshEntry() = readEntry()\n}\nfun readEntry() = 9\n" },
+        { path: "startup.kts", content: "fun scriptSeed() = 11\nfun scriptEntry() = scriptSeed()\nscriptEntry()\n" },
+      ];
+      for (const source of sources) fs.writeFileSync(path.join(tempDir, source.path), source.content);
+      fs.writeFileSync(path.join(tempDir, "unchanged.ts"), 'export function unchangedEntry() { return "NON_KOTLIN_CACHE_SENTINEL"; }\n');
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+        indexing: { mode, watchFiles: false, requireProjectMarker: false },
+      });
+      const writer = new Indexer(tempDir, config, "opencode");
+      _indexers.push(writer);
+      await writer.index();
+      const status = await writer.getStatus();
+      await writer.close();
+
+      const legacyChunks = sources.map((source) => ({
+        chunkId: `legacy_kotlin_${source.path}`,
+        contentHash: hashContent(source.content),
+        filePath: source.path,
+        startLine: 1,
+        endLine: source.content.trimEnd().split("\n").length,
+        nodeType: "block",
+        language: "text",
+      }));
+      const database = new Database(path.join(status.indexPath, "codebase.db"));
+      try {
+        const branch = database.getAllBranches()[0];
+        if (!branch) throw new Error("Fixture branch catalog missing");
+        const originalChunkIds = sources.flatMap((source) =>
+          database.getChunksByFile(source.path).map((chunk) => chunk.chunkId));
+        for (const source of sources) {
+          database.deleteChunksByFile(source.path);
+          database.deleteSymbolsByFile(source.path);
+          database.deleteCallEdgesByFile(source.path);
+        }
+        database.upsertChunksBatch(legacyChunks);
+        database.addChunksToBranchBatch(branch, legacyChunks.map((chunk) => chunk.chunkId));
+        database.deleteMetadata(`index.parser.kotlinVersion.${hashContent("default").slice(0, 24)}`);
+        if (mode === "hybrid") {
+          const vectors = new VectorStore(path.join(status.indexPath, "vectors"), 8);
+          vectors.loadStrict();
+          const keywords = new InvertedIndex(path.join(status.indexPath, "inverted-index.json"));
+          keywords.load();
+          for (const id of originalChunkIds) {
+            vectors.remove(id);
+            keywords.removeChunk(id);
+          }
+          for (const [index, chunk] of legacyChunks.entries()) {
+            vectors.add(chunk.chunkId, Array(8).fill(0.1), {
+              filePath: chunk.filePath, startLine: chunk.startLine, endLine: chunk.endLine,
+              chunkType: "other", language: "text", hash: chunk.contentHash,
+            });
+            keywords.addChunk(chunk.chunkId, sources[index].content);
+          }
+          vectors.save();
+          keywords.save();
+        }
+      } finally {
+        database.close();
+      }
+
+      const reader = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reader);
+      expect((await reader.getCallGraphSymbols()).filter((symbol) => symbol.language === "kotlin")).toEqual([]);
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: false, reason: "migration-required" });
+      fetchSpy.mockClear();
+      await reader.index();
+      const symbols = await reader.getCallGraphSymbols();
+      const refresh = symbols.find((symbol) => symbol.name === "refreshEntry");
+      const read = symbols.find((symbol) => symbol.name === "readEntry");
+      const script = symbols.find((symbol) => symbol.name === "scriptEntry");
+      const seed = symbols.find((symbol) => symbol.name === "scriptSeed");
+      expect(refresh).toMatchObject({ filePath: path.join(tempDir, "CacheProbe.kt"), kind: "method_declaration", language: "kotlin", startLine: 3, endLine: 3 });
+      expect(symbols.find((symbol) => symbol.name === "generation")).toMatchObject({ filePath: path.join(tempDir, "CacheProbe.kt"), kind: "property_declaration", startLine: 2, endLine: 2 });
+      expect(script).toMatchObject({ filePath: path.join(tempDir, "startup.kts"), kind: "function_declaration", language: "kotlin", startLine: 2, endLine: 2 });
+      if (!refresh || !read || !script || !seed) throw new Error("Migrated callable declarations missing");
+      expect(await reader.getCallees(refresh.id)).toContainEqual(expect.objectContaining({
+        targetName: "readEntry", toSymbolId: read.id, isResolved: true, line: 3,
+      }));
+      expect(await reader.getCallees(script.id)).toContainEqual(expect.objectContaining({
+        targetName: "scriptSeed", toSymbolId: seed.id, isResolved: true, line: 2,
+      }));
+      for (const source of sources) expect(fs.readFileSync(path.join(tempDir, source.path), "utf8")).toBe(source.content);
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      if (mode === "hybrid") {
+        const embedded = fetchSpy.mock.calls.flatMap(([, init]) => {
+          const body: unknown = JSON.parse(String(init?.body ?? "{}"));
+          if (!body || typeof body !== "object" || !("input" in body) || !Array.isArray(body.input)) return [];
+          return body.input.filter((value: unknown): value is string => typeof value === "string");
+        });
+        expect(embedded.join("\n")).not.toContain("NON_KOTLIN_CACHE_SENTINEL");
+      }
+      const upgraded = new Database(path.join(status.indexPath, "codebase.db"));
+      try {
+        for (const source of sources) {
+          expect(upgraded.getChunksByFile(source.path).map((chunk) => chunk.language)).not.toContain("text");
+          expect(upgraded.getChunksByFile(source.path).map((chunk) => chunk.chunkId)).not.toContain(`legacy_kotlin_${source.path}`);
+        }
+      } finally {
+        upgraded.close();
+      }
+    },
+  );
+
   describe.each(["search", "reranker", "similar"] as const)("sanitized SVG retrieval through %s", (surface) => {
     it.each([
       { separator: "", maxChunksPerFile: 100, contextLines: 0 },

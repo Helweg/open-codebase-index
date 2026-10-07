@@ -95,6 +95,16 @@ If you are unsure, aim for **semantic parsing first**. It is much easier to land
 
 - `README.md` — supported-language claims
 
+## Kotlin implementation notes
+
+Both `.kt` and `.kts` use semantic parsing, declaration persistence, and syntax-based call extraction. Named objects and companions use class declarations; constructor `val`/`var` parameters and regular properties remain navigable property declarations. Local properties do not become caller scopes. Incremental indexing reparses unchanged Kotlin files once per branch to replace legacy text chunks, symbols, and edges; unrelated files retain their cached embeddings.
+
+The exact `tree-sitter-kotlin-ng` 1.1.0 dependency is patched to `native/vendor/tree-sitter-kotlin-ng`. Its generated parser is unchanged. The external scanner has a narrow closing-brace separator fix for valid same-line nested class/companion bodies, covered by a regression that also checks following declarations. Preserve that correction when upgrading the grammar, verify its ABI, and retain the upstream MIT notice in `THIRD_PARTY_LICENSES.md`.
+
+Supported call syntax includes bare, member, safe-navigation, generic, chained, and trailing-lambda calls. A capitalized expression call is not proof of constructor identity. Graph edges are lexical evidence, not resolved overloads or runtime dispatch; operator/infix invocation, reflection, indirect callable values, destructuring bindings, accessors, and secondary-constructor symbols are not modeled.
+
+Native names preserve Unicode and remove backtick delimiters. The public `implementation_lookup` exact-symbol gate remains limited to bare ASCII identifiers: escaped ASCII names can be queried by their logical name, while space-containing or Unicode names take the semantic route rather than an authoritative exact match.
+
 ## Recommended order
 
 1. **Confirm file discovery** in `src/config/constants.ts`

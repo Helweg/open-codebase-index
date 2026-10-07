@@ -8,6 +8,8 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "interface_declaration",
   "type_alias_declaration",
   "enum_declaration",
+  "annotation_type_declaration",
+  "property_declaration",
   "function_definition",
   "class_definition",
   // Ruby module/class symbols that are declaration-bearing and navigable.

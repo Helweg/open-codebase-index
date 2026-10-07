@@ -43,7 +43,7 @@ import type { PrImpactResult } from "./pr-impact-types.js";
 import { UnsupportedIndexOperationError } from "./errors.js";
 export { UnsupportedIndexOperationError } from "./errors.js";
 import { getChunkGitBlame, type GitBlameMetadata } from "./git-blame.js";
-import { analyzeQueryIntent, isExplicitIdentifierLookup } from "./intent-aware-ranking.js";
+import { analyzeQueryIntent, extractFilePathHint, isExplicitIdentifierLookup, stripFilePathHint } from "./intent-aware-ranking.js";
 import {
   applyCommunityBoost,
   classifyQueryIntentRaw,
@@ -69,18 +69,16 @@ import {
   buildIdentifierDefinitionLane,
   classifyExternalRerankBand,
   extractCodeTermHints,
-  extractFilePathHint,
   extractIdentifierHints,
   extractPrimaryIdentifierQueryHint,
   isImplementationChunkType,
   isLikelyImplementationPath,
   pathMatchesHint,
   splitPathTokens,
-  stripFilePathHint,
   tokenizeTextForRanking,
   type ExternalRerankBand,
 } from "./definition-ranking.js";
-export { extractFilePathHint, stripFilePathHint } from "./definition-ranking.js";
+export { extractFilePathHint, stripFilePathHint } from "./intent-aware-ranking.js";
 import {
   acquireIndexLock,
   completeLeaseRecovery,
@@ -138,7 +136,7 @@ import {
   type PreparedScipEnrichment,
 } from "./scip-typescript-enrichment.js";
 
-export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal"]);
+export const CALL_GRAPH_LANGUAGES = new Set(["typescript", "tsx", "javascript", "jsx", "python", "go", "rust", "swift", "php", "apex", "zig", "gdscript", "matlab", "bash", "c", "cpp", "metal", "kotlin"]);
 
 type MarkupChunkContentCache = Map<string, Promise<Map<string, string>>>;
 
@@ -268,6 +266,8 @@ export function findEnclosingSymbol(
   let best: SymbolData | undefined;
 
   for (const symbol of symbols) {
+    // Properties remain navigable definitions, not executable caller scopes.
+    if (symbol.kind === "property_declaration") continue;
     if (line < symbol.startLine || line > symbol.endLine) continue;
     if (
       column !== undefined &&
@@ -769,6 +769,7 @@ const JAVASCRIPT_PARSER_VERSION = "1";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const MARKUP_PARSER_VERSION = "1";
+const KOTLIN_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "2";
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
@@ -780,6 +781,11 @@ function isPathWithinRoot(filePath: string, rootPath: string): boolean {
 function isMarkupFilePath(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase();
   return extension === ".xml" || extension === ".svg";
+}
+
+function isKotlinFilePath(filePath: string): boolean {
+  const extension = path.extname(filePath).toLowerCase();
+  return extension === ".kt" || extension === ".kts";
 }
 
 function promoteIdentifierMatches(
@@ -1940,6 +1946,12 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.parser.markupVersion", catalogIdentity);
   }
 
+  private getKotlinParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.kotlinVersion", catalogIdentity);
+  }
+
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -1960,6 +1972,8 @@ export class Indexer {
       === METAL_PARSER_VERSION
       && database.getMetadata(this.getMarkupParserVersionMetadataKey(catalogIdentity))
       === MARKUP_PARSER_VERSION
+      && database.getMetadata(this.getKotlinParserVersionMetadataKey(catalogIdentity))
+      === KOTLIN_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
       === SYMBOL_EXTRACTOR_VERSION;
   }
@@ -4948,6 +4962,8 @@ export class Indexer {
     const reparseCachedMetalFiles = database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
     const markupParserMetadataKey = this.getMarkupParserVersionMetadataKey();
     const reparseCachedMarkupFiles = database.getMetadata(markupParserMetadataKey) !== MARKUP_PARSER_VERSION;
+    const kotlinParserMetadataKey = this.getKotlinParserVersionMetadataKey();
+    const reparseCachedKotlinFiles = database.getMetadata(kotlinParserMetadataKey) !== KOTLIN_PARSER_VERSION;
     const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
     const refreshCachedSymbols = database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
     if (
@@ -5122,6 +5138,8 @@ export class Indexer {
         reparseCachedMetalFiles && path.extname(storedPath).toLowerCase() === ".metal";
       const requiresMarkupParserUpgrade =
         reparseCachedMarkupFiles && isMarkupFilePath(storedPath);
+      const requiresKotlinParserUpgrade =
+        reparseCachedKotlinFiles && isKotlinFilePath(storedPath);
       const inMigrationScope =
         forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
@@ -5133,6 +5151,7 @@ export class Indexer {
         && !requiresSwiftParserUpgrade
         && !requiresMetalParserUpgrade
         && !requiresMarkupParserUpgrade
+        && !requiresKotlinParserUpgrade
         && !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(storedPath);
@@ -5913,6 +5932,7 @@ export class Indexer {
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
+        database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
@@ -5958,6 +5978,7 @@ export class Indexer {
         database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
+        database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
@@ -6056,6 +6077,7 @@ export class Indexer {
       database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
+      database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
       database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       if (isStructural) this.saveStructuralIndexMetadata();

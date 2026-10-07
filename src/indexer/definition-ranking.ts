@@ -1,5 +1,6 @@
 import {
   analyzeQueryIntent,
+  extractFilePathHint,
   extractIntentIdentifierHints,
   isConfigPath,
   isDocumentationPath as isIntentDocumentationPath,
@@ -251,20 +252,6 @@ function hasModuleAffinity(filePath: string, exactIdentifierVariants: string[]):
   });
 }
 
-const FILE_PATH_HINT_EXTENSIONS = [
-  "ts", "tsx", "js", "jsx", "mjs", "cjs", "mts", "cts",
-  "py", "rs", "go", "java", "kt", "kts", "swift", "rb", "php",
-  "c", "h", "cc", "cpp", "cxx", "hpp", "cs", "scala", "lua",
-  "sh", "bash", "zsh", "json", "yaml", "yml", "toml",
-];
-
-const FILE_PATH_HINT_SUFFIX_REGEX = new RegExp(
-  "\\s+\\bin\\s+[\"'`]?((?:\\.\\/)?(?:[A-Za-z0-9._-]+\\/)+[A-Za-z0-9._-]+\\.(?:" +
-  FILE_PATH_HINT_EXTENSIONS.join("|") +
-  "))[\"'`]?[\\])}>.,;!?]*\\s*$",
-  "i"
-);
-
 function normalizeFilePathForHintMatch(filePath: string): string {
   return filePath.replace(/\\/g, "/").toLowerCase().replace(/^\.\//, "");
 }
@@ -276,21 +263,6 @@ export function pathMatchesHint(filePath: string, hint: string): boolean {
   return normalizedPath.endsWith(normalizedHint) ||
     normalizedPath.includes(`/${normalizedHint}`) ||
     normalizedPath.includes(normalizedHint);
-}
-
-export function extractFilePathHint(query: string): string | null {
-  const match = query.match(FILE_PATH_HINT_SUFFIX_REGEX);
-  const rawPath = match?.[1];
-  if (!rawPath) {
-    return null;
-  }
-
-  return rawPath.replace(/^\.\//, "");
-}
-
-export function stripFilePathHint(query: string): string {
-  const stripped = query.replace(FILE_PATH_HINT_SUFFIX_REGEX, "").trim();
-  return stripped.length > 0 ? stripped : query;
 }
 
 export function buildDeterministicIdentifierPass(
