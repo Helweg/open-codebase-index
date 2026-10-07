@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "verifiedAt": "2026-10-07T08:03:54.655Z",
+  "originalStudyByteUnchanged": true,
+  "comparison": "New publication is separate; actual original public archive/report/verification/retention SHA-256 match pre-comparison receipts.",
+  "files": [
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/preregistration.json.gz",
+      "sha256": "7be6e9854a882b294bedaecab35daeec6ea35ad5386f533899b43fee0f8f4ba2",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/report.json",
+      "sha256": "a18c9a2582ebeb401690c212f6ef075716e4a21590fd7dec499e9827f08be436",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/results-evidence.json.gz",
+      "sha256": "f414dec3a77e0c32e808c60b15903548fc4c869938bfdfda0bba663644b64c13",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/verification.json",
+      "sha256": "d60d563df3fe1d42a39fd62e3e1b058e7464c9e562cad11ac4a60c99866f26de",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/retention.json",
+      "sha256": "efb2e23a96d68e8722587a3a721c26f74129198fdb1ca700f9f75e121ae7962a",
+      "unchanged": true
+    }
+  ]
+}

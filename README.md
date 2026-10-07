@@ -233,6 +233,8 @@ The repository includes reproducible retrieval datasets, latency and quality bud
 
 - [Evaluation harness](docs/evaluation.md)
 - [Cross-repository benchmarking](docs/benchmarking-cross-repo.md)
+- [Assistant-curated round-two comparison and limitations](docs/benchmarks/2026-10-07-self-curated-round2-study.md)
+- [Kotlin/retrieval candidate development diagnosis](docs/benchmarks/2026-10-07-candidate-development-diagnosis.md)
 
 Performance depends on repository size, parser coverage, provider latency, embedding cache reuse, and the selected indexing limits. Prefer measured evaluation over fixed marketing claims.
 

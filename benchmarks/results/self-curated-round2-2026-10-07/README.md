@@ -24,3 +24,27 @@ Primary endpoint: exact-symbol relevant-file Hit@5. Secondary file metrics, natu
 ## Claim limits
 
 Source-author/internal AI QA is not independent review. Convenience selection and source-derived questions remain biased; historical/pretraining exposure is unknown. Pino was referenced as a prior Fastify dependency, and Zod is used by OCBI dependencies. New repository identities do not prove novelty. Equal supplied archive bytes do not imply equal indexed coverage. Selected CBM natural mapping is unsupported, not a universal upstream-capability claim. Literal unchanged-question matching is intentionally weak; whole-file BM25 shares OCBI's native tokenizer. No general-superiority, universal-SOTA, implementation-span, graph-identity, coding-productivity or cross-interface-speed claim is authorized.
+
+## Completed results and replay
+
+Execution: **2026-10-07T06:55:02.969Z–07:51:01.910Z**; all **63 cells, 700 primary outcomes and 2,100 pass records** retained, frozen locks unchanged. All 102 pass errors propagate three setup failures: OCBI hybrid/Humanizer and grepai/Humanizer/Sequel. There were 1,860 successful and 138 unsupported records; no ready-cell scored-query errors, retries or score amendments.
+
+| Condition | Exact Hit@5 / 54 | Natural Hit@5 / 46 |
+|---|---:|---:|
+| OCBI hybrid | 47 | 30 |
+| OCBI structural | 53 | 29 |
+| CodeGraph | 54 | 16 |
+| codebase-memory-mcp | 53 | Unsupported |
+| grepai | 38 | 27 |
+| Literal | 44 | 0 |
+| Plain-file BM25 | 47 | 24 |
+
+- [Complete findings and clustered uncertainty](../../../docs/benchmarks/2026-10-07-self-curated-round2-study.md).
+- [All 700 per-task outcomes, CSV](per-task-outcomes.csv); unsupported metric fields are blank.
+- [Full report](report.json), SHA-256 `14447aa6918b7084a07170fba405dc5dec897a784393caf2c117d22be7cf103d`.
+- [Completed evidence](results-evidence.json.gz): 3,778 text artifacts, SHA-256 `06684446fa6f4edcad6fc718e5461bbc03727810c20a7576839203804dd70906`.
+- [Actual publication replay](verification.json): 3,853 embedded hashes checked, all 1,860 successful raw returned-file lists replayed, all 2,100 records rescored, primary report and intervals reproduced exactly without participant requests.
+- [Exposed-development candidate diagnosis](../../../docs/benchmarks/2026-10-07-candidate-development-diagnosis.md) and [29-artifact development archive](candidate-development-evidence.json.gz); these are not fresh-study scores.
+- [Durable private evidence retention](retention.json).
+
+Operational zeros and different new tasks prevent a causal old/new improvement estimate. The transitive OS/Homebrew dynamic-library graph was not fully hash-bound; entry executables and project/tool bindings are not a portable whole-runtime image. Next development targets are embedding-index completion/readiness and Pino's omitted exported named function-expression symbol. This cohort is now development-exposed.
