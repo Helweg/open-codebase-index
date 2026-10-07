@@ -584,10 +584,7 @@ fun outside() { outsideOnly() }"#;
         let relationships = calls
             .iter()
             .map(|call| {
-                let point = tree_sitter::Point::new(
-                    call.line as usize - 1,
-                    call.column as usize,
-                );
+                let point = tree_sitter::Point::new(call.line as usize - 1, call.column as usize);
                 let mut node = tree.root_node().descendant_for_point_range(point, point);
                 let mut caller = None;
                 while let Some(ancestor) = node {
@@ -646,7 +643,10 @@ fun outside() { outsideOnly() }"#;
         }
         receivers.sort_unstable();
         callers.sort_unstable();
-        assert_eq!(receivers, vec!["client", "client", "client.fetch<String>()"]);
+        assert_eq!(
+            receivers,
+            vec!["client", "client", "client.fetch<String>()"]
+        );
         assert_eq!(callers, vec!["local", "other", "outside", "run"]);
 
         for alias in ["kt", "kts"] {

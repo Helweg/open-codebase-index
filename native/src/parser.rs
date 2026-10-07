@@ -222,8 +222,7 @@ fn extract_symbol_nodes(
 
     loop {
         let node = cursor.node();
-        if (is_semantic_node(node.kind(), language)
-            || is_kotlin_property_parameter(node, language))
+        if (is_semantic_node(node.kind(), language) || is_kotlin_property_parameter(node, language))
             && node.kind() != "export_statement"
         {
             if let Some(name) = extract_name(cursor, source, language) {
@@ -324,8 +323,8 @@ fn extract_semantic_nodes(
         let node = cursor.node();
         let node_type = node.kind();
 
-        let is_semantic = is_semantic_node(node_type, language)
-            || is_kotlin_property_parameter(node, language);
+        let is_semantic =
+            is_semantic_node(node_type, language) || is_kotlin_property_parameter(node, language);
         // Ruby modules are containers rather than useful retrieval units. Emit
         // their nested declarations, but not overlapping module chunks whose
         // content duplicates those declarations.
@@ -894,7 +893,10 @@ fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Langua
         return match node.kind() {
             "class_declaration" => {
                 let mut cursor = node.walk();
-                if node.children(&mut cursor).any(|child| child.kind() == "interface") {
+                if node
+                    .children(&mut cursor)
+                    .any(|child| child.kind() == "interface")
+                {
                     "interface_declaration"
                 } else {
                     let mut cursor = node.walk();
@@ -1478,13 +1480,25 @@ val answer: Int = 7"#;
                     .collect::<Vec<_>>(),
                 expected
             );
-            let build = chunks.iter().find(|chunk| chunk.name.as_deref() == Some("build")).unwrap();
+            let build = chunks
+                .iter()
+                .find(|chunk| chunk.name.as_deref() == Some("build"))
+                .unwrap();
             assert_eq!(build.content, r#"fun build(): String = "factory-body""#);
-            let after = chunks.iter().find(|chunk| chunk.name.as_deref() == Some("after")).unwrap();
+            let after = chunks
+                .iter()
+                .find(|chunk| chunk.name.as_deref() == Some("after"))
+                .unwrap();
             assert_eq!(after.start_line, 2);
             assert_eq!(after.end_line, 2);
-            assert_eq!(after.content, r#"fun after(): String = "following-function""#);
-            let answer = symbols.iter().find(|symbol| symbol.name == "answer").unwrap();
+            assert_eq!(
+                after.content,
+                r#"fun after(): String = "following-function""#
+            );
+            let answer = symbols
+                .iter()
+                .find(|symbol| symbol.name == "answer")
+                .unwrap();
             assert_eq!(answer.start_line, 3);
             assert_eq!(answer.end_line, 3);
         }
