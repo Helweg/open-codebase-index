@@ -25,6 +25,7 @@ export type ChunkType =
   | "function"
   | "class"
   | "method"
+  | "singleton_method"
   | "interface"
   | "type"
   | "enum"

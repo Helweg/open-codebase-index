@@ -12,9 +12,11 @@ export const CALL_GRAPH_SYMBOL_CHUNK_TYPES = new Set([
   "property_declaration",
   "function_definition",
   "class_definition",
-  // Ruby module/class symbols that are declaration-bearing and navigable.
+  // Ruby keeps distinct instance/singleton method kinds and container symbols.
   "class",
   "module",
+  "method",
+  "singleton_method",
   "class_specifier",
   "struct_specifier",
   "namespace_definition",

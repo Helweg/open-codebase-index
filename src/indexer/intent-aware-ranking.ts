@@ -72,6 +72,7 @@ const AUTHORITATIVE_CHUNK_TYPES = new Set([
   "protocol_declaration",
   "protocol_function_declaration",
   "signal_statement",
+  "singleton_method",
   "struct",
   "struct_declaration",
   "struct_item",
