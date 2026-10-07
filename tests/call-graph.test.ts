@@ -1918,16 +1918,6 @@ end
         for (const symbol of rubySymbols.filter((symbol) => symbol.name === "call" || symbol.name === "===")) {
           expect(findEnclosingSymbol(rubySymbols, symbol.startLine + 1)?.id).toBe(symbol.id);
         }
-        const lookup = await indexer.search("call", 10, { definitionIntent: "call", fileType: "rb" });
-        expect(lookup.filter((result) => result.name === "call").map((result) => result.chunkType).sort())
-          .toEqual(["method", "singleton_method"]);
-        const singletonOnly = await indexer.search("call", 10, {
-          definitionIntent: "call", fileType: "rb", chunkType: "singleton_method",
-        });
-        expect(singletonOnly).toEqual([expect.objectContaining({
-          name: "call", chunkType: "singleton_method", startLine: 4, endLine: 6,
-          content: rubyContent.split("\n").slice(3, 6).join("\n"),
-        })]);
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Ruby callable definitions**: Persist distinct instance and singleton method declarations instead of silently dropping them from exact lookup. Preserve declaration-owned predicate, bang, setter, and operator names without borrowing singleton receivers or body identifiers. Ordinary indexing repairs unchanged Ruby caches once per branch while retaining unrelated language catalogs and embeddings; Ruby call extraction remains unsupported.
+
 ## [0.36.0] - 2026-10-07
 
 ### Added
@@ -20,7 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Ruby callable definitions**: Persist distinct instance and singleton method declarations instead of silently dropping them from exact lookup. Preserve declaration-owned predicate, bang, setter, and operator names without borrowing singleton receivers or body identifiers. Ordinary indexing repairs unchanged Ruby caches once per branch while retaining unrelated language catalogs and embeddings; Ruby call extraction remains unsupported.
 - **Fresh-study evidence integrity**: Require paired study-approval and novelty-evidence paths, and verify the evidence file's exact-byte SHA-256 before creating a workspace or acquiring source. Preserve underlying errors when validation fails.
 - **Competitive CBM conformance**: Explicitly request JSON snippet output before parsing it, preserving exact symbol/path/source identity checks. Retain the original calibration failure and a separate corrected native-API smoke.
 - **Production source discovery**: Preserve legitimate builder/rebuild source directories and build-script filenames instead of excluding every path containing `build`. Keep delimited generated-build directories, dependency/cache/hidden guards, Git-ignore rules and explicit exclusions effective across indexing and watcher filters.

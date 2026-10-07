@@ -750,7 +750,7 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
       for (const [index, source] of sources.entries()) {
         const exact = await reopened.search(names[index], 1, {
-          definitionIntent: names[index], fileType: "rb", filterByBranch: false,
+          definitionIntent: true, fileType: "rb", filterByBranch: false,
         });
         expect(exact).toEqual([expect.objectContaining({
           name: names[index], chunkType: "method", filePath: path.join(tempDir, source.path),
