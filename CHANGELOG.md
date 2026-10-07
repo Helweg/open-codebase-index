@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-10-07
+
 ### Added
 
 - **Competitive evaluation diagnostics**: Report per-task wins, losses, ties, metric deltas, ranked paths, operational failures and unsupported interfaces. Publish a dated historical replay and fresh-study protocol without treating development data as a blind holdout or claiming SOTA.
@@ -14,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Assistant-run exploratory comparison**: Publish frozen nine-repository, 100-task results across seven conditions, all 2,100 query-pass records and a verified evidence replay. Report OCBI's exact-symbol and natural-language deficits, source-policy/declaration coverage failures and explicit self-curation limits; no outside-review prerequisite or SOTA claim.
 - **Kotlin declarations and calls**: Parse `.kt` and `.kts` into named classes, interfaces, objects and companions, functions and methods, properties, enums, annotations, and typealiases, with nested source ranges and KDoc. Persist declarations for definition lookup and extract syntax-based calls. Ordinary incremental indexing upgrades unchanged Kotlin text caches once per branch without reparsing unrelated files or deleting the index.
 - **Fresh candidate comparison**: Freeze the fully gated Kotlin/retrieval candidate before acquiring nine new repositories and 100 source-grounded tasks. Publish all 700 primary outcomes and 2,100 pass records, three setup failures, clustered uncertainty and verified raw-evidence replay separately from the unchanged prior study and exposed-development diagnosis.
+- **Named-expression candidate comparison**: Publish a separately preregistered nine-repository, 100-task comparison with all 700 primary outcomes and 2,100 pass records, including four failed setup cells and separately unsupported interfaces. Preserve historical scores and frozen evidence; append prose-count errata without rewriting archives. Humanizer's five-minute provider-bound setup failure remains unresolved.
 
 ### Fixed
 
@@ -968,7 +971,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...v0.36.0
 [0.35.3]: https://github.com/Helweg/open-codebase-index/compare/v0.35.2...v0.35.3
 [0.35.2]: https://github.com/Helweg/open-codebase-index/compare/v0.35.1...v0.35.2
 [0.35.1]: https://github.com/Helweg/open-codebase-index/compare/v0.35.0...v0.35.1
