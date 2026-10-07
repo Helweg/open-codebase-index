@@ -6,7 +6,7 @@ Status: **completed, including three operational setup failures**. Candidate `d4
 
 Execution ran from **2026-10-07T06:55:02.969Z to 2026-10-07T07:51:01.910Z**: nine repositories, 100 tasks, seven conditions, **63 cells, 700 first-pass outcomes and 2,100 query-pass records**. Candidate/input/runtime/model locks checked unchanged before and after. Repeat 1 alone determines quality. No retries, score exclusions or post-score runtime/query/gold/configuration changes.
 
-Supported operational failures count zero. Unsupported mappings are separate, not missed supported answers.
+All **102 supported error-pass records receive zero file-discovery scores** and remain in the supported denominator; they propagate three setup failures. Unsupported mappings are reported separately, not treated as missed supported answers.
 
 | Condition | Exact-symbol Hit@5, 54 tasks | Natural-language Hit@5, 46 tasks | Setup-failed primary tasks |
 |---|---:|---:|---:|
