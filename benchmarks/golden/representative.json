@@ -1,5 +1,5 @@
 {
-  "version": "2.2.0",
+  "version": "2.2.1",
   "name": "representative-retrieval",
   "description": "Hand-labeled retrieval kernel covering exact and nested definitions, conceptual source discovery, language and path filters, scoped recovery, graded multi-file evidence, similarity, keywords, error recovery, lock recovery, duplicate-symbol path disambiguation, and a negative filtered search.",
   "queries": [
@@ -288,7 +288,7 @@
         "expectedRoute": "search",
         "expectedOutcome": "results",
         "gradedEvidence": [
-          { "path": "src/indexer/definition-ranking.ts", "symbol": "extractFilePathHint", "relevance": 3 },
+          { "path": "src/indexer/intent-aware-ranking.ts", "symbol": "extractFilePathHint", "relevance": 3 },
           { "path": "src/indexer/definition-ranking.ts", "symbol": "pathMatchesHint", "relevance": 3 },
           { "path": "src/indexer/definition-ranking.ts", "symbol": "buildIdentifierDefinitionLane", "relevance": 2 }
         ]

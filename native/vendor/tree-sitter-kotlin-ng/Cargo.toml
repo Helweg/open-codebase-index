@@ -1,0 +1,17 @@
+[package]
+name = "tree-sitter-kotlin-ng"
+version = "1.1.0"
+edition = "2021"
+license = "MIT"
+description = "Kotlin grammar for tree-sitter"
+repository = "https://github.com/tree-sitter-grammars/tree-sitter-kotlin"
+build = "bindings/rust/build.rs"
+
+[lib]
+path = "bindings/rust/lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[build-dependencies]
+cc = "1.2"

@@ -392,6 +392,9 @@ describe("MCP operation execution", () => {
       isError: true,
       structuredContent: { error: { code: "OPERATION_CANCELLED" } },
     });
+
+    await runtime.diagnostics.markOrderedShutdown();
+    expect(fs.existsSync(path.join(projectRoot, ".codebase-index"))).toBe(false);
   });
 
   it("uses the real five-minute default and rearms it on heartbeat", async () => {

@@ -208,6 +208,7 @@ export async function executeMcpOperation(
   let stallTimeoutMs: number;
   let initializationTimer: ReturnType<typeof setTimeout> | undefined;
   try {
+    throwIfOperationAborted(operationController.signal);
     stallTimeoutMs = getRuntimeConfigForProject(runtime.projectRoot, runtime.host).mcp.stallTimeoutMs;
     if (stallTimeoutMs > 0 && !operationController.signal.aborted) {
       initializationTimer = setTimeout(() => {

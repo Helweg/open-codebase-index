@@ -92,6 +92,38 @@ function migrationMetadataKey(prefix: string, catalogIdentity = "default"): stri
     fs.rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it("keeps Kotlin initializer calls with their enclosing method rather than the local property", async () => {
+    fs.writeFileSync(path.join(tempDir, "Owner.kt"), [
+      "class Owner {",
+      "  fun run() {",
+      "    val result = helper()",
+      "    consume(result)",
+      "  }",
+      "}",
+      "fun helper() = 7",
+      "fun consume(value: Int) {}",
+      "",
+    ].join("\n"));
+    const indexer = new Indexer(tempDir, parseConfig({
+      indexing: { mode: "structural", autoIndex: false, watchFiles: false, requireProjectMarker: false },
+    }), "opencode");
+    try {
+      await indexer.index();
+      const symbols = await indexer.getCallGraphSymbols();
+      const run = symbols.find((symbol) => symbol.name === "run");
+      const result = symbols.find((symbol) => symbol.name === "result");
+      if (!run || !result) throw new Error("Kotlin method/property fixture declarations missing");
+      expect(result).toMatchObject({ kind: "property_declaration", startLine: 3, endLine: 3 });
+      const callees = (await indexer.getCallees(run.id))
+        .map((edge) => [edge.targetName, edge.line, edge.isResolved])
+        .sort((left, right) => String(left[0]).localeCompare(String(right[0])));
+      expect(callees).toEqual([["consume", 4, true], ["helper", 3, true]]);
+      expect(await indexer.getCallees(result.id)).toEqual([]);
+    } finally {
+      await indexer.close();
+    }
+  });
+
  describe("call extraction", () => {
     it.each([
       ["generators.js", "javascript"],

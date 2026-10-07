@@ -47,6 +47,7 @@ pub fn parse_file_internal(
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
         Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         Language::Go => tree_sitter_go::LANGUAGE.into(),
+        Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
         Language::Json => tree_sitter_json::LANGUAGE.into(),
         Language::Java => tree_sitter_java::LANGUAGE.into(),
         Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
@@ -159,6 +160,7 @@ fn parse_file_with_symbols_internal(
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
         Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         Language::Go => tree_sitter_go::LANGUAGE.into(),
+        Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
         Language::Json => tree_sitter_json::LANGUAGE.into(),
         Language::Java => tree_sitter_java::LANGUAGE.into(),
         Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
@@ -220,7 +222,9 @@ fn extract_symbol_nodes(
 
     loop {
         let node = cursor.node();
-        if is_semantic_node(node.kind(), language) && node.kind() != "export_statement" {
+        if (is_semantic_node(node.kind(), language) || is_kotlin_property_parameter(node, language))
+            && node.kind() != "export_statement"
+        {
             if let Some(name) = extract_name(cursor, source, language) {
                 symbols.push(ParsedSymbol {
                     name,
@@ -319,7 +323,8 @@ fn extract_semantic_nodes(
         let node = cursor.node();
         let node_type = node.kind();
 
-        let is_semantic = is_semantic_node(node_type, language);
+        let is_semantic =
+            is_semantic_node(node_type, language) || is_kotlin_property_parameter(node, language);
         // Ruby modules are containers rather than useful retrieval units. Emit
         // their nested declarations, but not overlapping module chunks whose
         // content duplicates those declarations.
@@ -360,7 +365,7 @@ fn extract_semantic_nodes(
                                     child.kind() == "generator_function_declaration"
                                 })))
                 }
-                Language::Swift => name.is_some(),
+                Language::Swift | Language::Kotlin => name.is_some(),
                 Language::Bash => node_type == "function_definition",
                 Language::C => node_type == "function_definition",
                 Language::Cpp => matches!(
@@ -413,7 +418,7 @@ fn extract_semantic_nodes(
             matches!(language, Language::TypeScript | Language::TypeScriptTsx)
                 && node_type == "abstract_class_declaration";
         let should_descend = !is_semantic
-            || *language == Language::Swift
+            || matches!(language, Language::Swift | Language::Kotlin)
             || descend_into_metal_type
             || descend_into_ts_abstract_class
             || descend_into_ruby_module;
@@ -546,6 +551,7 @@ fn is_comment_node(node_type: &str, language: &Language) -> bool {
         Language::Rust => matches!(node_type, "line_comment" | "block_comment"),
         Language::Swift => matches!(node_type, "comment" | "multiline_comment"),
         Language::Go => matches!(node_type, "comment"),
+        Language::Kotlin => matches!(node_type, "line_comment" | "block_comment"),
         Language::Java => matches!(node_type, "line_comment" | "block_comment"),
         Language::CSharp => matches!(node_type, "comment"),
         Language::Ruby => matches!(node_type, "comment"),
@@ -836,6 +842,15 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
         Language::Rust => RUST_SEMANTIC_NODES.contains(node_type),
         Language::Swift => SWIFT_SEMANTIC_NODES.contains(node_type),
         Language::Go => GO_SEMANTIC_NODES.contains(node_type),
+        Language::Kotlin => matches!(
+            node_type,
+            "class_declaration"
+                | "object_declaration"
+                | "companion_object"
+                | "function_declaration"
+                | "property_declaration"
+                | "type_alias"
+        ),
         Language::Java => JAVA_SEMANTIC_NODES.contains(node_type),
         Language::CSharp => CSHARP_SEMANTIC_NODES.contains(node_type),
         Language::Ruby => RUBY_SEMANTIC_NODES.contains(node_type),
@@ -862,7 +877,61 @@ fn is_semantic_node(node_type: &str, language: &Language) -> bool {
     result
 }
 
+fn is_kotlin_property_parameter(node: tree_sitter::Node<'_>, language: &Language) -> bool {
+    if *language != Language::Kotlin || node.kind() != "class_parameter" {
+        return false;
+    }
+    let mut cursor = node.walk();
+    let is_property = node
+        .children(&mut cursor)
+        .any(|child| matches!(child.kind(), "val" | "var"));
+    is_property
+}
+
 fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Language) -> String {
+    if *language == Language::Kotlin {
+        return match node.kind() {
+            "class_declaration" => {
+                let mut cursor = node.walk();
+                if node
+                    .children(&mut cursor)
+                    .any(|child| child.kind() == "interface")
+                {
+                    "interface_declaration"
+                } else {
+                    let mut cursor = node.walk();
+                    let modifiers = node
+                        .named_children(&mut cursor)
+                        .find(|child| child.kind() == "modifiers");
+                    let mut kind = "class_declaration";
+                    if let Some(modifiers) = modifiers {
+                        let mut cursor = modifiers.walk();
+                        for modifier in modifiers.named_children(&mut cursor) {
+                            match &source[modifier.byte_range()] {
+                                "enum" => kind = "enum_declaration",
+                                "annotation" => kind = "annotation_type_declaration",
+                                _ => {}
+                            }
+                        }
+                    }
+                    kind
+                }
+            }
+            "object_declaration" | "companion_object" => "class_declaration",
+            "type_alias" => "type_alias_declaration",
+            "class_parameter" => "property_declaration",
+            "function_declaration"
+                if node.parent().is_some_and(|parent| {
+                    matches!(parent.kind(), "class_body" | "enum_class_body")
+                }) =>
+            {
+                "method_declaration"
+            }
+            kind => kind,
+        }
+        .to_string();
+    }
+
     if matches!(
         language,
         Language::JavaScript
@@ -932,6 +1001,36 @@ fn extract_name(
     }
 
     let node = cursor.node();
+    if *language == Language::Kotlin {
+        // Use declaration-specific fields, never receiver/return type identifiers.
+        let name_node = match node.kind() {
+            "type_alias" => node.child_by_field_name("type"),
+            "property_declaration" => {
+                let mut cursor = node.walk();
+                let variable = node
+                    .named_children(&mut cursor)
+                    .find(|child| child.kind() == "variable_declaration");
+                variable.and_then(|variable| {
+                    let mut cursor = variable.walk();
+                    let name = variable
+                        .named_children(&mut cursor)
+                        .find(|child| child.kind() == "identifier");
+                    name
+                })
+            }
+            "class_parameter" => {
+                let mut cursor = node.walk();
+                let name = node
+                    .named_children(&mut cursor)
+                    .find(|child| child.kind() == "identifier");
+                name
+            }
+            _ => node.child_by_field_name("name"),
+        };
+        return name_node
+            .map(|name| source[name.byte_range()].trim_matches('`').to_string())
+            .or_else(|| (node.kind() == "companion_object").then(|| "Companion".to_string()));
+    }
 
     let fixed_name = match node.kind() {
         "init_declaration" => Some("init"),
@@ -1260,7 +1359,7 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
                     candidate.chunk_type.as_str(),
                     "function_definition" | "class_specifier" | "struct_specifier"
                 ),
-                "swift" => candidate.name.is_some(),
+                "swift" | "kotlin" => candidate.name.is_some(),
                 "metal" => true,
                 _ => false,
             };
@@ -1341,6 +1440,69 @@ fn chunk_by_lines(content: &str, language: &Language, lines_per_chunk: usize) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_kotlin_same_line_nested_class_closures_preserve_following_declarations() {
+        let source = r#"class Named { companion object Factory { fun build(): String = "factory-body" } }
+fun after(): String = "following-function"
+val answer: Int = 7"#;
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_kotlin_ng::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(source, None).unwrap();
+        assert!(
+            !tree.root_node().has_error(),
+            "Valid nested class closures must not create recovery nodes: {}",
+            tree.root_node().to_sexp()
+        );
+        for path in ["nested.kt", "nested.kts"] {
+            let (chunks, symbols) =
+                parse_file_with_symbols_internal(path, source, 30, None).unwrap();
+            let expected = vec![
+                ("Named", "class_declaration"),
+                ("Factory", "class_declaration"),
+                ("build", "method_declaration"),
+                ("after", "function_declaration"),
+                ("answer", "property_declaration"),
+            ];
+            assert_eq!(
+                symbols
+                    .iter()
+                    .map(|symbol| (symbol.name.as_str(), symbol.kind.as_str()))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            assert_eq!(
+                chunks
+                    .iter()
+                    .map(|chunk| (chunk.name.as_deref().unwrap(), chunk.chunk_type.as_str()))
+                    .collect::<Vec<_>>(),
+                expected
+            );
+            let build = chunks
+                .iter()
+                .find(|chunk| chunk.name.as_deref() == Some("build"))
+                .unwrap();
+            assert_eq!(build.content, r#"fun build(): String = "factory-body""#);
+            let after = chunks
+                .iter()
+                .find(|chunk| chunk.name.as_deref() == Some("after"))
+                .unwrap();
+            assert_eq!(after.start_line, 2);
+            assert_eq!(after.end_line, 2);
+            assert_eq!(
+                after.content,
+                r#"fun after(): String = "following-function""#
+            );
+            let answer = symbols
+                .iter()
+                .find(|symbol| symbol.name == "answer")
+                .unwrap();
+            assert_eq!(answer.start_line, 3);
+            assert_eq!(answer.end_line, 3);
+        }
+    }
 
     fn assert_php_parses_without_errors(content: &str) {
         let mut parser = Parser::new();

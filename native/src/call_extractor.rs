@@ -133,6 +133,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         Language::Rust => tree_sitter_rust::LANGUAGE.into(),
         Language::Swift => tree_sitter_swift::LANGUAGE.into(),
         Language::Go => tree_sitter_go::LANGUAGE.into(),
+        Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
         Language::Metal => tree_sitter_cpp::LANGUAGE.into(),
         Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
         Language::Zig => tree_sitter_zig::LANGUAGE.into(),
@@ -165,6 +166,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         Language::Rust => include_str!("../queries/rust-calls.scm"),
         Language::Swift => include_str!("../queries/swift-calls.scm"),
         Language::Go => include_str!("../queries/go-calls.scm"),
+        Language::Kotlin => include_str!("../queries/kotlin-calls.scm"),
         Language::Metal => include_str!("../queries/metal-calls.scm"),
         Language::Php => include_str!("../queries/php-calls.scm"),
         Language::Zig => include_str!("../queries/zig-calls.scm"),
@@ -305,7 +307,11 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
 
             if let Some(idx) = callee_name_idx {
                 if capture.index == idx {
-                    callee_name = Some(text.to_string());
+                    callee_name = Some(if language == Language::Kotlin {
+                        text.trim_matches('`').to_string()
+                    } else {
+                        text.to_string()
+                    });
                     if position.is_none() {
                         let start = node.start_position();
                         position = Some((start.row as u32 + 1, start.column as u32));
@@ -546,6 +552,117 @@ mod tests {
             "Expected method call, got: {:?}",
             calls
         );
+    }
+
+    #[test]
+    fn test_kotlin_calls_preserve_nearest_caller_boundaries_and_syntax_kinds() {
+        let code = r#"class Worker: Base() {
+  fun run(client: Client?) {
+    helper()
+    client?.refresh()
+    client.fetch<String>().decode()
+    Box<String>()
+    `display label`()
+    withValue { nestedLambda() }
+    fun local() { localOnly() }
+    local()
+    val reference = client::refresh
+    val indexed = values[0]
+  }
+  fun other() { otherOnly() }
+}
+fun outside() { outsideOnly() }"#;
+        let mut parser = Parser::new();
+        parser
+            .set_language(&tree_sitter_kotlin_ng::LANGUAGE.into())
+            .unwrap();
+        let tree = parser.parse(code, None).unwrap();
+        assert!(!tree.root_node().has_error());
+
+        let mut calls = extract_calls(code, "kotlin").unwrap();
+        calls.sort_by_key(|call| (call.line, call.column));
+        let relationships = calls
+            .iter()
+            .map(|call| {
+                let point = tree_sitter::Point::new(call.line as usize - 1, call.column as usize);
+                let mut node = tree.root_node().descendant_for_point_range(point, point);
+                let mut caller = None;
+                while let Some(ancestor) = node {
+                    if ancestor.kind() == "function_declaration" {
+                        caller = ancestor
+                            .child_by_field_name("name")
+                            .map(|name| name.utf8_text(code.as_bytes()).unwrap());
+                        break;
+                    }
+                    node = ancestor.parent();
+                }
+                assert_eq!(call.confidence, Confidence::Direct);
+                (caller, call.callee_name.as_str(), call.call_type)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            relationships,
+            vec![
+                (None, "Base", CallType::Constructor),
+                (Some("run"), "helper", CallType::Call),
+                (Some("run"), "refresh", CallType::MethodCall),
+                (Some("run"), "fetch", CallType::MethodCall),
+                (Some("run"), "decode", CallType::MethodCall),
+                // Kotlin capitalization does not distinguish factories from constructors.
+                (Some("run"), "Box", CallType::Call),
+                (Some("run"), "display label", CallType::Call),
+                (Some("run"), "withValue", CallType::Call),
+                (Some("run"), "nestedLambda", CallType::Call),
+                (Some("local"), "localOnly", CallType::Call),
+                (Some("run"), "local", CallType::Call),
+                (Some("other"), "otherOnly", CallType::Call),
+                (Some("outside"), "outsideOnly", CallType::Call),
+            ]
+        );
+        let query = Query::new(
+            &tree_sitter_kotlin_ng::LANGUAGE.into(),
+            include_str!("../queries/kotlin-calls.scm"),
+        )
+        .unwrap();
+        let object_index = query.capture_index_for_name("callee.object").unwrap();
+        let caller_index = query.capture_index_for_name("caller.name").unwrap();
+        let mut query_cursor = QueryCursor::new();
+        let mut matches = query_cursor.matches(&query, tree.root_node(), code.as_bytes());
+        let mut receivers = Vec::new();
+        let mut callers = Vec::new();
+        while let Some(match_) = matches.next() {
+            for capture in match_.captures {
+                let text = capture.node.utf8_text(code.as_bytes()).unwrap();
+                if capture.index == object_index {
+                    receivers.push(text);
+                }
+                if capture.index == caller_index {
+                    callers.push(text);
+                }
+            }
+        }
+        receivers.sort_unstable();
+        callers.sort_unstable();
+        assert_eq!(
+            receivers,
+            vec!["client", "client", "client.fetch<String>()"]
+        );
+        assert_eq!(callers, vec!["local", "other", "outside", "run"]);
+
+        for alias in ["kt", "kts"] {
+            let mut alias_calls = extract_calls(code, alias).unwrap();
+            alias_calls.sort_by_key(|call| (call.line, call.column));
+            assert_eq!(
+                alias_calls
+                    .iter()
+                    .map(|call| (&call.callee_name, call.line, call.column, call.call_type))
+                    .collect::<Vec<_>>(),
+                calls
+                    .iter()
+                    .map(|call| (&call.callee_name, call.line, call.column, call.call_type))
+                    .collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]

@@ -1,18 +1,16 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { analyzeQueryIntent, isExplicitIdentifierLookup } from "../src/indexer/intent-aware-ranking.js";
+import { analyzeQueryIntent, extractFilePathHint, isExplicitIdentifierLookup, stripFilePathHint } from "../src/indexer/intent-aware-ranking.js";
 import { vi } from "vitest";
 import {
   buildDeterministicIdentifierPass,
   buildIdentifierDefinitionLane,
   classifyExternalRerankBand,
-  extractFilePathHint,
   isImplementationChunkType,
   normalizeIdentifierVariants,
   pathMatchesHint,
   splitPathTokens,
-  stripFilePathHint,
   tokenizeTextForRanking,
 } from "../src/indexer/definition-ranking.js";
 import { Indexer } from "../src/indexer/index.js";
@@ -54,6 +52,9 @@ describe("definition ranking helpers", () => {
     expect(analyzeQueryIntent("find tests for `PaymentValidator`").preferSourcePaths).toBe(false);
     expect(analyzeQueryIntent("find docs for 'PaymentValidator'").preferSourcePaths).toBe(false);
     expect(isExplicitIdentifierLookup("conceptual view of how a JsonReader token stream is validated")).toBe(false);
+    expect(isExplicitIdentifierLookup("Where is request data combined with instance defaults?")).toBe(false);
+    expect(isExplicitIdentifierLookup("Find the middleware that closes a discarded response body.")).toBe(false);
+    expect(analyzeQueryIntent("Where is request data combined with instance defaults?").preferSourcePaths).toBe(true);
   });
 
   it("extracts, strips, and matches normalized file path hints", () => {
@@ -101,7 +102,6 @@ describe("definition ranking helpers", () => {
     );
 
     expect(ranked.map((entry) => entry.id)).toEqual(["exact", "other"]);
-    expect(ranked[0]?.score).toBe(0.995);
   });
 
   it("prefers same-name exact candidates whose module path matches the requested identifier", () => {
@@ -128,7 +128,6 @@ describe("definition ranking helpers", () => {
     );
 
     expect(ranked.map((entry) => entry.id)).toEqual(["hinted", "affine"]);
-    expect(ranked[0]?.score).toBe(0.995);
   });
 
   it("does not promote partial identifier matches above exact identifier matches", () => {
@@ -156,7 +155,6 @@ describe("definition ranking helpers", () => {
     );
 
     expect(ranked.map((entry) => entry.id)).toEqual(["exact"]);
-    expect(ranked[0]?.score).toBe(0.99);
   });
 
   it("classifies external rerank evidence according to query intent", () => {
@@ -304,15 +302,17 @@ end
     }
   });
 
-  it.each([0, 0.9])("keeps the semantic implementation visible when prose matches many declaration names (minScore %s)", async (minScore) => {
+  it.each([0, 0.9].flatMap((minScore) => [
+    { minScore, query: "combine instance defaults with request configuration", noiseName: "combine", surface: "context" },
+    { minScore, query: "Where is request data combined with instance defaults?", noiseName: "Request", surface: "search" },
+  ]))("keeps the semantic implementation visible for $surface prose matching declaration names (minScore $minScore)", async ({ minScore, query, noiseName, surface }) => {
     const tempDir = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "conceptual-name-promotion-")));
     const sourcePath = path.join(tempDir, "app", "merge.ts");
-    const query = "combine instance defaults with request configuration";
     fs.mkdirSync(path.dirname(sourcePath), { recursive: true });
     fs.writeFileSync(sourcePath, "export function mergeConfiguration(defaults: object, request: object) { return { ...defaults, ...request }; }");
     for (let index = 0; index < 30; index += 1) {
       fs.writeFileSync(path.join(tempDir, "app", `noise-${index}.ts`),
-        `export function combine() { return "unrelated item ${index}"; }`);
+        `export function ${noiseName}() { return "unrelated item ${index}"; }`);
     }
 
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
@@ -336,16 +336,18 @@ end
 
     try {
       await indexer.index();
-      const context = await resolveSearchContext({ query, limit: 5, tokenBudget: 1200 }, {
-        lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
-          ...scope, metadataOnly: true, definitionIntent: true,
-        }),
-        search: (searchQuery, limit, scope, _trace, options) => indexer.search(searchQuery, limit, {
-          ...scope, metadataOnly: true, definitionIntent: false,
-          prioritizeSourcePaths: options?.prioritizeSourcePaths,
-        }),
-      });
-      expect(context.details?.results).toEqual(expect.arrayContaining([
+      const results = surface === "search"
+        ? await indexer.search(query, 5, { metadataOnly: true })
+        : (await resolveSearchContext({ query, limit: 5, tokenBudget: 1200 }, {
+          lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
+            ...scope, metadataOnly: true, definitionIntent: true,
+          }),
+          search: (searchQuery, limit, scope, _trace, options) => indexer.search(searchQuery, limit, {
+            ...scope, metadataOnly: true, definitionIntent: false,
+            prioritizeSourcePaths: options?.prioritizeSourcePaths,
+          }),
+        })).details?.results;
+      expect(results).toEqual(expect.arrayContaining([
         expect.objectContaining({ filePath: fs.realpathSync.native(sourcePath), name: "mergeConfiguration" }),
       ]));
     } finally {

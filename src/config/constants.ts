@@ -3,7 +3,7 @@ import { BUILD_DIRECTORY_PATTERNS } from "../utils/paths.js";
 export const DEFAULT_INCLUDE = [
   "**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs}",
   "**/*.{py,pyi}",
-  "**/*.{go,rs,java,cs,kt,scala}",
+  "**/*.{go,rs,java,cs,kt,kts,scala}",
   "**/*.{c,cpp,cc,cxx,h,hpp,hxx}",
   "**/*.{rb,php,inc,swift}",
   "**/*.{cls,trigger}",

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Competitive evaluation diagnostics**: Report per-task wins, losses, ties, metric deltas, ranked paths, operational failures and unsupported interfaces. Publish a dated historical replay and fresh-study protocol without treating development data as a blind holdout or claiming SOTA.
 - **Study preparation evidence**: Publish a sanitized maintainer exposure register, current-version public-interface calibration and isolated broker/evaluator feasibility observations. Distinguish passing infrastructure controls from the failed bounded model repair attempt.
 - **Assistant-run exploratory comparison**: Publish frozen nine-repository, 100-task results across seven conditions, all 2,100 query-pass records and a verified evidence replay. Report OCBI's exact-symbol and natural-language deficits, source-policy/declaration coverage failures and explicit self-curation limits; no outside-review prerequisite or SOTA claim.
+- **Kotlin declarations and calls**: Parse `.kt` and `.kts` into named classes, interfaces, objects and companions, functions and methods, properties, enums, annotations, and typealiases, with nested source ranges and KDoc. Persist declarations for definition lookup and extract syntax-based calls. Ordinary incremental indexing upgrades unchanged Kotlin text caches once per branch without reparsing unrelated files or deleting the index.
+- **Fresh candidate comparison**: Freeze the fully gated Kotlin/retrieval candidate before acquiring nine new repositories and 100 source-grounded tasks. Publish all 700 primary outcomes and 2,100 pass records, three setup failures, clustered uncertainty and verified raw-evidence replay separately from the unchanged prior study and exposed-development diagnosis.
 
 ### Fixed
 
@@ -19,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Competitive CBM conformance**: Explicitly request JSON snippet output before parsing it, preserving exact symbol/path/source identity checks. Retain the original calibration failure and a separate corrected native-API smoke.
 - **Production source discovery**: Preserve legitimate builder/rebuild source directories and build-script filenames instead of excluding every path containing `build`. Keep delimited generated-build directories, dependency/cache/hidden guards, Git-ignore rules and explicit exclusions effective across indexing and watcher filters.
 - **Go receiver-method definitions**: Extract actual method names for value, pointer and generic receivers instead of return-type names or missing declarations. Upgrade the symbol-extractor marker so ordinary indexing repairs unchanged cached symbol/chunk catalogs without a forced rebuild.
+- **Natural-language source ranking**: Do not infer exact identifiers from “where is” wording or the first few prose words. Balance ordinary source-term promotions with hybrid evidence rather than placing the whole identifier lane first; preserve quoted/code-shaped identifiers and path-qualified lowercase lookups.
+- **Kotlin grammar recovery and caller ownership**: Patch the pinned grammar's scanner so same-line nested class/companion closures cannot swallow following declarations. Local-property initializer calls belong to their enclosing callable, not the property definition.
+- **Representative evaluation labels**: Move the path-hint extraction label to its canonical intent module and bump the dataset to `2.2.1`; prior dataset fingerprints are not comparable.
+- **Pre-cancelled MCP requests**: Stop before diagnostic initialization so an already-cancelled request cannot start runtime/index writes that outlive its return or race shutdown.
 
 ## [0.35.3] - 2026-10-06
 

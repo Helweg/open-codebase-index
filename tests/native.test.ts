@@ -18,6 +18,119 @@ import {
 
 describe("native module", () => {
   describe("parseFile", () => {
+    it.each(["Declarations.kt", "Declarations.kts"])(
+      "extracts Kotlin declaration names, kinds, ranges, and nested bodies in %s",
+      (filePath) => {
+        const content = [
+          "package synthetic.catalog",
+          "/** Retains the documented payload and constructor properties. */",
+          "@Deprecated(\"synthetic fixture\")",
+          "data class Payload<T>(val value: T, ignored: String) {",
+          "  val label: String = \"payload-label\"",
+          "  fun encode(): String {",
+          "    fun local(): String = \"nested-body-evidence\"",
+          "    return local()",
+          "  }",
+          "  companion object {",
+          "    fun create(): Payload<String> = Payload(\"companion-body\", \"ignored\")",
+          "  }",
+          "}",
+          "interface Encoder { fun encode(): String }",
+          "object Registry { fun lookup(): String = \"object-body-evidence\" }",
+          "class Named { companion object Factory { fun build(): String = \"factory-body\" } }",
+          "annotation class Marker(val note: String)",
+          "enum class State { READY, DONE }",
+          "typealias TextPayload = Payload<String>",
+          "val topLabel: String = \"top-property-evidence\"",
+          "fun <T> identity(input: T): T = input",
+          "fun String.decorate(): String = \"extension-body:\" + this",
+          "fun `display label`(): String = \"backtick-body-evidence\"",
+          "val String.width: Int get() = length",
+        ].join("\n");
+        const [result] = parseFiles([{ path: filePath, content }]);
+        const expectedKinds = [
+          ["Payload", "class_declaration"],
+          ["value", "property_declaration"],
+          ["label", "property_declaration"],
+          ["encode", "method_declaration"],
+          ["local", "function_declaration"],
+          ["Companion", "class_declaration"],
+          ["create", "method_declaration"],
+          ["Encoder", "interface_declaration"],
+          ["encode", "method_declaration"],
+          ["Registry", "class_declaration"],
+          ["lookup", "method_declaration"],
+          ["Named", "class_declaration"],
+          ["Factory", "class_declaration"],
+          ["build", "method_declaration"],
+          ["Marker", "annotation_type_declaration"],
+          ["note", "property_declaration"],
+          ["State", "enum_declaration"],
+          ["TextPayload", "type_alias_declaration"],
+          ["topLabel", "property_declaration"],
+          ["identity", "function_declaration"],
+          ["decorate", "function_declaration"],
+          ["display label", "function_declaration"],
+          ["width", "property_declaration"],
+        ];
+        // Exact equality rejects receiver, parameter, generic, and return type names.
+        expect(result.symbols.map((symbol) => [symbol.name, symbol.kind])).toEqual(expectedKinds);
+        expect(result.symbols.every((symbol) => symbol.language === "kotlin")).toBe(true);
+        expect(result.chunks.map((chunk) => [chunk.name, chunk.chunkType])).toEqual(expectedKinds);
+        expect(result.chunks.every((chunk) => chunk.language === "kotlin")).toBe(true);
+        expect(parseFile(filePath, content)).toEqual(result.chunks);
+        expect(result.symbols.find((symbol) => symbol.name === "Payload")).toMatchObject({
+          startLine: 3, startCol: 0, endLine: 13, endCol: 1,
+        });
+        expect(result.chunks.find((chunk) => chunk.name === "Payload")).toMatchObject({
+          startLine: 2, startCol: 0, endLine: 13, endCol: 1,
+        });
+        expect(result.chunks.find((chunk) => chunk.name === "Payload")?.content)
+          .toContain("/** Retains the documented payload");
+        expect(result.symbols.find((symbol) => symbol.name === "local")).toMatchObject({
+          startLine: 7, startCol: 4, endLine: 7, endCol: content.split("\n")[6].length,
+        });
+        for (const [name, evidence] of [
+          ["local", "nested-body-evidence"],
+          ["lookup", "object-body-evidence"],
+          ["create", "companion-body"],
+          ["decorate", "extension-body:"],
+          ["display label", "backtick-body-evidence"],
+          ["topLabel", "top-property-evidence"],
+          ["width", "get() = length"],
+        ]) {
+          expect(result.chunks.find((chunk) => chunk.name === name)?.content).toContain(evidence);
+        }
+        for (const symbol of result.symbols) {
+          const chunk = result.chunks.find((candidate) =>
+            candidate.name === symbol.name && candidate.endLine === symbol.endLine);
+          expect(chunk).toBeDefined();
+          expect(chunk?.endCol).toBe(symbol.endCol);
+          if (symbol.name !== "Payload") {
+            expect(chunk?.startLine).toBe(symbol.startLine);
+            expect(chunk?.startCol).toBe(symbol.startCol);
+          }
+        }
+      },
+    );
+
+    it("preserves adjacent small Kotlin functions and script declarations", () => {
+      const content = "fun first() = second()\nfun second() = 7\nval answer = first()";
+      const [result] = parseFiles([{ path: "session.kts", content }]);
+      expect(result.chunks.map((chunk) => ({
+        name: chunk.name, kind: chunk.chunkType, content: chunk.content,
+        startLine: chunk.startLine, startCol: chunk.startCol,
+        endLine: chunk.endLine, endCol: chunk.endCol,
+      }))).toEqual([
+        { name: "first", kind: "function_declaration", content: "fun first() = second()",
+          startLine: 1, startCol: 0, endLine: 1, endCol: "fun first() = second()".length },
+        { name: "second", kind: "function_declaration", content: "fun second() = 7",
+          startLine: 2, startCol: 0, endLine: 2, endCol: "fun second() = 7".length },
+        { name: "answer", kind: "property_declaration", content: "val answer = first()",
+          startLine: 3, startCol: 0, endLine: 3, endCol: "val answer = first()".length },
+      ]);
+    });
+
     it.each(["generators.js", "generators.jsx", "generators.ts", "generators.tsx"])(
       "preserves generator declarations and symbol boundaries in %s",
       (filePath) => {

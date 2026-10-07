@@ -21,6 +21,7 @@ pub enum Language {
     Rust,
     Swift,
     Go,
+    Kotlin,
     Java,
     CSharp,
     Ruby,
@@ -54,6 +55,7 @@ impl Language {
             "rs" => Language::Rust,
             "swift" => Language::Swift,
             "go" => Language::Go,
+            "kt" | "kts" => Language::Kotlin,
             "java" => Language::Java,
             "cs" => Language::CSharp,
             "rb" => Language::Ruby,
@@ -88,6 +90,7 @@ impl Language {
             Language::Rust => "rust",
             Language::Swift => "swift",
             Language::Go => "go",
+            Language::Kotlin => "kotlin",
             Language::Java => "java",
             Language::CSharp => "csharp",
             Language::Ruby => "ruby",
@@ -121,6 +124,7 @@ impl Language {
             "rust" | "rs" => Language::Rust,
             "swift" => Language::Swift,
             "go" => Language::Go,
+            "kotlin" | "kt" | "kts" => Language::Kotlin,
             "java" => Language::Java,
             "csharp" | "cs" | "c#" => Language::CSharp,
             "ruby" | "rb" => Language::Ruby,
@@ -143,5 +147,21 @@ impl Language {
             "apex" => Language::Apex,
             _ => Language::Text,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Language;
+
+    #[test]
+    fn kotlin_extensions_and_names_share_one_language() {
+        for extension in ["kt", "kts", "KT", "KTS"] {
+            assert_eq!(Language::from_extension(extension), Language::Kotlin);
+        }
+        for name in ["kotlin", "Kotlin", "kt", "kts"] {
+            assert_eq!(Language::from_string(name), Language::Kotlin);
+        }
+        assert_eq!(Language::Kotlin.as_str(), "kotlin");
     }
 }

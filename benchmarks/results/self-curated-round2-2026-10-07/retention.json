@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 1,
+  "kind": "durable-private-original-evidence-retention",
+  "createdAt": "2026-10-07T08:20:50.196Z",
+  "study": "self-curated-round2-2026-10-07",
+  "candidateCommit": "d44449d09ead0fcd0cb70d0631dcfff5b54ae65a",
+  "preregistrationCommit": "b7358d3ff640b77ead3ec335afb7ade71a447073",
+  "originalFreshStudy": {
+    "localArchive": "${USER_HOME}/.jcode/scratch/ocbi-self-curated-round2-20261007-originals.tar.gz",
+    "bytes": 1096880735,
+    "sha256": "6246d08e3b71192653daa80838280ad67e3d5163643500bbd6985142fdc29e16",
+    "fullGzipIntegrityCheck": "passed",
+    "completionMemberStreamRead": "passed",
+    "completionReceipt": {
+      "completedAt": "2026-10-07T07:51:01.910Z",
+      "primaryRows": 700,
+      "candidateAndInputLocksUnchanged": true
+    },
+    "contains": "Original private-path records, pinned Git source archives and manifests, source/curation snippets, frozen protocol/scripts/locks, every cell and native index, isolated comparator installations, replay observations, candidate source/runtime snapshots, all33,180 frozen project dependency files and system entry-executable snapshots.",
+    "dependencySnapshotFilesByteVerified": 33180,
+    "candidateSourceRuntimeSnapshotFilesByteVerified": 195
+  },
+  "originalDevelopmentEvidence": {
+    "localArchive": "${USER_HOME}/.jcode/scratch/ocbi-candidate-development-20261006-originals.tar.gz",
+    "bytes": 8625025534,
+    "sha256": "d05304d51777cce82b807ce3d6bf8eff8099c70da531c5dcc8c7ed10d1816b55",
+    "fullGzipIntegrityCheck": "passed",
+    "contains": "Original controlled before/rejected/final/serial-paired representative evaluations, source/engine snapshots, held native module, native indexes, Rack ranking-stage traces, diagnostics, smoke sources/results and gate failure/final history."
+  },
+  "publishedNormalization": "Original private-byte SHA-256 and normalized public-content SHA-256 are distinct; published archives are not asserted byte-identical to originals.",
+  "runtimeLimit": "Not a portable OS/compiler/Ollama/runtime image. Transitive OS/Homebrew dynamic-library closure not fully byte-bound before scoring; selected model manifest bound without redistributing model blobs.",
+  "priorStudy": "Five original public evidence/archive/report/verification/retention SHA-256 values reverified unchanged; original-study-preservation.json"
+}
