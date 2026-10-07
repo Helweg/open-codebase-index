@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../src/config/schema.js";
 import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
 import { Database, hashContent, InvertedIndex, parseFiles, VectorStore } from "../src/native/index.js";
+import type { SymbolData } from "../src/native/index.js";
 import { resolveSearchContext } from "../src/tools/context-search.js";
 
 describe("search integration", () => {
@@ -553,6 +554,121 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       ]);
       expect(fs.readFileSync(sourcePath, "utf8")).toBe(source);
       await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
+    },
+  );
+
+  it.each(["hybrid", "structural"] as const)(
+    "repairs unchanged named function-expression catalogs and chunks only for JS-family files in %s mode",
+    async (mode) => {
+      const source = "module.exports = function getCallers () {\n  return ['caller-evidence'];\n};\n";
+      const extensions = ["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"];
+      const sources = extensions.map((extension) => ({ path: `caller.${extension}`, content: source }));
+      for (const file of sources) fs.writeFileSync(path.join(tempDir, file.path), file.content);
+      const unrelatedPath = "unrelated.py";
+      const unrelatedSource = 'def unrelatedEntry():\n    return "NON_JS_CACHE_SENTINEL"\n';
+      fs.writeFileSync(path.join(tempDir, unrelatedPath), unrelatedSource);
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+        include: ["caller.*", unrelatedPath],
+        indexing: { mode, watchFiles: false, requireProjectMarker: false },
+        search: { minScore: 0 },
+      });
+      const writer = new Indexer(tempDir, config, "opencode");
+      _indexers.push(writer);
+      await writer.index();
+      const freshExact = await writer.search("getCallers", 1, {
+        definitionIntent: "getCallers", filterByBranch: false, fileType: "js",
+      });
+      expect(freshExact).toEqual([expect.objectContaining({
+        name: "getCallers", chunkType: "function", content: expect.stringContaining("return ['caller-evidence']"),
+      })]);
+      const status = await writer.getStatus();
+      await writer.close();
+
+      const database = new Database(path.join(status.indexPath, "codebase.db"));
+      const removedIds: string[] = [];
+      let unrelatedSymbols: SymbolData[] = [];
+      try {
+        for (const file of sources) {
+          expect(database.getSymbolsByFile(file.path)).toContainEqual(expect.objectContaining({
+            name: "getCallers", kind: "function", startLine: 1, startCol: 17, endLine: 3, endCol: 1,
+          }));
+          const canonical = database.getChunksByFile(file.path).filter((chunk) => chunk.name === "getCallers");
+          expect(canonical).toHaveLength(1);
+          expect(canonical[0]).toMatchObject({ nodeType: "function", startLine: 1, endLine: 3 });
+          removedIds.push(...canonical.map((chunk) => chunk.chunkId));
+          const retained = database.getChunksByFile(file.path).filter((chunk) => chunk.name !== "getCallers");
+          database.deleteChunksByFile(file.path);
+          database.upsertChunksBatch(retained);
+          const branches = database.getAllBranches();
+          for (const branch of branches) database.addChunksToBranchBatch(branch, retained.map((chunk) => chunk.chunkId));
+          database.deleteSymbolsByFile(file.path);
+          database.deleteCallEdgesByFile(file.path);
+        }
+        // A cached non-JS catalog sentinel proves the scoped upgrade never reparses it.
+        const unrelated = database.getSymbolsByFile(unrelatedPath).find((symbol) => symbol.name === "unrelatedEntry");
+        if (!unrelated) throw new Error("Unrelated-language fixture symbol missing");
+        database.upsertSymbol({ ...unrelated, name: "NON_JS_CACHED_SYMBOL" });
+        unrelatedSymbols = database.getSymbolsByFile(unrelatedPath);
+        database.setMetadata(`index.parser.javascriptVersion.${hashContent("default").slice(0, 24)}`, "1");
+        expect(database.getSymbolsByName("getCallers")).toEqual([]);
+        expect(database.getChunksByName("getCallers")).toEqual([]);
+      } finally {
+        database.close();
+      }
+      if (mode === "hybrid") {
+        const vectors = new VectorStore(path.join(status.indexPath, "vectors"), 8);
+        vectors.loadStrict();
+        const keywords = new InvertedIndex(path.join(status.indexPath, "inverted-index.json"));
+        keywords.load();
+        for (const id of removedIds) {
+          vectors.remove(id);
+          keywords.removeChunk(id);
+        }
+        vectors.save();
+        keywords.save();
+      }
+
+      const reader = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reader);
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: false, reason: "migration-required" });
+      fetchSpy.mockClear();
+      await reader.index();
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      const upgraded = new Database(path.join(status.indexPath, "codebase.db"));
+      try {
+        for (const file of sources) {
+          expect(upgraded.getSymbolsByFile(file.path)).toContainEqual(expect.objectContaining({
+            name: "getCallers", kind: "function", startLine: 1, startCol: 17, endLine: 3, endCol: 1,
+          }));
+          expect(upgraded.getChunksByFile(file.path).filter((chunk) => chunk.name === "getCallers")).toEqual([
+            expect.objectContaining({ nodeType: "function", startLine: 1, endLine: 3 }),
+          ]);
+          expect(fs.readFileSync(path.join(tempDir, file.path), "utf8")).toBe(file.content);
+        }
+        expect(upgraded.getSymbolsByFile(unrelatedPath)).toEqual(unrelatedSymbols);
+      } finally {
+        upgraded.close();
+      }
+      expect(fs.readFileSync(path.join(tempDir, unrelatedPath), "utf8")).toBe(unrelatedSource);
+      const embedded = fetchSpy.mock.calls.flatMap(([, init]) => {
+        const body: unknown = JSON.parse(String(init?.body ?? "{}"));
+        if (!body || typeof body !== "object" || !("input" in body) || !Array.isArray(body.input)) return [];
+        return body.input.filter((value: unknown): value is string => typeof value === "string");
+      });
+      expect(embedded.join("\n")).not.toContain("NON_JS_CACHE_SENTINEL");
+      await reader.close();
+
+      const reopened = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reopened);
+      await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      const exact = await reopened.search("getCallers", 1, {
+        definitionIntent: "getCallers", filterByBranch: false, fileType: "js",
+      });
+      expect(exact).toEqual([expect.objectContaining({
+        name: "getCallers", chunkType: "function", content: expect.stringContaining("return ['caller-evidence']"),
+      })]);
     },
   );
 

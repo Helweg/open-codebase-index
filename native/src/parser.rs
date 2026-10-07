@@ -259,7 +259,7 @@ fn extract_chunks(
     let root = tree.root_node();
     let mut cursor = root.walk();
 
-    extract_semantic_nodes(&mut cursor, source, language, &mut chunks, 0);
+    extract_semantic_nodes(&mut cursor, source, language, &mut chunks, 0, false);
 
     if chunks.is_empty() {
         return Ok(chunk_by_lines(source, language, lines_per_chunk));
@@ -301,6 +301,7 @@ fn extract_semantic_nodes(
     language: &Language,
     chunks: &mut Vec<CodeChunk>,
     depth: usize,
+    named_expressions_only: bool,
 ) {
     #[cfg(debug_assertions)]
     let start = Instant::now();
@@ -328,8 +329,12 @@ fn extract_semantic_nodes(
         // Ruby modules are containers rather than useful retrieval units. Emit
         // their nested declarations, but not overlapping module chunks whose
         // content duplicates those declarations.
-        let emit_semantic_chunk =
-            is_semantic && !(*language == Language::Ruby && node_type == "module");
+        let is_named_function_expression =
+            matches!(node_type, "function_expression" | "generator_function")
+                && node.child_by_field_name("name").is_some();
+        let emit_semantic_chunk = is_semantic
+            && (!named_expressions_only || is_named_function_expression)
+            && !(*language == Language::Ruby && node_type == "module");
 
         if emit_semantic_chunk {
             let semantic_start_node = if *language == Language::Metal {
@@ -357,7 +362,10 @@ fn extract_semantic_nodes(
                     name.is_some()
                         && (matches!(
                             node_type,
-                            "function_declaration" | "generator_function_declaration"
+                            "function_declaration"
+                                | "generator_function_declaration"
+                                | "function_expression"
+                                | "generator_function"
                         ) || (node_type == "export_statement"
                             && node
                                 .child_by_field_name("declaration")
@@ -422,8 +430,27 @@ fn extract_semantic_nodes(
             || descend_into_metal_type
             || descend_into_ts_abstract_class
             || descend_into_ruby_module;
-        if should_descend && !skip_children && cursor.goto_first_child() {
-            extract_semantic_nodes(cursor, source, language, chunks, depth + 1);
+        // Preserve the existing enclosing chunks, while finding explicitly named
+        // function expressions inside assignments, exports, properties, and bodies.
+        let find_nested_expressions = matches!(
+            language,
+            Language::JavaScript
+                | Language::JavaScriptJsx
+                | Language::TypeScript
+                | Language::TypeScriptTsx
+        );
+        if (should_descend || find_nested_expressions)
+            && !skip_children
+            && cursor.goto_first_child()
+        {
+            extract_semantic_nodes(
+                cursor,
+                source,
+                language,
+                chunks,
+                depth + 1,
+                named_expressions_only || (find_nested_expressions && !should_descend),
+            );
             cursor.goto_parent();
         }
 
@@ -634,7 +661,7 @@ static TS_SEMANTIC_NODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     set.insert("function_declaration");
     set.insert("generator_function_declaration");
     set.insert("generator_function");
-    set.insert("function");
+    set.insert("function_expression");
     set.insert("arrow_function");
     set.insert("method_definition");
     set.insert("class_declaration");
@@ -947,7 +974,7 @@ fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Langua
         {
             return "function_declaration".to_string();
         }
-        if node.kind() == "generator_function" {
+        if matches!(node.kind(), "function_expression" | "generator_function") {
             return "function".to_string();
         }
     }
@@ -1057,10 +1084,18 @@ fn extract_name(
         return name;
     }
 
-    if node.kind() == "generator_function" {
-        if let Some(name) = extract_arrow_binding_name(node, source) {
-            return Some(name);
+    if matches!(node.kind(), "function_expression" | "generator_function") {
+        // A named expression owns its explicit name, not its assignment target.
+        // Anonymous generators retain the existing variable-binding convention;
+        // neither form may borrow a parameter, export property, or body identifier.
+        if let Some(name) = node.child_by_field_name("name") {
+            return Some(source[name.byte_range()].to_string());
         }
+        return if node.kind() == "generator_function" {
+            extract_arrow_binding_name(node, source)
+        } else {
+            None
+        };
     }
 
     if *language == Language::Metal {
@@ -1352,7 +1387,10 @@ fn merge_small_chunks(chunks: &mut Vec<CodeChunk>) {
         let is_preserved_call_graph_symbol =
             |candidate: &CodeChunk| match candidate.language.as_str() {
                 "javascript" | "jsx" | "typescript" | "tsx" => {
-                    candidate.chunk_type == "function_declaration" && candidate.name.is_some()
+                    matches!(
+                        candidate.chunk_type.as_str(),
+                        "function_declaration" | "function"
+                    ) && candidate.name.is_some()
                 }
                 "bash" | "c" => candidate.chunk_type == "function_definition",
                 "cpp" => matches!(
@@ -1440,6 +1478,65 @@ fn chunk_by_lines(content: &str, language: &Language, lines_per_chunk: usize) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_javascript_family_named_expression_declarations() {
+        let source = "module.exports = function getCallers() { return []; };\n\
+exports.load = async function loadNamed() { return 1; };\n\
+const alias = function* generatorNamed() { yield 2; };\n\
+const object = { property: function propertyNamed() {} };\n\
+exports.stream = async function* streamNamed() { yield 3; };\n\
+exports.anonymous = function(parameter) { return parameter; };\n\
+exports.generator = function*(parameter) { yield parameter; };";
+        for path in [
+            "expressions.js",
+            "expressions.jsx",
+            "expressions.ts",
+            "expressions.tsx",
+        ] {
+            let (chunks, symbols) =
+                parse_file_with_symbols_internal(path, source, 30, None).unwrap();
+            let names = [
+                "getCallers",
+                "loadNamed",
+                "generatorNamed",
+                "propertyNamed",
+                "streamNamed",
+            ];
+            assert_eq!(
+                symbols
+                    .iter()
+                    .filter(|symbol| symbol.kind == "function")
+                    .map(|symbol| symbol.name.as_str())
+                    .collect::<Vec<_>>(),
+                names
+            );
+            assert_eq!(
+                chunks
+                    .iter()
+                    .filter(|chunk| chunk.chunk_type == "function")
+                    .map(|chunk| chunk.name.as_deref().unwrap())
+                    .collect::<Vec<_>>(),
+                names
+            );
+            for name in names {
+                let symbol = symbols.iter().find(|symbol| symbol.name == name).unwrap();
+                let chunk = chunks
+                    .iter()
+                    .find(|chunk| chunk.name.as_deref() == Some(name))
+                    .unwrap();
+                assert_eq!(chunk.start_line, symbol.start_line);
+                assert_eq!(chunk.start_col, symbol.start_col);
+                assert_eq!(chunk.end_line, symbol.end_line);
+                assert_eq!(chunk.end_col, symbol.end_col);
+                let line = source.lines().nth(symbol.start_line as usize - 1).unwrap();
+                assert_eq!(
+                    chunk.content,
+                    line[symbol.start_col as usize..symbol.end_col as usize]
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_kotlin_same_line_nested_class_closures_preserve_following_declarations() {

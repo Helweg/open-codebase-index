@@ -30,7 +30,7 @@ function symbolExtractorMetadataKey(catalogIdentity: string): string {
 function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: string): void {
   const suffix = hashContent(catalogIdentity).slice(0, 24);
   database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "11");
-  database.setMetadata(`index.parser.javascriptVersion.${suffix}`, "1");
+  database.setMetadata(`index.parser.javascriptVersion.${suffix}`, "2");
   database.setMetadata(`index.parser.swiftVersion.${suffix}`, "2");
   database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
   database.setMetadata(`index.parser.markupVersion.${suffix}`, "1");
