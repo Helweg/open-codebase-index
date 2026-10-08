@@ -135,6 +135,8 @@ Finds code analogous to a supplied snippet. Useful for duplicate detection, patt
 
 Reports readiness, chunk counts, compatibility, current provider/model, and index health information.
 
+Catalog presence and provider/model compatibility are separate from pending storage migrations. An active catalog can be `ready` and compatible while its parser, symbol, or call-graph migration markers are outdated. Shared status results expose `migrationRequired`; public status reports pending migrations and recommends ordinary `index_codebase` with `force: false`. This refresh upgrades affected cached declarations without deleting the index. With automatic indexing disabled, existing declarations can remain available while newly supported declarations are absent; with readiness-gated retrieval, pending migrations can block search. Status only checks stored migration markers, not source-file or HEAD freshness, and never starts a refresh.
+
 MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
 
 ### `index_codebase`

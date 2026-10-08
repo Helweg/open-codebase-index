@@ -34,6 +34,7 @@ export interface WorkspaceStatusEntry {
   activeChunkCount: number | null;
   mode: "hybrid" | "structural" | null;
   branchReadiness: StatusResult["branchReadiness"] | null;
+  migrationRequired: boolean | null;
   compatibility: "compatible" | "incompatible" | "unknown";
   error?: string;
 }
@@ -100,6 +101,7 @@ function isReady(status: StatusResult, branchMismatch: boolean): boolean {
     && compatibilityReady
     && status.failedBatchesCount === 0
     && branchReady
+    && status.migrationRequired !== true
     && !branchMismatch;
 }
 
@@ -143,6 +145,7 @@ async function inspectRepository(
     activeChunkCount: null,
     mode: null,
     branchReadiness: null,
+    migrationRequired: null,
     compatibility: "unknown" as const,
   };
   try {
@@ -175,6 +178,7 @@ async function inspectRepository(
       activeChunkCount: status.branchReadiness?.activeCatalogChunkCount ?? null,
       mode: status.mode ?? null,
       branchReadiness: status.branchReadiness ?? null,
+      migrationRequired: status.migrationRequired ?? null,
       compatibility: compatibilityState(status),
     };
   } catch (error) {
@@ -204,9 +208,14 @@ export function formatWorkspaceStatus(result: WorkspaceStatusResult): string {
       lines.push(`  Error: ${repo.error}`);
       return lines.join("\n");
     }
+    let migrationState = "unknown";
+    if (repo.migrationRequired !== null) {
+      migrationState = repo.migrationRequired ? "pending" : "none pending";
+    }
     lines.push(
       `  Index: branch=${repo.indexedBranch ?? "unknown"} storedChunks=${repo.chunkCount.toLocaleString()} activeChunks=${repo.activeChunkCount?.toLocaleString() ?? "unknown"} mode=${repo.mode ?? "unknown"}`,
       `  Branch readiness: ${repo.branchReadiness?.state ?? "unknown"}`,
+      `  Storage migrations: ${migrationState}`,
       `  Compatibility: ${repo.compatibility}`,
     );
     if (repo.branchMismatch) lines.push("  MISMATCH: checkout branch differs from the indexed runtime branch.");
