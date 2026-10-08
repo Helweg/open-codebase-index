@@ -673,6 +673,96 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
   );
 
   it.each(["hybrid", "structural"] as const)(
+    "repairs unchanged Ruby callable catalogs once without touching unrelated caches in %s mode",
+    async (mode) => {
+      const names = ["to_date", "build_keys", "map_value", "compile_fn", "registry_tree", "infer_predicate"];
+      const sources = names.map((name, index) => ({
+        path: `ruby_${index}.rb`,
+        content: `module Catalog\n  class Entry${index}\n    def ${name}(value)\n      value\n    end\n  end\nend\n`,
+      }));
+      for (const source of sources) fs.writeFileSync(path.join(tempDir, source.path), source.content);
+      const unrelatedPath = "unchanged.ts";
+      fs.writeFileSync(path.join(tempDir, unrelatedPath),
+        'export function unchangedEntry() { return "NON_RUBY_CACHE_SENTINEL"; }\n');
+      const config = parseConfig({
+        embeddingProvider: "custom",
+        customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+        indexing: { mode, watchFiles: false, requireProjectMarker: false },
+      });
+      const writer = new Indexer(tempDir, config, "opencode");
+      _indexers.push(writer);
+      await writer.index();
+      const status = await writer.getStatus();
+      await writer.close();
+      const versionKey = `index.parser.rubyVersion.${hashContent("default").slice(0, 24)}`;
+      const database = new Database(path.join(status.indexPath, "codebase.db"));
+      const unrelatedChunks = database.getChunksByFile(unrelatedPath);
+      const unrelatedSymbols = database.getSymbolsByFile(unrelatedPath);
+      const unrelatedEmbeddings = unrelatedChunks.map((chunk) => database.getEmbedding(chunk.contentHash));
+      try {
+        const branch = database.getAllBranches()[0];
+        if (!branch) throw new Error("Fixture branch catalog missing");
+        // The old allowlist persisted Ruby containers but dropped every method.
+        for (const source of sources) {
+          const containers = database.getSymbolsByFile(source.path)
+            .filter((symbol) => symbol.kind === "class" || symbol.kind === "module");
+          database.deleteSymbolsByFile(source.path);
+          database.upsertSymbolsBatch(containers);
+          database.addSymbolsToBranchBatch(branch, containers.map((symbol) => symbol.id));
+        }
+        database.deleteMetadata(versionKey);
+      } finally {
+        database.close();
+      }
+
+      const reader = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reader);
+      expect((await reader.getCallGraphSymbols()).filter((symbol) => names.includes(symbol.name))).toEqual([]);
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: false, reason: "migration-required" });
+      fetchSpy.mockClear();
+      await reader.index();
+      await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      const upgraded = new Database(path.join(status.indexPath, "codebase.db"));
+      try {
+        expect(upgraded.getMetadata(versionKey)).toBe("1");
+        for (const [index, source] of sources.entries()) {
+          expect(upgraded.getSymbolsByFile(source.path)).toContainEqual(expect.objectContaining({
+            name: names[index], kind: "method", startLine: 3, startCol: 4, endLine: 5, endCol: 7,
+          }));
+          expect(fs.readFileSync(path.join(tempDir, source.path), "utf8")).toBe(source.content);
+        }
+        expect(upgraded.getChunksByFile(unrelatedPath)).toEqual(unrelatedChunks);
+        expect(upgraded.getSymbolsByFile(unrelatedPath)).toEqual(unrelatedSymbols);
+        expect(unrelatedChunks.map((chunk) => upgraded.getEmbedding(chunk.contentHash))).toEqual(unrelatedEmbeddings);
+      } finally {
+        upgraded.close();
+      }
+      const embedded = fetchSpy.mock.calls.flatMap(([, init]) => {
+        const body: unknown = JSON.parse(String(init?.body ?? "{}"));
+        if (!body || typeof body !== "object" || !("input" in body) || !Array.isArray(body.input)) return [];
+        return body.input.filter((value: unknown): value is string => typeof value === "string");
+      });
+      expect(embedded.join("\n")).not.toContain("NON_RUBY_CACHE_SENTINEL");
+      await reader.close();
+
+      const reopened = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reopened);
+      await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      for (const [index, source] of sources.entries()) {
+        const exact = await reopened.search(names[index], 1, {
+          definitionIntent: true, fileType: "rb", filterByBranch: false,
+        });
+        expect(exact).toEqual([expect.objectContaining({
+          name: names[index], chunkType: "method", filePath: path.join(tempDir, source.path),
+          startLine: 3, endLine: 5, content: source.content.split("\n").slice(2, 5).join("\n"),
+        })]);
+      }
+      const repeatStats = await reopened.index();
+      expect(repeatStats.indexedChunks).toBe(0);
+    },
+  );
+
+  it.each(["hybrid", "structural"] as const)(
     "upgrades unchanged Kotlin text caches into declarations and call edges in %s mode",
     async (mode) => {
       const sources = [

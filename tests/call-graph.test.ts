@@ -1849,13 +1849,22 @@ func caller() { helper(1) }
   });
 
   describe("ruby symbol persistence", () => {
-    it("persists class and module symbols in the branch symbol catalog", async () => {
+    it.each(["hybrid", "structural"] as const)("persists Ruby containers and callable ownership in %s mode", async (mode) => {
       const rubyFilePath = path.join(tempDir, "sinatra.rb");
       const rubyContent = `module Sinatra
   module NotFound
     class Templates
       def self.call
         :ok
+      end
+      def call(value)
+        value
+      end
+      def Templates.===(value)
+        value
+      end
+      def value=(replacement)
+        replacement
       end
     end
   end
@@ -1883,7 +1892,7 @@ end
           model: "mock-model",
           dimensions: 8,
         },
-        indexing: { watchFiles: false },
+        indexing: { mode, watchFiles: false },
       });
       const indexer = new Indexer(tempDir, config, "opencode");
 
@@ -1896,6 +1905,19 @@ end
         expect(rubySymbols.some((symbol) => symbol.kind === "module" && symbol.name === "Sinatra")).toBe(true);
         expect(rubySymbols.some((symbol) => symbol.kind === "module" && symbol.name === "NotFound")).toBe(true);
         expect(rubySymbols.some((symbol) => symbol.kind === "class" && symbol.name === "Templates")).toBe(true);
+        expect(rubySymbols.filter((symbol) => symbol.name === "call")).toEqual(expect.arrayContaining([
+          expect.objectContaining({ kind: "singleton_method", startLine: 4, endLine: 6 }),
+          expect.objectContaining({ kind: "method", startLine: 7, endLine: 9 }),
+        ]));
+        expect(rubySymbols.filter((symbol) => symbol.name === "call")).toHaveLength(2);
+        const operator = rubySymbols.find((symbol) => symbol.name === "===");
+        const setter = rubySymbols.find((symbol) => symbol.name === "value=");
+        expect(operator).toMatchObject({ kind: "singleton_method", startLine: 10, endLine: 12 });
+        expect(setter).toMatchObject({ kind: "method", startLine: 13, endLine: 15 });
+        expect(rubySymbols.filter((symbol) => symbol.name === "Templates")).toHaveLength(1);
+        for (const symbol of rubySymbols.filter((symbol) => symbol.name === "call" || symbol.name === "===")) {
+          expect(findEnclosingSymbol(rubySymbols, symbol.startLine + 1)?.id).toBe(symbol.id);
+        }
       } finally {
         await indexer.close();
         fetchSpy.mockRestore();

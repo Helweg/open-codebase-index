@@ -243,6 +243,8 @@ const EXECUTABLE_SYMBOL_CHUNK_TYPES = new Set([
   "function",
   "arrow_function",
   "method_definition",
+  "method",
+  "singleton_method",
   "function_definition",
   "method_declaration",
   "function_item",
@@ -770,6 +772,7 @@ const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const MARKUP_PARSER_VERSION = "1";
 const KOTLIN_PARSER_VERSION = "1";
+const RUBY_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "2";
 
 function isPathWithinRoot(filePath: string, rootPath: string): boolean {
@@ -1952,6 +1955,12 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.parser.kotlinVersion", catalogIdentity);
   }
 
+  private getRubyParserVersionMetadataKey(
+    catalogIdentity = this.getBranchCatalogIdentity(),
+  ): string {
+    return this.getBranchMigrationMetadataKey("index.parser.rubyVersion", catalogIdentity);
+  }
+
   private getSymbolExtractorVersionMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -1974,6 +1983,8 @@ export class Indexer {
       === MARKUP_PARSER_VERSION
       && database.getMetadata(this.getKotlinParserVersionMetadataKey(catalogIdentity))
       === KOTLIN_PARSER_VERSION
+      && database.getMetadata(this.getRubyParserVersionMetadataKey(catalogIdentity))
+      === RUBY_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
       === SYMBOL_EXTRACTOR_VERSION;
   }
@@ -4964,6 +4975,8 @@ export class Indexer {
     const reparseCachedMarkupFiles = database.getMetadata(markupParserMetadataKey) !== MARKUP_PARSER_VERSION;
     const kotlinParserMetadataKey = this.getKotlinParserVersionMetadataKey();
     const reparseCachedKotlinFiles = database.getMetadata(kotlinParserMetadataKey) !== KOTLIN_PARSER_VERSION;
+    const rubyParserMetadataKey = this.getRubyParserVersionMetadataKey();
+    const reparseCachedRubyFiles = database.getMetadata(rubyParserMetadataKey) !== RUBY_PARSER_VERSION;
     const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
     const refreshCachedSymbols = database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
     if (
@@ -5140,6 +5153,8 @@ export class Indexer {
         reparseCachedMarkupFiles && isMarkupFilePath(storedPath);
       const requiresKotlinParserUpgrade =
         reparseCachedKotlinFiles && isKotlinFilePath(storedPath);
+      const requiresRubyParserUpgrade =
+        reparseCachedRubyFiles && path.extname(storedPath).toLowerCase() === ".rb";
       const inMigrationScope =
         forceScopedReembed && scopedRoots !== null && this.isFileInCurrentScope(storedPath, scopedRoots);
 
@@ -5152,6 +5167,7 @@ export class Indexer {
         && !requiresMetalParserUpgrade
         && !requiresMarkupParserUpgrade
         && !requiresKotlinParserUpgrade
+        && !requiresRubyParserUpgrade
         && !refreshCachedSymbols
       ) {
         unchangedFilePaths.add(storedPath);
@@ -5933,6 +5949,7 @@ export class Indexer {
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
+        database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
@@ -5979,6 +5996,7 @@ export class Indexer {
         database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
         database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
         database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
+        database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
         database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
@@ -6078,6 +6096,7 @@ export class Indexer {
       database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
       database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
       database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
+      database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
       database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
       this.saveBranchCommit(database, indexedCommit);
       if (isStructural) this.saveStructuralIndexMetadata();

@@ -18,6 +18,51 @@ import {
 
 describe("native module", () => {
   describe("parseFile", () => {
+    it("preserves Ruby declaration-owned names, punctuation, and instance/singleton ranges", () => {
+      const content = [
+        "module Catalog",
+        "  class Entry",
+        "    def to_date(value); value; end",
+        "    def self.to_date(value); value; end",
+        "    def ready?; true; end",
+        "    def persist!; :ok; end",
+        "    def value=(replacement); replacement; end",
+        "    def [](key); key; end",
+        "    def []=(key, value); value; end",
+        "    def +(other); other; end",
+        "    def self.[](key); key; end",
+        "    def Entry.===(other); other; end",
+        "    class << self",
+        "      def singleton_scope; :ok; end",
+        "    end",
+        "  end",
+        "end",
+      ].join("\n");
+      const [parsed] = parseFiles([{ path: "catalog.rb", content }]);
+      expect(parsed.parseFailed).toBe(false);
+      expect(parsed.symbols.map((symbol) => [symbol.name, symbol.kind, symbol.startLine, symbol.endLine])).toEqual([
+        ["Catalog", "module", 1, 17],
+        ["Entry", "class", 2, 16],
+        ["to_date", "method", 3, 3],
+        ["to_date", "singleton_method", 4, 4],
+        ["ready?", "method", 5, 5],
+        ["persist!", "method", 6, 6],
+        ["value=", "method", 7, 7],
+        ["[]", "method", 8, 8],
+        ["[]=", "method", 9, 9],
+        ["+", "method", 10, 10],
+        ["[]", "singleton_method", 11, 11],
+        ["===", "singleton_method", 12, 12],
+        ["singleton_scope", "method", 14, 14],
+      ]);
+      for (const symbol of parsed.symbols.filter((symbol) => symbol.startLine >= 3)) {
+        const declaration = content.split("\n")[symbol.startLine - 1];
+        expect(symbol.startCol).toBe(declaration.indexOf("def "));
+        expect(symbol.endCol).toBe(declaration.length);
+        expect(symbol.language).toBe("ruby");
+      }
+    });
+
     it.each(["Declarations.kt", "Declarations.kts"])(
       "extracts Kotlin declaration names, kinds, ranges, and nested bodies in %s",
       (filePath) => {

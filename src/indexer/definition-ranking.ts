@@ -148,7 +148,6 @@ export function isImplementationChunkType(chunkType: string): boolean {
     "export_statement",
     "function",
     "function_declaration",
-    "method",
     "method_definition",
     "method_declaration",
     "protocol_function_declaration",

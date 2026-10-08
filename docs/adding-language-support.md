@@ -101,6 +101,12 @@ Named function expressions use the grammar's explicit `name` field, including no
 
 Parser version `2` uses the existing branch-scoped JavaScript migration marker. Ordinary non-forced indexing reparses unchanged `.js`, `.jsx`, `.mjs`, `.cjs`, `.ts`, `.tsx`, `.mts` and `.cts` files to repair persisted symbols and chunks. Unrelated language catalogs and cached embeddings are retained; the global symbol-extractor version is unchanged.
 
+## Ruby declaration maintenance
+
+Ruby uses distinct `method` and `singleton_method` kinds throughout parsing, declaration persistence, executable ownership, and definition ranking. Method names come only from the grammar's declaration `name` field, preserving predicates (`ready?`), bang methods, setters, and operators such as `[]`, `[]=`, and `===`; singleton receivers and body identifiers cannot become method names. Class/module containers and nested method ranges remain separately navigable even when retrieval chunks cover the enclosing class.
+
+Ordinary non-forced indexing repairs unchanged `.rb` files once per branch using the Ruby parser-version marker, replacing stale callable catalogs and chunk names without a global symbol-extractor upgrade or index deletion. Other language catalogs and cached embeddings are retained. Ruby syntax-based call extraction is not supported: callable symbols do not imply resolved call edges. The public exact-symbol gate still accepts bare ASCII identifiers only; punctuation/operator names remain preserved in the native and persisted symbol catalogs.
+
 ## Kotlin implementation notes
 
 Both `.kt` and `.kts` use semantic parsing, declaration persistence, and syntax-based call extraction. Named objects and companions use class declarations; constructor `val`/`var` parameters and regular properties remain navigable property declarations. Local properties do not become caller scopes. Incremental indexing reparses unchanged Kotlin files once per branch to replace legacy text chunks, symbols, and edges; unrelated files retain their cached embeddings.

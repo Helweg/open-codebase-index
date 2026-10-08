@@ -18,7 +18,9 @@ if (targetPath && readyPath && releasePath) {
       && normalizedSource.startsWith(`${normalizedTargetPath}.tmp.`);
 
     if (isBm25Publication) {
-      fs.writeFileSync(readyPath, JSON.stringify({ source: normalizedSource, destination: normalizedDestination }));
+      const readyTemporaryPath = `${readyPath}.${process.pid}.tmp`;
+      fs.writeFileSync(readyTemporaryPath, JSON.stringify({ source: normalizedSource, destination: normalizedDestination }));
+      originalRenameSync(readyTemporaryPath, readyPath);
       const startedAt = Date.now();
       while (!fs.existsSync(releasePath)) {
         if (Date.now() - startedAt > 10000) {

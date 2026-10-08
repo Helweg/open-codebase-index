@@ -1028,6 +1028,15 @@ fn extract_name(
     }
 
     let node = cursor.node();
+    if *language == Language::Ruby && matches!(node.kind(), "method" | "singleton_method") {
+        // Ruby method names may be operators, setters, or predicates. The
+        // declaration's name field owns that spelling; never borrow a singleton
+        // receiver, parameter, or body identifier.
+        return node
+            .child_by_field_name("name")
+            .map(|name| source[name.byte_range()].to_string());
+    }
+
     if *language == Language::Kotlin {
         // Use declaration-specific fields, never receiver/return type identifiers.
         let name_node = match node.kind() {

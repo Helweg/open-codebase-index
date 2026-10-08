@@ -2,6 +2,7 @@ export const CHUNK_TYPES = [
   "function",
   "class",
   "method",
+  "singleton_method",
   "interface",
   "type",
   "enum",
