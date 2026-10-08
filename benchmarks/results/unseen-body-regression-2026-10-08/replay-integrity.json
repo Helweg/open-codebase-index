@@ -1,0 +1,46 @@
+{
+  "kind": "unchanged-frozen-analysis-and-separate-forensic-replay-integrity",
+  "recordedAt": "2026-10-08T12:11:15.088375+00:00",
+  "originalFrozenEvaluator": {
+    "path": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/programs/evaluate.py",
+    "sha256": "14acfa8a58bd1803d3cabf1009ee46f28a49070a6815a468bb19372b726c3285"
+  },
+  "frozenAnalysisReplay": {
+    "reportOriginalSha256": "8f73a0afa055f94b654b0434448a2ce97fd5b1c91ae0a7f422c99859d11aea71",
+    "reportReplaySha256": "8f73a0afa055f94b654b0434448a2ce97fd5b1c91ae0a7f422c99859d11aea71",
+    "primaryOriginalSha256": "86750f49716a04aa032bde249a2889d07c301a75ec7e553d719d332da72d0edd",
+    "primaryReplaySha256": "86750f49716a04aa032bde249a2889d07c301a75ec7e553d719d332da72d0edd",
+    "exactByteMatch": true,
+    "copiesAndReferences": "Exact frozen evaluate.py bytes executed under analysis-replay, with unchanged captured rows/cells and original canonical source/task/gold/manifests referenced read-only. No participant invocation."
+  },
+  "nonPreregisteredForensicReplay": {
+    "programPath": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution-tools/forensic_fences.py",
+    "programSha256": "1cd4433189799553912159572818d7c53a7b7b90f047cefd5217dc3aa1f16e90",
+    "files": [
+      {
+        "name": "report.json",
+        "originalSha256": "40d318cecd637e786e376dac47fad2e05336a4b751eb69ecbdb3ecf923b92ce8",
+        "replaySha256": "40d318cecd637e786e376dac47fad2e05336a4b751eb69ecbdb3ecf923b92ce8",
+        "exactByteMatch": true
+      },
+      {
+        "name": "per-task.json",
+        "originalSha256": "b5ca18e5edb2059910e1fded8939d0632aa38219f096e83a608a4d13ffdde9ec",
+        "replaySha256": "b5ca18e5edb2059910e1fded8939d0632aa38219f096e83a608a4d13ffdde9ec",
+        "exactByteMatch": true
+      },
+      {
+        "name": "affected-tasks.json",
+        "originalSha256": "05a540e9704942150086fd770ab8164c881ffad54d0b91abfbe9679ee8d7e7de",
+        "replaySha256": "05a540e9704942150086fd770ab8164c881ffad54d0b91abfbe9679ee8d7e7de",
+        "exactByteMatch": true
+      }
+    ],
+    "neverReplacesFrozenMetrics": true
+  },
+  "postExecutionFrozenInputBindings": 3539,
+  "postExecutionActualRuntimeBindings": 43536,
+  "postExecutionModelTagDigestUnchanged": true,
+  "participantRequestRetries": 0,
+  "extraParticipantRequestsForReplays": 0
+}

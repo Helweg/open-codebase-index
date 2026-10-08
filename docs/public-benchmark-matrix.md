@@ -10,6 +10,8 @@ For this comparison framing and prioritized near-term priorities, see
 Do not use this document to claim unmeasured performance.
 All comparisons must be grounded in the artifacts and scripts in this repository.
 
+The completed [2026-10-08 frozen candidate comparison](benchmarking-cross-repo.md#2026-10-08-frozen-body-and-structural-candidate-comparison) reports preferred registry 0.36.2 versus an exact source candidate. It preserves file-discovery losses, separates structured content from visible fences, and discloses a frozen CRLF extraction defect with a separately labeled raw-response forensic reconciliation. It is assistant-curated development-unseen evidence, not an independently reviewed public holdout or superiority claim.
+
 ## Goal
 
 Compare comparable, fixed-task behavior for:

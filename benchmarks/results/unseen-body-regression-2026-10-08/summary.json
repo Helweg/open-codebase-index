@@ -1,0 +1,330 @@
+{
+  "kind": "qualified-summary-not-a-replacement-for-frozen-report",
+  "participants": {
+    "published": {
+      "identity": "open-codebase-index",
+      "version": "0.36.2",
+      "sourceCommit": "5d2d4d128db9bc7addded7859dc8cfb20c25f8bd"
+    },
+    "candidate": {
+      "sourceCommit": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+      "pr": "https://github.com/Helweg/open-codebase-index/pull/432",
+      "registryVersion": false
+    }
+  },
+  "preScoringPublicCommit": "68f0960bb8a1411971480b2432e4a1bcc223b490",
+  "counts": {
+    "repositories": 9,
+    "tasks": 100,
+    "explicit": 54,
+    "natural": 46,
+    "cells": 36,
+    "primaryRows": 400,
+    "queryPassRecords": 1200
+  },
+  "operationalFailures": {
+    "setups": 0,
+    "queryAdapterRecords": 0
+  },
+  "fileDiscovery": [
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "participant": "published-0.36.2",
+      "denominator": 54,
+      "fileHitAt1": 53,
+      "fileHitAt5": 54,
+      "errors": 0
+    },
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "participant": "source-candidate",
+      "denominator": 54,
+      "fileHitAt1": 53,
+      "fileHitAt5": 53,
+      "errors": 0
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "participant": "published-0.36.2",
+      "denominator": 46,
+      "fileHitAt1": 14,
+      "fileHitAt5": 31,
+      "errors": 0
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "participant": "source-candidate",
+      "denominator": 46,
+      "fileHitAt1": 14,
+      "fileHitAt5": 31,
+      "errors": 0
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "participant": "published-0.36.2",
+      "denominator": 54,
+      "fileHitAt1": 53,
+      "fileHitAt5": 54,
+      "errors": 0
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "participant": "source-candidate",
+      "denominator": 54,
+      "fileHitAt1": 53,
+      "fileHitAt5": 53,
+      "errors": 0
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "participant": "published-0.36.2",
+      "denominator": 46,
+      "fileHitAt1": 14,
+      "fileHitAt5": 28,
+      "errors": 0
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "participant": "source-candidate",
+      "denominator": 46,
+      "fileHitAt1": 16,
+      "fileHitAt5": 30,
+      "errors": 0
+    }
+  ],
+  "pairedFileDiscovery": [
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "fileHitAt5": {
+        "wins": 0,
+        "losses": 1,
+        "ties": 53
+      },
+      "repoBootstrap95": [
+        -0.05555555555555555,
+        0
+      ]
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "fileHitAt5": {
+        "wins": 0,
+        "losses": 0,
+        "ties": 46
+      },
+      "repoBootstrap95": [
+        0,
+        0
+      ]
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "fileHitAt5": {
+        "wins": 0,
+        "losses": 1,
+        "ties": 53
+      },
+      "repoBootstrap95": [
+        -0.05555555555555555,
+        0
+      ]
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "fileHitAt5": {
+        "wins": 3,
+        "losses": 1,
+        "ties": 42
+      },
+      "repoBootstrap95": [
+        -0.044444444444444446,
+        0.12222222222222222
+      ]
+    }
+  ],
+  "bodyChannels": {
+    "frozenMetric": "visibleFencedText.fullDeclarationTextReturnedAt5",
+    "frozenVisiblePer54": {
+      "published": 25,
+      "candidate": 46
+    },
+    "frozenMetricDefect": "parse_visible splitlines()+LF join loses returned CRLF; these values are not unqualified raw-payload completeness.",
+    "separateForensic": {
+      "preregistered": false,
+      "allExplicitRowsAudited": 216,
+      "affectedClassifications": 18,
+      "rawFencedAt5Per54": {
+        "published": 28,
+        "candidate": 52
+      },
+      "structuredContentAt5Per54": {
+        "published": 53,
+        "candidate": 53
+      },
+      "evidence": "Contiguous source-hash-bound closed fenced text and valid source ranges, not arbitrary serialized JSON text matching."
+    },
+    "naturalBodiesGradeable": false
+  },
+  "observedTiming": [
+    {
+      "version": "published-0.36.2",
+      "mode": "hybrid",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 38221.92166600004,
+      "queryGroups": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "errors": 0,
+          "medianMs": 23.117250000010245
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "errors": 0,
+          "medianMs": 33.258167000021785
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "errors": 0,
+          "medianMs": 11.707104000008258
+        }
+      }
+    },
+    {
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 36984.49862500001,
+      "queryGroups": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "errors": 0,
+          "medianMs": 38.45654200017452
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "errors": 0,
+          "medianMs": 35.886708999983966
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "errors": 0,
+          "medianMs": 12.818665999962832
+        }
+      }
+    },
+    {
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 1787.9279999999562,
+      "queryGroups": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "errors": 0,
+          "medianMs": 18.115667000063695
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "errors": 0,
+          "medianMs": 13.698749999981374
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "errors": 0,
+          "medianMs": 12.237895999918692
+        }
+      }
+    },
+    {
+      "version": "source-candidate",
+      "mode": "structural",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 1809.173625000054,
+      "queryGroups": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "errors": 0,
+          "medianMs": 24.434958999976516
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "errors": 0,
+          "medianMs": 13.7724580001086
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "errors": 0,
+          "medianMs": 12.993458499957342
+        }
+      }
+    }
+  ],
+  "citationProvenance": {
+    "citations": 28023,
+    "exactPinnedSource": 28023,
+    "validRanges": 28017
+  },
+  "retainedCandidateMisses": [
+    {
+      "queryId": "rs-explicit-01",
+      "reason": "Expected target exists at structured raw rank22; visible token budget omits its later location, producing one explicit distinct-file hit@5 loss in each mode."
+    },
+    {
+      "queryId": "py-explicit-01",
+      "reason": "166-line declaration at structured rank1 is explicitly truncated by the frozen1200 estimated text-token budget."
+    }
+  ],
+  "decision": "Keep source candidate frozen and unmerged: body delivery improves, but one visible explicit-file discovery loss and one structural natural-language loss prevent an all-clear or dominance claim. Any follow-on source change is a new candidate, and this cohort is now development-exposed.",
+  "evidenceArchives": {
+    "preScore": {
+      "path": "preregistration-and-runtime.tar.gz",
+      "sha256": "a111688f90df7b26d7e0774adc92e115636a9aee7c6f95b48516aacd76c97261",
+      "bytes": 20515218
+    },
+    "execution": {
+      "path": "study-evidence.tar.gz",
+      "bytes": 46683754,
+      "sha256": "6c933d180b6134b75ea61d6d752b91b705483d5955cfb1747ca549716113048a",
+      "scope": "Exact unchanged raw1200records/400primary, original report/cells, all captured query files/source copies, separate forensic analysis/program and retention manifests. Actual SQLite/vector index bytes and full runtime closure are privately retained, not in this public archive."
+    }
+  },
+  "reportSha256": "8f73a0afa055f94b654b0434448a2ce97fd5b1c91ae0a7f422c99859d11aea71",
+  "forensicReportSha256": "40d318cecd637e786e376dac47fad2e05336a4b751eb69ecbdb3ecf923b92ce8",
+  "limits": [
+    "Assistant-curated development-unseen sample, not independent-human/blind/representative/model-training-unseen or population evidence.",
+    "File metrics rank distinct visible paths; declaration bodies rank raw citation/result locations. These are different units.",
+    "AST-text/range containment is not semantic equivalence, inherited/transitive closure or compiler-valid edit context.",
+    "Descriptive repository bootstrap uncertainty includes zero for structural natural Hit@5; no generalization/SOTA/productivity claim.",
+    "Timing is observed serial cold-process/index and later warm groups with resident model/ambient load; no causal speed claim.",
+    "Six strict citation range exceptions at a trailing empty source-line boundary remain disclosed and unamended.",
+    "Original-root frozen report and forensic replays are byte-identical; no participant request retries or extra requests for replay. Public archives retain original absolute source paths; portability is not claimed."
+  ]
+}

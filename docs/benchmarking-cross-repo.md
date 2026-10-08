@@ -4,6 +4,45 @@ This guide documents how to run the cross-repo benchmark runner in a portable wa
 
 The dated [assistant-run self-curated comparison](benchmarks/2026-10-06-self-curated-study.md) reports a completed nine-repository, 100-task study across seven current pinned conditions, including literal/plain-file-BM25 controls, all query-pass evidence and verified report replay. OCBI trails the primary rivals on exact-symbol file discovery and trails grepai/BM25 on natural-language file discovery in this sample. This is exploratory development evidence, not the independently approved holdout workflow described below.
 
+## 2026-10-08: frozen body and structural candidate comparison
+
+The [qualified summary](../benchmarks/results/unseen-body-regression-2026-10-08/summary.json), [unchanged frozen report](../benchmarks/results/unseen-body-regression-2026-10-08/frozen-report.json), [per-query deltas](../benchmarks/results/unseen-body-regression-2026-10-08/per-query-deltas.json) and [primary outcomes](../benchmarks/results/unseen-body-regression-2026-10-08/primary-outcomes.csv) compare preferred registry `open-codebase-index@0.36.2` with source candidate `336ed3e8cab4748df66715acc22a1ab247562ec0` ([#432](https://github.com/Helweg/open-codebase-index/pull/432)). The checked-in source manifest retains the compatibility package identity; it is not another published version or the globally installed plugin.
+
+Nine new repository revisions and 100 assistant-curated tasks (54 explicit, 46 natural-language) were sealed before candidate feedback. The exact candidate passed its full local gate and all 19 PR checks before evaluation. Complete protocol/runtime artifacts were [publicly committed before the first request](https://github.com/Helweg/open-codebase-index/commit/68f0960bb8a1411971480b2432e4a1bcc223b490). Execution retained all 36 serial cold-index cells, 400 pass-one outcomes and 1,200 three-pass records, with zero setup/query-adapter failures and no participant-request retries.
+
+### File discovery and body evidence are different measurements
+
+File Hit@5 ranks distinct visible paths. Declaration-body evidence ranks raw citation/result locations and requires the pinned AST declaration text; a structured match at raw rank 22 is not a body-at-five success.
+
+| Measurement | Published 0.36.2 | Frozen source candidate |
+| --- | ---: | ---: |
+| Explicit file Hit@5, hybrid | 54/54 | 53/54 |
+| Explicit file Hit@5, structural | 54/54 | 53/54 |
+| Natural file Hit@5, hybrid | 31/46 | 31/46 |
+| Natural file Hit@5, structural | 28/46 | 30/46 |
+| Frozen visible-fence body metric, each mode **(CRLF extractor defect)** | 25/54 | 46/54 |
+| Separate non-preregistered raw-fence forensic body@5, each mode | 28/54 | 52/54 |
+| Structured declaration content@5, each mode | 53/54 | 53/54 |
+
+Structural natural file Hit@5 has three wins, one loss and 42 ties; its descriptive repository-bootstrap interval includes zero. Hybrid natural discovery is unchanged. Explicit file discovery loses one case in each mode: the expected Rust declaration exists at structured raw rank 22, but the new visible-text budget omits later locations. A separate 166-line Python declaration is present at structured rank one and explicitly truncated in the visible response by the frozen 1,200-estimated-token default. The candidate remains frozen and unmerged; these are measured tradeoffs, not an all-clear or dominance result.
+
+### Preserve the grader defect rather than rewriting the study
+
+The frozen `parse_visible()` uses `splitlines()` and LF joining, which destroys returned CRLF before comparing it with exact pinned AST text. The frozen 25/54 and 46/54 scores remain unchanged and must not be described as unqualified raw-payload completeness.
+
+The [separate forensic report](../benchmarks/results/unseen-body-regression-2026-10-08/forensic-report.json) audits all 216 explicit participant/mode rows using EOL-preserving, citation-scoped closed-fence extraction against the captured responses. It reclassifies 18 rows: three published and six candidate C# false misses per mode. Its 28/54 to 52/54 result is **non-preregistered diagnosis**, not a replacement primary score. Both original and diagnostic analyses [replayed byte-identically](../benchmarks/results/unseen-body-regression-2026-10-08/replay-integrity.json) without invoking participants.
+
+### Evidence and limits
+
+- [Preregistration/runtime archive](../benchmarks/results/unseen-body-regression-2026-10-08/preregistration-and-runtime.tar.gz): SHA256 `a111688f90df7b26d7e0774adc92e115636a9aee7c6f95b48516aacd76c97261`; the initial freeze and later runtime supplement are separate immutable members.
+- [Captured study/forensic archive](../benchmarks/results/unseen-body-regression-2026-10-08/study-evidence.tar.gz): SHA256 `6c933d180b6134b75ea61d6d752b91b705483d5955cfb1747ca549716113048a`; includes unchanged raw records, primary outcomes, individual responses, source copies, reports, diagnostic program and retention manifests. Actual indexes and the full runtime-byte closure are privately retained rather than embedded in this public archive.
+- All 28,023 citation source checks match pinned bytes; only 28,017 inclusive ranges pass the strict validator. Six inherited rank-50 citations across both participants and three passes extend to a trailing empty line. The [captured-evidence observations](../benchmarks/results/unseen-body-regression-2026-10-08/post-score-observations.json) preserve these exceptions; no scores were amended.
+- Natural-language requests return metadata, so their implementation bodies are ungradeable. AST text/range containment is not semantic equivalence, inherited/transitive closure or compiler-valid edit context.
+- The report separates cold setup, first actual query, later pass-one queries and warm passes two/three. Resident model and ambient load were not controlled; observed timings are not causal speed evidence.
+- Assistant-curated development-unseen tasks are not independent-human, blind, representative, model-training-unseen or population evidence. This cohort is now development-exposed; follow-on code changes require a new candidate and must not reuse it as a fresh holdout.
+- Public records retain the original absolute source paths. Exact original-environment replay is verified; portable runtime, model or filesystem reproduction is not claimed.
+
+
 ## What it measures
 
 - Plugin retrieval quality (`codebase-index`) via eval harness

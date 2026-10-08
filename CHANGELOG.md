@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Frozen candidate body/retrieval evidence**: Publish a separately sealed nine-repository, 100-task preferred-registry 0.36.2 versus source-candidate study with all 36 cold cells, 400 primary outcomes and 1,200 records. Preserve the original metrics, report a CRLF visible-fence extractor defect through separate EOL-preserving forensics, and disclose explicit-file discovery loss, structural wins/losses, strict citation exceptions and timing/gradeability limits. The measured candidate remains unmerged; no blind, speed or general-superiority claim.
+
 ## [0.36.2] - 2026-10-08
 
 ### Added
