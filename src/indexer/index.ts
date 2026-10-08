@@ -533,6 +533,8 @@ export interface StatusResult {
   vectorCount: number;
   indexedChunkCount?: number;
   branchReadiness?: BranchReadiness;
+  /** Pending branch storage migration, not file freshness; absent when the database is unreadable. */
+  migrationRequired?: boolean;
   checkoutBranch?: string;
   provider: string;
   model: string;
@@ -6790,6 +6792,7 @@ export class Indexer {
     const vectorCount = store?.count() ?? 0;
     let indexedChunkCount = vectorCount;
     let branchReadiness: BranchReadiness | undefined;
+    let migrationRequired: boolean | undefined;
     const statusReadIssues = [...readIssues];
     let startupWarning = "";
     if (!statusReadIssues.some((issue) => issue.component === "database")) {
@@ -6797,6 +6800,9 @@ export class Indexer {
         startupWarning = database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? "";
         branchReadiness = this.getBranchReadiness(database);
         if (isStructural) indexedChunkCount = database.getStats().chunkCount;
+        const hasBranchData = branchReadiness.activeCatalogChunkCount > 0
+          || (branchReadiness.state === "legacy" && indexedChunkCount > 0);
+        migrationRequired = hasBranchData && !this.areBranchMigrationVersionsCurrent(database);
       } catch (error) {
         const message = this.getDatabaseReadIssueMessage();
         statusReadIssues.push(this.createReadIssue("database", message));
@@ -6814,7 +6820,10 @@ export class Indexer {
     const checkoutWarning = checkoutMismatch
       ? `This reader targets branch "${this.currentBranch}", but the checkout is "${checkoutBranch}". Restart the host or run index_codebase normally to refresh branch state before relying on retrieval.`
       : "";
-    const warning = [readWarning, startupWarning, readinessWarning, checkoutWarning]
+    const migrationWarning = migrationRequired
+      ? "The active branch requires a storage migration. Run index_codebase normally (force=false) before relying on retrieval."
+      : "";
+    const warning = [readWarning, startupWarning, readinessWarning, checkoutWarning, migrationWarning]
       .filter((message) => message.length > 0)
       .join(" ");
     const hasBlockingReadIssue = statusReadIssues.some((issue) => issue.blocking);
@@ -6827,6 +6836,7 @@ export class Indexer {
       indexed,
       mode: this.config.indexing.mode,
       branchReadiness,
+      migrationRequired,
       vectorCount,
       indexedChunkCount,
       checkoutBranch,

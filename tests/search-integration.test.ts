@@ -780,6 +780,7 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       _indexers.push(writer);
       await writer.index();
       const status = await writer.getStatus();
+      expect(status).toMatchObject({ indexed: true, migrationRequired: false });
       await writer.close();
 
       const legacyChunks = sources.map((source) => ({
@@ -832,6 +833,12 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       _indexers.push(reader);
       expect((await reader.getCallGraphSymbols()).filter((symbol) => symbol.language === "kotlin")).toEqual([]);
       await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: false, reason: "migration-required" });
+      await expect(reader.getStatus()).resolves.toMatchObject({
+        indexed: true,
+        migrationRequired: true,
+        branchReadiness: { state: "ready" },
+        compatibility: { compatible: true },
+      });
       fetchSpy.mockClear();
       await reader.index();
       const symbols = await reader.getCallGraphSymbols();
@@ -851,6 +858,7 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       }));
       for (const source of sources) expect(fs.readFileSync(path.join(tempDir, source.path), "utf8")).toBe(source.content);
       await expect(reader.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      await expect(reader.getStatus()).resolves.toMatchObject({ indexed: true, migrationRequired: false });
       if (mode === "hybrid") {
         const embedded = fetchSpy.mock.calls.flatMap(([, init]) => {
           const body: unknown = JSON.parse(String(init?.body ?? "{}"));
@@ -868,6 +876,17 @@ ${Array.from({ length: 120 }, (_, index) => `  public int Value${index} { get; s
       } finally {
         upgraded.close();
       }
+      await reader.close();
+      const reopened = new Indexer(tempDir, config, "opencode");
+      _indexers.push(reopened);
+      await expect(reopened.getStatus()).resolves.toMatchObject({ indexed: true, migrationRequired: false });
+      await expect(reopened.getIndexFreshness()).resolves.toMatchObject({ current: true });
+      const definitions = await reopened.search("refreshEntry", 1, {
+        definitionIntent: true, fileType: "kt", filterByBranch: false,
+      });
+      expect(definitions).toEqual([expect.objectContaining({
+        name: "refreshEntry", chunkType: "method_declaration", startLine: 3, endLine: 3,
+      })]);
     },
   );
 

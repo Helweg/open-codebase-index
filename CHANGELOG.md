@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pending storage migration visibility**: Report branch parser, symbol, and call-graph migrations separately from catalog presence and provider compatibility in shared and public status. Workspace status no longer labels migration-pending catalogs ready. Ordinary `index_codebase` with `force=false` remains the upgrade path; status does not rebuild or delete stored data.
+
 ## [0.36.1] - 2026-10-08
 
 ### Fixed

@@ -114,7 +114,10 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
     `Active branch catalog chunks: ${status.branchReadiness.activeCatalogChunkCount.toLocaleString()}`,
     `Active branch catalog registered: ${status.branchReadiness.registeredCatalog ? "yes" : "no"}`,
   ] : [];
-  const unindexedDetails = status.branchReadiness ? [countLine, `Location: ${status.indexPath}`, ...branchLines] : [];
+  const migrationLines = status.migrationRequired === undefined ? [] : [
+    `Storage migrations: ${status.migrationRequired ? "pending" : "none pending"}`,
+  ];
+  const unindexedDetails = status.branchReadiness ? [countLine, `Location: ${status.indexPath}`, ...branchLines, ...migrationLines] : [];
   if (!status.indexed) {
     if (status.warning) {
       return [...autoIndexLines, ...unindexedDetails, status.warning].join("\n");
@@ -144,6 +147,7 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
     `Model: ${status.model}`,
     `Location: ${status.indexPath}`,
     ...branchLines,
+    ...migrationLines,
   ];
 
   if (status.branchReadiness) {

@@ -10,6 +10,7 @@ import type { IndexStatusResult } from "../src/tools/operations.js";
 import { runCbiCli } from "../src/adapters/cbi.js";
 import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
+import { Database, hashContent } from "../src/native/index.js";
 import {
   getWorkspaceStatus,
   parseWorkspaceRepoSpecs,
@@ -128,6 +129,7 @@ describe("workspace status", () => {
     expect(output.repositories[0]).toMatchObject({
       ready: true,
       mode: "structural",
+      migrationRequired: false,
       compatibility: "compatible",
       branchMismatch: false,
       freshness: "not_checked",
@@ -136,6 +138,55 @@ describe("workspace status", () => {
     expect(output.repositories[0].activeChunkCount).toBeGreaterThan(0);
     expect(fs.readdirSync(root, { recursive: true }).map(String).sort()).toEqual(before);
     await indexer.close();
+  });
+
+  it("keeps readable compatible catalogs visible but not ready until ordinary migration and reopen", async () => {
+    const root = makeRepo("main");
+    fs.writeFileSync(path.join(root, "service.ts"), "export function migrationWorkspaceMarker() { return 42; }\n");
+    const config = structuralConfig();
+    const writer = new Indexer(root, config, "jcode");
+    await writer.index();
+    const current = await writer.getStatus();
+    expect(current.migrationRequired).toBe(false);
+    await writer.close();
+
+    const database = new Database(path.join(current.indexPath, "codebase.db"));
+    try {
+      database.deleteMetadata(`index.symbolExtractorVersion.${hashContent("main").slice(0, 24)}`);
+    } finally {
+      database.close();
+    }
+    const repositories = [{ name: "repo", root }];
+    const reader = new Indexer(root, config, "jcode");
+    try {
+      const pending = await getWorkspaceStatus(repositories, "jcode", { readStatus: () => reader.getStatus() });
+      expect(pending).toMatchObject({
+        ready: false,
+        repositories: [{
+          available: true,
+          indexed: true,
+          ready: false,
+          migrationRequired: true,
+          compatibility: "compatible",
+          branchReadiness: { state: "ready" },
+          freshness: "not_checked",
+        }],
+      });
+      await reader.index();
+    } finally {
+      await reader.close();
+    }
+    const reopened = new Indexer(root, config, "jcode");
+    try {
+      const migrated = await getWorkspaceStatus(repositories, "jcode", { readStatus: () => reopened.getStatus() });
+      expect(migrated).toMatchObject({
+        ready: true,
+        repositories: [{ ready: true, indexed: true, migrationRequired: false, compatibility: "compatible" }],
+      });
+      expect(migrated.repositories[0].chunkCount).toBe(current.indexedChunkCount);
+    } finally {
+      await reopened.close();
+    }
   });
 
   it("cleans snapshots and fails boundedly when source database artifacts keep changing", async () => {

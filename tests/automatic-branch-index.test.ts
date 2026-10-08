@@ -286,6 +286,7 @@ function changed(): number {
 
     git(repo, ["checkout", "feature"]);
     indexer = new Indexer(repo, config);
+    await expect(indexer.getStatus()).resolves.toMatchObject({ indexed: true, migrationRequired: true });
     await expect(indexer.getIndexFreshness()).resolves.toEqual({
       readable: true,
       current: false,
@@ -295,6 +296,7 @@ function changed(): number {
     git(repo, ["checkout", "main"]);
 
     indexer = new Indexer(repo, config);
+    await expect(indexer.getStatus()).resolves.toMatchObject({ indexed: true, migrationRequired: false });
     const fetchesBeforeMigration = fetchSpy.mock.calls.length;
     const migrated = await indexer.getPrImpact({ branch: "feature" });
 
