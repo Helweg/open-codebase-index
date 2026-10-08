@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.2] - 2026-10-08
+
+### Added
+
+- **Published-release comparison evidence**: Publish a paired comparison of registry `open-codebase-index@0.35.3` and `@0.36.1` across the unchanged, development-exposed nine-repository cohort. Preserve all 36 cold-index cells, 400 primary outcomes, and 1,200 query records; distinguish relevant-file discovery from complete returned declaration bodies and disclose timing, coverage, and gradeability limits without a speed or general-superiority claim.
+
 ### Fixed
 
 - **Pending storage migration visibility**: Report branch parser, symbol, and call-graph migrations separately from catalog presence and provider compatibility in shared and public status. Workspace status no longer labels migration-pending catalogs ready. Ordinary `index_codebase` with `force=false` remains the upgrade path; status does not rebuild or delete stored data.
@@ -981,7 +987,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...HEAD
+[0.36.2]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...v0.36.0
 [0.35.3]: https://github.com/Helweg/open-codebase-index/compare/v0.35.2...v0.35.3
