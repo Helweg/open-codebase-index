@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "frozenBindingsUnchanged": 80,
+  "dependencyFilesByteUnchanged": 13068,
+  "queryPassRecords": 1200,
+  "primaryRows": 400,
+  "cells": 36,
+  "supportedQueryErrors": 0,
+  "setupErrors": 0,
+  "pinnedSourceCitationsVerified": 26418,
+  "distinctPinnedSourceFilesVerified": 878,
+  "rangesSourceContained": true,
+  "modelTagDigestUnchanged": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+  "consumerBodyLimit": "This verifies pinned citation source slices, NOT full consumer-body completeness; separately frozen scorer checks actual returned bodies without reconstructing omitted/truncated text."
+}

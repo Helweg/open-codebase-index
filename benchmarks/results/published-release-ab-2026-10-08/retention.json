@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "kind": "private-original-evidence-retention",
+  "archive": "${USER_HOME}/.jcode/scratch/ocbi-published-release-ab-20261008-originals.tar.gz",
+  "sha256": "16301559f5c7c2bcb9a4d4fe67c91dbb14cd8a1f20f0b15b2981979d724358d8",
+  "bytes": 920530168,
+  "archiveCreationExitCode": 0,
+  "readBackVerification": {
+    "regularFilesVerified": 34732,
+    "inventoriedRawFiles": 34731,
+    "inventorySha256": "4e472b56f289e0d7818484327236f80627a897992f48d9e5778245340782c4b7",
+    "allInventoriedFilesByteIdentical": true,
+    "streamedTarGzipReadCompleted": true
+  },
+  "scope": "Full owned private workspace: copied canonical upstream archives, pinned source extracts, separately installed actual registry tarballs/dependency closures/native binaries, retained all36native indexes, complete raw MCP requests/results/stderr/status and all1200query-pass records, frozen drafts/final protocol, gold/annotation environments/wheels, scoring/publication programs and receipts.",
+  "limits": "Not a portable model/OS/runtime image or independently reviewed retention service. Shared system Node/Ollama/model bytes represented by frozen versions/hashes/digests, not redistributed; private local path durability depends on user storage."
+}

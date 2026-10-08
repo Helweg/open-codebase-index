@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "historicalFilesUnchanged": true,
+  "files": [
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/per-task-outcomes.csv",
+      "beforeSha256": "d3c2b6c7cc0c2fb58e3e1c4b954069444683c13db12f61d4184efde79bf252cf",
+      "afterSha256": "d3c2b6c7cc0c2fb58e3e1c4b954069444683c13db12f61d4184efde79bf252cf",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/report.json",
+      "beforeSha256": "a0ac54edfedbf2bd1d5f4eaefa55a3e55c247dce18bc4960ed2142a89cca75ff",
+      "afterSha256": "a0ac54edfedbf2bd1d5f4eaefa55a3e55c247dce18bc4960ed2142a89cca75ff",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/README.md",
+      "beforeSha256": "e445b9a5baec053e7e0860d319f66d708d4b7df233fdd60588151d5ff094e36d",
+      "afterSha256": "e445b9a5baec053e7e0860d319f66d708d4b7df233fdd60588151d5ff094e36d",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/results-evidence.json.gz",
+      "beforeSha256": "637c489b9d45c01e0dfe982dc7fa78f5024e6ef4fa89beeafabce2b06369ae82",
+      "afterSha256": "637c489b9d45c01e0dfe982dc7fa78f5024e6ef4fa89beeafabce2b06369ae82",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/verification.json",
+      "beforeSha256": "91f331f3d85b3c7e63261b2d61fd145040108b943300b095b0b8977518d2b9ad",
+      "afterSha256": "91f331f3d85b3c7e63261b2d61fd145040108b943300b095b0b8977518d2b9ad",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round3-2026-10-07/preregistration.json.gz",
+      "beforeSha256": "72dc711acd440b8f0053f298010d2d40eae188db0c15047a5e8c245e6c06a5db",
+      "afterSha256": "72dc711acd440b8f0053f298010d2d40eae188db0c15047a5e8c245e6c06a5db",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/report.json",
+      "beforeSha256": "a18c9a2582ebeb401690c212f6ef075716e4a21590fd7dec499e9827f08be436",
+      "afterSha256": "a18c9a2582ebeb401690c212f6ef075716e4a21590fd7dec499e9827f08be436",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/retention.json",
+      "beforeSha256": "efb2e23a96d68e8722587a3a721c26f74129198fdb1ca700f9f75e121ae7962a",
+      "afterSha256": "efb2e23a96d68e8722587a3a721c26f74129198fdb1ca700f9f75e121ae7962a",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/results-evidence.json.gz",
+      "beforeSha256": "f414dec3a77e0c32e808c60b15903548fc4c869938bfdfda0bba663644b64c13",
+      "afterSha256": "f414dec3a77e0c32e808c60b15903548fc4c869938bfdfda0bba663644b64c13",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/verification.json",
+      "beforeSha256": "d60d563df3fe1d42a39fd62e3e1b058e7464c9e562cad11ac4a60c99866f26de",
+      "afterSha256": "d60d563df3fe1d42a39fd62e3e1b058e7464c9e562cad11ac4a60c99866f26de",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-2026-10-06/preregistration.json.gz",
+      "beforeSha256": "7be6e9854a882b294bedaecab35daeec6ea35ad5386f533899b43fee0f8f4ba2",
+      "afterSha256": "7be6e9854a882b294bedaecab35daeec6ea35ad5386f533899b43fee0f8f4ba2",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/per-task-outcomes.csv",
+      "beforeSha256": "c2cc9e95ec899eb726b2adce6938f90bc101e9c8649ca9e07567213a53ff49a7",
+      "afterSha256": "c2cc9e95ec899eb726b2adce6938f90bc101e9c8649ca9e07567213a53ff49a7",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/report.json",
+      "beforeSha256": "14447aa6918b7084a07170fba405dc5dec897a784393caf2c117d22be7cf103d",
+      "afterSha256": "14447aa6918b7084a07170fba405dc5dec897a784393caf2c117d22be7cf103d",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/retention.json",
+      "beforeSha256": "7f445842b5557792c0aa5f740cb64d1bc5f5fc1c08ab95c98e7908251b212d87",
+      "afterSha256": "7f445842b5557792c0aa5f740cb64d1bc5f5fc1c08ab95c98e7908251b212d87",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/original-study-preservation.json",
+      "beforeSha256": "e38343cc15a8c04356a507b69457de8d31426d0a463ac3587b01d9bd8b6f4008",
+      "afterSha256": "e38343cc15a8c04356a507b69457de8d31426d0a463ac3587b01d9bd8b6f4008",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/README.md",
+      "beforeSha256": "f617456c41ec4f16fa05f8b6129039bc1a97717b36e33ec8849ec54c63ee713b",
+      "afterSha256": "f617456c41ec4f16fa05f8b6129039bc1a97717b36e33ec8849ec54c63ee713b",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/candidate-development-evidence.json.gz",
+      "beforeSha256": "d2e4f5c15f34034f358cd28f0bd06b30b8f68f55c96ac181a3a43aca2f65295f",
+      "afterSha256": "d2e4f5c15f34034f358cd28f0bd06b30b8f68f55c96ac181a3a43aca2f65295f",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/results-evidence.json.gz",
+      "beforeSha256": "06684446fa6f4edcad6fc718e5461bbc03727810c20a7576839203804dd70906",
+      "afterSha256": "06684446fa6f4edcad6fc718e5461bbc03727810c20a7576839203804dd70906",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/verification.json",
+      "beforeSha256": "a3eef4b9c4f3597e48010d5a939e2f8ece0c57db7a4ac3b3d7d4ce879d244f88",
+      "afterSha256": "a3eef4b9c4f3597e48010d5a939e2f8ece0c57db7a4ac3b3d7d4ce879d244f88",
+      "unchanged": true
+    },
+    {
+      "path": "benchmarks/results/self-curated-round2-2026-10-07/preregistration.json.gz",
+      "beforeSha256": "268df163a1f5d31f8ede4ce7f78171a72a936d4348753aeb4728f608dfd2ce8b",
+      "afterSha256": "268df163a1f5d31f8ede4ce7f78171a72a936d4348753aeb4728f608dfd2ce8b",
+      "unchanged": true
+    },
+    {
+      "path": "docs/benchmarks/2026-10-07-self-curated-round2-study.md",
+      "beforeSha256": "0974832940aafcae20ea875b8e86a46ca9695a96281c06a597290a129e19bf30",
+      "afterSha256": "0974832940aafcae20ea875b8e86a46ca9695a96281c06a597290a129e19bf30",
+      "unchanged": true
+    },
+    {
+      "path": "docs/benchmarks/2026-10-06-self-curated-study.md",
+      "beforeSha256": "ead988b283c2dcd8a4a9c7b8c42596639d5412c858aad3529123d3a223b3c7cf",
+      "afterSha256": "ead988b283c2dcd8a4a9c7b8c42596639d5412c858aad3529123d3a223b3c7cf",
+      "unchanged": true
+    }
+  ]
+}

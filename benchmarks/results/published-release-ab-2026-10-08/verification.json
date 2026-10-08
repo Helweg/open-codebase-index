@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "kind": "observed-published-release-comparison-verification",
+  "verifiedAt": "2026-10-08T08:58:26.701375+00:00",
+  "independentlyReviewed": false,
+  "sourceBuildLintTestsRunByBenchmarkOwner": false,
+  "protocolSha256": "4e007979dd7fd34ea4d5ec92326052770b57d89079a47bced286ddc96add9d3c",
+  "finalPreregistrationSha256": "5af3759a79b69a95d8c2d528056fea4b068284586987f4000cecb959fbf4e776",
+  "draftPreregistrationSha256": "0a94875e1f1c3693910d5e60258b5c25891dc2b70d86ef127e104f3ff5a58d78",
+  "execution": {
+    "start": "2026-10-08T08:20:21.332Z",
+    "completed": "2026-10-08T08:48:09.117Z",
+    "cells": 36,
+    "primaryRows": 400,
+    "queryPassRecords": 1200,
+    "setupErrors": 0,
+    "queryErrors": 0,
+    "indexAttemptsPerCell": 1,
+    "qualityPass": 1,
+    "indexTimeoutMs": 300000,
+    "queryTimeoutMs": 60000
+  },
+  "compactReplay": {
+    "command": "python3.12 benchmarks/published-release-ab-2026-10-08/replay.py benchmarks/results/published-release-ab-2026-10-08/results-evidence.json.gz",
+    "exitCode": 0,
+    "archiveSha256": "0a3ace56ef0e13e1a098391cab1d845da66e5e17fa007873d2f1acfc7c86e2f0",
+    "verifiedFiles": 170,
+    "reportReproducedExactly": true,
+    "replayedAnalysisSha256": "477f894b78a66a2d68aded6330e9986fc05df3504e030b41b0996dabc6daa4ab"
+  },
+  "rawProvenanceVerification": {
+    "schemaVersion": 1,
+    "frozenBindingsUnchanged": 80,
+    "dependencyFilesByteUnchanged": 13068,
+    "queryPassRecords": 1200,
+    "primaryRows": 400,
+    "cells": 36,
+    "supportedQueryErrors": 0,
+    "setupErrors": 0,
+    "pinnedSourceCitationsVerified": 26418,
+    "distinctPinnedSourceFilesVerified": 878,
+    "rangesSourceContained": true,
+    "modelTagDigestUnchanged": "0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f",
+    "consumerBodyLimit": "This verifies pinned citation source slices, NOT full consumer-body completeness; separately frozen scorer checks actual returned bodies without reconstructing omitted/truncated text."
+  },
+  "privateRetention": {
+    "schemaVersion": 1,
+    "kind": "private-original-evidence-retention",
+    "archive": "${USER_HOME}/.jcode/scratch/ocbi-published-release-ab-20261008-originals.tar.gz",
+    "sha256": "16301559f5c7c2bcb9a4d4fe67c91dbb14cd8a1f20f0b15b2981979d724358d8",
+    "bytes": 920530168,
+    "archiveCreationExitCode": 0,
+    "readBackVerification": {
+      "regularFilesVerified": 34732,
+      "inventoriedRawFiles": 34731,
+      "inventorySha256": "4e472b56f289e0d7818484327236f80627a897992f48d9e5778245340782c4b7",
+      "allInventoriedFilesByteIdentical": true,
+      "streamedTarGzipReadCompleted": true
+    },
+    "scope": "Full owned private workspace: copied canonical upstream archives, pinned source extracts, separately installed actual registry tarballs/dependency closures/native binaries, retained all36native indexes, complete raw MCP requests/results/stderr/status and all1200query-pass records, frozen drafts/final protocol, gold/annotation environments/wheels, scoring/publication programs and receipts.",
+    "limits": "Not a portable model/OS/runtime image or independently reviewed retention service. Shared system Node/Ollama/model bytes represented by frozen versions/hashes/digests, not redistributed; private local path durability depends on user storage."
+  },
+  "historicalPreservedFiles": 22,
+  "requiredHistorical13Preserved": true,
+  "publicArtifactHashes": {
+    "per-task-outcomes.csv": "d835922c605e0a2bf8693d8a902a7777feec822e8251ea312046cf47fe9210ef",
+    "report.json": "477f894b78a66a2d68aded6330e9986fc05df3504e030b41b0996dabc6daa4ab",
+    "evidence-verification.json": "66db1ae6a12898f17bd5994e1b732a2866db501886fe97d1f9061b8b92edfa7b",
+    "retention.json": "f80082a3e056fb4781d92fc823df7a3bb60bd8042ce4c95fd3db7c059832ef4c",
+    "preregistration-final.json.gz": "5af3759a79b69a95d8c2d528056fea4b068284586987f4000cecb959fbf4e776",
+    "README.md": "ab03d039203325f7927ae7b0f06fdaf0bac682e839041bd3a1718bd065dba2e9",
+    "results-evidence.json.gz": "0a3ace56ef0e13e1a098391cab1d845da66e5e17fa007873d2f1acfc7c86e2f0",
+    "node-library-receipt.json": "b9b831531c97ccd788ee561233a091caca2ba24ba370115f26826e137bec5853",
+    "pre-execution-supplement.json": "35c1669d74de16923a80507a6302c40d8e206a86d0b57d875bd7e1369bf4c9f2",
+    "LICENSE-NOTICES.txt": "7a1ce9982ef3939d38e963bf136420078561b41c744cbcfa666dfe7ea57679fb",
+    "preregistration.json.gz": "0a94875e1f1c3693910d5e60258b5c25891dc2b70d86ef127e104f3ff5a58d78",
+    "historical-preservation.json": "b460f5f1ab75a1661b28ad0bff4d28b63dc8a96296b9e9e0a7970ddbd10363dd"
+  }
+}
