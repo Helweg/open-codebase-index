@@ -1,0 +1,4772 @@
+{
+  "schemaVersion": 1,
+  "kind": "development-exposed-published-release-regression-comparison",
+  "counts": {
+    "cells": 36,
+    "primaryRows": 400,
+    "queryPassRecords": 1200,
+    "explicitPerCondition": 54,
+    "naturalPerCondition": 46
+  },
+  "summary": [
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "version": "0.35.3",
+      "count": 54,
+      "success": 54,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.7407407407407407,
+        "hitAt5": 0.7407407407407407,
+        "mrrAt10": 0.7407407407407407,
+        "ndcgAt10": 0.7407407407407407,
+        "declarationRangeAt5": 0.7407407407407407,
+        "completeDeclarationBodyAt5": 0.14814814814814814,
+        "targetIdentityAt5": 0.7407407407407407,
+        "originalEvidenceOverlapAt5": 0.7407407407407407,
+        "exactCitedBodyAt5": 0.14814814814814814
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.7407407407407407,
+        "hitAt5": 0.7407407407407407,
+        "mrrAt10": 0.7407407407407407,
+        "ndcgAt10": 0.7407407407407407,
+        "declarationRangeAt5": 0.7407407407407407,
+        "completeDeclarationBodyAt5": 0.14814814814814814,
+        "targetIdentityAt5": 0.7407407407407407,
+        "originalEvidenceOverlapAt5": 0.7407407407407407,
+        "exactCitedBodyAt5": 0.14814814814814814
+      }
+    },
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "version": "0.36.1",
+      "count": 54,
+      "success": 54,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.9814814814814815,
+        "hitAt5": 1,
+        "mrrAt10": 0.9907407407407407,
+        "ndcgAt10": 0.9931653658068789,
+        "declarationRangeAt5": 1,
+        "completeDeclarationBodyAt5": 0.25925925925925924,
+        "targetIdentityAt5": 1,
+        "originalEvidenceOverlapAt5": 1,
+        "exactCitedBodyAt5": 0.25925925925925924
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.9814814814814815,
+        "hitAt5": 1,
+        "mrrAt10": 0.9907407407407407,
+        "ndcgAt10": 0.9931653658068789,
+        "declarationRangeAt5": 1,
+        "completeDeclarationBodyAt5": 0.25925925925925924,
+        "targetIdentityAt5": 1,
+        "originalEvidenceOverlapAt5": 1,
+        "exactCitedBodyAt5": 0.25925925925925924
+      }
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "version": "0.35.3",
+      "count": 46,
+      "success": 46,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.2608695652173913,
+        "hitAt5": 0.4782608695652174,
+        "mrrAt10": 0.36056763285024157,
+        "ndcgAt10": 0.4112550854513396
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.26666666666666666,
+        "hitAt5": 0.48888888888888893,
+        "mrrAt10": 0.3681687242798354,
+        "ndcgAt10": 0.4192791614403916
+      }
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "version": "0.36.1",
+      "count": 46,
+      "success": 46,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.43478260869565216,
+        "hitAt5": 0.7608695652173914,
+        "mrrAt10": 0.5913906142167011,
+        "ndcgAt10": 0.6618685946724364
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.43703703703703706,
+        "hitAt5": 0.7703703703703704,
+        "mrrAt10": 0.5960964138741917,
+        "ndcgAt10": 0.6667351664697054
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "version": "0.35.3",
+      "count": 54,
+      "success": 54,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.7407407407407407,
+        "hitAt5": 0.7407407407407407,
+        "mrrAt10": 0.7407407407407407,
+        "ndcgAt10": 0.7407407407407407,
+        "declarationRangeAt5": 0.7407407407407407,
+        "completeDeclarationBodyAt5": 0.14814814814814814,
+        "targetIdentityAt5": 0.7407407407407407,
+        "originalEvidenceOverlapAt5": 0.7407407407407407,
+        "exactCitedBodyAt5": 0.14814814814814814
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.7407407407407407,
+        "hitAt5": 0.7407407407407407,
+        "mrrAt10": 0.7407407407407407,
+        "ndcgAt10": 0.7407407407407407,
+        "declarationRangeAt5": 0.7407407407407407,
+        "completeDeclarationBodyAt5": 0.14814814814814814,
+        "targetIdentityAt5": 0.7407407407407407,
+        "originalEvidenceOverlapAt5": 0.7407407407407407,
+        "exactCitedBodyAt5": 0.14814814814814814
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "version": "0.36.1",
+      "count": 54,
+      "success": 54,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.9814814814814815,
+        "hitAt5": 1,
+        "mrrAt10": 0.9907407407407407,
+        "ndcgAt10": 0.9931653658068789,
+        "declarationRangeAt5": 1,
+        "completeDeclarationBodyAt5": 0.25925925925925924,
+        "targetIdentityAt5": 1,
+        "originalEvidenceOverlapAt5": 1,
+        "exactCitedBodyAt5": 0.25925925925925924
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.9814814814814815,
+        "hitAt5": 1,
+        "mrrAt10": 0.9907407407407407,
+        "ndcgAt10": 0.9931653658068789,
+        "declarationRangeAt5": 1,
+        "completeDeclarationBodyAt5": 0.25925925925925924,
+        "targetIdentityAt5": 1,
+        "originalEvidenceOverlapAt5": 1,
+        "exactCitedBodyAt5": 0.25925925925925924
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "version": "0.35.3",
+      "count": 46,
+      "success": 46,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.2608695652173913,
+        "hitAt5": 0.43478260869565216,
+        "mrrAt10": 0.3419254658385093,
+        "ndcgAt10": 0.3863103992781213
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.26666666666666666,
+        "hitAt5": 0.4444444444444445,
+        "mrrAt10": 0.34899470899470897,
+        "ndcgAt10": 0.39366050691640053
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "version": "0.36.1",
+      "count": 46,
+      "success": 46,
+      "errors": 0,
+      "unsupported": 0,
+      "means": {
+        "hitAt1": 0.32608695652173914,
+        "hitAt5": 0.5217391304347826,
+        "mrrAt10": 0.4142080745341615,
+        "ndcgAt10": 0.4667544929176402
+      },
+      "equalRepositoryMeans": {
+        "hitAt1": 0.32962962962962966,
+        "hitAt5": 0.5259259259259259,
+        "mrrAt10": 0.4179453262786596,
+        "ndcgAt10": 0.4703366915256865
+      }
+    }
+  ],
+  "paired": [
+    {
+      "mode": "hybrid",
+      "track": "explicit",
+      "newMinusOld": {
+        "hitAt1": 0.24074074074074073,
+        "hitAt5": 0.25925925925925924,
+        "mrrAt10": 0.25,
+        "ndcgAt10": 0.2524246250661381,
+        "declarationRangeAt5": 0.25925925925925924,
+        "completeDeclarationBodyAt5": 0.1111111111111111,
+        "targetIdentityAt5": 0.25925925925925924,
+        "originalEvidenceOverlapAt5": 0.25925925925925924,
+        "exactCitedBodyAt5": 0.1111111111111111
+      },
+      "winsLossesTies": {
+        "hitAt1": {
+          "wins": 13,
+          "losses": 0,
+          "ties": 41
+        },
+        "hitAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "mrrAt10": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "ndcgAt10": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "declarationRangeAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "completeDeclarationBodyAt5": {
+          "wins": 6,
+          "losses": 0,
+          "ties": 48
+        },
+        "targetIdentityAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "originalEvidenceOverlapAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "exactCitedBodyAt5": {
+          "wins": 6,
+          "losses": 0,
+          "ties": 48
+        }
+      },
+      "perRepository": [
+        {
+          "repository": "fastify",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "hono",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "typer",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "gin",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.5,
+            "hitAt5": 0.5,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.5,
+            "declarationRangeAt5": 0.5,
+            "completeDeclarationBodyAt5": 0.3333333333333333,
+            "targetIdentityAt5": 0.5,
+            "originalEvidenceOverlapAt5": 0.5,
+            "exactCitedBodyAt5": 0.3333333333333333
+          }
+        },
+        {
+          "repository": "clap",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.6666666666666666,
+            "hitAt5": 0.8333333333333334,
+            "mrrAt10": 0.75,
+            "ndcgAt10": 0.7718216255952429,
+            "declarationRangeAt5": 0.8333333333333334,
+            "completeDeclarationBodyAt5": 0.5,
+            "targetIdentityAt5": 0.8333333333333334,
+            "originalEvidenceOverlapAt5": 0.8333333333333334,
+            "exactCitedBodyAt5": 0.5
+          }
+        },
+        {
+          "repository": "moshi",
+          "count": 6,
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0.16666666666666666,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0.16666666666666666
+          }
+        },
+        {
+          "repository": "csvhelper",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "monolog",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "rack",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        }
+      ],
+      "perTask": [
+        {
+          "queryId": "clap-explicit-01",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-02",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "clap-explicit-03",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-04",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-05",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "clap-explicit-06",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "csvhelper-def-01",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-02",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-03",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-04",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-05",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-06",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-01",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-02",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-03",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-04",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-05",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-06",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-01",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-02",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "gin-explicit-03",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-04",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "gin-explicit-05",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-06",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-01",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-02",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-03",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-04",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-05",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-06",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-01",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-02",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-03",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-04",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-05",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-06",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-01",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-02",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-03",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-04",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-05",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-06",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "rack-def-01",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-02",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-03",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-04",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-05",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-06",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-01",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-02",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-03",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-04",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-05",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-06",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        }
+      ],
+      "uncertainty": {
+        "hitAt1": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5
+          ],
+          "leaveOneRepositoryOut": [
+            0.2708333333333333,
+            0.2708333333333333,
+            0.2708333333333333,
+            0.20833333333333331,
+            0.1875,
+            0.14583333333333331,
+            0.2708333333333333,
+            0.2708333333333333,
+            0.2708333333333333
+          ]
+        },
+        "hitAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "mrrAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.0,
+            0.5
+          ],
+          "leaveOneRepositoryOut": [
+            0.28125,
+            0.28125,
+            0.28125,
+            0.21875,
+            0.1875,
+            0.15625,
+            0.28125,
+            0.28125,
+            0.28125
+          ]
+        },
+        "ndcgAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.0,
+            0.5096985002645524
+          ],
+          "leaveOneRepositoryOut": [
+            0.28397770319940535,
+            0.28397770319940535,
+            0.28397770319940535,
+            0.22147770319940535,
+            0.1875,
+            0.15897770319940535,
+            0.28397770319940535,
+            0.28397770319940535,
+            0.28397770319940535
+          ]
+        },
+        "declarationRangeAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "completeDeclarationBodyAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.24074074074074073
+          ],
+          "leaveOneRepositoryOut": [
+            0.125,
+            0.125,
+            0.125,
+            0.08333333333333333,
+            0.0625,
+            0.10416666666666666,
+            0.125,
+            0.125,
+            0.125
+          ]
+        },
+        "targetIdentityAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "originalEvidenceOverlapAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "exactCitedBodyAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.24074074074074073
+          ],
+          "leaveOneRepositoryOut": [
+            0.125,
+            0.125,
+            0.125,
+            0.08333333333333333,
+            0.0625,
+            0.10416666666666666,
+            0.125,
+            0.125,
+            0.125
+          ]
+        }
+      }
+    },
+    {
+      "mode": "hybrid",
+      "track": "natural",
+      "newMinusOld": {
+        "hitAt1": 0.17391304347826086,
+        "hitAt5": 0.2826086956521739,
+        "mrrAt10": 0.23082298136645962,
+        "ndcgAt10": 0.2506135092210969
+      },
+      "winsLossesTies": {
+        "hitAt1": {
+          "wins": 9,
+          "losses": 1,
+          "ties": 36
+        },
+        "hitAt5": {
+          "wins": 13,
+          "losses": 0,
+          "ties": 33
+        },
+        "mrrAt10": {
+          "wins": 20,
+          "losses": 4,
+          "ties": 22
+        },
+        "ndcgAt10": {
+          "wins": 20,
+          "losses": 4,
+          "ties": 22
+        }
+      },
+      "perRepository": [
+        {
+          "repository": "fastify",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "repository": "hono",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.03333333333333335,
+            "ndcgAt10": 0.026185950714291507
+          }
+        },
+        {
+          "repository": "typer",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0.2,
+            "hitAt5": 0,
+            "mrrAt10": 0.05,
+            "ndcgAt10": 0.0337634101860956
+          }
+        },
+        {
+          "repository": "gin",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0.4,
+            "hitAt5": 0,
+            "mrrAt10": 0.22833333333333336,
+            "ndcgAt10": 0.1383498532307138
+          }
+        },
+        {
+          "repository": "clap",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.3333333333333333,
+            "hitAt5": 0.3333333333333333,
+            "mrrAt10": 0.3611111111111111,
+            "ndcgAt10": 0.39270119785133706
+          }
+        },
+        {
+          "repository": "moshi",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0.6,
+            "hitAt5": 0.8,
+            "mrrAt10": 0.72,
+            "ndcgAt10": 0.7839989159778691
+          }
+        },
+        {
+          "repository": "csvhelper",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0.2,
+            "mrrAt10": 0.10857142857142857,
+            "ndcgAt10": 0.1350396521173806
+          }
+        },
+        {
+          "repository": "monolog",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0.2,
+            "mrrAt10": 0.08333333333333334,
+            "ndcgAt10": 0.11232126232897012
+          }
+        },
+        {
+          "repository": "rack",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.4666666666666667,
+            "ndcgAt10": 0.604743802857166
+          }
+        }
+      ],
+      "perTask": [
+        {
+          "queryId": "clap-natural-01",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-02",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.16666666666666666,
+            "ndcgAt10": 0.3562071871080222
+          }
+        },
+        {
+          "queryId": "clap-natural-03",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-04",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-05",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "clap-natural-06",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-01",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.14285714285714285,
+            "ndcgAt10": 0.3333333333333333
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-02",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-03",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-04",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.4,
+            "ndcgAt10": 0.34186492725356965
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-05",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-01",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-02",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-03",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-04",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-05",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-01",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-02",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 0,
+            "mrrAt10": 0.6666666666666667,
+            "ndcgAt10": 0.34907907019286744
+          }
+        },
+        {
+          "queryId": "gin-natural-03",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": -0.024999999999999994,
+            "ndcgAt10": -0.026400050467840885
+          }
+        },
+        {
+          "queryId": "gin-natural-04",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 0,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.36907024642854247
+          }
+        },
+        {
+          "queryId": "gin-natural-05",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-01",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-02",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-03",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 0,
+            "mrrAt10": 0.6666666666666667,
+            "ndcgAt10": 0.5
+          }
+        },
+        {
+          "queryId": "hono-nl-04",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-05",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": -1,
+            "hitAt5": 0,
+            "mrrAt10": -0.5,
+            "ndcgAt10": -0.36907024642854247
+          }
+        },
+        {
+          "queryId": "monolog-nl-01",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-02",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-03",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": -0.08333333333333331,
+            "ndcgAt10": -0.06932344192660694
+          }
+        },
+        {
+          "queryId": "monolog-nl-04",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-05",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "moshi-natural-01",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "moshi-natural-02",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.1,
+            "ndcgAt10": 0.2890648263178879
+          }
+        },
+        {
+          "queryId": "moshi-natural-03",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-04",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-05",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "rack-nl-01",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.3333333333333333,
+            "ndcgAt10": 0.5
+          }
+        },
+        {
+          "queryId": "rack-nl-02",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "rack-nl-03",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "rack-nl-04",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "rack-nl-05",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575
+          }
+        },
+        {
+          "queryId": "typer-nl-01",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 0,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.36907024642854247
+          }
+        },
+        {
+          "queryId": "typer-nl-02",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-03",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-04",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-05",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": -0.25,
+            "ndcgAt10": -0.20025319549806447
+          }
+        }
+      ],
+      "uncertainty": {
+        "hitAt1": {
+          "descriptiveRepositoryBootstrap95": [
+            0.044444444444444446,
+            0.31851851851851853
+          ],
+          "leaveOneRepositoryOut": [
+            0.19166666666666665,
+            0.19166666666666665,
+            0.16666666666666666,
+            0.14166666666666666,
+            0.15,
+            0.11666666666666667,
+            0.19166666666666665,
+            0.19166666666666665,
+            0.19166666666666665
+          ]
+        },
+        "hitAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0.06666666666666667,
+            0.5259259259259259
+          ],
+          "leaveOneRepositoryOut": [
+            0.31666666666666665,
+            0.31666666666666665,
+            0.31666666666666665,
+            0.31666666666666665,
+            0.275,
+            0.21666666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.19166666666666668
+          ]
+        },
+        "mrrAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.09153439153439154,
+            0.38641975308641974
+          ],
+          "leaveOneRepositoryOut": [
+            0.2564186507936508,
+            0.25225198412698413,
+            0.2501686507936508,
+            0.22787698412698412,
+            0.21127976190476191,
+            0.1664186507936508,
+            0.24284722222222221,
+            0.24600198412698412,
+            0.19808531746031746
+          ]
+        },
+        "ndcgAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.08855938282198786,
+            0.43023387001200114
+          ],
+          "leaveOneRepositoryOut": [
+            0.27838800565797794,
+            0.27511476181869154,
+            0.27416757938471603,
+            0.26109427400413876,
+            0.22930035592656084,
+            0.18038814116074434,
+            0.2615080491433054,
+            0.2643478478668567,
+            0.2027950303008322
+          ]
+        }
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "explicit",
+      "newMinusOld": {
+        "hitAt1": 0.24074074074074073,
+        "hitAt5": 0.25925925925925924,
+        "mrrAt10": 0.25,
+        "ndcgAt10": 0.2524246250661381,
+        "declarationRangeAt5": 0.25925925925925924,
+        "completeDeclarationBodyAt5": 0.1111111111111111,
+        "targetIdentityAt5": 0.25925925925925924,
+        "originalEvidenceOverlapAt5": 0.25925925925925924,
+        "exactCitedBodyAt5": 0.1111111111111111
+      },
+      "winsLossesTies": {
+        "hitAt1": {
+          "wins": 13,
+          "losses": 0,
+          "ties": 41
+        },
+        "hitAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "mrrAt10": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "ndcgAt10": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "declarationRangeAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "completeDeclarationBodyAt5": {
+          "wins": 6,
+          "losses": 0,
+          "ties": 48
+        },
+        "targetIdentityAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "originalEvidenceOverlapAt5": {
+          "wins": 14,
+          "losses": 0,
+          "ties": 40
+        },
+        "exactCitedBodyAt5": {
+          "wins": 6,
+          "losses": 0,
+          "ties": 48
+        }
+      },
+      "perRepository": [
+        {
+          "repository": "fastify",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "hono",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "typer",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "gin",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.5,
+            "hitAt5": 0.5,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.5,
+            "declarationRangeAt5": 0.5,
+            "completeDeclarationBodyAt5": 0.3333333333333333,
+            "targetIdentityAt5": 0.5,
+            "originalEvidenceOverlapAt5": 0.5,
+            "exactCitedBodyAt5": 0.3333333333333333
+          }
+        },
+        {
+          "repository": "clap",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.6666666666666666,
+            "hitAt5": 0.8333333333333334,
+            "mrrAt10": 0.75,
+            "ndcgAt10": 0.7718216255952429,
+            "declarationRangeAt5": 0.8333333333333334,
+            "completeDeclarationBodyAt5": 0.5,
+            "targetIdentityAt5": 0.8333333333333334,
+            "originalEvidenceOverlapAt5": 0.8333333333333334,
+            "exactCitedBodyAt5": 0.5
+          }
+        },
+        {
+          "repository": "moshi",
+          "count": 6,
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0.16666666666666666,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0.16666666666666666
+          }
+        },
+        {
+          "repository": "csvhelper",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "monolog",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "repository": "rack",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        }
+      ],
+      "perTask": [
+        {
+          "queryId": "clap-explicit-01",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-02",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "clap-explicit-03",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-04",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "clap-explicit-05",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.5,
+            "ndcgAt10": 0.6309297535714575,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "clap-explicit-06",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "csvhelper-def-01",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-02",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-03",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-04",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-05",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "csvhelper-def-06",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-01",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-02",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-03",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-04",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-05",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "fastify-def-06",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-01",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-02",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "gin-explicit-03",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-04",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "gin-explicit-05",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "gin-explicit-06",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-01",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-02",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-03",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-04",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-05",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "hono-def-06",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-01",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-02",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-03",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-04",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-05",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "monolog-def-06",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-01",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-02",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-03",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-04",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-05",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "moshi-explicit-06",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0,
+            "declarationRangeAt5": 1,
+            "completeDeclarationBodyAt5": 1,
+            "targetIdentityAt5": 1,
+            "originalEvidenceOverlapAt5": 1,
+            "exactCitedBodyAt5": 1
+          }
+        },
+        {
+          "queryId": "rack-def-01",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-02",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-03",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-04",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-05",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "rack-def-06",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-01",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-02",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-03",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-04",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-05",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        },
+        {
+          "queryId": "typer-def-06",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0,
+            "declarationRangeAt5": 0,
+            "completeDeclarationBodyAt5": 0,
+            "targetIdentityAt5": 0,
+            "originalEvidenceOverlapAt5": 0,
+            "exactCitedBodyAt5": 0
+          }
+        }
+      ],
+      "uncertainty": {
+        "hitAt1": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5
+          ],
+          "leaveOneRepositoryOut": [
+            0.2708333333333333,
+            0.2708333333333333,
+            0.2708333333333333,
+            0.20833333333333331,
+            0.1875,
+            0.14583333333333331,
+            0.2708333333333333,
+            0.2708333333333333,
+            0.2708333333333333
+          ]
+        },
+        "hitAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "mrrAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.0,
+            0.5
+          ],
+          "leaveOneRepositoryOut": [
+            0.28125,
+            0.28125,
+            0.28125,
+            0.21875,
+            0.1875,
+            0.15625,
+            0.28125,
+            0.28125,
+            0.28125
+          ]
+        },
+        "ndcgAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            0.0,
+            0.5096985002645524
+          ],
+          "leaveOneRepositoryOut": [
+            0.28397770319940535,
+            0.28397770319940535,
+            0.28397770319940535,
+            0.22147770319940535,
+            0.1875,
+            0.15897770319940535,
+            0.28397770319940535,
+            0.28397770319940535,
+            0.28397770319940535
+          ]
+        },
+        "declarationRangeAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "completeDeclarationBodyAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.24074074074074073
+          ],
+          "leaveOneRepositoryOut": [
+            0.125,
+            0.125,
+            0.125,
+            0.08333333333333333,
+            0.0625,
+            0.10416666666666666,
+            0.125,
+            0.125,
+            0.125
+          ]
+        },
+        "targetIdentityAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "originalEvidenceOverlapAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.5370370370370371
+          ],
+          "leaveOneRepositoryOut": [
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.22916666666666669,
+            0.1875,
+            0.16666666666666669,
+            0.2916666666666667,
+            0.2916666666666667,
+            0.2916666666666667
+          ]
+        },
+        "exactCitedBodyAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.24074074074074073
+          ],
+          "leaveOneRepositoryOut": [
+            0.125,
+            0.125,
+            0.125,
+            0.08333333333333333,
+            0.0625,
+            0.10416666666666666,
+            0.125,
+            0.125,
+            0.125
+          ]
+        }
+      }
+    },
+    {
+      "mode": "structural",
+      "track": "natural",
+      "newMinusOld": {
+        "hitAt1": 0.06521739130434782,
+        "hitAt5": 0.08695652173913043,
+        "mrrAt10": 0.07228260869565217,
+        "ndcgAt10": 0.08044409363951889
+      },
+      "winsLossesTies": {
+        "hitAt1": {
+          "wins": 3,
+          "losses": 0,
+          "ties": 43
+        },
+        "hitAt5": {
+          "wins": 5,
+          "losses": 1,
+          "ties": 40
+        },
+        "mrrAt10": {
+          "wins": 5,
+          "losses": 2,
+          "ties": 39
+        },
+        "ndcgAt10": {
+          "wins": 5,
+          "losses": 2,
+          "ties": 39
+        }
+      },
+      "perRepository": [
+        {
+          "repository": "fastify",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "repository": "hono",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "repository": "typer",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "repository": "gin",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": -0.02666666666666666,
+            "ndcgAt10": -0.023007313873571956
+          }
+        },
+        {
+          "repository": "clap",
+          "count": 6,
+          "differences": {
+            "hitAt1": 0.16666666666666666,
+            "hitAt5": 0.3333333333333333,
+            "mrrAt10": 0.2222222222222222,
+            "ndcgAt10": 0.25
+          }
+        },
+        {
+          "repository": "moshi",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0.4,
+            "hitAt5": 0.6,
+            "mrrAt10": 0.44,
+            "ndcgAt10": 0.4773705614469083
+          }
+        },
+        {
+          "repository": "csvhelper",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "repository": "monolog",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": -0.2,
+            "mrrAt10": -0.015000000000000003,
+            "ndcgAt10": -0.014277586089762572
+          }
+        },
+        {
+          "repository": "rack",
+          "count": 5,
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        }
+      ],
+      "perTask": [
+        {
+          "queryId": "clap-natural-01",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-02",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-03",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-04",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "clap-natural-05",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "clap-natural-06",
+          "repository": "clap",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.3333333333333333,
+            "ndcgAt10": 0.5
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-01",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-02",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-03",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-04",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "csvhelper-nl-05",
+          "repository": "csvhelper",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-01",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-02",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-03",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-04",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "fastify-nl-05",
+          "repository": "fastify",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-01",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-02",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": -0.1333333333333333,
+            "ndcgAt10": -0.11503656936785978
+          }
+        },
+        {
+          "queryId": "gin-natural-03",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-04",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "gin-natural-05",
+          "repository": "gin",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-01",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-02",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-03",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-04",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "hono-nl-05",
+          "repository": "hono",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-01",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-02",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-03",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": -1,
+            "mrrAt10": -0.07500000000000001,
+            "ndcgAt10": -0.07138793044881286
+          }
+        },
+        {
+          "queryId": "monolog-nl-04",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "monolog-nl-05",
+          "repository": "monolog",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-01",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-02",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-03",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 1,
+            "mrrAt10": 0.2,
+            "ndcgAt10": 0.38685280723454163
+          }
+        },
+        {
+          "queryId": "moshi-natural-04",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "moshi-natural-05",
+          "repository": "moshi",
+          "differences": {
+            "hitAt1": 1,
+            "hitAt5": 1,
+            "mrrAt10": 1.0,
+            "ndcgAt10": 1.0
+          }
+        },
+        {
+          "queryId": "rack-nl-01",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "rack-nl-02",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "rack-nl-03",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "rack-nl-04",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "rack-nl-05",
+          "repository": "rack",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-01",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-02",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-03",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-04",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        },
+        {
+          "queryId": "typer-nl-05",
+          "repository": "typer",
+          "differences": {
+            "hitAt1": 0,
+            "hitAt5": 0,
+            "mrrAt10": 0.0,
+            "ndcgAt10": 0.0
+          }
+        }
+      ],
+      "uncertainty": {
+        "hitAt1": {
+          "descriptiveRepositoryBootstrap95": [
+            0,
+            0.15185185185185185
+          ],
+          "leaveOneRepositoryOut": [
+            0.07083333333333333,
+            0.07083333333333333,
+            0.07083333333333333,
+            0.07083333333333333,
+            0.05,
+            0.020833333333333332,
+            0.07083333333333333,
+            0.07083333333333333,
+            0.07083333333333333
+          ]
+        },
+        "hitAt5": {
+          "descriptiveRepositoryBootstrap95": [
+            -0.044444444444444446,
+            0.23703703703703702
+          ],
+          "leaveOneRepositoryOut": [
+            0.09166666666666666,
+            0.09166666666666666,
+            0.09166666666666666,
+            0.09166666666666666,
+            0.049999999999999996,
+            0.016666666666666663,
+            0.09166666666666666,
+            0.11666666666666667,
+            0.09166666666666666
+          ]
+        },
+        "mrrAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            -0.007962962962962963,
+            0.17135802469135802
+          ],
+          "leaveOneRepositoryOut": [
+            0.07756944444444444,
+            0.07756944444444444,
+            0.07756944444444444,
+            0.08090277777777778,
+            0.049791666666666665,
+            0.022569444444444444,
+            0.07756944444444444,
+            0.07944444444444444,
+            0.07756944444444444
+          ]
+        },
+        "ndcgAt10": {
+          "descriptiveRepositoryBootstrap95": [
+            -0.007315563571428853,
+            0.18782928186711711
+          ],
+          "leaveOneRepositoryOut": [
+            0.08626070768544672,
+            0.08626070768544672,
+            0.08626070768544672,
+            0.08913662191964322,
+            0.055010707685446726,
+            0.026589387504583183,
+            0.08626070768544672,
+            0.08804540594666704,
+            0.08626070768544672
+          ]
+        }
+      }
+    }
+  ],
+  "latency": [
+    {
+      "version": "0.35.3",
+      "mode": "hybrid",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 67195.254708,
+      "queries": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "successes": 9,
+          "medianMs": 52.437707999954,
+          "meanMs": 44.70875455554213,
+          "minMs": 4.166666999924928,
+          "maxMs": 78.60245799995027
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "successes": 91,
+          "medianMs": 24.028375000227243,
+          "meanMs": 30.075892901113306,
+          "minMs": 2.852707999991253,
+          "maxMs": 82.78383400011808
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "successes": 200,
+          "medianMs": 15.96345849998761,
+          "meanMs": 15.2597161899996,
+          "minMs": 3.0180420000106096,
+          "maxMs": 31.290584000060335
+        }
+      }
+    },
+    {
+      "version": "0.36.1",
+      "mode": "hybrid",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 75326.731333,
+      "queries": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "successes": 9,
+          "medianMs": 57.12008300004527,
+          "meanMs": 50.3838796666888,
+          "minMs": 9.967583000194281,
+          "maxMs": 85.24637500010431
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "successes": 91,
+          "medianMs": 38.60891599999741,
+          "meanMs": 34.62399364834661,
+          "minMs": 8.039499999955297,
+          "maxMs": 73.10037499997998
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "successes": 200,
+          "medianMs": 18.887249999999767,
+          "meanMs": 19.23962189000551,
+          "minMs": 6.460332999937236,
+          "maxMs": 41.89987499988638
+        }
+      }
+    },
+    {
+      "version": "0.35.3",
+      "mode": "structural",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 2941.531166000059,
+      "queries": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "successes": 9,
+          "medianMs": 21.20300000003772,
+          "meanMs": 24.47535633328759,
+          "minMs": 5.103124999906868,
+          "maxMs": 48.747791999951005
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "successes": 91,
+          "medianMs": 18.49033300008159,
+          "meanMs": 18.21635021979135,
+          "minMs": 3.60287500009872,
+          "maxMs": 39.22537499992177
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "successes": 200,
+          "medianMs": 16.613563000049908,
+          "meanMs": 16.363766659999964,
+          "minMs": 3.000125000020489,
+          "maxMs": 32.595875000115484
+        }
+      }
+    },
+    {
+      "version": "0.36.1",
+      "mode": "structural",
+      "coldSetupCount": 9,
+      "failedSetups": 0,
+      "medianSetupMs": 3173.441957999952,
+      "queries": {
+        "firstRealQuery": {
+          "records": 9,
+          "measured": 9,
+          "successes": 9,
+          "medianMs": 21.714042000006884,
+          "meanMs": 26.25860177778587,
+          "minMs": 11.096040999982506,
+          "maxMs": 49.560499999905005
+        },
+        "laterPassOne": {
+          "records": 91,
+          "measured": 91,
+          "successes": 91,
+          "medianMs": 22.791250000009313,
+          "meanMs": 22.479863120877482,
+          "minMs": 7.975667000049725,
+          "maxMs": 48.198374999919906
+        },
+        "passesTwoAndThree": {
+          "records": 200,
+          "measured": 200,
+          "successes": 200,
+          "medianMs": 20.924583500018343,
+          "meanMs": 20.675252889998664,
+          "minMs": 7.419332999968901,
+          "maxMs": 56.39587499992922
+        }
+      }
+    }
+  ],
+  "bodyMetricLimits": "Exact pinned-source declaration range and returned complete declaration text, not semantic equivalence, concrete method closure, inherited/library behavior or coding productivity. Struct/trait declarations do not prove concrete implementation; natural-language tasks have file-only gold and body/range correctness is ungradeable. Consumer omission/truncation is not reconstructed. Explicit AST annotations were frozen before participant feedback using separate upstream Python Tree-sitter grammars and original source QA.",
+  "uncertaintyLimits": "Descriptive only: nine convenience clusters, development-exposed tasks, not unseen-project inference or confirmatory superiority.",
+  "repeatStability": [
+    {
+      "mode": "hybrid",
+      "version": "0.35.3",
+      "identicalPathListsAcrossThreePasses": 100,
+      "taskCount": 100
+    },
+    {
+      "mode": "hybrid",
+      "version": "0.36.1",
+      "identicalPathListsAcrossThreePasses": 100,
+      "taskCount": 100
+    },
+    {
+      "mode": "structural",
+      "version": "0.35.3",
+      "identicalPathListsAcrossThreePasses": 97,
+      "taskCount": 100
+    },
+    {
+      "mode": "structural",
+      "version": "0.36.1",
+      "identicalPathListsAcrossThreePasses": 98,
+      "taskCount": 100
+    }
+  ],
+  "apiReportedIndexWork": {
+    "limits": "Public successful setup response counters only; not independently measured backend calls, actual prompt/token computation, retries or model work. Absent/unparseable/failed setup values are N/A. Structural mode does not embed.",
+    "perCell": [
+      {
+        "repository": "fastify",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 348,
+          "embeddedChunks": 5470,
+          "tokenCount": 937008,
+          "structuralChunks": null,
+          "productDurationSeconds": 151,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "fastify",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 345,
+          "embeddedChunks": 5355,
+          "tokenCount": 927742,
+          "structuralChunks": null,
+          "productDurationSeconds": 147.4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "fastify",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 345,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 5355,
+          "productDurationSeconds": 4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "fastify",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 348,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 5470,
+          "productDurationSeconds": 4.3,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "hono",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 482,
+          "embeddedChunks": 6498,
+          "tokenCount": 941606,
+          "structuralChunks": null,
+          "productDurationSeconds": 158.7,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "hono",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 482,
+          "embeddedChunks": 6403,
+          "tokenCount": 928022,
+          "structuralChunks": null,
+          "productDurationSeconds": 160.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "hono",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 482,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 6403,
+          "productDurationSeconds": 16,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "hono",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 482,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 6498,
+          "productDurationSeconds": 16.4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "typer",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 731,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 2932,
+          "productDurationSeconds": 5.4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "typer",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 731,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 2932,
+          "productDurationSeconds": 5.4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "typer",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 731,
+          "embeddedChunks": 2932,
+          "tokenCount": 458922,
+          "structuralChunks": null,
+          "productDurationSeconds": 74.9,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "typer",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 731,
+          "embeddedChunks": 2932,
+          "tokenCount": 458922,
+          "structuralChunks": null,
+          "productDurationSeconds": 76.9,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "gin",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 110,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1589,
+          "productDurationSeconds": 2.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "gin",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 110,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1589,
+          "productDurationSeconds": 2.6,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "gin",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 110,
+          "embeddedChunks": 1589,
+          "tokenCount": 250213,
+          "structuralChunks": null,
+          "productDurationSeconds": 45.6,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "gin",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 110,
+          "embeddedChunks": 1589,
+          "tokenCount": 251131,
+          "structuralChunks": null,
+          "productDurationSeconds": 44.4,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "clap",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 461,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 5225,
+          "productDurationSeconds": 5.1,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "clap",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 315,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 2673,
+          "productDurationSeconds": 2.5,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "clap",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 461,
+          "embeddedChunks": 5225,
+          "tokenCount": 846773,
+          "structuralChunks": null,
+          "productDurationSeconds": 138.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "clap",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 315,
+          "embeddedChunks": 2673,
+          "tokenCount": 404363,
+          "structuralChunks": null,
+          "productDurationSeconds": 66.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "moshi",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 150,
+          "embeddedChunks": 1851,
+          "tokenCount": 380760,
+          "structuralChunks": null,
+          "productDurationSeconds": 53.2,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "moshi",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 163,
+          "embeddedChunks": 3281,
+          "tokenCount": 453916,
+          "structuralChunks": null,
+          "productDurationSeconds": 71.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "moshi",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 150,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1851,
+          "productDurationSeconds": 0.3,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "moshi",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 163,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 3281,
+          "productDurationSeconds": 2,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "csvhelper",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 615,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 4859,
+          "productDurationSeconds": 0.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "csvhelper",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 615,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 4859,
+          "productDurationSeconds": 0.7,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "csvhelper",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 615,
+          "embeddedChunks": 4859,
+          "tokenCount": 748984,
+          "structuralChunks": null,
+          "productDurationSeconds": 120.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "csvhelper",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 615,
+          "embeddedChunks": 4859,
+          "tokenCount": 748984,
+          "structuralChunks": null,
+          "productDurationSeconds": 119.3,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "monolog",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 127,
+          "embeddedChunks": 1418,
+          "tokenCount": 204712,
+          "structuralChunks": null,
+          "productDurationSeconds": 31.8,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "monolog",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 127,
+          "embeddedChunks": 1418,
+          "tokenCount": 204712,
+          "structuralChunks": null,
+          "productDurationSeconds": 31.6,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "monolog",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 127,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1418,
+          "productDurationSeconds": 2.7,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "monolog",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 127,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1418,
+          "productDurationSeconds": 2.7,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "rack",
+        "version": "0.35.3",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 111,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1047,
+          "productDurationSeconds": 0.2,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "rack",
+        "version": "0.36.1",
+        "mode": "structural",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 112,
+          "embeddedChunks": null,
+          "tokenCount": null,
+          "structuralChunks": 1048,
+          "productDurationSeconds": 0.2,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "rack",
+        "version": "0.36.1",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 112,
+          "embeddedChunks": 1048,
+          "tokenCount": 174677,
+          "structuralChunks": null,
+          "productDurationSeconds": 25.7,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      },
+      {
+        "repository": "rack",
+        "version": "0.35.3",
+        "mode": "hybrid",
+        "setupError": null,
+        "apiReportedIndexWork": {
+          "source": "Successful public index_codebase tool response; product-reported counters, not independently measured backend requests/tokens/computation/retries",
+          "processedFiles": 111,
+          "embeddedChunks": 1047,
+          "tokenCount": 174615,
+          "structuralChunks": null,
+          "productDurationSeconds": 25.5,
+          "failedEmbeddingChunks": null,
+          "unavailableReason": "Absent/unparseable or structural non-embedding counters are N/A, not zero"
+        }
+      }
+    ],
+    "byCondition": [
+      {
+        "mode": "hybrid",
+        "version": "0.35.3",
+        "cells": 9,
+        "counters": {
+          "processedFiles": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 2986
+          },
+          "embeddedChunks": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 28127
+          },
+          "tokenCount": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 4478333
+          },
+          "structuralChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "productDurationSeconds": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 728.8000000000001
+          },
+          "failedEmbeddingChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          }
+        }
+      },
+      {
+        "mode": "hybrid",
+        "version": "0.36.1",
+        "cells": 9,
+        "counters": {
+          "processedFiles": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 3149
+          },
+          "embeddedChunks": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 32320
+          },
+          "tokenCount": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 5017729
+          },
+          "structuralChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "productDurationSeconds": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 816.2
+          },
+          "failedEmbeddingChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          }
+        }
+      },
+      {
+        "mode": "structural",
+        "version": "0.35.3",
+        "cells": 9,
+        "counters": {
+          "processedFiles": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 2986
+          },
+          "embeddedChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "tokenCount": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "structuralChunks": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 28127
+          },
+          "productDurationSeconds": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 34.4
+          },
+          "failedEmbeddingChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          }
+        }
+      },
+      {
+        "mode": "structural",
+        "version": "0.36.1",
+        "cells": 9,
+        "counters": {
+          "processedFiles": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 3149
+          },
+          "embeddedChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "tokenCount": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          },
+          "structuralChunks": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 32320
+          },
+          "productDurationSeconds": {
+            "availableCells": 9,
+            "unavailableCells": 0,
+            "sumAvailable": 39.699999999999996
+          },
+          "failedEmbeddingChunks": {
+            "availableCells": 0,
+            "unavailableCells": 9,
+            "sumAvailable": null
+          }
+        }
+      }
+    ]
+  }
+}

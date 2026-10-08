@@ -1,0 +1,85 @@
+{
+  "capturedAt": "2026-10-08T08:09:14.139983+00:00",
+  "scope": "Additional preparation-only executable identity receipt; no change to frozen task/config/schedule/evaluation bindings",
+  "executables": [
+    {
+      "name": "node",
+      "path": "/opt/homebrew/Cellar/node/26.9.0/bin/node",
+      "sha256": "91ed66b8cd139609427a3e9d93518dd3b0d5407c737fc9a265bfd991ec623d8a",
+      "bytes": 132848
+    },
+    {
+      "name": "npm",
+      "path": "/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js",
+      "sha256": "8e5f6f3429f8cdbe693cdc29904e9d5a7b127a494bd15c804bd54c7403bfcbe7",
+      "bytes": 54
+    }
+  ],
+  "annotationEnvironment": {
+    "ownedPython": "${PRIVATE_WORK}/annotation-venv/bin/python",
+    "deriveCommand": [
+      "${PRIVATE_WORK}/annotation-venv/bin/python",
+      "${PRIVATE_WORK}/programs/derive-gold.py",
+      "${PRIVATE_WORK}"
+    ],
+    "versions": {
+      "tree-sitter": "0.25.2",
+      "tree-sitter-javascript": "0.25.0",
+      "tree-sitter-typescript": "0.23.2",
+      "tree-sitter-python": "0.23.6",
+      "tree-sitter-go": "0.25.0",
+      "tree-sitter-rust": "0.24.2",
+      "tree-sitter-kotlin": "1.1.0",
+      "tree-sitter-c-sharp": "0.23.5",
+      "tree-sitter-php": "0.25.1",
+      "tree-sitter-ruby": "0.23.1"
+    },
+    "wheels": [
+      {
+        "path": "annotation-wheels/tree_sitter_javascript-0.25.0-cp310-abi3-macosx_11_0_arm64.whl",
+        "sha256": "8264a996b8845cfce06965152a013b5d9cbb7d199bc3503e12b5682e62bb1de1"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_typescript-0.23.2-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "c7cc1b0ff5d91bac863b0e38b1578d5505e718156c9db577c8baea2557f66de8"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_c_sharp-0.23.5-cp310-abi3-macosx_11_0_arm64.whl",
+        "sha256": "a75994a11f6fed3f5b8c36ad6a00e5dc43205bd912c43af3a2a54fdf649664eb"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_kotlin-1.1.0-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "910b41a580dae00d319e555075f3886a41386d1067931b14c7de504eeae3ae2a"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_python-0.23.6-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "680b710051b144fedf61c95197db0094f2245e82551bf7f0c501356333571f7a"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter-0.25.2-cp312-cp312-macosx_11_0_arm64.whl",
+        "sha256": "c0c0ab5f94938a23fe81928a21cc0fac44143133ccc4eb7eeb1b92f84748331c"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_go-0.25.0-cp310-abi3-macosx_11_0_arm64.whl",
+        "sha256": "503b81a2b4c31e302869a1de3a352ad0912ccab3df9ac9950197b0a9ceeabd8f"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_php-0.25.1-cp310-abi3-macosx_11_0_arm64.whl",
+        "sha256": "3ccacce66119b96e87443750eabcd38613b3fee770582c646e2c8bc29b7089a8"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_rust-0.24.2-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "01a46622735498493f29f3e628a90de95c96a07bfbeb88996243eb986b1cee36"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter_ruby-0.23.1-cp39-abi3-macosx_11_0_arm64.whl",
+        "sha256": "aa4ee7433bd42fac22e2dad4a3c0f332292ecf482e610316828c711a0bb7f794"
+      },
+      {
+        "path": "annotation-wheels/tree_sitter-0.25.2-cp314-cp314-macosx_11_0_arm64.whl",
+        "sha256": "bda059af9d621918efb813b22fb06b3fe00c3e94079c6143fcb2c565eb44cb87"
+      }
+    ],
+    "transientEvalSetupRestored": true
+  }
+}
