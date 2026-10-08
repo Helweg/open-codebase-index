@@ -8,6 +8,7 @@ import {
   formatHealthCheck,
   formatLogs,
   formatSearchResults,
+  formatDefinitionLookup,
   buildContextPack,
   countContextTokens,
   fitTextToContextBudget,
@@ -1196,6 +1197,78 @@ describe("tools utils", () => {
       expect(lines).toHaveLength(2);
       expect(lines[0]).toContain("First");
       expect(lines[1]).toContain("Second");
+    });
+  });
+
+  describe("formatDefinitionLookup", () => {
+    function definition(content: string, filePath = "src/calculate.ts"): SearchResult {
+      return {
+        filePath,
+        name: "calculate",
+        chunkType: "function_declaration",
+        startLine: 1,
+        endLine: content.split("\n").length,
+        score: 1,
+        content,
+      };
+    }
+
+    function visibleBody(text: string): string {
+      const match = /(^`{3,})\n([\s\S]*?)\n\1(?:\n|$)/m.exec(text);
+      expect(match).not.toBeNull();
+      return match![2];
+    }
+
+    it("retains the final operation and closing brace beyond the old preview boundary when the declaration fits", () => {
+      const source = [
+        "export function calculate() {",
+        "  let value = 0;",
+        ...Array.from({ length: 40 }, (_, index) => `  value += ${index};`),
+        "  return value;",
+        "}",
+      ].join("\n");
+      const text = formatDefinitionLookup([definition(source)], "calculate", 1200);
+      expect(visibleBody(text)).toBe(source);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(1200);
+    });
+
+    it.each([128, 129, 160, 256, 4000])("keeps a whole-line source prefix and closed fences within a %i-token response", (budget) => {
+      const source = [
+        "export function calculate() {",
+        "  let value = 0;",
+        ...Array.from({ length: 600 }, (_, index) => `  value += ${index}; // αβ🙂`),
+        "  return value;",
+        "}",
+      ].join("\n");
+      const text = formatDefinitionLookup([definition(source)], "calculate", budget);
+      const body = visibleBody(text);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(budget);
+      expect(body).not.toBe(source);
+      expect(source.startsWith(`${body}\n`)).toBe(true);
+      expect(text.slice(text.indexOf(body) + body.length)).toContain("Partial source body");
+    });
+
+    it("does not let source backtick lines terminate a complete declaration fence", () => {
+      const source = [
+        "export function calculate() {",
+        "  return `",
+        "```",
+        "````",
+        "  `;",
+        "}",
+      ].join("\n");
+      const text = formatDefinitionLookup([definition(source)], "calculate", 1200);
+      expect(text.split("\n")[1]).toBe("`````");
+      expect(visibleBody(text)).toBe(source);
+    });
+
+    it("omits a location that cannot fit instead of clipping a citation or exceeding the budget", () => {
+      const first = definition("export function calculate() { return 1; }");
+      const second = definition("export function calculate() { return 2; }", `src/${"nested/".repeat(100)}calculate.ts`);
+      const text = formatDefinitionLookup([first, second], "calculate", 128);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(128);
+      expect(text.match(/^\[\d+\]/gm)).toHaveLength(1);
+      expect(visibleBody(text)).toBe(first.content);
     });
   });
 

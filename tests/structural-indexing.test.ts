@@ -116,6 +116,59 @@ describe("provider-free structural indexing", () => {
     fetchSpy.mockRestore();
   });
 
+  it.each([
+    { fusionStrategy: "rrf" as const, rerankTopN: 0 },
+    { fusionStrategy: "rrf" as const, rerankTopN: 50 },
+    { fusionStrategy: "weighted" as const, rerankTopN: 50 },
+  ])("keeps structural prose relevance ahead of incidental symbol terms ($fusionStrategy, $rerankTopN)", async (ranking) => {
+    const policyDir = path.join(projectDir, "src", "policy");
+    const rendererDir = path.join(projectDir, "src", "renderers");
+    fs.mkdirSync(policyDir, { recursive: true });
+    fs.mkdirSync(rendererDir, { recursive: true });
+    const policyFile = path.join(policyDir, "policy.ts");
+    fs.writeFileSync(policyFile, [
+      "/** Durable notification delivery is suppressed across requests using persistent timestamps,",
+      " * severity and message storage, forwarding buffered batches only once. */",
+      "export function policy() { return true; }",
+    ].join("\n"));
+    for (let index = 0; index < 6; index++) {
+      fs.writeFileSync(path.join(rendererDir, `renderer-${index}.ts`),
+        `export function renderMessage${index}(message: string) { return message.toUpperCase(); }\n`);
+    }
+    const query = "Where is durable notification delivery suppressed across requests using persistent timestamps, severity and message storage while forwarding buffered batches only once?";
+    const baseConfig = structuralConfig();
+    const config = parseConfig({
+      ...baseConfig,
+      search: { ...baseConfig.search, ...ranking },
+    });
+    const runtime = { indexPath: indexRoot };
+    const indexer = createIndexer(runtime, config);
+    await indexer.index();
+
+    // A shared prose word in six declaration names must not prepend six files
+    // ahead of the implementation whose text matches the described behavior.
+    const results = await indexer.search(query, 5);
+    expect(results[0]?.filePath).toBe(policyFile);
+    expect((await indexer.search("renderMessage0", 5, { definitionIntent: true }))[0]?.name)
+      .toBe("renderMessage0");
+    expect((await indexer.search("Where is `renderMessage0` defined?", 5))[0]?.name)
+      .toBe("renderMessage0");
+    const scoped = await indexer.search(query, 10, { directory: "src/renderers", fileType: "ts" });
+    expect(scoped.length).toBeGreaterThan(0);
+    expect(scoped.every((result) => result.filePath.startsWith(`${rendererDir}${path.sep}`))).toBe(true);
+    expect(await indexer.search(query, 10, { fileType: "php" })).toEqual([]);
+
+    if (ranking.fusionStrategy === "rrf") {
+      // A single RRF lane has scores at most 0.5. Incidental name matches must
+      // not invent a higher score and bypass the caller's relevance floor.
+      const strict = createIndexer(runtime, parseConfig({
+        ...config,
+        search: { ...config.search, minScore: 0.8 },
+      }));
+      expect(await strict.search(query, 10)).toEqual([]);
+    }
+  });
+
   it("handles incremental updates and deletion inside the isolated structural catalog", async () => {
     const sourcePath = path.join(projectDir, "feature.ts");
     fs.writeFileSync(sourcePath, "export function oldFeature() { return 'legacyMarker'; }\n");

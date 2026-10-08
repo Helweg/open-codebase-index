@@ -24,6 +24,8 @@ ocbi search 'configuration validation' --project /path/to/repository --host jcod
 
 In structural mode, search is keyword-based, not semantic similarity. Definitions and graph operations use the indexed structural catalog. Retrieval quality for paraphrases can differ substantially from hybrid mode. `find_similar` and embedding-cost estimation are unsupported rather than simulated with dummy vectors. MCP reports unsupported operations as non-retryable `UNSUPPORTED_OPERATION` errors.
 
+Natural-language structural searches retain lexical relevance and local intent-aware reranking. Ordinary prose words that happen to appear in symbol names or file paths do not receive a separate definition-priority lane or its synthetic scores. Explicit identifier/definition lookups still use declaration-priority retrieval, and hard directory/file-type scopes and configured minimum scores remain effective. This structural-only policy does not change hybrid lane balancing; it does not make keyword retrieval semantic or guarantee a relevant file in the first five results.
+
 ## Storage and safety
 
 Structural artifacts live in a `structural/` child of the normal resolved index directory. Existing hybrid artifacts are not moved, overwritten or converted. Switching modes selects the corresponding index, so a first structural index must be built even when a hybrid index already exists.

@@ -321,6 +321,8 @@ export const implementation_lookup: ToolDefinition = tool({
   args: {
     query: z.string().describe("Symbol name or natural language description (e.g., 'validateToken', 'where is the payment handler defined')"),
     limit: z.number().optional().default(5).describe("Maximum number of results"),
+    tokenBudget: z.number().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
+      .describe("Visible source-text budget in estimated tokens (128–4000; default 1200). Complete retrieved bodies are shown when they fit."),
     fileType: z.string().optional().describe("Filter by file extension (e.g., 'ts', 'py')"),
     directory: z.string().optional().describe("Filter by directory path (e.g., 'src/utils')"),
   },

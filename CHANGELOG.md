@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Visible definition bodies**: Remove `implementation_lookup`'s fixed 30-line preview cap across hosts. Use an optional bounded `tokenBudget` (default 1,200 estimated tokens), preserve whole source lines and closed fences, and disclose partial bodies and omitted locations outside the source. Structured results and other search previews remain unchanged; retrieved chunks are not a declaration-completeness guarantee.
+- **Structural prose ranking**: Keep incidental prose matches in declaration names and paths from prepending a synthetic definition-priority lane ahead of lexical relevance. Preserve explicit identifier/definition lookups, hard scopes, minimum-score filtering and existing hybrid lane behavior.
+
 ## [0.36.2] - 2026-10-08
 
 ### Added

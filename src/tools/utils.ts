@@ -1,7 +1,7 @@
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
 import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolution, IndexStatusResult } from "./operations.js";
 import type { LogEntry } from "../utils/logger.js";
-import { formatExactSearchHandoff } from "./context-pack.js";
+import { clampContextPackTokenBudget, countContextTokens, fitTextToContextBudget, formatExactSearchHandoff } from "./context-pack.js";
 
 export {
   clampContextPackTokenBudget,
@@ -423,17 +423,77 @@ function formatBlame(result: SearchResult): string {
   return `\n    ${result.blame.sha.slice(0, 7)} | ${result.blame.author} | ${date} | ${result.blame.summary}`;
 }
 
-export function formatDefinitionLookup(results: SearchResult[], query: string): string {
+function definitionCodeFence(content: string): string {
+  let length = 3;
+  for (const match of content.matchAll(/^[\t ]*(`{3,})/gm)) {
+    length = Math.max(length, match[1].length + 1);
+  }
+  return "`".repeat(length);
+}
+
+export function formatDefinitionLookup(results: SearchResult[], query: string, tokenBudget?: number): string {
+  const budget = clampContextPackTokenBudget(tokenBudget);
   if (results.length === 0) {
-    return `No definition found for "${query}". Try codebase_search for broader discovery, or verify the symbol name.`;
+    return fitTextToContextBudget(
+      `No definition found for "${query}". Try codebase_search for broader discovery, or verify the symbol name.`,
+      budget,
+    ).text;
   }
 
-  const formatted = results.map((r, idx) => {
-    const header = formatResultHeader(r, idx);
-    return `${header} (score: ${r.score.toFixed(2)})${formatBlame(r)}\n\`\`\`\n${truncateContent(r.content)}\n\`\`\``;
-  });
+  let rendered = "";
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    const fence = definitionCodeFence(result.content);
+    const header = `${formatResultHeader(result, index)} (score: ${result.score.toFixed(2)})${formatBlame(result)}`;
+    const separator = rendered ? "\n\n" : "";
+    const prefix = `${rendered}${separator}${header}\n${fence}\n`;
+    const suffix = `\n${fence}`;
+    const remaining = results.length - index - 1;
+    const omitted = remaining > 0
+      ? `\n\n${remaining} additional definition${remaining === 1 ? "" : "s"} omitted by text token budget.`
+      : "";
+    const complete = `${prefix}${result.content}${suffix}`;
+    if (countContextTokens(`${complete}${omitted}`) <= budget) {
+      rendered = complete;
+      continue;
+    }
 
-  return formatted.join("\n\n");
+    const partialNotice = "\n\nPartial source body: truncated by text token budget; the citation still names the full source range.";
+    const partialSuffix = `${suffix}${partialNotice}${omitted}`;
+    if (countContextTokens(`${prefix}${partialSuffix}`) > budget) {
+      if (rendered) {
+        const omittedCount = results.length - index;
+        return `${rendered}\n\n${omittedCount} additional definition${omittedCount === 1 ? "" : "s"} omitted by text token budget.`;
+      }
+      return fitTextToContextBudget(
+        "Definition locations exceed the text token budget. Increase tokenBudget or narrow the directory filter; structured results retain the retrieved source.",
+        budget,
+      ).text;
+    }
+
+    // Find a fitting prefix, then retain only whole source lines. Never turn
+    // omitted source into a synthetic code comment or leave an open code fence.
+    let low = 0;
+    let high = result.content.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (countContextTokens(`${prefix}${result.content.slice(0, middle)}${partialSuffix}`) <= budget) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    let lineEnd = result.content.lastIndexOf("\n", low - 1);
+    let partial = `${prefix}${lineEnd < 0 ? "" : result.content.slice(0, lineEnd)}${partialSuffix}`;
+    // Removing a suffix can change BPE token boundaries, so check the actual
+    // whole-line rendering rather than assuming every shorter string fits.
+    while (countContextTokens(partial) > budget) {
+      lineEnd = result.content.lastIndexOf("\n", lineEnd - 1);
+      partial = `${prefix}${lineEnd < 0 ? "" : result.content.slice(0, lineEnd)}${partialSuffix}`;
+    }
+    return partial;
+  }
+  return rendered;
 }
 
 export type ScoreFormat = "score" | "similarity";

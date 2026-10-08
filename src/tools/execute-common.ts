@@ -143,7 +143,7 @@ export async function executeImplementationLookup(
   }, control);
   const exactSymbol = isExactSymbolQuery(args.query);
   return {
-    text: formatDefinitionLookup(results, args.query),
+    text: formatDefinitionLookup(results, args.query, args.tokenBudget),
     details: {
       resolution: exactSymbol
         ? (results.length === 0 ? "not_found" : results.length === 1 ? "resolved" : "ambiguous")
