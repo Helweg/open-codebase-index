@@ -125,7 +125,9 @@ Returns full semantic search results, optionally with context lines and filters.
 
 Use directly for known-definition questions. Finds authoritative definition locations and prefers implementation files over tests, documentation, examples, and fixtures.
 
-`tokenBudget` optionally bounds the visible text response to an estimated 128–4,000 `cl100k_base` tokens (default: 1,200), including citations, code fences and omission notices. Definitions remain in ranked order. Retrieved source is shown in full when it fits; otherwise the response keeps a whole-line prefix, closes the fence and labels the partial body outside the source. Later locations can be omitted when the text budget is exhausted. Generic search previews retain their existing limits.
+`tokenBudget` optionally bounds the visible text response to an estimated 128–4,000 `cl100k_base` tokens (default: 1,200), including citations, code fences and omission notices. The response first reserves an unclipped citation for each distinct retrieved file, in first-occurrence order with its original result rank and range. If these citations exceed the budget, only a ranked prefix is retained and omitted file locations are disclosed. This keeps a large declaration or many declarations in one file from hiding later files whose citations fit.
+
+Source bodies use the remaining budget in original result order. Retrieved source is shown in full when it fits; otherwise the response keeps a whole-line prefix, closes the fence and labels the partial body outside the source. Locations whose bodies do not fit remain as citation-only entries without inventing source. Source-body omissions and file-location omissions are reported separately. Reserving file citations can reduce visible source-body detail in a tight budget. Generic search previews retain their existing limits.
 
 This budget does not reduce MCP structured results or Pi/omp result details, and those payloads can exceed the visible-text budget. A retrieved chunk or citation range is not proof of an independently verified complete declaration, dependency closure or compiler-valid edit context.
 

@@ -1219,6 +1219,16 @@ describe("tools utils", () => {
       return match![2];
     }
 
+    function visibleLocations(text: string): { rank: number; path: string; startLine: number; endLine: number }[] {
+      const matches = text.matchAll(/^\[(\d+)\]\s+.+?\s+in\s+(.+?):(\d+)-(\d+)(?:\s|$)/gm);
+      return Array.from(matches, (match) => ({
+        rank: Number(match[1]),
+        path: match[2],
+        startLine: Number(match[3]),
+        endLine: Number(match[4]),
+      }));
+    }
+
     it("retains the final operation and closing brace beyond the old preview boundary when the declaration fits", () => {
       const source = [
         "export function calculate() {",
@@ -1260,6 +1270,68 @@ describe("tools utils", () => {
       const text = formatDefinitionLookup([definition(source)], "calculate", 1200);
       expect(text.split("\n")[1]).toBe("`````");
       expect(visibleBody(text)).toBe(source);
+    });
+
+    it("retains a later file's original citation when an earlier file has large bodies and several declarations", () => {
+      const source = [
+        "export function calculate() {",
+        ...Array.from({ length: 600 }, (_, index) => `  accumulate(${index});`),
+        "  return result;",
+        "}",
+      ].join("\n");
+      const results: SearchResult[] = [
+        definition(source, "src/value.ts"),
+        { ...definition("export function read() { return result; }", "src/value.ts"), name: "read", startLine: 700, endLine: 700 },
+        { ...definition("export function write(value) { result = value; }", "src/value.ts"), name: "write", startLine: 800, endLine: 800 },
+        { ...definition("export class Value {}", "src/declaration.ts"), name: "Value", chunkType: "class_declaration" },
+      ];
+      const text = formatDefinitionLookup(results, "Value", 256);
+      expect(visibleLocations(text)).toEqual([
+        { rank: 1, path: "src/value.ts", startLine: 1, endLine: 603 },
+        { rank: 4, path: "src/declaration.ts", startLine: 1, endLine: 1 },
+      ]);
+      expect(source.startsWith(`${visibleBody(text)}\n`)).toBe(true);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(256);
+    });
+
+    it("retains citations without empty source fences when a declaration name cannot fit", () => {
+      const first = { ...definition("export function calculate() { return 1; }"), name: "calculate".repeat(200) };
+      const second = definition("export function calculate() { return 2; }", "src/alternative.ts");
+      const text = formatDefinitionLookup([first, second], "calculate", 128);
+      expect(visibleLocations(text)).toEqual([
+        { rank: 1, path: first.filePath, startLine: 1, endLine: 1 },
+        { rank: 2, path: second.filePath, startLine: 1, endLine: 1 },
+      ]);
+      expect(text).not.toContain("```");
+      expect(countContextTokens(text)).toBeLessThanOrEqual(128);
+    });
+
+    it("retains an unclipped ranked location prefix when many distinct files exceed the minimum budget", () => {
+      const results = Array.from({ length: 15 }, (_, index) => definition(
+        `export function calculate() { return ${index}; }`,
+        `src/feature-${index}/αβ🙂/calculate.ts`,
+      ));
+      const text = formatDefinitionLookup(results, "calculate", 128);
+      const locations = visibleLocations(text);
+      expect(locations).toEqual(results.slice(0, locations.length).map((result, index) => ({
+        rank: index + 1, path: result.filePath, startLine: result.startLine, endLine: result.endLine,
+      })));
+      expect(locations.some(location => location.path === results[0].filePath)).toBe(true);
+      expect(locations.some(location => location.path === results[14].filePath)).toBe(false);
+      expect(Buffer.from(text, "utf8").toString("utf8")).toBe(text);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(128);
+    });
+
+    it("preserves CRLF body bytes while retaining a later file citation", () => {
+      const source = "export function calculate() {\r\n  return 1;\r\n}";
+      const second = { ...definition("export function calculate() { return 2; }", "src/alternative.ts"), name: "calculate".repeat(200) };
+      const text = formatDefinitionLookup([definition(source), second], "calculate", 256);
+      expect(visibleBody(text)).toBe(source);
+      expect(visibleLocations(text)).toEqual([
+        { rank: 1, path: "src/calculate.ts", startLine: 1, endLine: 3 },
+        { rank: 2, path: "src/alternative.ts", startLine: 1, endLine: 1 },
+      ]);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(256);
     });
 
     it("omits a location that cannot fit instead of clipping a citation or exceeding the budget", () => {

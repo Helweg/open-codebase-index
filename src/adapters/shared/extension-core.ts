@@ -315,7 +315,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       tokenBudget: schema.Optional(schema.Number({
         minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET,
         maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET,
-        description: "Visible source-text budget in estimated tokens (128–4000; default 1200). Complete retrieved bodies are shown when they fit; source details are unchanged.",
+        description: "Visible text budget in estimated tokens (128–4000; default 1200). Reserves ranked citations for distinct files before source bodies; source details are unchanged.",
       })),
       fileType: schema.Optional(schema.String()),
       directory: schema.Optional(schema.String()),
