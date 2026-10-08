@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.1] - 2026-10-08
+
 ### Fixed
 
 - **Ruby callable definitions**: Persist distinct instance and singleton method declarations instead of silently dropping them from exact lookup. Preserve declaration-owned predicate, bang, setter, and operator names without borrowing singleton receivers or body identifiers. Ordinary indexing repairs unchanged Ruby caches once per branch while retaining unrelated language catalogs and embeddings; Ruby call extraction remains unsupported.
@@ -975,7 +977,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...HEAD
+[0.36.1]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...v0.36.0
 [0.35.3]: https://github.com/Helweg/open-codebase-index/compare/v0.35.2...v0.35.3
 [0.35.2]: https://github.com/Helweg/open-codebase-index/compare/v0.35.1...v0.35.2
