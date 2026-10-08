@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "kind": "sealed-development-unseen-declaration-body-cohort",
+  "frozenAt": "2026-10-08T10:10:36.246205+00:00",
+  "counts": {
+    "newRepositories": 9,
+    "tasks": 100,
+    "explicit": 54,
+    "naturalFileDiscovery": 46,
+    "conditions": 4,
+    "serialColdCells": 36,
+    "primaryRows": 400,
+    "queryPassRecords": 1200
+  },
+  "hashes": {
+    "preregistration.tar.gz": "ee17b066d4bb21c1fe5d6df85cfeec8fc525607fbff2519164d8aa82f2a5c037",
+    "preregistration.json": "24130e929cb627bbb04475554f861ac1b32ee055bd2f4c85716f9a87f8cf2105",
+    "protocol.json": "eb181c7d6ca0b1253f5bbea85f98163e28c17069fa5348e0a214be3096e33a07",
+    "inputs/tasks.json": "d7146ad6eb8e36fd4739e22cd605d23f2a97dab71b6c551643e3ac0774a36ed2",
+    "gold/explicit.json": "7795d41e8baf5ce3dbda7189f5b111e0abb889c9ab00d8bd0a825bc7fd7ac2c0",
+    "programs/evaluate.py": "14acfa8a58bd1803d3cabf1009ee46f28a49070a6815a468bb19372b726c3285"
+  },
+  "budgets": {
+    "setupMs": 300000,
+    "queryMs": 60000,
+    "requestedRawHits": 50,
+    "retainedDistinctFiles": 10,
+    "passes": 3,
+    "qualityPass": 1,
+    "setupAttempts": 1,
+    "retries": 0
+  },
+  "participants": {
+    "baseline": "Preferred published open-codebase-index@0.36.2",
+    "candidate": "Source candidate only after completed build/typecheck/lint/tests and real runtime smoke; exact identities bound in a separate immutable pre-score supplement"
+  },
+  "exposure": {
+    "parentAndFixWorkersHaveNotInspectedNewTaskGoldOrSource": true,
+    "scoredRequestsIssued": 0,
+    "repositoryNamesAndLabels": "Sealed until CANDIDATE_FROZEN; complete inputs/archives/gold/programs retained immutably",
+    "classification": "Assistant-curated development-unseen cohort, not independently human-reviewed, population-representative, historical/model-training-unseen or semantic/productivity evidence"
+  },
+  "grading": {
+    "primary": "Relevant-file discovery",
+    "explicitBodies": "Visible fenced text and structured results[].content graded separately against independently frozen full source declarations; no reconstruction",
+    "naturalBodies": "Ungradeable file-only metadata interface",
+    "failures": "Supported failed cells/queries retained with zero scores"
+  }
+}
