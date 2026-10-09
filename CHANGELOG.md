@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.36.3] - 2026-10-09
+
 ### Fixed
 
 - **Visible definition bodies**: Remove `implementation_lookup`'s fixed 30-line preview cap across hosts. Use an optional bounded `tokenBudget` (default 1,200 estimated tokens), preserve whole source lines and closed fences, and disclose partial bodies and omitted locations outside the source. Structured results and other search previews remain unchanged; retrieved chunks are not a declaration-completeness guarantee.
@@ -994,7 +996,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...HEAD
+[0.36.3]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...v0.36.3
 [0.36.2]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...v0.36.0
