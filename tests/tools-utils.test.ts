@@ -686,6 +686,16 @@ describe("tools utils", () => {
   });
 
   describe("buildContextPack", () => {
+    it.each([128, 1200])("preserves literal tokenizer markers in context headings within %i tokens", (budget) => {
+      const heading = "Literal markers <|endoftext|> <|fim_prefix|> <|fim_middle|> <|fim_suffix|> <|endofprompt|>";
+      const packed = buildContextPack([{
+        filePath: "src/markers.ts", startLine: 1, endLine: 3, content: "export function markers() {}",
+        score: 1, chunkType: "function_declaration", name: "markers",
+      }], { tokenBudget: budget, heading });
+      expect(packed.text).toContain(heading);
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(budget);
+    });
+
     it("caps and validates token budgets", () => {
       const sampleResult: SearchResult = {
         filePath: "src/example.ts",
@@ -1240,6 +1250,13 @@ describe("tools utils", () => {
       const text = formatDefinitionLookup([definition(source)], "calculate", 1200);
       expect(visibleBody(text)).toBe(source);
       expect(countContextTokens(text)).toBeLessThanOrEqual(1200);
+    });
+
+    it.each([128, 1200])("returns complete declarations containing literal tokenizer markers within %i tokens", (budget) => {
+      const source = 'export function calculate() {\n  return ["<|endoftext|>", "<|fim_prefix|>", "<|fim_middle|>", "<|fim_suffix|>", "<|endofprompt|>"];\n}';
+      const text = formatDefinitionLookup([definition(source)], "calculate", budget);
+      expect(visibleBody(text)).toBe(source);
+      expect(countContextTokens(text)).toBeLessThanOrEqual(budget);
     });
 
     it.each([128, 129, 160, 256, 4000])("keeps a whole-line source prefix and closed fences within a %i-token response", (budget) => {
