@@ -114,7 +114,7 @@ export function clampContextPackTokenBudget(tokenBudget?: number): number {
 }
 
 export function countContextTokens(text: string): number {
-  return CONTEXT_TOKENIZER.encode(text).length;
+  return CONTEXT_TOKENIZER.encode_ordinary(text).length;
 }
 
 export function fitTextToContextBudget(text: string, tokenBudget?: number): BudgetedTextResult {

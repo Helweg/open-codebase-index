@@ -83,6 +83,7 @@ export interface SharedIndexLogsArgs {
 export interface SharedImplementationLookupArgs {
   query: string;
   limit?: number;
+  tokenBudget?: number;
   fileType?: string;
   directory?: string;
 }
