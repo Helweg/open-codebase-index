@@ -1,0 +1,70 @@
+{
+  "state": "CANDIDATE_FROZEN",
+  "frozenAt": "2026-10-08T11:00:14.053Z",
+  "sourceCommit": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+  "baseReleaseCommit": "5d2d4d128db9bc7addded7859dc8cfb20c25f8bd",
+  "worktree": "<owned-root>/body-delivery",
+  "branch": "fix/complete-declaration-delivery-20261008",
+  "sourcePackageManifestVersion": "0.36.2",
+  "sourcePackageManifestIdentity": "opencode-codebase-index",
+  "identityDisclosure": "Checked-in compatibility identity, not a published package or globally installed plugin. Evaluation must label this fully gated source candidate separately from registry open-codebase-index@0.36.2.",
+  "gate": {
+    "command": "npm run build && npm run typecheck && npm run lint && npm run test:run -- --maxWorkers=1",
+    "passed": true,
+    "testsPassed": 2672,
+    "testsSkipped": 6,
+    "filesPassed": 142,
+    "filesSkipped": 1,
+    "rawLog": "candidate-local-gate.log",
+    "rawLogSha256": "5f2f17ebeaee8514d9c25c67a07b516c8e3dc805072849bdaac8a17ba51ccce7"
+  },
+  "runtimeFiles": [
+    {
+      "relativePath": "package.json",
+      "bytes": 6270,
+      "sha256": "37ec34849bb48b9b9dc2f68cb7e7b671e3ee2de3c29a394e884188b5420691f7"
+    },
+    {
+      "relativePath": "dist/cli.js",
+      "bytes": 29889,
+      "sha256": "dbe7bf8c435854d0e52a620e7acd926dd56e7368cfcf0918aff6f5d8932b2806"
+    },
+    {
+      "relativePath": "dist/mcp-worker.js",
+      "bytes": 1307805,
+      "sha256": "2e7bccbc79bc122cb45d5596873de0185abd152aac6c93621836949235883244"
+    },
+    {
+      "relativePath": "dist/index.js",
+      "bytes": 1193923,
+      "sha256": "45c8d966b9ed0ace3f9505f819367607e4d1979c0ee030b773c0352b3c4c3b41"
+    },
+    {
+      "relativePath": "dist/pi-extension.js",
+      "bytes": 1125219,
+      "sha256": "e94a6dbbdb5b1166d60ae96fd3b320b915ef77f21f1591637409689bb77fc600"
+    },
+    {
+      "relativePath": "dist/omp-extension.js",
+      "bytes": 1125538,
+      "sha256": "faedf292faea32ec16dcf915f0b5e9f4e7350d79dbbba903911bb8ec0273cb59"
+    },
+    {
+      "relativePath": "native/codebase-index-native.darwin-arm64.node",
+      "bytes": 34985760,
+      "sha256": "31c65c2ff39838bc7f29c8eb45a80e235435c50d0c8434b6b4701a75a9dd06db"
+    }
+  ],
+  "publicSmokes": [
+    "candidate-built-body-proof.json",
+    "candidate-built-monolog-proof.json"
+  ],
+  "cohortDisclosureAtFreeze": "Only sealed initial counts/digests/public receipt; no new repository names, queries, source or gold disclosed, no scored requests.",
+  "pr": "https://github.com/Helweg/open-codebase-index/pull/432",
+  "ci": {
+    "id": 37767200322,
+    "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322",
+    "status": "pending-at-source-freeze",
+    "disclosure": "Local full gate passed; scoring is not authorized until exact-head CI completes successfully."
+  }
+}

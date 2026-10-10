@@ -1,0 +1,3914 @@
+[
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-01",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-02",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-03",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-04",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-05",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "cs-explicit-06",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-01",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-02",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-03",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-04",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-05",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "go-explicit-06",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-01",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-02",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-03",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-04",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-05",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "js-explicit-06",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-01",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-02",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-03",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-04",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-05",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "kt-explicit-06",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-01",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-02",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-03",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-04",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-05",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "php-explicit-06",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-01",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-02",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-03",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-04",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-05",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "py-explicit-06",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-01",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-02",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-03",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-04",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-05",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rb-explicit-06",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-01",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": -1,
+      "fileMrrAt10": -0.25,
+      "fileNdcgAt10": -0.43067655807339306,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-02",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-03",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-04",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-05",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "rs-explicit-06",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-01",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-02",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-03",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-04",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-05",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "explicit",
+    "queryId": "ts-explicit-06",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "cs-natural-01",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "cs-natural-02",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "cs-natural-03",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "cs-natural-04",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "cs-natural-05",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "go-natural-01",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "go-natural-02",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "go-natural-03",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "go-natural-04",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "go-natural-05",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "js-natural-01",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "js-natural-02",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "js-natural-03",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "js-natural-04",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "js-natural-05",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "kt-natural-01",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "kt-natural-02",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "kt-natural-03",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "kt-natural-04",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "kt-natural-05",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "php-natural-01",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "php-natural-02",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "php-natural-03",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "php-natural-04",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "php-natural-05",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "py-natural-01",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "py-natural-02",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "py-natural-03",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "py-natural-04",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "py-natural-05",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-01",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-02",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-03",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-04",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-05",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rb-natural-06",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rs-natural-01",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rs-natural-02",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rs-natural-03",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rs-natural-04",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "rs-natural-05",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "ts-natural-01",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "ts-natural-02",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "ts-natural-03",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "ts-natural-04",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "hybrid",
+    "track": "natural",
+    "queryId": "ts-natural-05",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-01",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-02",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-03",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-04",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-05",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "cs-explicit-06",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-01",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-02",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-03",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-04",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-05",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "go-explicit-06",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-01",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-02",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-03",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-04",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-05",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "js-explicit-06",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-01",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-02",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-03",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-04",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-05",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "kt-explicit-06",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-01",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-02",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-03",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-04",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-05",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "php-explicit-06",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-01",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-02",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-03",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-04",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-05",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "py-explicit-06",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-01",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-02",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-03",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-04",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-05",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rb-explicit-06",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-01",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": -1,
+      "fileMrrAt10": -0.25,
+      "fileNdcgAt10": -0.43067655807339306,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-02",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-03",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-04",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-05",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "rs-explicit-06",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-01",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-02",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-03",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-04",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-05",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 1,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 1,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 1,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "explicit",
+    "queryId": "ts-explicit-06",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0,
+      "visibleFencedText.targetIdentityAt5": 0,
+      "visibleFencedText.originalSupportingOverlapAt5": 0,
+      "visibleFencedText.originalSupportingCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationRangeCoveredAt5": 0,
+      "visibleFencedText.fullDeclarationTextReturnedAt5": 0,
+      "visibleFencedText.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "visibleFencedText.bodyExactlyMatchesCitedSourceAt5": 0,
+      "structuredResultsContent.targetIdentityAt5": 0,
+      "structuredResultsContent.originalSupportingOverlapAt5": 0,
+      "structuredResultsContent.originalSupportingCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationRangeCoveredAt5": 0,
+      "structuredResultsContent.fullDeclarationTextReturnedAt5": 0,
+      "structuredResultsContent.fullDeclarationTextAndRangeReturnedAt5": 0,
+      "structuredResultsContent.bodyExactlyMatchesCitedSourceAt5": 0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "cs-natural-01",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.125,
+      "fileNdcgAt10": 0.31546487678572877
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "cs-natural-02",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "cs-natural-03",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "cs-natural-04",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "cs-natural-05",
+    "repository": "cs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": -1,
+      "fileMrrAt10": -0.5,
+      "fileNdcgAt10": -0.6309297535714575
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "go-natural-01",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "go-natural-02",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 1,
+      "fileHitAt5": 1,
+      "fileMrrAt10": 1.0,
+      "fileNdcgAt10": 1.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "go-natural-03",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "go-natural-04",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "go-natural-05",
+    "repository": "go",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "js-natural-01",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.16666666666666669,
+      "fileNdcgAt10": 0.13092975357145753
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "js-natural-02",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": -1,
+      "fileHitAt5": 0,
+      "fileMrrAt10": -0.6666666666666667,
+      "fileNdcgAt10": -0.5
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "js-natural-03",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "js-natural-04",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "js-natural-05",
+    "repository": "js",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "kt-natural-01",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 1,
+      "fileMrrAt10": 0.25,
+      "fileNdcgAt10": 0.43067655807339306
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "kt-natural-02",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "kt-natural-03",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.1111111111111111,
+      "fileNdcgAt10": 0.3010299956639812
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "kt-natural-04",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.125,
+      "fileNdcgAt10": 0.31546487678572877
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "kt-natural-05",
+    "repository": "kt",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "php-natural-01",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "php-natural-02",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "php-natural-03",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "php-natural-04",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 1,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.5,
+      "fileNdcgAt10": 0.36907024642854247
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "php-natural-05",
+    "repository": "php",
+    "metrics": {
+      "fileHitAt1": 1,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.5,
+      "fileNdcgAt10": 0.36907024642854247
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "py-natural-01",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "py-natural-02",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "py-natural-03",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "py-natural-04",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "py-natural-05",
+    "repository": "py",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-01",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-02",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-03",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-04",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-05",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 1,
+      "fileHitAt5": 1,
+      "fileMrrAt10": 0.875,
+      "fileNdcgAt10": 0.6845351232142712
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rb-natural-06",
+    "repository": "rb",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rs-natural-01",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rs-natural-02",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rs-natural-03",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": -1,
+      "fileHitAt5": 0,
+      "fileMrrAt10": -0.5,
+      "fileNdcgAt10": -0.36907024642854247
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rs-natural-04",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "rs-natural-05",
+    "repository": "rs",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0.0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "ts-natural-01",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "ts-natural-02",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "ts-natural-03",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "ts-natural-04",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  },
+  {
+    "mode": "structural",
+    "track": "natural",
+    "queryId": "ts-natural-05",
+    "repository": "ts",
+    "metrics": {
+      "fileHitAt1": 0,
+      "fileHitAt5": 0,
+      "fileMrrAt10": 0,
+      "fileNdcgAt10": 0.0
+    }
+  }
+]

@@ -1,0 +1,511 @@
+{
+  "kind": "NON-PREREGISTERED-read-only-EOL-preserving-fenced-evidence-forensics",
+  "frozenReportSha256": "8f73a0afa055f94b654b0434448a2ce97fd5b1c91ae0a7f422c99859d11aea71",
+  "initiallyFrozenEvaluatorSha256": "14acfa8a58bd1803d3cabf1009ee46f28a49070a6815a468bb19372b726c3285",
+  "diagnosticProgramSha256": "1cd4433189799553912159572818d7c53a7b7b90f047cefd5217dc3aa1f16e90",
+  "sourceRecordsSha256": "3bdf5615f09fcf88b8a63d2740fe4542b8774a44f21ec172340d41cd94a7f66e",
+  "counts": {
+    "auditedExplicitPrimaryRows": 216,
+    "explicitPerParticipantMode": 54,
+    "allPrimaryRowsUnchanged": 400,
+    "allPassRecordsUnchanged": 1200,
+    "affectedClassifications": 18
+  },
+  "summary": [
+    {
+      "version": "published-0.36.2",
+      "mode": "hybrid",
+      "denominator": 54,
+      "frozenVisibleComplete": 25,
+      "forensicExactRawFencedComplete": 28,
+      "forensicExactRawFencedTextAndRangeComplete": 28,
+      "structuredComplete": 53,
+      "changedClassifications": 3
+    },
+    {
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "denominator": 54,
+      "frozenVisibleComplete": 25,
+      "forensicExactRawFencedComplete": 28,
+      "forensicExactRawFencedTextAndRangeComplete": 28,
+      "structuredComplete": 53,
+      "changedClassifications": 3
+    },
+    {
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "denominator": 54,
+      "frozenVisibleComplete": 46,
+      "forensicExactRawFencedComplete": 52,
+      "forensicExactRawFencedTextAndRangeComplete": 52,
+      "structuredComplete": 53,
+      "changedClassifications": 6
+    },
+    {
+      "version": "source-candidate",
+      "mode": "structural",
+      "denominator": 54,
+      "frozenVisibleComplete": 46,
+      "forensicExactRawFencedComplete": 52,
+      "forensicExactRawFencedTextAndRangeComplete": 52,
+      "structuredComplete": 53,
+      "changedClassifications": 6
+    }
+  ],
+  "affectedTasks": [
+    {
+      "queryId": "cs-explicit-05",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 11,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-05.json",
+      "retainedRawFileSha256": "29d790774c0bba0ec3309a66915ac2ed855f809a1f3ddf1a690c2d838d34f160"
+    },
+    {
+      "queryId": "cs-explicit-01",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 96,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-01.json",
+      "retainedRawFileSha256": "d81c16d6a514ac76880fa381aeb441820cb4739ddd0999c9e9475fbd2ee2d917"
+    },
+    {
+      "queryId": "cs-explicit-04",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 9,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-04.json",
+      "retainedRawFileSha256": "4e14f010d4b88b153e9216b82f7f5a7b20060824e614dd8ba94cb61f7d54b46f"
+    },
+    {
+      "queryId": "cs-explicit-02",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 52,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-02.json",
+      "retainedRawFileSha256": "7c238a3b779f3bb2c1cf2046ed6dd0262d4af39817aa9bfd63317278c287f7cc"
+    },
+    {
+      "queryId": "cs-explicit-03",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 59,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-03.json",
+      "retainedRawFileSha256": "8f655186ced8d4b1953b998db66f2840beb9133f0ee960a51d5ad6accd468c3b"
+    },
+    {
+      "queryId": "cs-explicit-06",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 13,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-hybrid/query-1-cs-explicit-06.json",
+      "retainedRawFileSha256": "7c6081b8e83fec3b6f587b036c94b38b1b6989bb158fcf82f63cf27a6aa6dd86"
+    },
+    {
+      "queryId": "cs-explicit-05",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 11,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-hybrid/query-1-cs-explicit-05.json",
+      "retainedRawFileSha256": "e4fe035f529b12e0776596781269235b182cedf1f8c3540994b27e6a765f1485"
+    },
+    {
+      "queryId": "cs-explicit-04",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 9,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-hybrid/query-1-cs-explicit-04.json",
+      "retainedRawFileSha256": "3912f1b1f82663bf889b0c1ee47fd5888a7dcc09d4f346fabdd75a669d419c92"
+    },
+    {
+      "queryId": "cs-explicit-06",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "hybrid",
+      "expectedNodeEOL": {
+        "crlf": 13,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-hybrid/query-1-cs-explicit-06.json",
+      "retainedRawFileSha256": "0fd3a4f6709ea5b36514a7b5704483e7e3a37f8fa1c2e639744810fa22a8053c"
+    },
+    {
+      "queryId": "cs-explicit-05",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 11,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-05.json",
+      "retainedRawFileSha256": "207c663a8b0a37918db228421baeaaf8c00dc5ec8c06b813301161e0fab57715"
+    },
+    {
+      "queryId": "cs-explicit-01",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 96,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-01.json",
+      "retainedRawFileSha256": "b802d613871ebdea487c0e8a8d1a687c8991c776bc5bd9b47b72ec5e588a8840"
+    },
+    {
+      "queryId": "cs-explicit-04",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 9,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-04.json",
+      "retainedRawFileSha256": "a9204c02eaeacafc9b6d9212afc595928b4db3572d25b503899999f5befa35c7"
+    },
+    {
+      "queryId": "cs-explicit-02",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 52,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-02.json",
+      "retainedRawFileSha256": "ccf1c4429e16279ae3a597cbf81e3ea87756aaa57995102ed7ad85d1a3bc402f"
+    },
+    {
+      "queryId": "cs-explicit-03",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 59,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-03.json",
+      "retainedRawFileSha256": "9ec697eed2253f7c8a3d4685ac07675da134456bb5e2376a66c4cd60a0267366"
+    },
+    {
+      "queryId": "cs-explicit-06",
+      "language": "c_sharp",
+      "version": "source-candidate",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 13,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/source-candidate-structural/query-1-cs-explicit-06.json",
+      "retainedRawFileSha256": "71caec9fb8979819e2242d835a7dde4c3df41e4e5d31cc77afd8da3a69022e6c"
+    },
+    {
+      "queryId": "cs-explicit-05",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 11,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-structural/query-1-cs-explicit-05.json",
+      "retainedRawFileSha256": "c7cf7daa012544d80c6508486457c0c1f6fcf759c795b2fca23606ff0502d979"
+    },
+    {
+      "queryId": "cs-explicit-04",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 9,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-structural/query-1-cs-explicit-04.json",
+      "retainedRawFileSha256": "4e862b275515529fb051ef754f991b90bc98b502c1059cb2be7fec54f1181576"
+    },
+    {
+      "queryId": "cs-explicit-06",
+      "language": "c_sharp",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "expectedNodeEOL": {
+        "crlf": 13,
+        "lf": 0,
+        "cr": 0,
+        "classification": "CRLF"
+      },
+      "beforeFrozenClassification": {
+        "fileHitAt5": 1,
+        "visibleDeclarationCompleteAt5": 0,
+        "visibleDeclarationTextAndRangeAt5": 0,
+        "structuredDeclarationCompleteAt5": 1
+      },
+      "nonPreregisteredForensicClassification": {
+        "exactRawFencedDeclarationCompleteAt5": 1,
+        "exactRawFencedTextAndRangeAt5": 1,
+        "structuredResultsContentDeclarationCompleteAt5": 1
+      },
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/cs/published-0.36.2-structural/query-1-cs-explicit-06.json",
+      "retainedRawFileSha256": "2ecaf3710b8266340f7c17062a8237f3caf0dda044b9e8fd6adf5fb6d3b9df0b"
+    }
+  ],
+  "finding": "The frozen visible extractor splitlines()+LF join destroys captured CRLF before comparing with CRLF-preserving AST node gold. This diagnostic takes exact contiguous raw-text spans between closed fences associated with numbered citations; no anywhere-in-serialized-JSON echo check. Frozen metrics/report remain unamended.",
+  "scope": "Both participants, both modes, all54 explicit tasks each; supported failures would remain0. Actual structured results[].content independently retained/graded, never substituted into visible fences. Natural bodies/spans remain ungradeable.",
+  "limits": "Post-score, non-preregistered evaluator-artifact diagnosis only. Exact source text/full AST declarations, not semantic/transitive/inherited implementation closure, independent human/blind/population evidence, general superiority, or candidate tuning evidence. No new participant or embedding calls."
+}

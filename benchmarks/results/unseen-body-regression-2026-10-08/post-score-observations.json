@@ -1,0 +1,168 @@
+{
+  "kind": "NON-PREREGISTERED-captured-evidence-operational-and-grading-limits",
+  "initialFrozenReportUnamended": true,
+  "evaluatorCRLFArtifact": {
+    "affectedClassifications": 18,
+    "auditedBothParticipantsBothModesAll54Explicit": true,
+    "forensicReportPath": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/forensic/report.json",
+    "frozenVisible": {
+      "published": 25,
+      "candidate": 46
+    },
+    "separateNonPreregisteredRawFenced": {
+      "published": 28,
+      "candidate": 52
+    },
+    "structured": {
+      "published": 53,
+      "candidate": 53
+    },
+    "message": "Frozen splitlines/LF join causes false negatives for complete raw CRLF fences. Diagnostic preserves contiguous raw fenced bodies and their hashes; original scoring is not replaced."
+  },
+  "remainingCandidateMisses": [
+    {
+      "queryId": "rs-explicit-01",
+      "mode": "hybrid",
+      "language": "rust",
+      "sourceDeclarationLines": 61,
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/rs/source-candidate-hybrid/query-1-rs-explicit-01.json",
+      "retainedRawFileSha256": "0212cbe0c8eed6599c63e3c3ba793da01fe63702ef545a2873275a0743865684",
+      "structuredFullDeclarationRanks": [
+        22
+      ],
+      "visibleMatchingCitationRanks": [],
+      "visibleMatchingBodyBytes": [],
+      "actualResponseTail": "re = \"alloc\"))]\n            Value::String(v) => visitor.visit_string(v),\n            #[cfg(not(any(feature = \"std\", feature = \"alloc\")))]\n```\n\nPartial source body: truncated by text token budget; the citation still names the full source range.\n\n24 additional definitions omitted by text token budget.",
+      "capturedEvidenceClassification": "Expected declaration exists in saved structured results beyond raw top5. Candidate text-budget omission hides later definitions/files; no index-absence or production source cause inferred.",
+      "scope": "Captured-record diagnosis only; no lookup/index/retry or source/gold/program changes."
+    },
+    {
+      "queryId": "rs-explicit-01",
+      "mode": "structural",
+      "language": "rust",
+      "sourceDeclarationLines": 61,
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/rs/source-candidate-structural/query-1-rs-explicit-01.json",
+      "retainedRawFileSha256": "05652d6ad3ffe9bef70e673125221530938e9d5e8a674788a6cb9796c4e04aa5",
+      "structuredFullDeclarationRanks": [
+        22
+      ],
+      "visibleMatchingCitationRanks": [],
+      "visibleMatchingBodyBytes": [],
+      "actualResponseTail": "re = \"alloc\"))]\n            Value::String(v) => visitor.visit_string(v),\n            #[cfg(not(any(feature = \"std\", feature = \"alloc\")))]\n```\n\nPartial source body: truncated by text token budget; the citation still names the full source range.\n\n24 additional definitions omitted by text token budget.",
+      "capturedEvidenceClassification": "Expected declaration exists in saved structured results beyond raw top5. Candidate text-budget omission hides later definitions/files; no index-absence or production source cause inferred.",
+      "scope": "Captured-record diagnosis only; no lookup/index/retry or source/gold/program changes."
+    },
+    {
+      "queryId": "py-explicit-01",
+      "mode": "hybrid",
+      "language": "python",
+      "sourceDeclarationLines": 166,
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/py/source-candidate-hybrid/query-1-py-explicit-01.json",
+      "retainedRawFileSha256": "8283391e4282a5b5d0de5e88984face8e2d1005ccb3b384eb92ba2a50e52e0f9",
+      "structuredFullDeclarationRanks": [
+        1
+      ],
+      "visibleMatchingCitationRanks": [
+        1
+      ],
+      "visibleMatchingBodyBytes": [
+        4846
+      ],
+      "actualResponseTail": "            format_args[\"opaque\"] = challenge.opaque\n        if qop:\n            format_args[\"qop\"] = b\"auth\"\n            format_args[\"nc\"] = nc_value\n            format_args[\"cnonce\"] = cnonce\n\n```\n\nPartial source body: truncated by text token budget; the citation still names the full source range.",
+      "capturedEvidenceClassification": "Full expected declaration present at structured rank1, but visible fenced body explicitly truncated by text token budget.",
+      "scope": "Captured-record diagnosis only; no lookup/index/retry or source/gold/program changes."
+    },
+    {
+      "queryId": "py-explicit-01",
+      "mode": "structural",
+      "language": "python",
+      "sourceDeclarationLines": 166,
+      "retainedRawFile": "/private/tmp/ocbi-body-regression-release-P06g9pSu/sealed-cohort/execution/py/source-candidate-structural/query-1-py-explicit-01.json",
+      "retainedRawFileSha256": "f4baf1303c266afe57fd4fe5f862bff14a0c915f82732e474752d9503fbc64fe",
+      "structuredFullDeclarationRanks": [
+        1
+      ],
+      "visibleMatchingCitationRanks": [
+        1
+      ],
+      "visibleMatchingBodyBytes": [
+        4846
+      ],
+      "actualResponseTail": "            format_args[\"opaque\"] = challenge.opaque\n        if qop:\n            format_args[\"qop\"] = b\"auth\"\n            format_args[\"nc\"] = nc_value\n            format_args[\"cnonce\"] = cnonce\n\n```\n\nPartial source body: truncated by text token budget; the citation still names the full source range.",
+      "capturedEvidenceClassification": "Full expected declaration present at structured rank1, but visible fenced body explicitly truncated by text token budget.",
+      "scope": "Captured-record diagnosis only; no lookup/index/retry or source/gold/program changes."
+    }
+  ],
+  "strictSourceRangeExceptions": [
+    {
+      "repository": "ts",
+      "version": "source-candidate",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 1,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    },
+    {
+      "repository": "ts",
+      "version": "source-candidate",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 2,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    },
+    {
+      "repository": "ts",
+      "version": "source-candidate",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 3,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    },
+    {
+      "repository": "ts",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 1,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    },
+    {
+      "repository": "ts",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 2,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    },
+    {
+      "repository": "ts",
+      "version": "published-0.36.2",
+      "mode": "structural",
+      "queryId": "ts-natural-02",
+      "pass": 3,
+      "rank": 50,
+      "sourceLineCount": 20,
+      "startLine": 10,
+      "endLine": 21
+    }
+  ],
+  "strictSourceRangeInterpretation": "Six citations (same rank50 natural structural query across both participants and3passes) extend to20-line source line21, the trailing empty split element counted by runner but rejected by frozen evaluator splitlines. Exact source-file provenance succeeds; strict range validation28017/28023, not all-valid. No file score amended, no natural-body grading introduced.",
+  "knownSupplementaryInventoryLimitation": "Earlier export result-inventory assumed unused .codebase-index; actual observed .opencode/index identities and bytes supplied separately in execution/actual-index-retention.json. Raw result hashes remain unchanged.",
+  "noParticipantRequests": true,
+  "noCandidateOrFrozenProgramOrInputEdits": true
+}

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Frozen candidate body/retrieval evidence**: Publish a separately sealed nine-repository, 100-task preferred-registry 0.36.2 versus source-candidate study with all 36 cold cells, 400 primary outcomes and 1,200 records. Preserve the original metrics, report a CRLF visible-fence extractor defect through separate EOL-preserving forensics, and disclose explicit-file discovery loss, structural wins/losses, strict citation exceptions and timing/gradeability limits. The measured candidate remains unmerged; no blind, speed or general-superiority claim.
+- **Historical candidate / current release distinction**: The frozen study's #432 candidate was rejected and closed without merging. The later #434 fixes and #435 release shipped 0.36.3 separately; this evidence publication does not rescore the original study or evaluate the published 0.36.3 release.
+
 ### Changed
 
 - **Dependency override hygiene**: Remove five fresh-resolution-proven inert pins and obsolete `@hono/node-server`/`express-rate-limit` exact pins; retain Hono, IP-address, PostCSS, and Vite security floors using same-major selectors and patched caret ranges. Scope the necessary esbuild security exception to tsup 8.x, restoring chord's exact esbuild 0.28.2 edge and the native CLI's declared js-yaml 5.x range without broadly refreshing the lock. Both packed identities retain Node.js 22.13 compatibility; the OpenCode plugin remains pinned at 1.3.13.

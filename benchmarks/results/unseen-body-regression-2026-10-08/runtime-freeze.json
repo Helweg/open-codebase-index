@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "kind": "actual-runtime-supplement-commitment-before-scored-requests",
+  "sourceCommit": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+  "registryParticipant": {
+    "identity": "open-codebase-index",
+    "version": "0.36.2",
+    "sourceCommit": "5d2d4d128db9bc7addded7859dc8cfb20c25f8bd",
+    "tag": "v0.36.2",
+    "trustedPublicationRun": 37765973802
+  },
+  "archive": {
+    "path": "preregistration-and-runtime.tar.gz",
+    "sha256": "a111688f90df7b26d7e0774adc92e115636a9aee7c6f95b48516aacd76c97261",
+    "bytes": 20515218
+  },
+  "members": [
+    {
+      "path": "runtime-supplement.json",
+      "sha256": "81172663adcba918e5a5ad925de4692b8cb4fd7ffd56ecc7cb0dcf3c0ac1cf56"
+    },
+    {
+      "path": "runtime-binding-validation.json",
+      "sha256": "a3e26fd5ace9b3127f4f830e07a4412a9a21a1709106a04eb022bbb17e6b9bb2"
+    },
+    {
+      "path": "authorization.json",
+      "sha256": "1210a07fe80f0c5170a1fb4b820547db3c0ea1a15e20b99b22bb7e3491558c0f"
+    },
+    {
+      "path": "preregistration.tar.gz",
+      "sha256": "ee17b066d4bb21c1fe5d6df85cfeec8fc525607fbff2519164d8aa82f2a5c037"
+    }
+  ],
+  "runtimeBindings": 43536,
+  "candidateEarlierPreparationBindings": 36890,
+  "sdkVersion": "1.29.0",
+  "retainedPreferredTarballSha256": "302d52275d0246458abb1f20fc7585a1ad0c31b9d273f4377dc0306b587ad72d",
+  "executionHold": "No participant/scored request until this complete archive and receipt are committed/pushed and Main sends RUN_FROZEN_EVALUATION.",
+  "limitations": "Exact supplied runtime closures/direct library/model-tag receipts, not recursive OS/dyld/shared-cache or live-model-file identity. Assistant-curated/development-unseen tasks, not independent human or model-training-unseen evidence."
+}
