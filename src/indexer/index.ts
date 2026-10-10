@@ -6557,7 +6557,13 @@ export class Indexer {
     const fusionMs = performance.now() - fusionStartTime;
 
     const explicitIdentifierLookup = options?.definitionIntent === true || isExplicitIdentifierLookup(query);
-    const prioritizeIdentifierLanes = !sourceIntent || identifierHints.length === 0 || explicitIdentifierLookup;
+    // Structural prose has only a lexical retrieval lane; incidental symbol
+    // words must not prepend a synthetic definition-priority lane above it.
+    const prioritizeIdentifierLanes = (
+      !isStructural || identifierHints.length > 0 || explicitIdentifierLookup
+    ) && (
+      !sourceIntent || identifierHints.length === 0 || explicitIdentifierLookup
+    );
     const rescued = promoteIdentifierMatches(
       query,
       rerankedCombined,

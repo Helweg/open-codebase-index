@@ -1,7 +1,7 @@
 import type { IndexStats, IndexProgress, SearchResult, HealthCheckResult, StatusResult } from "../indexer/index.js";
 import type { CallGraphDataResult, CallGraphPathResult, CallGraphSymbolResolution, IndexStatusResult } from "./operations.js";
 import type { LogEntry } from "../utils/logger.js";
-import { formatExactSearchHandoff } from "./context-pack.js";
+import { clampContextPackTokenBudget, countContextTokens, fitTextToContextBudget, formatExactSearchHandoff } from "./context-pack.js";
 
 export {
   clampContextPackTokenBudget,
@@ -403,13 +403,13 @@ export function formatCallGraphPathResult(result: CallGraphPathResult): string {
   return `Path (${result.path.length} hops):\n${formatted.join("\n")}`;
 }
 
-function formatResultHeader(result: SearchResult, index: number): string {
+function formatResultHeader(result: SearchResult, index: number, includeName: boolean = true): string {
   if (result.documentLocation?.kind === "pdf") {
     const { pageStart, pageEnd } = result.documentLocation;
     const pages = pageStart === pageEnd ? `p. ${pageStart}` : `pp. ${pageStart}-${pageEnd}`;
     return `[${index + 1}] ${result.chunkType} in ${result.filePath}, ${pages}`;
   }
-  return result.name
+  return includeName && result.name
     ? `[${index + 1}] ${result.chunkType} "${result.name}" in ${result.filePath}:${result.startLine}-${result.endLine}`
     : `[${index + 1}] ${result.chunkType} in ${result.filePath}:${result.startLine}-${result.endLine}`;
 }
@@ -423,17 +423,112 @@ function formatBlame(result: SearchResult): string {
   return `\n    ${result.blame.sha.slice(0, 7)} | ${result.blame.author} | ${date} | ${result.blame.summary}`;
 }
 
-export function formatDefinitionLookup(results: SearchResult[], query: string): string {
+function definitionCodeFence(content: string): string {
+  let length = 3;
+  for (const match of content.matchAll(/^[\t ]*(`{3,})/gm)) {
+    length = Math.max(length, match[1].length + 1);
+  }
+  return "`".repeat(length);
+}
+
+export function formatDefinitionLookup(results: SearchResult[], query: string, tokenBudget?: number): string {
+  const budget = clampContextPackTokenBudget(tokenBudget);
   if (results.length === 0) {
-    return `No definition found for "${query}". Try codebase_search for broader discovery, or verify the symbol name.`;
+    return fitTextToContextBudget(
+      `No definition found for "${query}". Try codebase_search for broader discovery, or verify the symbol name.`,
+      budget,
+    ).text;
   }
 
-  const formatted = results.map((r, idx) => {
-    const header = formatResultHeader(r, idx);
-    return `${header} (score: ${r.score.toFixed(2)})${formatBlame(r)}\n\`\`\`\n${truncateContent(r.content)}\n\`\`\``;
-  });
+  const locations: { index: number; header: string }[] = [];
+  const files = new Set<string>();
+  for (let index = 0; index < results.length; index += 1) {
+    const result = results[index];
+    if (!files.has(result.filePath)) {
+      files.add(result.filePath);
+      locations.push({ index, header: formatResultHeader(result, index, false) });
+    }
+  }
 
-  return formatted.join("\n\n");
+  let visibleLocationCount = 0;
+  function finish(bodyText: string, lastBodyIndex: number): string {
+    const parts = bodyText ? [bodyText] : [];
+    for (let index = 0; index < visibleLocationCount; index += 1) {
+      const location = locations[index];
+      if (location.index > lastBodyIndex) parts.push(location.header);
+    }
+    const omittedBodies = results.length - lastBodyIndex - 1;
+    if (omittedBodies > 0) {
+      parts.push(`${omittedBodies} definition source bod${omittedBodies === 1 ? "y" : "ies"} omitted by text token budget.`);
+    }
+    const omittedLocations = locations.length - visibleLocationCount;
+    if (omittedLocations > 0) {
+      parts.push(`${omittedLocations} additional file location${omittedLocations === 1 ? "" : "s"} omitted by text token budget.`);
+    }
+    return parts.join("\n\n");
+  }
+
+  // Reserve whole citations for distinct files before allocating source bodies.
+  // Their original result ranks/ranges remain unchanged, even after many hits
+  // from an earlier file. Oversized citations are never clipped or skipped.
+  while (visibleLocationCount < locations.length) {
+    visibleLocationCount += 1;
+    if (countContextTokens(finish("", -1)) > budget) {
+      visibleLocationCount -= 1;
+      break;
+    }
+  }
+  if (visibleLocationCount === 0) {
+    return fitTextToContextBudget(
+      "Definition locations exceed the text token budget. Increase tokenBudget or narrow the directory filter; structured results retain the retrieved source.",
+      budget,
+    ).text;
+  }
+
+  const bodyLimit = locations[visibleLocationCount]?.index ?? results.length;
+  let rendered = "";
+  for (let index = 0; index < bodyLimit; index += 1) {
+    const result = results[index];
+    const fence = definitionCodeFence(result.content);
+    const header = `${formatResultHeader(result, index)} (score: ${result.score.toFixed(2)})${formatBlame(result)}`;
+    const separator = rendered ? "\n\n" : "";
+    const prefix = `${rendered}${separator}${header}\n${fence}\n`;
+    const suffix = `\n${fence}`;
+    const complete = `${prefix}${result.content}${suffix}`;
+    if (countContextTokens(finish(complete, index)) <= budget) {
+      rendered = complete;
+      continue;
+    }
+
+    const partialNotice = "\n\nPartial source body: truncated by text token budget; the citation still names the full source range.";
+    const partialSuffix = `${suffix}${partialNotice}`;
+    if (countContextTokens(finish(`${prefix}${partialSuffix}`, index)) > budget) {
+      return finish(rendered, index - 1);
+    }
+
+    // Find a fitting prefix, then retain only whole source lines. Never turn
+    // omitted source into a synthetic code comment or leave an open code fence.
+    let low = 0;
+    let high = result.content.length;
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2);
+      if (countContextTokens(finish(`${prefix}${result.content.slice(0, middle)}${partialSuffix}`, index)) <= budget) {
+        low = middle;
+      } else {
+        high = middle - 1;
+      }
+    }
+    let lineEnd = result.content.lastIndexOf("\n", low - 1);
+    let partial = `${prefix}${lineEnd < 0 ? "" : result.content.slice(0, lineEnd)}${partialSuffix}`;
+    // Removing a suffix can change BPE token boundaries, so check the actual
+    // whole-line rendering rather than assuming every shorter string fits.
+    while (countContextTokens(finish(partial, index)) > budget) {
+      lineEnd = result.content.lastIndexOf("\n", lineEnd - 1);
+      partial = `${prefix}${lineEnd < 0 ? "" : result.content.slice(0, lineEnd)}${partialSuffix}`;
+    }
+    return finish(partial, index);
+  }
+  return finish(rendered, bodyLimit - 1);
 }
 
 export type ScoreFormat = "score" | "similarity";

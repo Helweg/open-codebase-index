@@ -312,6 +312,11 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     parameters: schema.Object({
       query: schema.String(),
       limit: schema.Optional(schema.Number()),
+      tokenBudget: schema.Optional(schema.Number({
+        minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET,
+        maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET,
+        description: "Visible text budget in estimated tokens (128–4000; default 1200). Reserves ranked citations for distinct files before source bodies; source details are unchanged.",
+      })),
       fileType: schema.Optional(schema.String()),
       directory: schema.Optional(schema.String()),
     }),
@@ -320,7 +325,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         ...params,
         exactSymbol: isExactSymbolQuery(params.query),
       }, { signal });
-      return text(formatDefinitionLookup(results, params.query), results);
+      return text(formatDefinitionLookup(results, params.query, params.tokenBudget), results);
     },
   });
 

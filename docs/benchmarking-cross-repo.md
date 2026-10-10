@@ -10,6 +10,8 @@ The [qualified summary](../benchmarks/results/unseen-body-regression-2026-10-08/
 
 Nine new repository revisions and 100 assistant-curated tasks (54 explicit, 46 natural-language) were sealed before candidate feedback. The exact candidate passed its full local gate and all 19 PR checks before evaluation. Complete protocol/runtime artifacts were [publicly committed before the first request](https://github.com/Helweg/open-codebase-index/commit/68f0960bb8a1411971480b2432e4a1bcc223b490). Execution retained all 36 serial cold-index cells, 400 pass-one outcomes and 1,200 three-pass records, with zero setup/query-adapter failures and no participant-request retries.
 
+**Current context (2026-10-10):** [#432](https://github.com/Helweg/open-codebase-index/pull/432) was rejected and closed without merging; its exact candidate and this study remain frozen. The “unmerged” status below records that historical candidate, not the status of later work. [#434](https://github.com/Helweg/open-codebase-index/pull/434) subsequently shipped separate fixes through the [#435 / 0.36.3 release](https://github.com/Helweg/open-codebase-index/pull/435). Neither that release nor its revised behavior was rescored in this study; the original 0.36.2 baseline, candidate, graders, archives and scores are unchanged.
+
 ### File discovery and body evidence are different measurements
 
 File Hit@5 ranks distinct visible paths. Declaration-body evidence ranks raw citation/result locations and requires the pinned AST declaration text; a structured match at raw rank 22 is not a body-at-five success.

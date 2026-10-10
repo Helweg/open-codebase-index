@@ -12,6 +12,8 @@ All comparisons must be grounded in the artifacts and scripts in this repository
 
 The completed [2026-10-08 frozen candidate comparison](benchmarking-cross-repo.md#2026-10-08-frozen-body-and-structural-candidate-comparison) reports preferred registry 0.36.2 versus an exact source candidate. It preserves file-discovery losses, separates structured content from visible fences, and discloses a frozen CRLF extraction defect with a separately labeled raw-response forensic reconciliation. It is assistant-curated development-unseen evidence, not an independently reviewed public holdout or superiority claim.
 
+**Current context (2026-10-10):** The measured [#432](https://github.com/Helweg/open-codebase-index/pull/432) candidate was rejected and closed without merging. Later [#434](https://github.com/Helweg/open-codebase-index/pull/434) fixes shipped as 0.36.3 through [#435](https://github.com/Helweg/open-codebase-index/pull/435), not as a rescore or replacement of this frozen comparison. These historical scores do not measure the published 0.36.3 release.
+
 ## Goal
 
 Compare comparable, fixed-task behavior for:

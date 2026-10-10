@@ -10,6 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Frozen candidate body/retrieval evidence**: Publish a separately sealed nine-repository, 100-task preferred-registry 0.36.2 versus source-candidate study with all 36 cold cells, 400 primary outcomes and 1,200 records. Preserve the original metrics, report a CRLF visible-fence extractor defect through separate EOL-preserving forensics, and disclose explicit-file discovery loss, structural wins/losses, strict citation exceptions and timing/gradeability limits. The measured candidate remains unmerged; no blind, speed or general-superiority claim.
+- **Historical candidate / current release distinction**: The frozen study's #432 candidate was rejected and closed without merging. The later #434 fixes and #435 release shipped 0.36.3 separately; this evidence publication does not rescore the original study or evaluate the published 0.36.3 release.
+
+## [0.36.3] - 2026-10-09
+
+### Fixed
+
+- **Visible definition bodies**: Remove `implementation_lookup`'s fixed 30-line preview cap across hosts. Use an optional bounded `tokenBudget` (default 1,200 estimated tokens), preserve whole source lines and closed fences, and disclose partial bodies and omitted locations outside the source. Structured results and other search previews remain unchanged; retrieved chunks are not a declaration-completeness guarantee.
+- **Definition file discovery**: Reserve original-ranked citations for distinct retrieved files before allocating `implementation_lookup` source bodies. Keep later files visible when large earlier declarations exhaust the body budget; report body and location omissions separately without clipping citations or changing structured results.
+- **Structural prose ranking**: Keep incidental prose matches in declaration names and paths from prepending a synthetic definition-priority lane ahead of lexical relevance. Preserve explicit identifier/definition lookups, hard scopes, minimum-score filtering and existing hybrid lane behavior.
+- **Ordinary source token counting**: Preserve literal tokenizer control spellings such as `<|endoftext|>` in budgeted definition bodies and context evidence instead of failing token counting.
 
 ## [0.36.2] - 2026-10-08
 
@@ -991,7 +1001,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...HEAD
+[0.36.3]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...v0.36.3
 [0.36.2]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...v0.36.1
 [0.36.0]: https://github.com/Helweg/open-codebase-index/compare/v0.35.3...v0.36.0
