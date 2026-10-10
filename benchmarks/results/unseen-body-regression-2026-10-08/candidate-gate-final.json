@@ -1,0 +1,1258 @@
+{
+  "sourceCommit": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+  "verifiedAt": "2026-10-08T11:16:20.458Z",
+  "ci": {
+    "conclusion": "success",
+    "headSha": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+    "jobs": [
+      {
+        "completedAt": "2026-10-08T11:14:43Z",
+        "conclusion": "success",
+        "databaseId": 113277652092,
+        "name": "test (22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:27Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:32Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:27Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:35Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:32Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:44Z",
+            "conclusion": "success",
+            "name": "Setup Rust",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:01Z",
+            "conclusion": "success",
+            "name": "Cache Cargo",
+            "number": 5,
+            "startedAt": "2026-10-08T11:00:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:12Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 6,
+            "startedAt": "2026-10-08T11:01:01Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:13Z",
+            "conclusion": "success",
+            "name": "Check Rust formatting",
+            "number": 7,
+            "startedAt": "2026-10-08T11:01:12Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:18Z",
+            "conclusion": "success",
+            "name": "Run Clippy",
+            "number": 8,
+            "startedAt": "2026-10-08T11:01:13Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:30Z",
+            "conclusion": "success",
+            "name": "Run Rust tests",
+            "number": 9,
+            "startedAt": "2026-10-08T11:01:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:03:08Z",
+            "conclusion": "success",
+            "name": "Build native module",
+            "number": 10,
+            "startedAt": "2026-10-08T11:01:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:03:16Z",
+            "conclusion": "success",
+            "name": "Build TypeScript",
+            "number": 11,
+            "startedAt": "2026-10-08T11:03:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:05:00Z",
+            "conclusion": "success",
+            "name": "Smoke-test packed CLI identities",
+            "number": 12,
+            "startedAt": "2026-10-08T11:03:16Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:05:10Z",
+            "conclusion": "success",
+            "name": "Run typecheck",
+            "number": 13,
+            "startedAt": "2026-10-08T11:05:00Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:05:15Z",
+            "conclusion": "success",
+            "name": "Run lint",
+            "number": 14,
+            "startedAt": "2026-10-08T11:05:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:05:17Z",
+            "conclusion": "success",
+            "name": "Validate frozen cross-repo benchmark inputs and comparator contracts",
+            "number": 15,
+            "startedAt": "2026-10-08T11:05:15Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:05:37Z",
+            "conclusion": "success",
+            "name": "Validate frozen cross-repo source evidence against pinned revisions",
+            "number": 16,
+            "startedAt": "2026-10-08T11:05:17Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:09:52Z",
+            "conclusion": "success",
+            "name": "Run tests with coverage",
+            "number": 17,
+            "startedAt": "2026-10-08T11:05:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:09:52Z",
+            "conclusion": "success",
+            "name": "Start mock embeddings server for eval smoke",
+            "number": 18,
+            "startedAt": "2026-10-08T11:09:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:44Z",
+            "conclusion": "success",
+            "name": "Run eval harness smoke check (mock embeddings)",
+            "number": 19,
+            "startedAt": "2026-10-08T11:09:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:45Z",
+            "conclusion": "success",
+            "name": "Upload eval smoke outputs",
+            "number": 20,
+            "startedAt": "2026-10-08T11:11:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:13:42Z",
+            "conclusion": "success",
+            "name": "Run pre-edit context eval gate (mock embeddings)",
+            "number": 21,
+            "startedAt": "2026-10-08T11:11:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:13:43Z",
+            "conclusion": "success",
+            "name": "Upload pre-edit context eval outputs",
+            "number": 22,
+            "startedAt": "2026-10-08T11:13:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:13:43Z",
+            "conclusion": "success",
+            "name": "Stop mock embeddings server",
+            "number": 23,
+            "startedAt": "2026-10-08T11:13:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:13:49Z",
+            "conclusion": "success",
+            "name": "Setup minimum supported Node.js",
+            "number": 24,
+            "startedAt": "2026-10-08T11:13:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:40Z",
+            "conclusion": "success",
+            "name": "Smoke-test minimum supported runtime",
+            "number": 25,
+            "startedAt": "2026-10-08T11:13:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:40Z",
+            "conclusion": "success",
+            "name": "Post Setup minimum supported Node.js",
+            "number": 47,
+            "startedAt": "2026-10-08T11:14:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:40Z",
+            "conclusion": "success",
+            "name": "Post Cache Cargo",
+            "number": 48,
+            "startedAt": "2026-10-08T11:14:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:41Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 49,
+            "startedAt": "2026-10-08T11:14:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:41Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 50,
+            "startedAt": "2026-10-08T11:14:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:14:41Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 51,
+            "startedAt": "2026-10-08T11:14:41Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652092"
+      },
+      {
+        "completedAt": "2026-10-08T11:01:06Z",
+        "conclusion": "success",
+        "databaseId": 113277652431,
+        "name": "path-semantics (macos-latest, 22)",
+        "startedAt": "2026-10-08T11:00:31Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:32Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:39Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:32Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:43Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:53Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:00:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:54Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:00:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:03Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:00:54Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:03Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:01:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:03Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:01:03Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:04Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:01:03Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652431"
+      },
+      {
+        "completedAt": "2026-10-08T11:11:42Z",
+        "conclusion": "success",
+        "databaseId": 113277652434,
+        "name": "test (24)",
+        "startedAt": "2026-10-08T11:00:27Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:30Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:34Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:40Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:50Z",
+            "conclusion": "success",
+            "name": "Setup Rust",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:40Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:11Z",
+            "conclusion": "success",
+            "name": "Cache Cargo",
+            "number": 5,
+            "startedAt": "2026-10-08T11:00:50Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:23Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 6,
+            "startedAt": "2026-10-08T11:01:11Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:23Z",
+            "conclusion": "success",
+            "name": "Check Rust formatting",
+            "number": 7,
+            "startedAt": "2026-10-08T11:01:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:33Z",
+            "conclusion": "success",
+            "name": "Run Clippy",
+            "number": 8,
+            "startedAt": "2026-10-08T11:01:23Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:45Z",
+            "conclusion": "success",
+            "name": "Run Rust tests",
+            "number": 9,
+            "startedAt": "2026-10-08T11:01:33Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:03:21Z",
+            "conclusion": "success",
+            "name": "Build native module",
+            "number": 10,
+            "startedAt": "2026-10-08T11:01:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:03:28Z",
+            "conclusion": "success",
+            "name": "Build TypeScript",
+            "number": 11,
+            "startedAt": "2026-10-08T11:03:21Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:04:12Z",
+            "conclusion": "success",
+            "name": "Smoke-test packed CLI identities",
+            "number": 12,
+            "startedAt": "2026-10-08T11:03:28Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:04:19Z",
+            "conclusion": "success",
+            "name": "Run typecheck",
+            "number": 13,
+            "startedAt": "2026-10-08T11:04:12Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:04:24Z",
+            "conclusion": "success",
+            "name": "Run lint",
+            "number": 14,
+            "startedAt": "2026-10-08T11:04:19Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:04:26Z",
+            "conclusion": "success",
+            "name": "Validate frozen cross-repo benchmark inputs and comparator contracts",
+            "number": 15,
+            "startedAt": "2026-10-08T11:04:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:04:38Z",
+            "conclusion": "success",
+            "name": "Validate frozen cross-repo source evidence against pinned revisions",
+            "number": 16,
+            "startedAt": "2026-10-08T11:04:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:08:33Z",
+            "conclusion": "success",
+            "name": "Run tests with coverage",
+            "number": 17,
+            "startedAt": "2026-10-08T11:04:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:08:33Z",
+            "conclusion": "success",
+            "name": "Start mock embeddings server for eval smoke",
+            "number": 18,
+            "startedAt": "2026-10-08T11:08:33Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:10:05Z",
+            "conclusion": "success",
+            "name": "Run eval harness smoke check (mock embeddings)",
+            "number": 19,
+            "startedAt": "2026-10-08T11:08:33Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:10:07Z",
+            "conclusion": "success",
+            "name": "Upload eval smoke outputs",
+            "number": 20,
+            "startedAt": "2026-10-08T11:10:05Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:37Z",
+            "conclusion": "success",
+            "name": "Run pre-edit context eval gate (mock embeddings)",
+            "number": 21,
+            "startedAt": "2026-10-08T11:10:07Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "success",
+            "name": "Upload pre-edit context eval outputs",
+            "number": 22,
+            "startedAt": "2026-10-08T11:11:37Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "success",
+            "name": "Stop mock embeddings server",
+            "number": 23,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "skipped",
+            "name": "Setup minimum supported Node.js",
+            "number": 24,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "skipped",
+            "name": "Smoke-test minimum supported runtime",
+            "number": 25,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "success",
+            "name": "Post Cache Cargo",
+            "number": 48,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:38Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 49,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:39Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 50,
+            "startedAt": "2026-10-08T11:11:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:11:39Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 51,
+            "startedAt": "2026-10-08T11:11:39Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652434"
+      },
+      {
+        "completedAt": "2026-10-08T11:01:54Z",
+        "conclusion": "success",
+        "databaseId": 113277652491,
+        "name": "path-semantics (windows-latest, 22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:26Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:35Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:45Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:16Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:18Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:01:16Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:20Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:01:18Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:49Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:01:20Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:49Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:01:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:52Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:01:49Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:53Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:01:52Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652491"
+      },
+      {
+        "completedAt": "2026-10-08T11:01:42Z",
+        "conclusion": "success",
+        "databaseId": 113277652628,
+        "name": "path-semantics (windows-latest, 24)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:25Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:34Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:44Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:34Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:06Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:08Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:01:06Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:10Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:01:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:38Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:01:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:39Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:01:38Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:41Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:01:39Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:41Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:01:41Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652628"
+      },
+      {
+        "completedAt": "2026-10-08T11:00:53Z",
+        "conclusion": "success",
+        "databaseId": 113277652654,
+        "name": "path-semantics (ubuntu-latest, 24)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:25Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:29Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:31Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:29Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:41Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:31Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:42Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:00:41Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:43Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:00:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:00:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:00:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:00:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:00:52Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652654"
+      },
+      {
+        "completedAt": "2026-10-08T11:01:29Z",
+        "conclusion": "success",
+        "databaseId": 113277652659,
+        "name": "path-semantics (macos-latest, 24)",
+        "startedAt": "2026-10-08T11:00:33Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:36Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:35Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:45Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:36Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:52Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:45Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:08Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:52Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:10Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:01:08Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:12Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:01:10Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:24Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:01:12Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:24Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:01:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:26Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:01:24Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:01:26Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:01:26Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652659"
+      },
+      {
+        "completedAt": "2026-10-08T11:01:31Z",
+        "conclusion": "success",
+        "databaseId": 113277652678,
+        "name": "path-semantics (ubuntu-latest, 22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "completed",
+        "steps": [
+          {
+            "completedAt": "2026-10-08T11:00:26Z",
+            "conclusion": "success",
+            "name": "Set up job",
+            "number": 1,
+            "startedAt": "2026-10-08T11:00:25Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:30Z",
+            "conclusion": "success",
+            "name": "Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 2,
+            "startedAt": "2026-10-08T11:00:26Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:32Z",
+            "conclusion": "success",
+            "name": "Setup Node.js",
+            "number": 3,
+            "startedAt": "2026-10-08T11:00:30Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:42Z",
+            "conclusion": "success",
+            "name": "Install dependencies",
+            "number": 4,
+            "startedAt": "2026-10-08T11:00:32Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:43Z",
+            "conclusion": "success",
+            "name": "Test canonical path semantics",
+            "number": 5,
+            "startedAt": "2026-10-08T11:00:42Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:44Z",
+            "conclusion": "success",
+            "name": "Record recursive native watcher capability",
+            "number": 6,
+            "startedAt": "2026-10-08T11:00:43Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:53Z",
+            "conclusion": "success",
+            "name": "Measure native watcher behavior",
+            "number": 7,
+            "startedAt": "2026-10-08T11:00:44Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:53Z",
+            "conclusion": "success",
+            "name": "Post Setup Node.js",
+            "number": 13,
+            "startedAt": "2026-10-08T11:00:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:53Z",
+            "conclusion": "success",
+            "name": "Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "number": 14,
+            "startedAt": "2026-10-08T11:00:53Z",
+            "status": "completed"
+          },
+          {
+            "completedAt": "2026-10-08T11:00:53Z",
+            "conclusion": "success",
+            "name": "Complete job",
+            "number": 15,
+            "startedAt": "2026-10-08T11:00:53Z",
+            "status": "completed"
+          }
+        ],
+        "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652678"
+      }
+    ],
+    "status": "completed",
+    "url": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322"
+  },
+  "pr": {
+    "headRefOid": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+    "mergeStateStatus": "CLEAN",
+    "state": "OPEN",
+    "statusCheckRollup": [
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:31Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652678",
+        "name": "path-semantics (ubuntu-latest, 22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:08Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767196681/job/113277646233",
+        "name": "Analyze (actions)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CodeQL"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:28Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767199099/job/113277649341",
+        "name": "update_release_draft",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Drafter"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:31Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767201631/job/113277656157",
+        "name": "update_release_draft",
+        "startedAt": "2026-10-08T11:00:25Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Drafter"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:29Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767201705/job/113277656518",
+        "name": "update_release_draft",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Drafter"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:28Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200292/job/113277651372",
+        "name": "validate_release_labels",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Label Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:28Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767201663/job/113277654415",
+        "name": "validate_release_labels",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Label Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:29Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767201769/job/113277655213",
+        "name": "validate_release_labels",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "Release Label Check"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:00:53Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652654",
+        "name": "path-semantics (ubuntu-latest, 24)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:33Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767196681/job/113277646388",
+        "name": "Analyze (javascript-typescript)",
+        "startedAt": "2026-10-08T11:00:23Z",
+        "status": "COMPLETED",
+        "workflowName": "CodeQL"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:06Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652431",
+        "name": "path-semantics (macos-latest, 22)",
+        "startedAt": "2026-10-08T11:00:31Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:20Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767196681/job/113277646327",
+        "name": "Analyze (python)",
+        "startedAt": "2026-10-08T11:00:23Z",
+        "status": "COMPLETED",
+        "workflowName": "CodeQL"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:29Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652659",
+        "name": "path-semantics (macos-latest, 24)",
+        "startedAt": "2026-10-08T11:00:33Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:04:31Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767196681/job/113277645954",
+        "name": "Analyze (rust)",
+        "startedAt": "2026-10-08T11:00:23Z",
+        "status": "COMPLETED",
+        "workflowName": "CodeQL"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:54Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652491",
+        "name": "path-semantics (windows-latest, 22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:42Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652628",
+        "name": "path-semantics (windows-latest, 24)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:14:43Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652092",
+        "name": "test (22)",
+        "startedAt": "2026-10-08T11:00:24Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:11:42Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/actions/runs/37767200322/job/113277652434",
+        "name": "test (24)",
+        "startedAt": "2026-10-08T11:00:27Z",
+        "status": "COMPLETED",
+        "workflowName": "CI"
+      },
+      {
+        "__typename": "CheckRun",
+        "completedAt": "2026-10-08T11:01:01Z",
+        "conclusion": "SUCCESS",
+        "detailsUrl": "https://github.com/Helweg/open-codebase-index/runs/113277880829",
+        "name": "CodeQL",
+        "startedAt": "2026-10-08T11:00:58Z",
+        "status": "COMPLETED",
+        "workflowName": ""
+      }
+    ],
+    "url": "https://github.com/Helweg/open-codebase-index/pull/432"
+  },
+  "registryProof": {
+    "path": "registry-smoke02/summary-public.json",
+    "sha256": "3226d60659584809ffdae7e1a32483731646b0c78cd878c7ccd056b237199f9c",
+    "preferredIdentity": "open-codebase-index",
+    "version": "0.36.2",
+    "sourceCommit": "5d2d4d128db9bc7addded7859dc8cfb20c25f8bd",
+    "runId": 37765973802
+  }
+}

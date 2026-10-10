@@ -1,0 +1,28 @@
+{
+  "kind": "public-archive-streaming-readback-no-participant-calls",
+  "archiveSha256": "6c933d180b6134b75ea61d6d752b91b705483d5955cfb1747ca549716113048a",
+  "verifiedOriginalAndForensicMembers": {
+    "execution/report.json": "8f73a0afa055f94b654b0434448a2ce97fd5b1c91ae0a7f422c99859d11aea71",
+    "execution/actual-index-retention.json": "c4704e8fc2f5a0ee723ae8a8ea5e36f35568797f21eea5b3a80e2e9a4bf82e1c",
+    "execution/cells.json": "13ccf7000b2c1544917cdc83c87a78623651ef79c2eb31e528690dc081d87942",
+    "execution/post-score-observations.json": "35a0077ef3740b60b4b950ab654675933ea94929c6b8a364fdb3e050f14060bc",
+    "execution/operational-failures.json": "f50e654785e304afeafe26cd3fec43d276866f28a5182cd47f7d100385ce9d36",
+    "execution/primary.json": "86750f49716a04aa032bde249a2889d07c301a75ec7e553d719d332da72d0edd",
+    "execution/primary-outcomes.csv": "235d47399a7f47fdce6d17e88df1321eda4651daeae382c5f51a5da8438a4f71",
+    "execution/rows.json": "3bdf5615f09fcf88b8a63d2740fe4542b8774a44f21ec172340d41cd94a7f66e",
+    "execution/run-manifest.json": "001978a1855fb53169f8ddb3a59bf84f9a6c7b12bfcc76f6002fbfad47a1f6a3",
+    "execution/replay-integrity.json": "308e04f9f43a1533c0054110c2af9cf8572cc6fe9c8af03b6211d6fd860468e9",
+    "execution/per-query-deltas.json": "1bda59e0069cb1b780003bed78bc4a1b6bbc5b73a71b82e26c7164f4a6b3cd4e",
+    "forensic/per-task.json": "b5ca18e5edb2059910e1fded8939d0632aa38219f096e83a608a4d13ffdde9ec",
+    "forensic/report.json": "40d318cecd637e786e376dac47fad2e05336a4b751eb69ecbdb3ecf923b92ce8",
+    "forensic/affected-tasks.json": "05a540e9704942150086fd770ab8164c881ffad54d0b91abfbe9679ee8d7e7de",
+    "execution-tools/forensic_fences.py": "1cd4433189799553912159572818d7c53a7b7b90f047cefd5217dc3aa1f16e90"
+  },
+  "rawIndividualQueryFiles": 1200,
+  "allPassRows": 1200,
+  "primaryRows": 400,
+  "sourceCopyFiles": 31656,
+  "actualIndexFilesExcluded": true,
+  "participantCalls": 0,
+  "originalMetricsChanged": false
+}

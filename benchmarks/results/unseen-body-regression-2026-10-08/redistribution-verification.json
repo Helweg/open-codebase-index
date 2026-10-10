@@ -1,0 +1,393 @@
+{
+  "scope": "Redistribution notice verification; not a replacement scoring or preregistration report.",
+  "studyCandidate": "336ed3e8cab4748df66715acc22a1ab247562ec0",
+  "repositories": 9,
+  "originalLicenseNoticeCopies": 48,
+  "allCopiesMatchPinnedBytes": true,
+  "originalLicenseMembers": [
+    {
+      "repository": "ruby-grape/grape",
+      "commit": "35916a8e4a4ef5100dad9d1f4b7e0674ae232792",
+      "licensePath": "LICENSE",
+      "member": "execution/rb/source-candidate-hybrid/source/LICENSE",
+      "sha256": "a081cd9be5ae2f22aa796f21d94603f711e16c34caece7811b40a42cb9dcd282"
+    },
+    {
+      "repository": "ruby-grape/grape",
+      "commit": "35916a8e4a4ef5100dad9d1f4b7e0674ae232792",
+      "licensePath": "LICENSE",
+      "member": "execution/rb/published-0.36.2-hybrid/source/LICENSE",
+      "sha256": "a081cd9be5ae2f22aa796f21d94603f711e16c34caece7811b40a42cb9dcd282"
+    },
+    {
+      "repository": "ruby-grape/grape",
+      "commit": "35916a8e4a4ef5100dad9d1f4b7e0674ae232792",
+      "licensePath": "LICENSE",
+      "member": "execution/rb/source-candidate-structural/source/LICENSE",
+      "sha256": "a081cd9be5ae2f22aa796f21d94603f711e16c34caece7811b40a42cb9dcd282"
+    },
+    {
+      "repository": "ruby-grape/grape",
+      "commit": "35916a8e4a4ef5100dad9d1f4b7e0674ae232792",
+      "licensePath": "LICENSE",
+      "member": "execution/rb/published-0.36.2-structural/source/LICENSE",
+      "sha256": "a081cd9be5ae2f22aa796f21d94603f711e16c34caece7811b40a42cb9dcd282"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "LICENSE",
+      "member": "execution/ts/source-candidate-hybrid/source/LICENSE",
+      "sha256": "e714dd84c8fa242600844b05d317a31003423723178c1f1603dbfad1bc68d906"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "packages/server/src/vendor/unpromise/LICENSE",
+      "member": "execution/ts/source-candidate-hybrid/source/packages/server/src/vendor/unpromise/LICENSE",
+      "sha256": "9a16336c25c977661af8e838adfc67de610e17da175f9636226147bb107ae1d6"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "LICENSE",
+      "member": "execution/ts/published-0.36.2-hybrid/source/LICENSE",
+      "sha256": "e714dd84c8fa242600844b05d317a31003423723178c1f1603dbfad1bc68d906"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "packages/server/src/vendor/unpromise/LICENSE",
+      "member": "execution/ts/published-0.36.2-hybrid/source/packages/server/src/vendor/unpromise/LICENSE",
+      "sha256": "9a16336c25c977661af8e838adfc67de610e17da175f9636226147bb107ae1d6"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "LICENSE",
+      "member": "execution/ts/source-candidate-structural/source/LICENSE",
+      "sha256": "e714dd84c8fa242600844b05d317a31003423723178c1f1603dbfad1bc68d906"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "packages/server/src/vendor/unpromise/LICENSE",
+      "member": "execution/ts/source-candidate-structural/source/packages/server/src/vendor/unpromise/LICENSE",
+      "sha256": "9a16336c25c977661af8e838adfc67de610e17da175f9636226147bb107ae1d6"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "LICENSE",
+      "member": "execution/ts/published-0.36.2-structural/source/LICENSE",
+      "sha256": "e714dd84c8fa242600844b05d317a31003423723178c1f1603dbfad1bc68d906"
+    },
+    {
+      "repository": "trpc/trpc",
+      "commit": "d756e591a5e37ef20b8d75ecd4d736c195497289",
+      "licensePath": "packages/server/src/vendor/unpromise/LICENSE",
+      "member": "execution/ts/published-0.36.2-structural/source/packages/server/src/vendor/unpromise/LICENSE",
+      "sha256": "9a16336c25c977661af8e838adfc67de610e17da175f9636226147bb107ae1d6"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "LICENSE.txt",
+      "member": "execution/kt/source-candidate-hybrid/source/LICENSE.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "member": "execution/kt/source-candidate-hybrid/source/okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "sha256": "7a384b7d03f1ff5aceca376e7308d74dc7ec6aa45b3e30a6d6aaa52eb75dc740"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "LICENSE.txt",
+      "member": "execution/kt/published-0.36.2-hybrid/source/LICENSE.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "member": "execution/kt/published-0.36.2-hybrid/source/okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "sha256": "7a384b7d03f1ff5aceca376e7308d74dc7ec6aa45b3e30a6d6aaa52eb75dc740"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "LICENSE.txt",
+      "member": "execution/kt/source-candidate-structural/source/LICENSE.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "member": "execution/kt/source-candidate-structural/source/okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "sha256": "7a384b7d03f1ff5aceca376e7308d74dc7ec6aa45b3e30a6d6aaa52eb75dc740"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "LICENSE.txt",
+      "member": "execution/kt/published-0.36.2-structural/source/LICENSE.txt",
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "repository": "square/okio",
+      "commit": "a6ae13ee0e7522674ae6382aaf8e6d6e9ef4bb9e",
+      "licensePath": "okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "member": "execution/kt/published-0.36.2-structural/source/okio-testing-support/src/commonMain/resources/go/NOTICE",
+      "sha256": "7a384b7d03f1ff5aceca376e7308d74dc7ec6aa45b3e30a6d6aaa52eb75dc740"
+    },
+    {
+      "repository": "thephpleague/commonmark",
+      "commit": "718fda46b2e4410d5f2176e18a9b52fc914e109d",
+      "licensePath": "LICENSE",
+      "member": "execution/php/source-candidate-hybrid/source/LICENSE",
+      "sha256": "80043e4e2ba13ff485810363631657baae7e2a2a02ef62b463bf1661134ac56c"
+    },
+    {
+      "repository": "thephpleague/commonmark",
+      "commit": "718fda46b2e4410d5f2176e18a9b52fc914e109d",
+      "licensePath": "LICENSE",
+      "member": "execution/php/published-0.36.2-hybrid/source/LICENSE",
+      "sha256": "80043e4e2ba13ff485810363631657baae7e2a2a02ef62b463bf1661134ac56c"
+    },
+    {
+      "repository": "thephpleague/commonmark",
+      "commit": "718fda46b2e4410d5f2176e18a9b52fc914e109d",
+      "licensePath": "LICENSE",
+      "member": "execution/php/source-candidate-structural/source/LICENSE",
+      "sha256": "80043e4e2ba13ff485810363631657baae7e2a2a02ef62b463bf1661134ac56c"
+    },
+    {
+      "repository": "thephpleague/commonmark",
+      "commit": "718fda46b2e4410d5f2176e18a9b52fc914e109d",
+      "licensePath": "LICENSE",
+      "member": "execution/php/published-0.36.2-structural/source/LICENSE",
+      "sha256": "80043e4e2ba13ff485810363631657baae7e2a2a02ef62b463bf1661134ac56c"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-APACHE",
+      "member": "execution/rs/source-candidate-hybrid/source/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-MIT",
+      "member": "execution/rs/source-candidate-hybrid/source/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-APACHE",
+      "member": "execution/rs/published-0.36.2-hybrid/source/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-MIT",
+      "member": "execution/rs/published-0.36.2-hybrid/source/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-APACHE",
+      "member": "execution/rs/source-candidate-structural/source/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-MIT",
+      "member": "execution/rs/source-candidate-structural/source/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-APACHE",
+      "member": "execution/rs/published-0.36.2-structural/source/LICENSE-APACHE",
+      "sha256": "62c7a1e35f56406896d7aa7ca52d0cc0d272ac022b5d2796e7d6905db8a3636a"
+    },
+    {
+      "repository": "serde-rs/json",
+      "commit": "afdf6fc67247dd7fa4fcde1381e6ecc6bcc7a30e",
+      "licensePath": "LICENSE-MIT",
+      "member": "execution/rs/published-0.36.2-structural/source/LICENSE-MIT",
+      "sha256": "23f18e03dc49df91622fe2a76176497404e46ced8a715d9d2b67a7446571cca3"
+    },
+    {
+      "repository": "DapperLib/Dapper",
+      "commit": "eb47546a408bbf6c178bda4f04dc205bc51ffbfe",
+      "licensePath": "License.txt",
+      "member": "execution/cs/source-candidate-hybrid/source/License.txt",
+      "sha256": "9148ebecf47ce49421b0adc69192384b0619bcdc22c67b8bb30d26882b8a7db9"
+    },
+    {
+      "repository": "DapperLib/Dapper",
+      "commit": "eb47546a408bbf6c178bda4f04dc205bc51ffbfe",
+      "licensePath": "License.txt",
+      "member": "execution/cs/published-0.36.2-hybrid/source/License.txt",
+      "sha256": "9148ebecf47ce49421b0adc69192384b0619bcdc22c67b8bb30d26882b8a7db9"
+    },
+    {
+      "repository": "DapperLib/Dapper",
+      "commit": "eb47546a408bbf6c178bda4f04dc205bc51ffbfe",
+      "licensePath": "License.txt",
+      "member": "execution/cs/source-candidate-structural/source/License.txt",
+      "sha256": "9148ebecf47ce49421b0adc69192384b0619bcdc22c67b8bb30d26882b8a7db9"
+    },
+    {
+      "repository": "DapperLib/Dapper",
+      "commit": "eb47546a408bbf6c178bda4f04dc205bc51ffbfe",
+      "licensePath": "License.txt",
+      "member": "execution/cs/published-0.36.2-structural/source/License.txt",
+      "sha256": "9148ebecf47ce49421b0adc69192384b0619bcdc22c67b8bb30d26882b8a7db9"
+    },
+    {
+      "repository": "jaredhanson/passport",
+      "commit": "217018dbc46dcd4118dd6f2c60c8d97010c587f8",
+      "licensePath": "LICENSE",
+      "member": "execution/js/source-candidate-hybrid/source/LICENSE",
+      "sha256": "5941d1b8618a33a6db8dc4d97118508185bbb1fe0b26b275c4c4df5fdbd9cc10"
+    },
+    {
+      "repository": "jaredhanson/passport",
+      "commit": "217018dbc46dcd4118dd6f2c60c8d97010c587f8",
+      "licensePath": "LICENSE",
+      "member": "execution/js/published-0.36.2-hybrid/source/LICENSE",
+      "sha256": "5941d1b8618a33a6db8dc4d97118508185bbb1fe0b26b275c4c4df5fdbd9cc10"
+    },
+    {
+      "repository": "jaredhanson/passport",
+      "commit": "217018dbc46dcd4118dd6f2c60c8d97010c587f8",
+      "licensePath": "LICENSE",
+      "member": "execution/js/source-candidate-structural/source/LICENSE",
+      "sha256": "5941d1b8618a33a6db8dc4d97118508185bbb1fe0b26b275c4c4df5fdbd9cc10"
+    },
+    {
+      "repository": "jaredhanson/passport",
+      "commit": "217018dbc46dcd4118dd6f2c60c8d97010c587f8",
+      "licensePath": "LICENSE",
+      "member": "execution/js/published-0.36.2-structural/source/LICENSE",
+      "sha256": "5941d1b8618a33a6db8dc4d97118508185bbb1fe0b26b275c4c4df5fdbd9cc10"
+    },
+    {
+      "repository": "etcd-io/bbolt",
+      "commit": "4dc08f7187c709d355a8bcf334fcbcf7d7cfedf6",
+      "licensePath": "LICENSE",
+      "member": "execution/go/source-candidate-hybrid/source/LICENSE",
+      "sha256": "c15d721c37e277a11584547de6d618541501f7aa10c4e32a945a4f9ff36cb0f6"
+    },
+    {
+      "repository": "etcd-io/bbolt",
+      "commit": "4dc08f7187c709d355a8bcf334fcbcf7d7cfedf6",
+      "licensePath": "LICENSE",
+      "member": "execution/go/published-0.36.2-hybrid/source/LICENSE",
+      "sha256": "c15d721c37e277a11584547de6d618541501f7aa10c4e32a945a4f9ff36cb0f6"
+    },
+    {
+      "repository": "etcd-io/bbolt",
+      "commit": "4dc08f7187c709d355a8bcf334fcbcf7d7cfedf6",
+      "licensePath": "LICENSE",
+      "member": "execution/go/source-candidate-structural/source/LICENSE",
+      "sha256": "c15d721c37e277a11584547de6d618541501f7aa10c4e32a945a4f9ff36cb0f6"
+    },
+    {
+      "repository": "etcd-io/bbolt",
+      "commit": "4dc08f7187c709d355a8bcf334fcbcf7d7cfedf6",
+      "licensePath": "LICENSE",
+      "member": "execution/go/published-0.36.2-structural/source/LICENSE",
+      "sha256": "c15d721c37e277a11584547de6d618541501f7aa10c4e32a945a4f9ff36cb0f6"
+    },
+    {
+      "repository": "encode/httpx",
+      "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+      "licensePath": "LICENSE.md",
+      "member": "execution/py/source-candidate-hybrid/source/LICENSE.md",
+      "sha256": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d"
+    },
+    {
+      "repository": "encode/httpx",
+      "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+      "licensePath": "LICENSE.md",
+      "member": "execution/py/published-0.36.2-hybrid/source/LICENSE.md",
+      "sha256": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d"
+    },
+    {
+      "repository": "encode/httpx",
+      "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+      "licensePath": "LICENSE.md",
+      "member": "execution/py/source-candidate-structural/source/LICENSE.md",
+      "sha256": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d"
+    },
+    {
+      "repository": "encode/httpx",
+      "commit": "b5addb64f0161ff6bfe94c124ef76f6a1fba5254",
+      "licensePath": "LICENSE.md",
+      "member": "execution/py/published-0.36.2-structural/source/LICENSE.md",
+      "sha256": "4ec59d544f12b5f539a3a716fd321ac58ccd8030b465221f2c880200cdf28d8d"
+    }
+  ],
+  "originalSourceFilesModified": false,
+  "rootTerms": {
+    "MIT": [
+      "jaredhanson/passport",
+      "trpc/trpc",
+      "etcd-io/bbolt",
+      "ruby-grape/grape"
+    ],
+    "MIT OR Apache-2.0": [
+      "serde-rs/json"
+    ],
+    "BSD-3-Clause": [
+      "encode/httpx",
+      "thephpleague/commonmark"
+    ],
+    "Apache-2.0": [
+      "square/okio",
+      "DapperLib/Dapper"
+    ]
+  },
+  "supplementedLinkOnlyNotices": [
+    "Go BSD-3-Clause terms for Okio fixtures",
+    "Apache-2.0 terms referenced by Dapper License.txt"
+  ],
+  "logoRestrictionRetained": true,
+  "endorsementClaimed": false,
+  "componentsReadback": {
+    "REDISTRIBUTION-NOTICES.txt": {
+      "sha256": "4dfc9dbc6c0718bd96bf353d1cd64445fcbaed12ca98297d6ce5bf7143962be7",
+      "bytes": 37739
+    },
+    "preregistration-and-runtime.tar.gz": {
+      "sha256": "a111688f90df7b26d7e0774adc92e115636a9aee7c6f95b48516aacd76c97261",
+      "bytes": 20515218
+    },
+    "study-evidence.tar.gz": {
+      "sha256": "6c933d180b6134b75ea61d6d752b91b705483d5955cfb1747ca549716113048a",
+      "bytes": 46683754
+    }
+  },
+  "wrapper": {
+    "path": "sealed-study-distribution.tar",
+    "bytes": 67243008,
+    "sha256": "46a4669229738e2e3aa461b800fce3b2d4e2921f78793cdb782e2590a489e828"
+  },
+  "frozenProgramOrScoreChanged": false,
+  "additionalParticipantCalls": 0,
+  "unpublishedInitialWrapperSmokeFailure": "Darwin tar added AppleDouble resource-fork metadata; rebuilt only this additive wrapper with COPYFILE_DISABLE=1. No sealed component changed."
+}
