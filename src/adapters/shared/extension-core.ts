@@ -526,6 +526,12 @@ export function createCodebaseIndexExtension(
     registerCodebaseIndexTools(pi, schema);
     pi.on("before_agent_start", async (event, ctx) => {
       await ensureCodebaseIndexSession(projectRoot(ctx));
+      // Additive sections keep later extensions visible instead of freezing a prompt override.
+      const sections = event.systemPromptOptions?.sections;
+      if (sections) {
+        sections.codebase_index_guidance = CODEBASE_INDEX_GUIDANCE;
+        return;
+      }
       return { systemPrompt: `${event.systemPrompt}\n\n${CODEBASE_INDEX_GUIDANCE}` };
     });
   };

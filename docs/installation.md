@@ -105,6 +105,12 @@ pi install ./path/to/open-codebase-index
 
 The package provides native tools and the `codebase-search` skill. Pi uses `.codebase-index/` project storage.
 
+On Pi hosts with mutable prompt sections, workflow guidance is contributed through
+`systemPromptOptions.sections.codebase_index_guidance`, allowing later extensions to add
+instructions without being hidden by a whole-prompt snapshot. Older Pi hosts retain the
+string-return fallback. Another extension's intentional full-prompt override remains
+respected; this extension does not clear or repair other extensions' overrides.
+
 ## omp (oh-my-pi)
 
 Install the extension package:
