@@ -40,6 +40,7 @@ This plugin:
 Track override decisions in [#379](https://github.com/Helweg/open-codebase-index/issues/379). An override must act on a real, non-shrinkwrapped dependency edge, identify its security purpose and patched floor, and avoid forcing unrelated or future-major edges to an older release.
 
 - Prefer same-major, version-qualified selectors and patched caret ranges over global exact pins. Check ordinary, optional, and peer dependency ranges after resolution.
+- Preserve existing `os`, `cpu`, and `libc` selectors on unchanged optional packages when refreshing lockfiles. Package-path/version equality alone does not prove platform-selection equivalence.
 - Before calling an override inert, resolve two disposable lock-only trees from the same manifest with no existing lock, with and without that override. Compare every package path and version; report explicit added, removed, and version-changed lists. All three lists must be empty.
 - For active changes, record those resolution deltas and run `npm audit --json` including development dependencies, a fresh `npm ci`, affected real CLI/build paths, and the repository validation gate. Preserve security coverage rather than accepting a newly introduced finding.
 - Root overrides govern repository installs, not the transitive dependencies of a published package installed by a consumer. Check both packed identities with `npm_config_engine_strict=true` on the supported Node.js floor, 22.13.0.
