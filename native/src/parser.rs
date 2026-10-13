@@ -1,6 +1,9 @@
 use crate::markup::extract_markup_chunks;
 use crate::types::Language;
-use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol, TestContainerData, TestDirectCallPosition, TestSyntaxData};
+use crate::{
+    CodeChunk, FileInput, ParsedFile, ParsedSymbol, TestContainerData, TestDirectCallPosition,
+    TestSyntaxData,
+};
 use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -196,32 +199,51 @@ fn parse_file_with_symbols_internal(
     let chunks = extract_chunks(&tree, content, &language, lines_per_chunk)?;
     let symbols = extract_symbols(&tree, content, &language);
     if let Some(syntax) = test_syntax {
-        if matches!(language, Language::JavaScript | Language::JavaScriptJsx | Language::TypeScript | Language::TypeScriptTsx) {
+        if matches!(
+            language,
+            Language::JavaScript
+                | Language::JavaScriptJsx
+                | Language::TypeScript
+                | Language::TypeScriptTsx
+        ) {
             *syntax = extract_test_syntax(&tree, content);
         }
     }
     Ok((chunks, symbols))
 }
 
-fn collect_binding_pattern<'source>(node: tree_sitter::Node<'_>, content: &'source str, bindings: &mut HashSet<&'source str>) -> bool {
+fn collect_binding_pattern<'source>(
+    node: tree_sitter::Node<'_>,
+    content: &'source str,
+    bindings: &mut HashSet<&'source str>,
+) -> bool {
     let mut pending = Vec::new();
     let mut current = Some(node);
     while let Some(pattern) = current.take() {
         match pattern.kind() {
             "identifier" | "type_identifier" | "shorthand_property_identifier_pattern" => {
-                let Ok(name) = pattern.utf8_text(content.as_bytes()) else { return false; };
-                if name.contains('\\') { return false; }
+                let Ok(name) = pattern.utf8_text(content.as_bytes()) else {
+                    return false;
+                };
+                if name.contains('\\') {
+                    return false;
+                }
                 bindings.insert(name);
             }
-            "pair_pattern" | "assignment_pattern" | "object_assignment_pattern"
-            | "required_parameter" | "optional_parameter" => {
+            "pair_pattern"
+            | "assignment_pattern"
+            | "object_assignment_pattern"
+            | "required_parameter"
+            | "optional_parameter" => {
                 let field = match pattern.kind() {
                     "pair_pattern" => "value",
                     "required_parameter" | "optional_parameter" => "pattern",
                     _ => "left",
                 };
                 current = pattern.child_by_field_name(field);
-                if current.is_none() { return false; }
+                if current.is_none() {
+                    return false;
+                }
             }
             "formal_parameters" | "object_pattern" | "array_pattern" | "rest_pattern" => {
                 let mut cursor = pattern.walk();
@@ -255,9 +277,16 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
     loop {
         let node = cursor.node();
         match node.kind() {
-            "variable_declarator" | "function_declaration" | "function_expression" | "function"
-            | "generator_function_declaration" | "generator_function" | "class_declaration" | "class"
-            | "abstract_class_declaration" | "enum_declaration" => {
+            "variable_declarator"
+            | "function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function_declaration"
+            | "generator_function"
+            | "class_declaration"
+            | "class"
+            | "abstract_class_declaration"
+            | "enum_declaration" => {
                 if let Some(name) = node.child_by_field_name("name") {
                     bindings_valid &= collect_binding_pattern(name, content, &mut bindings);
                 }
@@ -271,12 +300,19 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
             }
             _ => {}
         }
-        if let Some(parameters) = node.child_by_field_name("parameters").or_else(|| node.child_by_field_name("parameter")) {
+        if let Some(parameters) = node
+            .child_by_field_name("parameters")
+            .or_else(|| node.child_by_field_name("parameter"))
+        {
             bindings_valid &= collect_binding_pattern(parameters, content, &mut bindings);
         }
         let is_constructor = node.kind() == "new_expression";
         if node.kind() == "call_expression" || is_constructor {
-            let field = if is_constructor { "constructor" } else { "function" };
+            let field = if is_constructor {
+                "constructor"
+            } else {
+                "function"
+            };
             if let Some(callee) = node.child_by_field_name(field) {
                 if callee.kind() == "identifier" {
                     let position = callee.start_position();
@@ -289,11 +325,23 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
             }
         }
         if node.kind() == "call_expression" {
-            if let (Some(function), Some(arguments)) = (node.child_by_field_name("function"), node.child_by_field_name("arguments")) {
-                if function.kind() == "identifier" && matches!(function.utf8_text(content.as_bytes()), Ok("it" | "test")) {
+            if let (Some(function), Some(arguments)) = (
+                node.child_by_field_name("function"),
+                node.child_by_field_name("arguments"),
+            ) {
+                if function.kind() == "identifier"
+                    && matches!(function.utf8_text(content.as_bytes()), Ok("it" | "test"))
+                {
                     let mut arguments_cursor = arguments.walk();
-                    let mut callbacks = arguments.named_children(&mut arguments_cursor)
-                        .filter(|argument| matches!(argument.kind(), "arrow_function" | "function_expression" | "function"));
+                    let mut callbacks =
+                        arguments
+                            .named_children(&mut arguments_cursor)
+                            .filter(|argument| {
+                                matches!(
+                                    argument.kind(),
+                                    "arrow_function" | "function_expression" | "function"
+                                )
+                            });
                     if let Some(callback) = callbacks.next() {
                         if callbacks.next().is_none() {
                             if let Some(body) = callback.child_by_field_name("body") {
@@ -329,7 +377,12 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
             if !cursor.goto_parent() {
                 let mut bindings: Vec<String> = bindings.into_iter().map(str::to_owned).collect();
                 bindings.sort();
-                return TestSyntaxData { valid: bindings_valid, bindings, containers, direct_calls };
+                return TestSyntaxData {
+                    valid: bindings_valid,
+                    bindings,
+                    containers,
+                    direct_calls,
+                };
             }
         }
     }
@@ -1955,8 +2008,9 @@ class Greeter {
 	const values = [1, 2].map(item => item * 2);
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content, 30, None, None)
-            .expect("should parse TypeScript arrow functions");
+        let (_chunks, symbols) =
+            parse_file_with_symbols_internal("arrows.ts", content, 30, None, None)
+                .expect("should parse TypeScript arrow functions");
 
         let arrow_names: Vec<String> = symbols
             .iter()
@@ -1985,8 +2039,9 @@ class Greeter {
 	}
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content, 30, None, None)
-            .expect("should parse exported abstract class");
+        let (_chunks, symbols) =
+            parse_file_with_symbols_internal("animal.ts", content, 30, None, None)
+                .expect("should parse exported abstract class");
 
         assert!(symbols.iter().any(|symbol| {
             symbol.kind == "class_declaration" && symbol.name == "AbstractAnimal"
