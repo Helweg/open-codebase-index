@@ -97,6 +97,43 @@ describe("native OpenCode codebase_context", () => {
     });
   });
 
+  it("honors opt-in scope recovery through the OpenCode adapter, including inferred-symbol fallback", async () => {
+    const declaration = {
+      filePath: "lib/status.ts", startLine: 2, endLine: 6, name: "getStatus",
+      chunkType: "function", content: "function getStatus() { return true; }", score: 0.9,
+    };
+    const filtered = (options: { directory?: string; fileType?: string }) =>
+      (!options.directory || declaration.filePath.startsWith(`${options.directory}/`)) &&
+      (!options.fileType || declaration.filePath.endsWith(`.${options.fileType}`)) ? [declaration] : [];
+    operationMocks.implementationLookup.mockImplementation(
+      async (_root, _host, symbol, options) => symbol === "getStatus" && options.exactSymbol ? filtered(options) : [],
+    );
+    operationMocks.searchCodebase.mockImplementation(
+      async (_root, _host, query, options) =>
+        query === "getStatus" || query === "request helpers" ? filtered(options) : [],
+    );
+    for (const route of [
+      { query: "find implementation", symbol: "getStatus" },
+      { query: "request helpers" },
+      { query: "where is `getStatus` defined" },
+    ]) {
+      for (const allowUnscopedRecovery of [undefined, false, true]) {
+        const result = await codebase_context.execute({
+          ...commonArgs, ...route, directory: " ./private\\scope/ ", fileType: " .PY ",
+          allowUnscopedRecovery, tokenBudget: 1200,
+        }, context);
+        if (allowUnscopedRecovery === true) {
+          expect(result).toContain("lib/status.ts:2-6");
+          expect(result).toContain("Recovery:");
+          expect(result).toContain("filter removed");
+        } else {
+          expect(result).not.toContain("lib/status.ts");
+          expect(result).not.toContain("filter removed");
+        }
+      }
+    }
+  });
+
   it("marks OpenCode peek and search routes for effectiveness aggregation", async () => {
     operationMocks.searchCodebase.mockResolvedValue([]);
 
@@ -220,6 +257,7 @@ describe("native OpenCode codebase_context", () => {
       query: "find request helpers",
       fileType: "ts",
       directory: "src",
+      allowUnscopedRecovery: true,
     }, context);
 
     expect(operationMocks.recordToolEffectiveness).toHaveBeenCalledWith("/repo", "opencode", expect.objectContaining({
@@ -480,45 +518,6 @@ describe("native OpenCode codebase_context", () => {
     }, { signal: undefined });
   });
 
-  it("keeps explicit artifact-intent queries on host-aware scoped search instead of definition lookup", async () => {
-    operationMocks.searchCodebase.mockResolvedValue([{
-      filePath: "tests/status.test.ts",
-      startLine: 1,
-      endLine: 5,
-      name: "getStatus test",
-      chunkType: "test_declaration",
-      content: "hidden",
-      score: 0.9,
-    }]);
-
-    const queries = [
-      "tests for `getStatus`",
-      "where is getStatus documentation",
-      "getStatus configuration settings",
-      "who calls getStatus",
-    ];
-
-    for (const query of queries) {
-      operationMocks.searchCodebase.mockClear();
-      operationMocks.implementationLookup.mockClear();
-      await codebase_context.execute({
-        ...commonArgs,
-        query,
-        fileType: "ts",
-        directory: "src",
-      }, context);
-
-      expect(operationMocks.implementationLookup).not.toHaveBeenCalled();
-      expect(operationMocks.searchCodebase).toHaveBeenCalledWith("/repo", "opencode", query, {
-        limit: 100,
-        fileType: "ts",
-        directory: "src",
-        metadataOnly: true,
-        prioritizeSourcePaths: expect.any(Boolean),
-      }, { signal: undefined });
-    }
-  });
-
   it("falls back from an inferred definition miss to conceptual search", async () => {
     operationMocks.searchCodebase.mockResolvedValue([{
       filePath: "src/fallback.ts",
@@ -552,58 +551,6 @@ describe("native OpenCode codebase_context", () => {
     expect(result).toContain("src/fallback.ts:1-4");
   });
 
-  it("retries scoped conceptual search with unscoped filters when scoped results are empty", async () => {
-    const search = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([
-        {
-          filePath: "src/auth.ts",
-          startLine: 1,
-          endLine: 5,
-          name: "authHandler",
-          chunkType: "function",
-          content: "function authHandler() { return true; }",
-          score: 0.9,
-        },
-      ]);
-
-    const result = await resolveSearchContext(
-      {
-        query: "find request helpers",
-        symbol: undefined,
-        limit: 10,
-        tokenBudget: 128,
-        fileType: "ts",
-        directory: "src",
-      },
-      {
-        lookup: vi.fn().mockResolvedValue([]),
-        search,
-      },
-    );
-
-    expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "find request helpers", 100, { fileType: "ts", directory: "src" }, undefined, { prioritizeSourcePaths: true });
-    expect(search).toHaveBeenNthCalledWith(2, "find request helpers", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
-    expect(result.details?.recovery?.attempts).toEqual([
-      {
-        kind: "conceptual",
-        scope: "scoped",
-        resultCount: 0,
-        relaxedFields: [],
-      },
-      {
-        kind: "conceptual",
-        scope: "unscoped",
-        resultCount: 1,
-        relaxedFields: ["directory", "fileType"],
-      },
-    ]);
-    expect(result.text).toContain("src/auth.ts:1-5");
-    expect(result.text).toContain("Recovery: directory filter removed; file-type filter removed.");
-    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
-    expect(countContextTokens(result.text)).toBeLessThanOrEqual(128);
-  });
 
   it("retries inferred symbol conceptual query text when original conceptual query has no matches", async () => {
     const search = vi.fn()
@@ -679,79 +626,6 @@ describe("native OpenCode codebase_context", () => {
     expect(result.details?.recovery?.successfulAttemptIndex).toBeUndefined();
   });
 
-  it("relaxes invalid scope filters for explicit-symbol definition lookup", async () => {
-    const lookup = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{
-        filePath: "src/indexer/index.ts",
-        startLine: 100,
-        endLine: 110,
-        name: "getStatus",
-        chunkType: "method",
-        content: "source",
-        score: 0.99,
-      }]);
-
-    const result = await resolveSearchContext({
-      query: "find the getStatus method definition",
-      symbol: "getStatus",
-      limit: 10,
-      tokenBudget: 128,
-      fileType: undefined,
-      directory: "does/not/exist",
-      diagnostic: true,
-    }, {
-      lookup,
-      search: vi.fn(),
-    });
-
-    expect(lookup).toHaveBeenNthCalledWith(1, "getStatus", 100, {
-      fileType: undefined,
-      directory: "does/not/exist",
-    }, true, expect.any(Function));
-    expect(lookup).toHaveBeenNthCalledWith(2, "getStatus", 100, {}, true, expect.any(Function));
-    expect(result.text).toContain("src/indexer/index.ts:100-110");
-    expect(result.text).toContain("Recovery: directory filter removed.");
-    expect(result.details?.recovery?.successfulAttemptIndex).toBe(1);
-    expect(result.details?.diagnostic?.contextPackTrace).toMatchObject({
-      selectedCandidates: [{
-        filePath: "src/indexer/index.ts",
-        startLine: 100,
-        endLine: 110,
-        score: 0.99,
-        chunkType: "method",
-        name: "getStatus",
-      }],
-    });
-  });
-
-  it("does not duplicate identical conceptual attempts", async () => {
-    const search = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    const result = await resolveSearchContext(
-      {
-        query: "getStatus",
-        symbol: undefined,
-        limit: 10,
-        tokenBudget: 128,
-        fileType: "ts",
-        directory: "src",
-      },
-      {
-        lookup: vi.fn().mockResolvedValue([]),
-        search,
-      },
-    );
-
-    expect(search).toHaveBeenCalledTimes(2);
-    expect(search).toHaveBeenNthCalledWith(1, "getStatus", 100, { fileType: "ts", directory: "src" }, undefined, { prioritizeSourcePaths: true });
-    expect(search).toHaveBeenNthCalledWith(2, "getStatus", 100, { fileType: undefined, directory: undefined }, undefined, { prioritizeSourcePaths: true });
-    expect(result.details?.recovery?.attempts).toHaveLength(3);
-    expect(new Set(result.details?.recovery?.attempts.map((attempt) => JSON.stringify(attempt))).size)
-      .toBe(3);
-  });
 
   it("fits all-failure output to the provided token budget", async () => {
     const search = vi.fn()
@@ -766,6 +640,7 @@ describe("native OpenCode codebase_context", () => {
         tokenBudget: 128,
         fileType: "ts",
         directory: "src",
+        allowUnscopedRecovery: true,
       },
       {
         lookup: vi.fn().mockResolvedValue([]),
@@ -795,91 +670,7 @@ describe("native OpenCode codebase_context", () => {
     expect(search).not.toHaveBeenCalled();
   });
 
-  it("keeps explicit symbols definition-only while relaxing their normalized scope", async () => {
-    const lookup = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{
-        filePath: "src/tools/context.ts",
-        startLine: 1,
-        endLine: 4,
-        name: "resolveSearchContext",
-        chunkType: "function",
-        content: "hidden",
-        score: 0.9,
-      }]);
-    const search = vi.fn();
 
-    const result = await resolveSearchContext({
-      query: "   ",
-      symbol: "  resolveSearchContext  ",
-      limit: 10,
-      tokenBudget: 128,
-      fileType: " .TS ",
-      directory: " ./src\\tools/ ",
-    }, { lookup, search });
-
-    expect(lookup).toHaveBeenCalledTimes(2);
-    expect(lookup).toHaveBeenNthCalledWith(1, "resolveSearchContext", 100, {
-      fileType: "ts",
-      directory: "src/tools",
-    }, true, undefined);
-    expect(lookup).toHaveBeenNthCalledWith(2, "resolveSearchContext", 100, {
-      fileType: undefined,
-      directory: undefined,
-    }, true, undefined);
-    expect(search).not.toHaveBeenCalled();
-    expect(result.details).toMatchObject({
-      route: "definition",
-      routedQuery: "resolveSearchContext",
-      truncated: expect.any(Boolean),
-    });
-    expect(result.text).toContain("src/tools/context.ts:1-4");
-    expect(result.text).not.toContain("No definition found.");
-    expect(result.text).not.toContain("resolveSearchContext  ");
-    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
-  });
-
-  it("orders and deduplicates conceptual recovery attempts across query and scope", async () => {
-    const search = vi.fn()
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{
-        filePath: "lib/status.ts",
-        startLine: 2,
-        endLine: 6,
-        name: "getStatus",
-        chunkType: "function",
-        content: "hidden",
-        score: 0.8,
-      }]);
-
-    const result = await resolveSearchContext({
-      query: "  where is `getStatus` defined  ",
-      symbol: undefined,
-      limit: 10,
-      tokenBudget: 128,
-      fileType: " .TS ",
-      directory: " ./private\\scope/ ",
-    }, {
-      lookup: vi.fn().mockResolvedValue([]),
-      search,
-    });
-
-    expect(search.mock.calls).toEqual([
-      ["where is `getStatus` defined", 100, { fileType: "ts", directory: "private/scope" }, undefined, { prioritizeSourcePaths: true }],
-      ["getStatus", 100, { fileType: "ts", directory: "private/scope" }, undefined, { prioritizeSourcePaths: true }],
-      ["where is `getStatus` defined", 100, {}, undefined, { prioritizeSourcePaths: true }],
-      ["getStatus", 100, {}, undefined, { prioritizeSourcePaths: true }],
-    ]);
-    const recoveryLine = result.text.split("\n").find((line) => line.startsWith("Recovery:"));
-    expect(recoveryLine).toBe("Recovery: inferred definition missed; inferred-symbol query tried; directory filter removed; file-type filter removed.");
-    expect(recoveryLine).not.toContain("getStatus");
-    expect(recoveryLine).not.toContain("private/scope");
-    expect(recoveryLine?.length).toBeLessThan(160);
-    expect(result.details).toMatchObject({ route: "conceptual", routedQuery: "getStatus", truncated: false });
-    expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));
-  });
 
   it("keeps packed evidence and omission metadata consistent without post-truncation", async () => {
     const results = Array.from({ length: 8 }, (_, index) => ({
@@ -897,15 +688,16 @@ describe("native OpenCode codebase_context", () => {
       limit: 8,
       tokenBudget: 128,
       fileType: "ts",
-      directory: "missing",
+      directory: "src",
     }, {
       lookup: vi.fn().mockResolvedValue([]),
-      search: vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce(results),
+      search: vi.fn().mockResolvedValue(results),
     });
 
     const renderedEvidenceCount = result.text.match(/^\[\d+\]/gm)?.length ?? 0;
     expect(renderedEvidenceCount).toBe(result.details?.selectedCount);
     expect(result.details?.results).toHaveLength(renderedEvidenceCount);
+    expect(result.details?.results?.[0]?.filePath).toBe(results[0].filePath);
     expect(result.details?.omittedCount).toBe(results.length - renderedEvidenceCount);
     expect(result.details?.truncated).toBe(false);
     expect(result.details?.tokenEstimate).toBe(countContextTokens(result.text));

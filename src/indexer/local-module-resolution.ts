@@ -445,38 +445,49 @@ export function getTsConfigModuleResolutionConfigDependencyPaths(
   return dependencies;
 }
 
+export interface LocalModulePathAliasState {
+  resolved: boolean;
+  aliases?: LocalModulePathAliases;
+}
+
 /** Resolves aliases through a local relative `extends` chain, parent first. */
 export function resolveTsConfigForModuleResolution(
   configPath: string,
   loadConfig: (configPath: string) => string | undefined,
 ): LocalModulePathAliases | undefined {
+  return resolveTsConfigAliasState(configPath, loadConfig).aliases;
+}
+
+function resolveTsConfigAliasState(
+  configPath: string,
+  loadConfig: (configPath: string) => string | undefined,
+): LocalModulePathAliasState {
   const configPaths = getTsConfigModuleResolutionConfigPaths(configPath, loadConfig);
-  if (!configPaths) return undefined;
+  if (!configPaths) return { resolved: false };
 
   let baseUrl = ".";
   let aliases: LocalModulePathAlias[] | undefined;
   for (const currentPath of configPaths) {
     const configText = loadConfig(currentPath);
-    if (configText === undefined) return undefined;
+    if (configText === undefined) return { resolved: false };
     const document = parseTsConfigDocument(configText);
-    if (!document) return undefined;
+    if (!document) return { resolved: false };
 
     if (document.compilerOptions.baseUrl !== undefined) {
-      if (typeof document.compilerOptions.baseUrl !== "string") return undefined;
+      if (typeof document.compilerOptions.baseUrl !== "string") return { resolved: false };
       const resolvedBaseUrl = resolveConfigBaseUrl(currentPath, document.compilerOptions.baseUrl);
-      if (!resolvedBaseUrl) return undefined;
+      if (!resolvedBaseUrl) return { resolved: false };
       baseUrl = resolvedBaseUrl;
     }
 
     if (document.compilerOptions.paths !== undefined) {
       const currentAliases = parsePathAliases(document.compilerOptions);
-      if (!currentAliases) return undefined;
+      if (!currentAliases) return { resolved: false };
       aliases = currentAliases.map((alias) => ({ ...alias, baseUrl }));
     }
   }
 
-  if (!aliases || aliases.length === 0) return undefined;
-  return { baseUrl, aliases };
+  return { resolved: true, ...(aliases && aliases.length > 0 ? { aliases: { baseUrl, aliases } } : {}) };
 }
 
 /**
@@ -488,23 +499,22 @@ export function resolveTsConfigForModuleResolution(
 export class TsConfigPathAliasCache {
   private readonly configTextByPath = new Map<string, string | undefined>();
   private readonly nearestConfigByDirectory = new Map<string, string | undefined>();
-  private readonly aliasesByConfigPath = new Map<string, LocalModulePathAliases | undefined>();
+  private readonly aliasesByConfigPath = new Map<string, LocalModulePathAliasState>();
 
   constructor(private readonly loadConfig: (configPath: string) => string | undefined) {}
 
   getPathAliasesForImporter(importerFilePath: string): LocalModulePathAliases | undefined {
+    return this.getPathAliasStateForImporter(importerFilePath).aliases;
+  }
+
+  getPathAliasStateForImporter(importerFilePath: string): LocalModulePathAliasState {
     const configPath = this.findNearestConfigPath(importerFilePath);
-    if (!configPath) return undefined;
-
-    if (this.aliasesByConfigPath.has(configPath)) {
-      return this.aliasesByConfigPath.get(configPath);
-    }
-
-    const aliases = resolveTsConfigForModuleResolution(configPath, (candidate) =>
-      this.loadConfigCached(candidate)
-    );
-    this.aliasesByConfigPath.set(configPath, aliases);
-    return aliases;
+    if (!configPath) return { resolved: true };
+    const cached = this.aliasesByConfigPath.get(configPath);
+    if (cached) return cached;
+    const state = resolveTsConfigAliasState(configPath, (candidate) => this.loadConfigCached(candidate));
+    this.aliasesByConfigPath.set(configPath, state);
+    return state;
   }
 
   getConfigState(importerFilePaths: readonly string[]): LocalModuleResolutionConfigState {
@@ -1368,8 +1378,10 @@ export class LocalModuleCallResolver {
   private readonly loadModule: LocalModuleResolverOptions["loadModule"];
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
+  private readonly moduleRecordContents = new Map<string, string>();
   private readonly goCallClassifiers = new Map<string, (site: CallSiteData) => boolean>();
   private readonly exportCache = new Map<string, SymbolData[]>();
+  private exportCacheEpoch = 0;
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
   private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
   private readonly workspacePackages = new Map<string, LocalWorkspacePackage | null>();
@@ -1384,7 +1396,14 @@ export class LocalModuleCallResolver {
     this.loadModule = options.loadModule;
     this.tsConfigPathAliases = options.tsConfigPathAliases;
     this.pathAliasesForImporter = options.pathAliasesForImporter;
-    for (const workspacePackage of options.workspacePackages ?? []) {
+    this.setWorkspacePackages(options.workspacePackages ?? []);
+  }
+
+  setWorkspacePackages(packages: readonly LocalWorkspacePackage[]): void {
+    this.workspacePackages.clear();
+    this.exportCache.clear();
+    this.exportCacheEpoch++;
+    for (const workspacePackage of packages) {
       const existing = this.workspacePackages.get(workspacePackage.name);
       this.workspacePackages.set(workspacePackage.name, existing === undefined ? workspacePackage : null);
     }
@@ -1396,6 +1415,7 @@ export class LocalModuleCallResolver {
     this.moduleData.set(normalized, Promise.resolve(data));
     if (this.modulePaths.has(normalized)) {
       this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
+      this.moduleRecordContents.set(normalized, data.content);
     }
     if (this.goPackagePaths.has(normalized)) {
       this.goCallClassifiers.set(normalized, createGoDirectCallClassifier(data.content, data.symbols));
@@ -1405,10 +1425,12 @@ export class LocalModuleCallResolver {
     }
   }
 
+  /** Only a source-AST-proven bare callee may opt out of receiver inspection. */
   async resolveCallTarget(
     importerFilePath: string,
     importerContent: string,
     site: CallSiteData,
+    directCallee?: boolean,
   ): Promise<SymbolData | undefined> {
     const importer = normalizeFilePath(importerFilePath);
     if (this.pythonModulePaths.has(importer)) {
@@ -1422,7 +1444,7 @@ export class LocalModuleCallResolver {
     if (!record) return undefined;
 
     const candidates: SymbolData[] = [];
-    const qualifier = namespaceQualifier(importerContent, site);
+    const qualifier = directCallee === true ? undefined : namespaceQualifier(importerContent, site);
     if (!qualifier) {
       for (const binding of record.imports.get(site.calleeName) ?? []) {
         candidates.push(...await this.resolveImportedBinding(importer, binding, site.callType));
@@ -1500,8 +1522,11 @@ export class LocalModuleCallResolver {
   private async getModuleRecord(filePath: string, knownContent?: string): Promise<ModuleRecord | undefined> {
     const normalized = normalizeFilePath(filePath);
     if (knownContent !== undefined) {
+      const existing = this.moduleRecords.get(normalized);
+      if (existing && this.moduleRecordContents.get(normalized) === knownContent) return existing;
       const parsed = Promise.resolve(parseModuleRecord(knownContent));
       this.moduleRecords.set(normalized, parsed);
+      this.moduleRecordContents.set(normalized, knownContent);
       return parsed;
     }
     const existing = this.moduleRecords.get(normalized);
@@ -1687,6 +1712,7 @@ export class LocalModuleCallResolver {
     if (cached) return cached;
     if (visiting.has(cacheKey)) return [];
 
+    const cacheEpoch = this.exportCacheEpoch;
     const nextVisiting = new Set(visiting);
     nextVisiting.add(cacheKey);
     const record = await this.getModuleRecord(normalized);
@@ -1720,7 +1746,8 @@ export class LocalModuleCallResolver {
 
     const filtered = filterCallTargetCandidates(callType, deduplicateSymbols(candidates));
     const result = deduplicateSymbols(filtered);
-    this.exportCache.set(cacheKey, result);
+    // Demanded modules can refresh workspace packages while this traversal awaits.
+    if (cacheEpoch === this.exportCacheEpoch) this.exportCache.set(cacheKey, result);
     return result;
   }
 }

@@ -1,3 +1,4 @@
+import type { SearchTrace } from "../src/indexer/index.js";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
@@ -80,6 +81,88 @@ export function rerankResults(query: string) { return rankHybridResults(query); 
     _indexers = [];
     fetchSpy.mockRestore();
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("keeps normalized context constraints strict unless recovery is explicitly enabled", async () => {
+    const config = parseConfig({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-embedding-model", dimensions: 8 },
+      indexing: { mode: "structural", watchFiles: false, autoIndex: false, requireProjectMarker: false },
+      search: { maxResults: 10, minScore: 0 },
+    });
+    const indexer = new Indexer(tempDir, config, "opencode");
+    _indexers.push(indexer);
+    await indexer.index();
+    const operations = {
+      lookup: (symbol: string, limit: number, scope: { fileType?: string; directory?: string }, exactSymbol: boolean, trace?: (trace: SearchTrace) => void) =>
+        indexer.search(symbol, limit, { ...scope, definitionIntent: exactSymbol, filterByBranch: false, trace }),
+      search: (query: string, limit: number, scope: { fileType?: string; directory?: string }, trace?: (trace: SearchTrace) => void, searchOptions?: { prioritizeSourcePaths?: boolean }) =>
+        indexer.search(query, limit, { ...scope, ...searchOptions, filterByBranch: false, trace }),
+    };
+    const routes = [
+      { query: "find implementation", symbol: "rankHybridResults" },
+      { query: "ranking query length" },
+      { query: "where is `missingHandler` defined" },
+    ];
+    for (const allowUnscopedRecovery of [undefined, false]) {
+      for (const route of routes) {
+        for (const scope of [
+          { directory: " ./absent\\scope/ ", fileType: " .TS " },
+          { directory: " ./app\\indexer/ ", fileType: " .PY " },
+        ]) {
+          const result = await resolveSearchContext({
+            ...route, ...scope, allowUnscopedRecovery, diagnostic: true, tokenBudget: 1200,
+          }, operations);
+          expect(result.details?.results ?? []).toEqual([]);
+          expect(result.text).not.toContain("app/indexer/index.ts:");
+          expect(result.text).not.toContain("filter removed");
+          expect(result.details?.recovery?.attempts.every((attempt) =>
+            attempt.scope === "scoped" && attempt.relaxedFields.length === 0)).toBe(true);
+          expect(result.details?.diagnostic?.searchScope).toEqual({
+            directory: scope.directory.includes("absent") ? "absent/scope" : "app/indexer",
+            fileType: scope.fileType.includes("PY") ? "py" : "ts",
+          });
+        }
+      }
+    }
+    for (const route of routes.slice(0, 2)) {
+      const recovered = await resolveSearchContext({
+        ...route, directory: "absent/scope", fileType: "py", allowUnscopedRecovery: true,
+        diagnostic: true, tokenBudget: 1200,
+      }, operations);
+      expect(recovered.details?.results).toContainEqual(expect.objectContaining({
+        filePath: path.join(tempDir, "app/indexer/index.ts"),
+      }));
+      expect(recovered.text).toContain("Recovery:");
+      expect(recovered.text).toContain("filter removed");
+      expect(recovered.details?.recovery?.attempts[0]).toMatchObject({ scope: "scoped", resultCount: 0, relaxedFields: [] });
+      expect(recovered.details?.recovery?.attempts.at(-1)).toMatchObject({
+        scope: "unscoped", relaxedFields: ["directory", "fileType"],
+      });
+      expect(recovered.details?.diagnostic?.searchScope).toEqual({});
+    }
+    for (const route of routes.slice(0, 2)) {
+      const hit = await resolveSearchContext({
+        ...route, directory: " ./app\\indexer/ ", fileType: " .TS ",
+        allowUnscopedRecovery: true, diagnostic: true, tokenBudget: 1200,
+      }, operations);
+      expect(hit.details?.results).toContainEqual(expect.objectContaining({
+        filePath: path.join(tempDir, "app/indexer/index.ts"),
+      }));
+      expect(hit.details?.results?.every((result) =>
+        result.filePath.startsWith(path.join(tempDir, "app/indexer") + path.sep) && result.filePath.endsWith(".ts"))).toBe(true);
+      expect(hit.details?.diagnostic?.searchScope).toEqual({ directory: "app/indexer", fileType: "ts" });
+      expect(hit.text).not.toContain("filter removed");
+    }
+    for (const route of routes.slice(0, 2)) {
+      const ordinary = await resolveSearchContext({ ...route, diagnostic: true }, operations);
+      const enabled = await resolveSearchContext({
+        ...route, directory: "  ", fileType: "  ", allowUnscopedRecovery: true, diagnostic: true,
+      }, operations);
+      expect(enabled.text).toEqual(ordinary.text);
+      expect(enabled.details?.results).toEqual(ordinary.details?.results);
+      expect(enabled.details?.recovery).toEqual(ordinary.details?.recovery);
+    }
   });
 
   it("returns implementation definitions before fixture/benchmark noise for implementation-intent query", async () => {

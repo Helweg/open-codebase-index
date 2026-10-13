@@ -47,6 +47,7 @@ export interface SharedCodebaseContextArgs {
   directory?: string | null;
   tokenBudget?: number | null;
   diagnostic?: boolean;
+  allowUnscopedRecovery?: boolean;
 }
 
 export interface SharedCodebaseEditContextArgs {

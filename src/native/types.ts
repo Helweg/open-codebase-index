@@ -45,6 +45,33 @@ export interface ParsedFile {
   symbols: ParsedSymbol[];
   hash: string;
   parseFailed?: boolean;
+  testSyntax?: TestSyntaxData;
+}
+
+export interface TestSyntaxData {
+  valid: boolean;
+  bindings: string[];
+  containers: TestContainerData[];
+  directCalls: TestDirectCallPosition[];
+}
+
+export interface TestDirectCallPosition {
+  line: number;
+  column: number;
+  isConstructor: boolean;
+}
+
+export interface TestContainerData {
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+  startByte: number;
+  endByte: number;
+  bodyStartLine: number;
+  bodyStartCol: number;
+  bodyEndLine: number;
+  bodyEndCol: number;
 }
 
 export interface ParsedSymbol {

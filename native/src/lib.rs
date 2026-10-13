@@ -64,11 +64,13 @@ pub fn parse_files(
     files: Vec<FileInput>,
     lines_per_chunk: Option<u32>,
     max_markup_chunks: Option<u32>,
+    include_test_syntax: Option<bool>,
 ) -> Result<Vec<ParsedFile>> {
     parser::parse_files_parallel(
         files,
         lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
         max_markup_chunks.map(|value| value as usize),
+        include_test_syntax.unwrap_or(false),
     )
     .map_err(|e| Error::from_reason(e.to_string()))
 }
@@ -303,6 +305,37 @@ pub struct ParsedFile {
     pub symbols: Vec<ParsedSymbol>,
     pub hash: String,
     pub parse_failed: bool,
+    pub test_syntax: Option<TestSyntaxData>,
+}
+
+#[napi(object)]
+#[derive(Default)]
+pub struct TestSyntaxData {
+    pub valid: bool,
+    pub bindings: Vec<String>,
+    pub containers: Vec<TestContainerData>,
+    pub direct_calls: Vec<TestDirectCallPosition>,
+}
+
+#[napi(object)]
+pub struct TestDirectCallPosition {
+    pub line: u32,
+    pub column: u32,
+    pub is_constructor: bool,
+}
+
+#[napi(object)]
+pub struct TestContainerData {
+    pub start_line: u32,
+    pub start_col: u32,
+    pub end_line: u32,
+    pub end_col: u32,
+    pub start_byte: u32,
+    pub end_byte: u32,
+    pub body_start_line: u32,
+    pub body_start_col: u32,
+    pub body_end_line: u32,
+    pub body_end_col: u32,
 }
 
 #[napi(object)]

@@ -76,6 +76,15 @@ describe("eval schema", () => {
     expect(dataset.queries[0]?.retrievalMode).toBe("context");
   });
 
+  it.each([null, "true", "false", 0, 1, [], {}])("rejects non-boolean recovery option %j", (allowUnscopedRecovery) => {
+    expect(() => parseGoldenDataset({
+      version: "2.3.0", name: "scope-option", queries: [{
+        id: "scope", query: "find definition", queryType: "definition", retrievalMode: "context",
+        args: { allowUnscopedRecovery }, expected: { filePath: "src/status.ts" },
+      }],
+    }, "dataset.json")).toThrow(/allowUnscopedRecovery.*boolean/);
+  });
+
   it("parses architecture planning queries with bounded depth and token cost", () => {
     const dataset = parseGoldenDataset(
       {

@@ -904,6 +904,62 @@ describe("MCP server tools and prompts", () => {
     );
   });
 
+  it("keeps MCP context scope strict until recovery is explicitly requested", async () => {
+    await client.callTool({
+      name: "codebase_context", arguments: { query: "known definition", symbol: "validateToken" },
+    });
+    const indexer = indexerMockState.instances.at(-1);
+    if (!indexer) throw new Error("Missing MCP backing indexer");
+    const declaration = {
+      filePath: "lib/status.ts", startLine: 2, endLine: 6, name: "getStatus",
+      chunkType: "function", content: "function getStatus() { return true; }", score: 0.9,
+    };
+    const sourcePath = `${testMainRepo}/${declaration.filePath}`;
+    fs.mkdirSync(`${testMainRepo}/lib`, { recursive: true });
+    fs.writeFileSync(sourcePath, "\nexport function getStatus() {\n  return true;\n}\n\n// status evidence\n");
+    indexer.getCallGraphSymbols.mockResolvedValue([
+      graphSymbol("status-definition", declaration.name, sourcePath, declaration.startLine),
+    ]);
+    indexer.search.mockImplementation(async (query: string, _limit: number, options: {
+      directory?: string; fileType?: string; definitionIntent?: boolean;
+    }) => {
+      const queryMatches = options.definitionIntent ? query === "getStatus" : query === "request helpers" || query === "missingHandler";
+      const scopeMatches = (!options.directory || declaration.filePath.startsWith(`${options.directory}/`)) &&
+        (!options.fileType || declaration.filePath.endsWith(`.${options.fileType}`));
+      return queryMatches && scopeMatches ? [declaration] : [];
+    });
+    for (const route of [
+      { query: "find implementation", symbol: "getStatus" },
+      { query: "request helpers" },
+      { query: "where is `missingHandler` defined" },
+    ]) {
+      for (const allowUnscopedRecovery of [undefined, false, true]) {
+        const result = await client.callTool({ name: "codebase_context", arguments: {
+          ...route, directory: " ./private\\scope/ ", fileType: " .PY ",
+          ...(allowUnscopedRecovery === undefined ? {} : { allowUnscopedRecovery }),
+          diagnostic: true, tokenBudget: 1200,
+        } });
+        const text = (result.content as Array<{ type: string; text?: string }>)[0]?.text ?? "";
+        const details = result.structuredContent as {
+          results?: Array<{ filePath: string }>;
+          diagnostic?: { searchScope: { directory?: string; fileType?: string } };
+          recovery?: { attempts: Array<{ scope: string; relaxedFields: string[] }> };
+        };
+        if (allowUnscopedRecovery === true) {
+          expect(text).toContain("lib/status.ts:2-6");
+          expect(text).toContain("filter removed");
+          expect(details.recovery?.attempts.at(-1)?.relaxedFields).toEqual(["directory", "fileType"]);
+          expect(details.diagnostic?.searchScope).toEqual({});
+        } else {
+          expect(details.results ?? []).toEqual([]);
+          expect(text).not.toContain("lib/status.ts");
+          expect(text).not.toContain("filter removed");
+          expect(details.diagnostic?.searchScope).toEqual({ directory: "private/scope", fileType: "py" });
+        }
+      }
+    }
+  });
+
   it("should route codebase_context endpoint pairs to call graph paths", async () => {
     const result = await client.callTool({
       name: "codebase_context",

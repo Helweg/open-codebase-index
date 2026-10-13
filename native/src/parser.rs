@@ -1,6 +1,9 @@
 use crate::markup::extract_markup_chunks;
 use crate::types::Language;
-use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol};
+use crate::{
+    CodeChunk, FileInput, ParsedFile, ParsedSymbol, TestContainerData, TestDirectCallPosition,
+    TestSyntaxData,
+};
 use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -93,15 +96,18 @@ pub fn parse_files_parallel(
     files: Vec<FileInput>,
     lines_per_chunk: usize,
     max_markup_chunks: Option<usize>,
+    include_test_syntax: bool,
 ) -> Result<Vec<ParsedFile>> {
     let results: Vec<ParsedFile> = files
         .par_iter()
         .filter_map(|file| {
+            let mut test_syntax = include_test_syntax.then(TestSyntaxData::default);
             let parsed = parse_file_with_symbols_internal(
                 &file.path,
                 &file.content,
                 lines_per_chunk,
                 max_markup_chunks,
+                test_syntax.as_mut(),
             );
             let (chunks, symbols, parse_failed) = match parsed {
                 Ok((chunks, symbols)) => (chunks, symbols, false),
@@ -118,6 +124,7 @@ pub fn parse_files_parallel(
                 symbols,
                 hash,
                 parse_failed,
+                test_syntax,
             })
         })
         .collect();
@@ -130,6 +137,7 @@ fn parse_file_with_symbols_internal(
     content: &str,
     lines_per_chunk: usize,
     max_markup_chunks: Option<usize>,
+    test_syntax: Option<&mut TestSyntaxData>,
 ) -> Result<(Vec<CodeChunk>, Vec<ParsedSymbol>)> {
     let ext = Path::new(file_path)
         .extension()
@@ -190,7 +198,194 @@ fn parse_file_with_symbols_internal(
         .ok_or_else(|| anyhow!("Failed to parse file: {}", file_path))?;
     let chunks = extract_chunks(&tree, content, &language, lines_per_chunk)?;
     let symbols = extract_symbols(&tree, content, &language);
+    if let Some(syntax) = test_syntax {
+        if matches!(
+            language,
+            Language::JavaScript
+                | Language::JavaScriptJsx
+                | Language::TypeScript
+                | Language::TypeScriptTsx
+        ) {
+            *syntax = extract_test_syntax(&tree, content);
+        }
+    }
     Ok((chunks, symbols))
+}
+
+fn collect_binding_pattern<'source>(
+    node: tree_sitter::Node<'_>,
+    content: &'source str,
+    bindings: &mut HashSet<&'source str>,
+) -> bool {
+    let mut pending = Vec::new();
+    let mut current = Some(node);
+    while let Some(pattern) = current.take() {
+        match pattern.kind() {
+            "identifier" | "type_identifier" | "shorthand_property_identifier_pattern" => {
+                let Ok(name) = pattern.utf8_text(content.as_bytes()) else {
+                    return false;
+                };
+                if name.contains('\\') {
+                    return false;
+                }
+                bindings.insert(name);
+            }
+            "pair_pattern"
+            | "assignment_pattern"
+            | "object_assignment_pattern"
+            | "required_parameter"
+            | "optional_parameter" => {
+                let field = match pattern.kind() {
+                    "pair_pattern" => "value",
+                    "required_parameter" | "optional_parameter" => "pattern",
+                    _ => "left",
+                };
+                current = pattern.child_by_field_name(field);
+                if current.is_none() {
+                    return false;
+                }
+            }
+            "formal_parameters" | "object_pattern" | "array_pattern" | "rest_pattern" => {
+                let mut cursor = pattern.walk();
+                for child in pattern.named_children(&mut cursor) {
+                    if current.is_none() {
+                        current = Some(child);
+                    } else {
+                        pending.push(child);
+                    }
+                }
+            }
+            _ => return false,
+        }
+        if current.is_none() {
+            current = pending.pop();
+        }
+    }
+    true
+}
+
+fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
+    let root = tree.root_node();
+    if root.has_error() {
+        return TestSyntaxData::default();
+    }
+    let mut bindings = HashSet::new();
+    let mut containers = Vec::new();
+    let mut direct_calls = Vec::new();
+    let mut cursor = root.walk();
+    let mut bindings_valid = true;
+    loop {
+        let node = cursor.node();
+        match node.kind() {
+            "variable_declarator"
+            | "function_declaration"
+            | "function_expression"
+            | "function"
+            | "generator_function_declaration"
+            | "generator_function"
+            | "class_declaration"
+            | "class"
+            | "abstract_class_declaration"
+            | "enum_declaration" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    bindings_valid &= collect_binding_pattern(name, content, &mut bindings);
+                }
+            }
+            "for_in_statement" if node.child_by_field_name("kind").is_some() => {
+                if let Some(pattern) = node.child_by_field_name("left") {
+                    bindings_valid &= collect_binding_pattern(pattern, content, &mut bindings);
+                } else {
+                    bindings_valid = false;
+                }
+            }
+            _ => {}
+        }
+        if let Some(parameters) = node
+            .child_by_field_name("parameters")
+            .or_else(|| node.child_by_field_name("parameter"))
+        {
+            bindings_valid &= collect_binding_pattern(parameters, content, &mut bindings);
+        }
+        let is_constructor = node.kind() == "new_expression";
+        if node.kind() == "call_expression" || is_constructor {
+            let field = if is_constructor {
+                "constructor"
+            } else {
+                "function"
+            };
+            if let Some(callee) = node.child_by_field_name(field) {
+                if callee.kind() == "identifier" {
+                    let position = callee.start_position();
+                    direct_calls.push(TestDirectCallPosition {
+                        line: position.row as u32 + 1,
+                        column: position.column as u32,
+                        is_constructor,
+                    });
+                }
+            }
+        }
+        if node.kind() == "call_expression" {
+            if let (Some(function), Some(arguments)) = (
+                node.child_by_field_name("function"),
+                node.child_by_field_name("arguments"),
+            ) {
+                if function.kind() == "identifier"
+                    && matches!(function.utf8_text(content.as_bytes()), Ok("it" | "test"))
+                {
+                    let mut arguments_cursor = arguments.walk();
+                    let mut callbacks =
+                        arguments
+                            .named_children(&mut arguments_cursor)
+                            .filter(|argument| {
+                                matches!(
+                                    argument.kind(),
+                                    "arrow_function" | "function_expression" | "function"
+                                )
+                            });
+                    if let Some(callback) = callbacks.next() {
+                        if callbacks.next().is_none() {
+                            if let Some(body) = callback.child_by_field_name("body") {
+                                let start = node.start_position();
+                                let end = node.end_position();
+                                let body_start = body.start_position();
+                                let body_end = body.end_position();
+                                containers.push(TestContainerData {
+                                    start_line: start.row as u32 + 1,
+                                    start_col: start.column as u32,
+                                    end_line: end.row as u32 + 1,
+                                    end_col: end.column as u32,
+                                    start_byte: node.start_byte() as u32,
+                                    end_byte: node.end_byte() as u32,
+                                    body_start_line: body_start.row as u32 + 1,
+                                    body_start_col: body_start.column as u32,
+                                    body_end_line: body_end.row as u32 + 1,
+                                    body_end_col: body_end.column as u32,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if cursor.goto_first_child() {
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                let mut bindings: Vec<String> = bindings.into_iter().map(str::to_owned).collect();
+                bindings.sort();
+                return TestSyntaxData {
+                    valid: bindings_valid,
+                    bindings,
+                    containers,
+                    direct_calls,
+                };
+            }
+        }
+    }
 }
 
 fn is_markup_file_path(file_path: &str) -> bool {
@@ -1504,7 +1699,7 @@ exports.generator = function*(parameter) { yield parameter; };";
             "expressions.tsx",
         ] {
             let (chunks, symbols) =
-                parse_file_with_symbols_internal(path, source, 30, None).unwrap();
+                parse_file_with_symbols_internal(path, source, 30, None, None).unwrap();
             let names = [
                 "getCallers",
                 "loadNamed",
@@ -1564,7 +1759,7 @@ val answer: Int = 7"#;
         );
         for path in ["nested.kt", "nested.kts"] {
             let (chunks, symbols) =
-                parse_file_with_symbols_internal(path, source, 30, None).unwrap();
+                parse_file_with_symbols_internal(path, source, 30, None, None).unwrap();
             let expected = vec![
                 ("Named", "class_declaration"),
                 ("Factory", "class_declaration"),
@@ -1813,8 +2008,9 @@ class Greeter {
 	const values = [1, 2].map(item => item * 2);
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("arrows.ts", content, 30, None)
-            .expect("should parse TypeScript arrow functions");
+        let (_chunks, symbols) =
+            parse_file_with_symbols_internal("arrows.ts", content, 30, None, None)
+                .expect("should parse TypeScript arrow functions");
 
         let arrow_names: Vec<String> = symbols
             .iter()
@@ -1843,8 +2039,9 @@ class Greeter {
 	}
 	"#;
 
-        let (_chunks, symbols) = parse_file_with_symbols_internal("animal.ts", content, 30, None)
-            .expect("should parse exported abstract class");
+        let (_chunks, symbols) =
+            parse_file_with_symbols_internal("animal.ts", content, 30, None, None)
+                .expect("should parse exported abstract class");
 
         assert!(symbols.iter().any(|symbol| {
             symbol.kind == "class_declaration" && symbol.name == "AbstractAnimal"
@@ -2171,7 +2368,7 @@ end
 "#;
 
         let (_, symbols) =
-            parse_file_with_symbols_internal("rack/protection.rb", content, 30, None)
+            parse_file_with_symbols_internal("rack/protection.rb", content, 30, None, None)
                 .expect("should parse nested Ruby modules");
         assert!(
             symbols

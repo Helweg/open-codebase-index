@@ -179,8 +179,11 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         schema.Null(),
       ], { default: 10, description: `Maximum call-graph traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})` })),
       diagnostic: schema.Optional(schema.Union([schema.Boolean(), schema.Null()], { description: "Collect diagnostic routing and search traces without changing normal output." })),
-      fileType: schema.Optional(schema.Union([schema.String(), schema.Null()], { description: "Filter by file extension, e.g., ts, py, rs" })),
-      directory: schema.Optional(schema.Union([schema.String(), schema.Null()], { description: "Filter by directory path" })),
+      fileType: schema.Optional(schema.Union([schema.String(), schema.Null()], { description: "Retrieval-route filter by file extension; not used for from/to graph paths." })),
+      directory: schema.Optional(schema.Union([schema.String(), schema.Null()], { description: "Retrieval-route filter by directory path; not used for from/to graph paths." })),
+      allowUnscopedRecovery: schema.Optional(schema.Union([schema.Boolean(), schema.Null()], {
+        description: "Allow definition and conceptual retrieval fallbacks to remove supplied fileType/directory filters after a scoped miss. Defaults to false; only true enables recovery.",
+      })),
       tokenBudget: schema.Optional(schema.Union([
         schema.Integer({ minimum: MIN_CONTEXT_PACK_TOKEN_BUDGET, maximum: MAX_CONTEXT_PACK_TOKEN_BUDGET }),
         schema.Null(),
@@ -193,6 +196,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       const normalizedParams = {
         ...params,
         diagnostic: params.diagnostic ?? undefined,
+        allowUnscopedRecovery: params.allowUnscopedRecovery ?? undefined,
       };
       const result = await resolveCodebaseContext(projectRoot(ctx), HOST, normalizedParams, { signal });
       return text(result.text, result.details);

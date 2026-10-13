@@ -337,6 +337,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
           symbol: query.args?.symbol,
           fileType: query.args?.fileType,
           directory: query.args?.directory,
+          allowUnscopedRecovery: query.args?.allowUnscopedRecovery,
           limit: 10,
           tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
         }, {
@@ -359,7 +360,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         : undefined;
       const result = architectureResult?.results
         ?? editContextResult?.results
-        ?? contextResult?.details?.results
+        ?? (contextResult ? contextResult.details?.results ?? [] : undefined)
         ?? await indexer.search(query.query, 10, {
           metadataOnly: true,
           filterByBranch: !!query.expected.branch,

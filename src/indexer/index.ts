@@ -516,6 +516,13 @@ export interface IndexOperationOptions {
   onProviderError?: (error: ProviderRequestError) => void;
 }
 
+export interface KeywordFileCandidateResult {
+  filePaths: string[];
+  capped: boolean;
+}
+
+export const MAX_KEYWORD_FILE_CANDIDATE_CHUNKS = 800;
+
 export interface HealthCheckResult {
   removed: number;
   filePaths: string[];
@@ -6747,6 +6754,8 @@ export class Indexer {
     branchChunkIds: Set<string> | null = null,
     shouldPrefilterByBranch = false,
     temporalChunkIds: Set<string> | null = null,
+    indexedMetadata?: ReadonlyMap<string, ChunkMetadata>,
+    onCandidateCap?: () => void,
   ): Promise<Array<{ id: string; score: number; metadata: ChunkMetadata }>> {
     const normalizedLimit = Math.max(0, Math.floor(limit));
     if (normalizedLimit === 0) return [];
@@ -6755,14 +6764,18 @@ export class Indexer {
       shouldPrefilterByBranch ? branchChunkIds : null,
       temporalChunkIds,
     );
-    const scoreEntries = this.searchCandidatesWithAllowedIds(
-      normalizedLimit,
-      invertedIndex.getDocumentCount(),
-      allowedChunkIds,
-      allowedChunkIds !== null,
-      (requestedLimit) => Array.from(invertedIndex.search(query, requestedLimit)),
-      ([chunkId]) => chunkId,
-    );
+    const nativeScores = indexedMetadata ? invertedIndex.search(query, normalizedLimit) : undefined;
+    if (nativeScores && nativeScores.size >= normalizedLimit) onCandidateCap?.();
+    const scoreEntries = nativeScores
+      ? Array.from(nativeScores).filter(([chunkId]) => !allowedChunkIds || allowedChunkIds.has(chunkId))
+      : this.searchCandidatesWithAllowedIds(
+          normalizedLimit,
+          invertedIndex.getDocumentCount(),
+          allowedChunkIds,
+          allowedChunkIds !== null,
+          (requestedLimit) => Array.from(invertedIndex.search(query, requestedLimit)),
+          ([chunkId]) => chunkId,
+        );
     const scores = new Map(scoreEntries);
 
     if (scores.size === 0) {
@@ -6771,13 +6784,12 @@ export class Indexer {
 
     // Only fetch metadata for chunks returned by BM25 (O(n) where n = result count)
     // instead of getAllMetadata() which fetches ALL chunks in the index
-    const chunkIds = Array.from(scores.keys());
-    const metadataMap = store
-      ? store.getMetadataBatch(chunkIds)
-      : new Map(chunkIds.flatMap((chunkId) => {
+    const metadataMap = indexedMetadata ?? (store
+      ? store.getMetadataBatch(Array.from(scores.keys()))
+      : new Map(Array.from(scores.keys()).flatMap((chunkId) => {
           const chunk = database.getChunk(chunkId);
           return chunk ? [[chunkId, this.chunkMetadataFromData(chunk)] as const] : [];
-        }));
+        })));
 
     const results: Array<{ id: string; score: number; metadata: ChunkMetadata }> = [];
     for (const [chunkId, score] of scores) {
@@ -7904,6 +7916,63 @@ export class Indexer {
     const resolvedBranch = this.resolveBranchCatalogKey(branch);
     return database.getSymbolsForBranch(resolvedBranch)
       .map((symbol) => this.resolveFilePathRecord(symbol));
+  }
+
+  /** Provider-free, active-branch lexical file navigation for bounded source verification. */
+  async getKeywordFileCandidates(
+    queries: readonly string[],
+    allowedFilePaths: readonly string[],
+    limit: number,
+    options: IndexOperationOptions = {},
+  ): Promise<KeywordFileCandidateResult> {
+    throwIfOperationAborted(options.signal);
+    const { database, invertedIndex, readIssues } = await this.ensureInitialized();
+    this.requireReadableComponents(readIssues, "database", "keyword");
+    throwIfOperationAborted(options.signal);
+    const branchChunkIds = new Set(this.getBranchCatalogKeys().flatMap((key) => database.getBranchChunkIds(key)));
+    const metadata = new Map<string, ChunkMetadata>();
+    const allowedFiles = [...new Set(allowedFilePaths
+      .map((filePath) => this.toCanonicalFilePath(filePath))
+      .filter((filePath) => isPathWithinRoot(filePath, this.projectRoot))
+      .map((filePath) => this.toStoredFilePath(filePath)))].sort();
+    // Reuse each file's batch once; no per-chunk SQLite lookups or source reads.
+    for (const filePath of allowedFiles) {
+      throwIfOperationAborted(options.signal);
+      for (const chunk of database.getChunksByFile(filePath)) {
+        if (branchChunkIds.has(chunk.chunkId)) metadata.set(chunk.chunkId, this.chunkMetadataFromData(chunk));
+      }
+      await options.heartbeat?.();
+    }
+    if (metadata.size === 0) return { filePaths: [], capped: false };
+    const allowedChunkIds = new Set(metadata.keys());
+    const identifiers = [...new Set(queries)];
+    let capped = identifiers.length > 9;
+    const markCapped = (): void => { capped = true; };
+    const groups: string[][] = [];
+    const allFiles = new Set<string>();
+    for (const query of identifiers.slice(0, 9)) {
+      throwIfOperationAborted(options.signal);
+      const candidates = await this.keywordSearch(query, MAX_KEYWORD_FILE_CANDIDATE_CHUNKS,
+        null, invertedIndex, database, allowedChunkIds, true, null, metadata, markCapped);
+      capped ||= candidates.length >= MAX_KEYWORD_FILE_CANDIDATE_CHUNKS;
+      candidates.sort((left, right) => right.score - left.score
+        || left.metadata.filePath.localeCompare(right.metadata.filePath)
+        || left.metadata.startLine - right.metadata.startLine || left.id.localeCompare(right.id));
+      const files = [...new Set(candidates.map((candidate) => this.resolveStoredFilePath(candidate.metadata.filePath)))];
+      for (const filePath of files) allFiles.add(filePath);
+      groups.push(files);
+      await options.heartbeat?.();
+    }
+    const selected = new Set<string>();
+    const maxFiles = Math.max(0, Math.floor(limit));
+    for (let depth = 0; selected.size < Math.min(maxFiles, allFiles.size); depth += 1) {
+      for (const group of groups) {
+        const filePath = group[depth];
+        if (filePath && selected.size < maxFiles) selected.add(filePath);
+      }
+    }
+    throwIfOperationAborted(options.signal);
+    return { filePaths: [...selected], capped: capped || allFiles.size > selected.size };
   }
 
   async getIndexedFilePathsForActiveBranch(): Promise<string[]> {
