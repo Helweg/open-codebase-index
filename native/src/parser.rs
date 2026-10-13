@@ -1,6 +1,6 @@
 use crate::markup::extract_markup_chunks;
 use crate::types::Language;
-use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol, TestContainerData, TestSyntaxData};
+use crate::{CodeChunk, FileInput, ParsedFile, ParsedSymbol, TestContainerData, TestDirectCallPosition, TestSyntaxData};
 use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -203,28 +203,43 @@ fn parse_file_with_symbols_internal(
     Ok((chunks, symbols))
 }
 
-fn collect_binding_pattern(node: tree_sitter::Node<'_>, content: &str, bindings: &mut HashSet<String>) -> bool {
-    match node.kind() {
-        "identifier" | "type_identifier" | "shorthand_property_identifier_pattern" => {
-            let Ok(name) = node.utf8_text(content.as_bytes()) else { return false; };
-            if !bindings.contains(name) {
-                bindings.insert(name.to_owned());
+fn collect_binding_pattern<'source>(node: tree_sitter::Node<'_>, content: &'source str, bindings: &mut HashSet<&'source str>) -> bool {
+    let mut pending = Vec::new();
+    let mut current = Some(node);
+    while let Some(pattern) = current.take() {
+        match pattern.kind() {
+            "identifier" | "type_identifier" | "shorthand_property_identifier_pattern" => {
+                let Ok(name) = pattern.utf8_text(content.as_bytes()) else { return false; };
+                if name.contains('\\') { return false; }
+                bindings.insert(name);
             }
-            true
+            "pair_pattern" | "assignment_pattern" | "object_assignment_pattern"
+            | "required_parameter" | "optional_parameter" => {
+                let field = match pattern.kind() {
+                    "pair_pattern" => "value",
+                    "required_parameter" | "optional_parameter" => "pattern",
+                    _ => "left",
+                };
+                current = pattern.child_by_field_name(field);
+                if current.is_none() { return false; }
+            }
+            "formal_parameters" | "object_pattern" | "array_pattern" | "rest_pattern" => {
+                let mut cursor = pattern.walk();
+                for child in pattern.named_children(&mut cursor) {
+                    if current.is_none() {
+                        current = Some(child);
+                    } else {
+                        pending.push(child);
+                    }
+                }
+            }
+            _ => return false,
         }
-        "pair_pattern" => node.child_by_field_name("value")
-            .is_some_and(|value| collect_binding_pattern(value, content, bindings)),
-        "assignment_pattern" | "object_assignment_pattern" => node.child_by_field_name("left")
-            .is_some_and(|left| collect_binding_pattern(left, content, bindings)),
-        "required_parameter" | "optional_parameter" => node.child_by_field_name("pattern")
-            .is_some_and(|pattern| collect_binding_pattern(pattern, content, bindings)),
-        "formal_parameters" | "object_pattern" | "array_pattern" | "rest_pattern" => {
-            let mut cursor = node.walk();
-            let complete = node.named_children(&mut cursor).all(|child| collect_binding_pattern(child, content, bindings));
-            complete
+        if current.is_none() {
+            current = pending.pop();
         }
-        _ => false,
     }
+    true
 }
 
 fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
@@ -234,6 +249,7 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
     }
     let mut bindings = HashSet::new();
     let mut containers = Vec::new();
+    let mut direct_calls = Vec::new();
     let mut cursor = root.walk();
     let mut bindings_valid = true;
     loop {
@@ -245,10 +261,31 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
                     bindings_valid &= collect_binding_pattern(name, content, &mut bindings);
                 }
             }
+            "for_in_statement" if node.child_by_field_name("kind").is_some() => {
+                if let Some(pattern) = node.child_by_field_name("left") {
+                    bindings_valid &= collect_binding_pattern(pattern, content, &mut bindings);
+                } else {
+                    bindings_valid = false;
+                }
+            }
             _ => {}
         }
         if let Some(parameters) = node.child_by_field_name("parameters").or_else(|| node.child_by_field_name("parameter")) {
             bindings_valid &= collect_binding_pattern(parameters, content, &mut bindings);
+        }
+        let is_constructor = node.kind() == "new_expression";
+        if node.kind() == "call_expression" || is_constructor {
+            let field = if is_constructor { "constructor" } else { "function" };
+            if let Some(callee) = node.child_by_field_name(field) {
+                if callee.kind() == "identifier" {
+                    let position = callee.start_position();
+                    direct_calls.push(TestDirectCallPosition {
+                        line: position.row as u32 + 1,
+                        column: position.column as u32,
+                        is_constructor,
+                    });
+                }
+            }
         }
         if node.kind() == "call_expression" {
             if let (Some(function), Some(arguments)) = (node.child_by_field_name("function"), node.child_by_field_name("arguments")) {
@@ -289,9 +326,9 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
                 break;
             }
             if !cursor.goto_parent() {
-                let mut bindings: Vec<String> = bindings.into_iter().collect();
+                let mut bindings: Vec<String> = bindings.into_iter().map(str::to_owned).collect();
                 bindings.sort();
-                return TestSyntaxData { valid: bindings_valid, bindings, containers };
+                return TestSyntaxData { valid: bindings_valid, bindings, containers, direct_calls };
             }
         }
     }

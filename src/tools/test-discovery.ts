@@ -104,6 +104,8 @@ interface SourceEvidence {
   bindings: Set<string>;
   containersByCall: Map<CallSiteData, TestContainer>;
   containerContents: Map<TestContainer, string>;
+  directCalls: Set<string>;
+  sourceBytes?: Buffer;
   content: string;
 }
 
@@ -139,13 +141,9 @@ function parseSource(filePath: string, content: string): SourceEvidence | undefi
     if (active.length > 0) containersByCall.set(call, active[active.length - 1]);
   }
   const containerContents = new Map<TestContainer, string>();
-  if (containers.length > 0) {
-    const bytes = Buffer.from(content);
-    for (const container of containers) {
-      containerContents.set(container, bytes.subarray(container.startByte, container.endByte).toString("utf8"));
-    }
-  }
-  return { parsed, content, calls, lines: content.split("\n"), bindings: new Set(parsed.testSyntax.bindings), containersByCall, containerContents };
+  const directCalls = new Set(parsed.testSyntax.directCalls.map((call) =>
+    `${call.line}:${call.column}:${call.isConstructor ? "Constructor" : "Call"}`));
+  return { parsed, content, calls, lines: content.split("\n"), bindings: new Set(parsed.testSyntax.bindings), containersByCall, containerContents, directCalls };
 }
 
 function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, definition: SearchResult, root: string): boolean {
@@ -153,9 +151,8 @@ function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, d
     && reference.startLine >= definition.startLine && reference.startLine <= definition.endLine;
 }
 
-function executableReference(call: CallSiteData, name: string): boolean {
-  // Import, inheritance and arbitrary obj.name() do not prove an executable reference to name.
-  return call.calleeName === name && (call.callType === "Call" || call.callType === "Constructor");
+function executableReference(source: SourceEvidence, call: CallSiteData, name: string): boolean {
+  return call.calleeName === name && source.directCalls.has(`${call.line}:${call.column}:${call.callType}`);
 }
 
 function declaresName(source: SourceEvidence, name: string): boolean {
@@ -251,10 +248,10 @@ export async function discoverSymbolTests(
     const callerContent = await readSource(root, callerPath, markCapped, control);
     const source = callerContent === undefined ? undefined : parseSource(callerPath, callerContent);
     if (!source || declaresName(source, symbol)) continue;
-    const sourceCall = source.calls.find((call) => executableReference(call, symbol) && call.line === edge.line);
+    const sourceCall = source.calls.find((call) => executableReference(source, call, symbol) && call.line === edge.line);
     if (!sourceCall) continue;
     resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
-    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall);
+    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall, true);
     throwIfOperationAborted(control?.signal);
     if (!resolvedReferenceMatchesDefinition(targetReference, target, root)) continue;
     const exportedCandidates = new Set<SourceEvidence["parsed"]["symbols"][number]>();
@@ -303,21 +300,26 @@ export async function discoverSymbolTests(
     resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
     const names = [symbol, ...callerDefinitionsByName.keys()].filter((name) => !declaresName(source, name));
     for (const call of source.calls) {
-      if (!names.some((name) => executableReference(call, name))) continue;
+      if (!names.some((name) => executableReference(source, call, name))) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
       const expectedDefinition = call.calleeName === symbol ? target : callerDefinitionsByName.get(call.calleeName);
       if (!expectedDefinition) continue;
-      const reference = await resolver.resolveCallTarget(filePath, source.content, call);
-      throwIfOperationAborted(control?.signal);
-      if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition, root)) continue;
       const direct = call.calleeName === symbol;
       const startLine = container.startLine;
       const endLine = container.endLine;
       const key = `${filePath}:${container.startByte}:${container.endByte}`;
       const previous = references.get(key);
       if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
-      const content = source.containerContents.get(container)!;
+      const reference = await resolver.resolveCallTarget(filePath, source.content, call, true);
+      throwIfOperationAborted(control?.signal);
+      if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition, root)) continue;
+      let content = source.containerContents.get(container);
+      if (content === undefined) {
+        source.sourceBytes ??= Buffer.from(source.content);
+        content = source.sourceBytes.subarray(container.startByte, container.endByte).toString("utf8");
+        source.containerContents.set(container, content);
+      }
       const candidate: TestReferenceResult = {
         filePath: path.resolve(root, filePath), startLine, endLine,
         content, score: direct ? 1 : relatedReferenceScore(content, targetTerms),

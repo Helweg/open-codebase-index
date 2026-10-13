@@ -28,7 +28,11 @@ interface TestBindingResolver {
   resolveCallTarget: LocalModuleCallResolver["resolveCallTarget"];
 }
 
-class ConfigurationUncertainError extends Error {}
+class ConfigurationUncertainError extends Error {
+  constructor(filePath: string, readonly bounded = true) {
+    super(filePath);
+  }
+}
 
 /** Reuses indexing's resolver; uncertain nearer configuration fails linkage closed. */
 export async function createTestBindingResolver(
@@ -42,22 +46,54 @@ export async function createTestBindingResolver(
   const configurations = new Map<string, string | undefined>();
   const unknownConfigurations = new Set<string>();
   const requested = new Set<string>();
+  const importers = new Set<string>();
   let loadingRounds = 0;
+  let workspacePackages: readonly LocalWorkspacePackage[] = [];
+  let packageKey: string | undefined;
+  let packageGeneration = 0;
+  let moduleResolver: LocalModuleCallResolver | undefined;
   const requestConfiguration = (filePath: string): string | undefined => {
     requested.add(filePath);
     return configurations.get(filePath);
   };
+  const cachedConfiguration = (filePath: string): string | undefined => {
+    if (!configurations.has(filePath)) throw new ConfigurationUncertainError(filePath);
+    return configurations.get(filePath);
+  };
+  const refreshPackages = (): void => {
+    try {
+      workspacePackages = getLocalWorkspacePackages([...importers], cachedConfiguration);
+    } catch (error: unknown) {
+      if (!(error instanceof ConfigurationUncertainError)) throw error;
+      markCapped();
+      workspacePackages = [];
+    }
+    const nextKey = workspacePackages.map((item) => `${item.name}\0${item.rootPath}`).sort().join("\n");
+    if (nextKey !== packageKey) {
+      packageKey = nextKey;
+      packageGeneration += 1;
+      moduleResolver?.setWorkspacePackages(workspacePackages);
+    }
+  };
   const loadImporters = async (filePaths: string[]): Promise<void> => {
+    let changed = false;
+    for (const filePath of filePaths) {
+      if (!importers.has(filePath)) {
+        importers.add(filePath);
+        changed = true;
+      }
+    }
     while (true) {
       getLocalWorkspacePackages(filePaths, requestConfiguration);
       new TsConfigPathAliasCache(requestConfiguration).getConfigState(filePaths);
       const missing = [...requested].filter((filePath) =>
         !configurations.has(filePath) && !unknownConfigurations.has(filePath));
-      if (missing.length === 0) return;
+      if (missing.length === 0) break;
       const capacity = TEST_DISCOVERY_MAX_CONFIG_FILES - configurations.size - unknownConfigurations.size;
-      if (capacity <= 0 || loadingRounds >= 4) { markCapped(); return; }
+      if (capacity <= 0 || loadingRounds >= 4) { markCapped(); break; }
       if (missing.length > capacity) markCapped();
       loadingRounds += 1;
+      changed = true;
       for (const filePath of missing.slice(0, capacity)) {
         throwIfOperationAborted(control?.signal);
         const state = await readConfiguration(filePath);
@@ -69,26 +105,19 @@ export async function createTestBindingResolver(
         }
       }
     }
+    if (changed) refreshPackages();
   };
   await loadImporters(configurationImporters);
-  const cachedConfiguration = (filePath: string): string | undefined => {
-    if (!configurations.has(filePath)) throw new ConfigurationUncertainError(filePath);
-    return configurations.get(filePath);
-  };
   const aliases = new TsConfigPathAliasCache(cachedConfiguration);
-  let workspacePackages: readonly LocalWorkspacePackage[];
-  try {
-    workspacePackages = getLocalWorkspacePackages(configurationImporters, cachedConfiguration);
-  } catch (error: unknown) {
-    if (!(error instanceof ConfigurationUncertainError)) throw error;
-    markCapped();
-    workspacePackages = [];
-  }
   let moduleReads = 0;
-  const moduleResolver = new LocalModuleCallResolver({
+  const resolver = new LocalModuleCallResolver({
     filePaths: inventory,
     workspacePackages,
-    pathAliasesForImporter: (filePath) => aliases.getPathAliasesForImporter(filePath),
+    pathAliasesForImporter: (filePath) => {
+      const state = aliases.getPathAliasStateForImporter(filePath);
+      if (!state.resolved) throw new ConfigurationUncertainError(filePath, false);
+      return state.aliases;
+    },
     loadModule: async (filePath) => {
       throwIfOperationAborted(control?.signal);
       if (moduleReads >= TEST_DISCOVERY_MAX_MODULE_FILES) { markCapped(); return undefined; }
@@ -103,15 +132,18 @@ export async function createTestBindingResolver(
       return testModuleData(filePath, content, parsed);
     },
   });
+  moduleResolver = resolver;
   return {
-    moduleResolver,
+    moduleResolver: resolver,
     loadImporters,
-    resolveCallTarget: async (filePath, content, call) => {
+    resolveCallTarget: async (filePath, content, call, directCallee) => {
+      const generation = packageGeneration;
       try {
-        return await moduleResolver.resolveCallTarget(filePath, content, call);
+        const result = await resolver.resolveCallTarget(filePath, content, call, directCallee);
+        return generation === packageGeneration ? result : undefined;
       } catch (error: unknown) {
         if (!(error instanceof ConfigurationUncertainError)) throw error;
-        markCapped();
+        if (error.bounded) markCapped();
         return undefined;
       }
     },

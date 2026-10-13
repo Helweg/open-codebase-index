@@ -52,6 +52,13 @@ export interface TestSyntaxData {
   valid: boolean;
   bindings: string[];
   containers: TestContainerData[];
+  directCalls: TestDirectCallPosition[];
+}
+
+export interface TestDirectCallPosition {
+  line: number;
+  column: number;
+  isConstructor: boolean;
 }
 
 export interface TestContainerData {

@@ -367,6 +367,125 @@ it('uses signalGate through an incompletely probed local alias chain', () => {
     expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
   });
 
+  it("rejects destructured declarations in for-of loop headers as imported target evidence", async () => {
+    await writeSource("tests/loop-shadow/loop.test.ts", `import { signalGate } from '../../src/gate.js';
+it('uses a destructured local substitute', () => {
+  for (const { signalGate } of substitutes) {
+    expect(signalGate([false])).toBe(false);
+  }
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/loop-shadow" });
+    expect(response.details?.results?.some((result) => result.filePath.endsWith("loop.test.ts"))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("requires a bare JavaScript callee rather than an object or this receiver", async () => {
+    for (const receiver of ["unrelated", "this"]) {
+      await writeSource(`tests/js-methods/${receiver}.test.js`, `import { signalGate } from '../../src/gate.js';
+it('uses a receiver method rather than the imported signalGate', function () {
+  expect(${receiver}.signalGate([false])).toBe(false);
+});
+`);
+    }
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/js-methods" });
+    expect(new Set(response.details?.results?.map((result) => path.relative(root, result.filePath)))).toEqual(
+      new Set(["tests/js-methods/unrelated.test.js", "tests/js-methods/this.test.js"]),
+    );
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("incorporates selected package manifests before resolving a conflicting self-reference", async () => {
+    await writeSource("package.json", JSON.stringify({ name: "gate-package", type: "module", exports: "./src/gate.js" }));
+    await writeSource("tests/self/package.json", JSON.stringify({ name: "gate-package", type: "module", exports: "./foreign.js" }));
+    await writeSource("src/foreign.ts", "export function foreignGate(inputs: boolean[]) { return false; }\n");
+    await writeSource("tests/self/foreign.js", "export { foreignGate as signalGate } from '../../src/foreign.js';\n");
+    await writeSource("tests/self/alias.test.js", `import { signalGate } from 'gate-package';
+it('uses the selected package self-reference, not the root package', () => {
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/self" });
+    expect(response.details?.results?.some((result) => result.filePath.endsWith("alias.test.js"))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("allows resolved no-alias configuration but rejects workspace fallback through unresolved extends", async () => {
+    await writeSource("package.json", JSON.stringify({ name: "@logic/gate", type: "module", exports: "./src/gate.js" }));
+    await writeSource("src/foreign.ts", "export function foreignGate(inputs: boolean[]) { return false; }\n");
+    await writeSource("tests/resolved/tsconfig.json", JSON.stringify({ compilerOptions: { strict: true } }));
+    await writeSource("tests/resolved/alias.test.ts", `import { signalGate } from '@logic/gate';
+it('uses a resolved configuration without aliases', () => {
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await writeSource("tests/unresolved/tsconfig.json", JSON.stringify({
+      extends: "shared-tsconfig", compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["foreign.ts"] } },
+    }));
+    await writeSource("tests/unresolved/foreign.ts", "export { foreignGate as signalGate } from '../../src/foreign.js';\n");
+    await writeSource("tests/unresolved/alias.test.ts", `import { signalGate } from '@logic/gate';
+it('uses a foreign path mapping whose package extends cannot be resolved here', () => {
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const resolved = await retrieve({ directory: "tests/resolved" });
+    expect(resolved.details?.results?.map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind,
+    }))).toEqual([{ file: "tests/resolved/alias.test.ts", kind: "direct_target_test_reference" }]);
+    const unresolved = await retrieve({ directory: "tests/unresolved" });
+    expect(unresolved.details?.results?.some((result) => result.filePath.endsWith("alias.test.ts"))).toBe(true);
+    expect(unresolved.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("fails escaped declaration, function and parameter binding spellings closed", async () => {
+    const forms = [
+      `it('uses an escaped declaration', () => {
+  const signal\\u0047ate = foreignGate;
+  expect(signalGate([false])).toBe(false);
+});`,
+      `it('uses an escaped local function', () => {
+  function signal\\u0047ate(inputs) { return foreignGate(inputs); }
+  expect(signalGate([false])).toBe(false);
+});`,
+      `it('uses an escaped parameter', (signal\\u0047ate) => {
+  expect(signalGate([false])).toBe(false);
+});`,
+    ];
+    for (const [index, form] of forms.entries()) {
+      await writeSource(`tests/escaped/form-${index}.test.js`,
+        `import { signalGate } from '../../src/gate.js';\n${form}\n`);
+    }
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/escaped" });
+    expect(new Set(response.details?.results?.map((result) => path.relative(root, result.filePath)))).toEqual(
+      new Set(["tests/escaped/form-0.test.js", "tests/escaped/form-1.test.js", "tests/escaped/form-2.test.js"]),
+    );
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("preserves direct imported construction references with exact callback citations", async () => {
+    await writeSource("src/factory.ts", "export class EnvelopeFactory { value = 1; }\n");
+    await writeSource("tests/constructors/factory.test.ts", `import { EnvelopeFactory } from '../../src/factory.js';
+it('constructs the imported EnvelopeFactory directly', () => {
+  const value = new EnvelopeFactory();
+  expect(value.value).toBe(1);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for EnvelopeFactory", directory: "tests/constructors" });
+    expect(response.details?.results?.map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([{
+      file: "tests/constructors/factory.test.ts", kind: "direct_target_test_reference", referenced: "EnvelopeFactory",
+      line: 3, start: 2, end: 5,
+    }]);
+  });
+
   it("rejects parameter shadowing, escaped symlinks, oversized files, and unindexed tests", async () => {
     await writeSource("tests/shadow.test.ts", `it('uses a local parameter', (signalGate) => {
   expect(signalGate([true, false])).toBe(false);

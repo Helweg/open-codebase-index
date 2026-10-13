@@ -314,6 +314,14 @@ pub struct TestSyntaxData {
     pub valid: bool,
     pub bindings: Vec<String>,
     pub containers: Vec<TestContainerData>,
+    pub direct_calls: Vec<TestDirectCallPosition>,
+}
+
+#[napi(object)]
+pub struct TestDirectCallPosition {
+    pub line: u32,
+    pub column: u32,
+    pub is_constructor: bool,
 }
 
 #[napi(object)]
