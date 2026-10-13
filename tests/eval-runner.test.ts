@@ -617,6 +617,54 @@ describe("eval runner", () => {
     expect(result.perQuery[2]?.recoveryMatched).toBe(true);
   });
 
+  it("keeps strict context misses empty when ordinary scoped search has evidence", async () => {
+    mkdirSync(path.join(tempDir, "src/helpers"), { recursive: true });
+    mkdirSync(path.join(tempDir, "lib"), { recursive: true });
+    writeFileSync(path.join(tempDir, "src/helpers/request.ts"),
+      "export function requestHelpers() { return 'request helpers'; }\n");
+    writeFileSync(path.join(tempDir, "lib/status.ts"),
+      "export function getStatus() { return 'ready'; }\n");
+    const datasetPath = "benchmarks/golden/context-authority.json";
+    writeFileSync(path.join(tempDir, datasetPath), JSON.stringify({
+      version: "2.3.0", name: "context-authority",
+      queries: [
+        ...[undefined, false, true].map((allowUnscopedRecovery, index) => ({
+          id: `context-${index}`, query: "request helpers", queryType: "definition", retrievalMode: "context",
+          args: { symbol: "getStatus", directory: "src/helpers", fileType: "ts",
+            ...(allowUnscopedRecovery === undefined ? {} : { allowUnscopedRecovery }) },
+          expected: { filePath: "lib/status.ts", symbol: "getStatus", expectedRoute: "definition",
+            expectedOutcome: allowUnscopedRecovery === true ? "results" : "no-results",
+            recoveryExpectation: "filter-relaxed" },
+        })),
+        {
+          id: "ordinary-search", query: "request helpers", queryType: "conceptual", retrievalMode: "search",
+          args: { directory: "src/helpers", fileType: "ts" },
+          expected: { filePath: "src/helpers/request.ts", symbol: "requestHelpers",
+            expectedRoute: "search", expectedOutcome: "results" },
+        },
+      ],
+    }));
+    const result = await runEvaluation({
+      projectRoot: tempDir, datasetPath, outputRoot: "benchmarks/results", ciMode: false, reindex: false,
+    });
+    for (const row of result.perQuery.slice(0, 2)) {
+      expect(row.results).toEqual([]);
+      expect(row.resolvedRoute).toBe("definition");
+      expect(row.routedQuery).toBe("getStatus");
+      expect(row.candidateCount).toBe(0);
+      expect(row.outcomeMatched).toBe(true);
+      expect(row.recoveryMatched).toBe(false);
+    }
+    expect(result.perQuery[2]?.results.map((item) => ({
+      file: path.relative(tempDir, item.filePath).replace(/\\/g, "/"), name: item.name,
+    }))).toEqual([{ file: "lib/status.ts", name: "getStatus" }]);
+    expect(result.perQuery[2]?.outcomeMatched).toBe(true);
+    expect(result.perQuery[2]?.recoveryMatched).toBe(true);
+    expect(result.perQuery[3]?.results.map((item) =>
+      path.relative(tempDir, item.filePath).replace(/\\/g, "/"))).toEqual(["src/helpers/request.ts"]);
+    expect(result.perQuery[3]?.resolvedRoute).toBe("search");
+  });
+
   it("does not delete an inherited main-repo project index when reindexing from a fresh worktree", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo");
     const worktreeDir = path.join(tempDir, "worktree-feature");

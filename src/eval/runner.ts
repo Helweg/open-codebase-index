@@ -360,7 +360,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         : undefined;
       const result = architectureResult?.results
         ?? editContextResult?.results
-        ?? contextResult?.details?.results
+        ?? (contextResult ? contextResult.details?.results ?? [] : undefined)
         ?? await indexer.search(query.query, 10, {
           metadataOnly: true,
           filterByBranch: !!query.expected.branch,

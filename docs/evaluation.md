@@ -52,6 +52,8 @@ than replacing them.
 
 Representative dataset version `2.3.0` explicitly opts its existing filter-recovery query into `args.allowUnscopedRecovery: true`. Expected labels are unchanged. The request and dataset fingerprint differ from `2.2.1`; historical reports and baselines are not rewritten or directly interchangeable.
 
+Context-mode evaluation treats the packed context operation's selected evidence as authoritative, including an empty result on a strict explicit-symbol miss. It never fills that miss with a separate generic query search; evidence, route, recovery and token/candidate metadata remain aligned. Ordinary search mode still searches the supplied query directly. Context-mode evaluation currently exercises definition and conceptual retrieval only: it does not wire caller-aware `discoverTests` and therefore does not measure the production tool's linked test-discovery lane.
+
 Version 2 golden queries can declare:
 
 - `language`, `difficulty`, and bounded `tags` for per-query diagnostics
