@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { countContextTokens } from "../src/tools/utils.js";
+import codebaseIndexOmpExtension from "../src/omp-extension.js";
+import codebaseIndexPiExtension from "../src/pi-extension.js";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { OperationCancelledError, OperationStallTimeoutError } from "../src/utils/operation-control.js";
@@ -119,7 +121,7 @@ interface RegisteredPiRuntime {
   ) => Promise<unknown> | unknown>;
 }
 
-async function registerPiTools(): Promise<RegisteredPiRuntime> {
+async function registerPiTools(host: "pi" | "omp" = "pi"): Promise<RegisteredPiRuntime> {
   const tools = new Map<string, RegisteredTool>();
   const beforeAgentStartHandlers: RegisteredPiRuntime["beforeAgentStartHandlers"] = [];
   const sessionShutdownHandlers: RegisteredPiRuntime["sessionShutdownHandlers"] = [];
@@ -137,8 +139,11 @@ async function registerPiTools(): Promise<RegisteredPiRuntime> {
     },
   } satisfies Pick<ExtensionAPI, "registerTool" | "on">;
 
-  const { default: codebaseIndexPiExtension } = await import("../src/pi-extension.js");
-  codebaseIndexPiExtension(pi);
+  if (host === "omp") {
+    codebaseIndexOmpExtension(pi);
+  } else {
+    codebaseIndexPiExtension(pi);
+  }
 
   return { tools, beforeAgentStartHandlers, sessionShutdownHandlers };
 }
@@ -657,6 +662,57 @@ describe("Pi adapter conformance", () => {
     expect(result?.content[0]?.text).toContain("Direct path: callerFn --Call--> targetFn");
     expect(result?.content[0]?.text).toContain("src/app.ts:19");
     expect(result?.content[0]?.text).toContain("edge is unresolved");
+  });
+
+  it.each(["pi", "omp"] as const)("retains strict scope and discloses opted-in recovery in %s", async (host) => {
+    const declaration = {
+      filePath: "lib/status.ts", startLine: 2, endLine: 6, name: "getStatus",
+      chunkType: "function", content: "function getStatus() { return true; }", score: 0.9,
+    };
+    const filtered = (options: { directory?: string; fileType?: string }) =>
+      (!options.directory || declaration.filePath.startsWith(`${options.directory}/`)) &&
+      (!options.fileType || declaration.filePath.endsWith(`.${options.fileType}`)) ? [declaration] : [];
+    operationMocks.implementationLookup.mockImplementation(
+      async (_root, _host, symbol, options) => symbol === "getStatus" && options.exactSymbol ? filtered(options) : [],
+    );
+    operationMocks.searchCodebase.mockImplementation(
+      async (_root, _host, query, options) => query === "getStatus" || query === "request helpers" ? filtered(options) : [],
+    );
+    const { tools } = await registerPiTools(host);
+    const tool = tools.get("codebase_context");
+    if (!tool) throw new Error("Missing context tool");
+    for (const route of [
+      { query: "find implementation", symbol: "getStatus" },
+      { query: "request helpers" },
+      { query: "where is `getStatus` defined" },
+    ]) {
+      for (const allowUnscopedRecovery of [undefined, false, true]) {
+        const result = await tool.execute("scope-contract", {
+          ...route, directory: " ./private\\scope/ ", fileType: " .PY ",
+          allowUnscopedRecovery, diagnostic: true, tokenBudget: 1200,
+        }, new AbortController().signal, () => {}, { cwd: "/repo" });
+        const text = result.content[0]?.text ?? "";
+        const details = result.details as {
+          results?: Array<{ filePath: string }>;
+          diagnostic?: { searchScope: { directory?: string; fileType?: string } };
+          recovery?: { attempts: Array<{ scope: string; relaxedFields: string[] }> };
+        };
+        if (allowUnscopedRecovery === true) {
+          expect(text).toContain("lib/status.ts:2-6");
+          expect(text).toContain("Recovery:");
+          expect(text).toContain("filter removed");
+          expect(details.recovery?.attempts.at(-1)?.relaxedFields).toEqual(["directory", "fileType"]);
+          expect(details.diagnostic?.searchScope).toEqual({});
+        } else {
+          expect(details.results ?? []).toEqual([]);
+          expect(text).not.toContain("lib/status.ts");
+          expect(text).not.toContain("filter removed");
+          expect(details.diagnostic?.searchScope).toEqual({ directory: "private/scope", fileType: "py" });
+          expect(details.recovery?.attempts.every((attempt) =>
+            attempt.scope === "scoped" && attempt.relaxedFields.length === 0)).toBe(true);
+        }
+      }
+    }
   });
 
   it("routes codebase_context symbol lookups through implementation lookup", async () => {

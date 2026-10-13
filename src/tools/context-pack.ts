@@ -27,6 +27,7 @@ export interface ContextPackOptions {
   projectRoot?: string;
   preserveInputOrder?: boolean;
   trace?: (trace: ContextPackTrace) => void;
+  evidenceLabel?: (result: SearchResult) => string | undefined;
   /** Complete rendered rows, with UTF-16 end offsets into the packed text. */
   onSelectedEvidence?: (evidence: Array<{ result: SearchResult; endOffset: number }>) => void;
 }
@@ -345,7 +346,7 @@ export function formatExactSearchHandoff(results: SearchResult[]): string | null
   return `Exact-search handoff: use exact grep/search for ${quotedNames} to find usages or exhaustive matches.`;
 }
 
-function formatContextEvidence(result: SearchResult, index: number, origins?: CanonicalContextOrigin[]): string {
+function formatContextEvidence(result: SearchResult, index: number, origins?: CanonicalContextOrigin[], evidenceLabel?: (result: SearchResult) => string | undefined): string {
   const symbol = result.name ? ` ${JSON.stringify(sanitizeEvidenceDisplayValue(compactEvidenceValue(result.name, 80)))}` : "";
   const origin = origins ? resultOrigin(result, origins) : -1;
   const sourcePath = sanitizeEvidenceDisplayValue(origin >= 0 && origins
@@ -355,7 +356,9 @@ function formatContextEvidence(result: SearchResult, index: number, origins?: Ca
     ? `${sourcePath}, ${result.documentLocation.pageStart === result.documentLocation.pageEnd ? `p. ${result.documentLocation.pageStart}` : `pp. ${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`}`
     : `${sourcePath}:${result.startLine}-${result.endLine}`;
   const label = origin < 0 || origins?.length === 1 ? "" : ` [origin: ${sanitizeEvidenceDisplayValue(origins?.[origin].label ?? "")}]`;
-  return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})`;
+  const evidence = evidenceLabel?.(result);
+  const evidenceSuffix = evidence ? ` [${sanitizeEvidenceDisplayValue(compactEvidenceValue(evidence, 80))}]` : "";
+  return `[${index}] ${result.chunkType}${symbol} in ${location}${label} (score ${result.score.toFixed(2)})${evidenceSuffix}`;
 }
 
 function formatContextPack(
@@ -368,10 +371,11 @@ function formatContextPack(
   includeExactSearchHandoff: boolean,
   origins?: CanonicalContextOrigin[],
   evidence?: Array<{ result: SearchResult; endOffset: number }>,
+  evidenceLabel?: (result: SearchResult) => string | undefined,
 ): string {
   let offset = heading.length + 2;
   const lines = selected.map((result, index) => {
-    const line = formatContextEvidence(result, index + 1, origins);
+    const line = formatContextEvidence(result, index + 1, origins, evidenceLabel);
     if (evidence) {
       offset += line.length;
       evidence.push({ result, endOffset: offset });
@@ -426,6 +430,8 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     selectable.length,
     includeExactSearchHandoff,
     origins,
+    undefined,
+    options.evidenceLabel,
   );
 
   for (let count = 1; count <= selectable.length; count += 1) {
@@ -443,6 +449,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
       includeExactSearchHandoff,
       origins,
       candidateEvidence,
+      options.evidenceLabel,
     );
     if (countContextTokens(candidateText) > tokenBudget) break;
     selected = candidateSelection;

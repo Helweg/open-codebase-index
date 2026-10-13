@@ -121,8 +121,10 @@ export const codebase_context: ToolDefinition = tool({
       .describe(`Maximum number of results (${MIN_CONTEXT_RESULT_LIMIT}-${MAX_CONTEXT_RESULT_LIMIT})`),
     maxDepth: z.number().int().min(MIN_CONTEXT_PATH_DEPTH).max(MAX_CONTEXT_PATH_DEPTH).nullable().optional().default(10)
       .describe(`Maximum call-path traversal depth (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})`),
-    fileType: z.string().nullable().optional().describe("Filter by file extension"),
-    directory: z.string().nullable().optional().describe("Filter by directory path"),
+    fileType: z.string().nullable().optional().describe("Retrieval-route filter by file extension; not used for from/to graph paths."),
+    directory: z.string().nullable().optional().describe("Retrieval-route filter by directory path; not used for from/to graph paths."),
+    allowUnscopedRecovery: z.boolean().optional()
+      .describe("Allow definition and conceptual retrieval fallbacks to remove supplied fileType/directory filters after a scoped miss. Defaults to false; only true enables recovery."),
     tokenBudget: z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET)
       .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)
       .describe(`Maximum response tokens (${MIN_CONTEXT_PACK_TOKEN_BUDGET}-${MAX_CONTEXT_PACK_TOKEN_BUDGET})`),

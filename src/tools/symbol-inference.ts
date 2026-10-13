@@ -55,26 +55,26 @@ function isLikelySymbolName(token: string): boolean {
   return CAMEL_CASE_RE.test(token) || PASCAL_CASE_RE.test(token) || SNAKE_CASE_RE.test(token);
 }
 
-function extractQuotedIdentifiers(query: string): string[] {
+function extractQuotedIdentifiers(query: string, allowPlain = false): string[] {
   const identifiers = new Set<string>();
 
   for (const match of query.matchAll(QUOTED_BACKTICK_RE)) {
     const candidate = stripCallSuffix(match[1]!.trim());
-    if (candidate && isLikelySymbolName(candidate)) {
+    if (candidate && (isLikelySymbolName(candidate) || (allowPlain && SYMBOL_LIKE_RE.test(candidate)))) {
       identifiers.add(candidate);
     }
   }
 
   for (const match of query.matchAll(QUOTED_SINGLE_RE)) {
     const candidate = stripCallSuffix(match[1]!.trim());
-    if (candidate && isLikelySymbolName(candidate)) {
+    if (candidate && (isLikelySymbolName(candidate) || (allowPlain && SYMBOL_LIKE_RE.test(candidate)))) {
       identifiers.add(candidate);
     }
   }
 
   for (const match of query.matchAll(QUOTED_DOUBLE_RE)) {
     const candidate = stripCallSuffix(match[1]!.trim());
-    if (candidate && isLikelySymbolName(candidate)) {
+    if (candidate && (isLikelySymbolName(candidate) || (allowPlain && SYMBOL_LIKE_RE.test(candidate)))) {
       identifiers.add(candidate);
     }
   }
@@ -109,6 +109,23 @@ function isSingleMeaningfulToken(query: string, symbol: string): boolean {
     .filter((token) => !STOP_WORDS.has(token));
 
   return tokens.length === 1 && tokens[0] === symbol.toLowerCase();
+}
+
+/** Artifact lookup needs exact spelling, without changing definition inference. */
+export function inferTestSymbolFromQuery(query: string): string | undefined {
+  const intent = analyzeQueryIntent(query);
+  if (intent.primary !== "test") return undefined;
+  // Behavioral qualifiers retain ordinary query relevance; only test-intent boilerplate is ignored.
+  const symbolQuery = query.replace(/\b(?:tests?|specs?|fixtures?|benchmarks?|coverage)\b/gi, " ");
+  const candidates = [...new Set([...extractQuotedIdentifiers(query, true), ...extractBareIdentifiers(query)
+    .filter((candidate) => intent.identifierHints.includes(candidate.toLowerCase()))])];
+  if (candidates.length > 0) {
+    return candidates.length === 1 && isSingleMeaningfulToken(symbolQuery, candidates[0]) ? candidates[0] : undefined;
+  }
+  if (intent.identifierHints.length !== 1) return undefined;
+  const exact = [...new Set([...query.matchAll(IDENTIFIER_RE)].map((match) => match[0])
+    .filter((token) => token.toLowerCase() === intent.identifierHints[0]))];
+  return exact.length === 1 && isSingleMeaningfulToken(symbolQuery, exact[0]) ? exact[0] : undefined;
 }
 
 export function inferExactSymbolFromQuery(query: string): string | undefined {

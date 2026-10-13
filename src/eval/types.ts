@@ -31,6 +31,7 @@ export interface GoldenQueryArgs {
   calleeLimit?: number;
   depth?: number;
   tokenBudget?: number;
+  allowUnscopedRecovery?: boolean;
 }
 
 export interface GoldenExpectedGraphNeighbor {

@@ -588,6 +588,35 @@ describe("eval runner", () => {
     expect(result.perQuery[0]?.recoveryMatched).toBe(true);
   });
 
+  it("uses only the requested recovery option, never the expected recovery label", async () => {
+    const datasetPath = path.join(tempDir, "benchmarks/golden/scope-options.json");
+    writeFileSync(datasetPath, JSON.stringify({
+      version: "2.3.0", name: "scope-options",
+      queries: [undefined, false, true].map((allowUnscopedRecovery, index) => ({
+        id: `scope-${index}`, query: "find ranking definition", queryType: "definition", retrievalMode: "context",
+        args: { symbol: "rankHybridResults", directory: "absent", fileType: "py",
+          ...(allowUnscopedRecovery === undefined ? {} : { allowUnscopedRecovery }) },
+        expected: { filePath: "src/indexer/index.ts", symbol: "rankHybridResults",
+          expectedOutcome: allowUnscopedRecovery === true ? "results" : "no-results",
+          recoveryExpectation: "filter-relaxed" },
+      })),
+    }));
+    const result = await runEvaluation({
+      projectRoot: tempDir, datasetPath: "benchmarks/golden/scope-options.json",
+      outputRoot: "benchmarks/results", ciMode: false, reindex: false,
+    });
+    for (const row of result.perQuery.slice(0, 2)) {
+      expect(row.results).toEqual([]);
+      expect(row.outcomeMatched).toBe(true);
+      expect(row.recoveryMatched).toBe(false);
+    }
+    expect(result.perQuery[2]?.results).toContainEqual(expect.objectContaining({
+      filePath: expect.stringContaining("src/indexer/index.ts"), name: "rankHybridResults",
+    }));
+    expect(result.perQuery[2]?.outcomeMatched).toBe(true);
+    expect(result.perQuery[2]?.recoveryMatched).toBe(true);
+  });
+
   it("does not delete an inherited main-repo project index when reindexing from a fresh worktree", async () => {
     const mainRepoDir = path.join(tempDir, "main-repo");
     const worktreeDir = path.join(tempDir, "worktree-feature");

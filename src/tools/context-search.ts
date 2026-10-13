@@ -1,9 +1,10 @@
 import type { SearchResult } from "../indexer/index.js";
 import type { SearchTrace } from "../indexer/index.js";
 import { analyzeQueryIntent } from "../indexer/intent-aware-ranking.js";
-import { inferExactSymbolFromQuery } from "./symbol-inference.js";
+import { inferExactSymbolFromQuery, inferTestSymbolFromQuery } from "./symbol-inference.js";
 import { buildContextPack, fitTextToContextBudget } from "./utils.js";
 import type { ContextPackTrace } from "./context-pack.js";
+import type { TestDiscoveryResult, TestEvidenceKind, TestReferenceResult } from "./test-discovery.js";
 
 export interface CodebaseContextInput {
   query: string;
@@ -18,6 +19,7 @@ export interface CodebaseContextInput {
   directory?: string | null;
   tokenBudget?: number | null;
   diagnostic?: boolean;
+  allowUnscopedRecovery?: boolean;
 }
 
 export const MIN_CONTEXT_RESULT_LIMIT = 1;
@@ -32,6 +34,9 @@ interface ContextLocation {
   score: number;
   chunkType: string;
   name?: string;
+  evidenceKind?: TestEvidenceKind;
+  referencedSymbol?: string;
+  referenceLine?: number;
 }
 
 export interface CodebaseContextResult {
@@ -61,6 +66,7 @@ export interface CodebaseContextResult {
       }>;
       successfulAttemptIndex?: number;
     };
+    testDiscovery?: Omit<TestDiscoveryResult, "results">;
     diagnostic?: {
       route: "definition" | "conceptual";
       routedQuery: string;
@@ -84,7 +90,22 @@ function locations(results: SearchResult[]): ContextLocation[] {
     score: result.score,
     chunkType: result.chunkType,
     name: result.name,
+    ...("evidenceKind" in result ? {
+      evidenceKind: (result as TestReferenceResult).evidenceKind,
+      referencedSymbol: (result as TestReferenceResult).referencedSymbol,
+      referenceLine: (result as TestReferenceResult).referenceLine,
+    } : {}),
   }));
+}
+
+function testDiscoveryMetadata(discovery: TestDiscoveryResult): Omit<TestDiscoveryResult, "results"> {
+  return {
+    resolution: discovery.resolution,
+    scannedFileCount: discovery.scannedFileCount,
+    candidateFileCount: discovery.candidateFileCount,
+    verifiedCallerCount: discovery.verifiedCallerCount,
+    capped: discovery.capped,
+  };
 }
 
 function packedResult(
@@ -128,6 +149,7 @@ interface SearchContextOperations {
       prioritizeSourcePaths?: boolean;
     },
   ): Promise<SearchResult[]>;
+  discoverTests?(symbol: string, scope: SearchScope): Promise<TestDiscoveryResult>;
 }
 
 type RecoveryScope = "scoped" | "unscoped";
@@ -311,7 +333,10 @@ function relaxedHintFields(fileType?: string, directory?: string): Array<"direct
 }
 
 export async function resolveSearchContext(
-  input: Pick<CodebaseContextInput, "query" | "symbol" | "limit" | "tokenBudget" | "fileType" | "directory" | "diagnostic">,
+  input: Pick<
+    CodebaseContextInput,
+    "query" | "symbol" | "limit" | "tokenBudget" | "fileType" | "directory" | "diagnostic" | "allowUnscopedRecovery"
+  >,
   operations: SearchContextOperations,
   origins?: Array<{ root: string; label: string }>,
 ): Promise<CodebaseContextResult> {
@@ -319,6 +344,7 @@ export async function resolveSearchContext(
   const tokenBudget = input.tokenBudget ?? undefined;
   const explicitSymbol = trimOrUndefined(input.symbol);
   const inferredSymbol = explicitSymbol || !query ? undefined : inferExactSymbolFromQuery(query);
+  const testSymbol = explicitSymbol || !query ? undefined : inferTestSymbolFromQuery(query);
   const definitionSymbol = explicitSymbol ?? inferredSymbol;
   const limit = input.limit ?? 10;
   const fileType = normalizeFileType(input.fileType);
@@ -360,8 +386,9 @@ export async function resolveSearchContext(
     scope: SearchScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
     runAttempt: (trace?: (trace: SearchTrace) => void) => Promise<SearchResult[]>,
+    lane: "search" | "test-discovery" = "search",
   ): Promise<SearchResult[]> => {
-    const key = attemptKey(kind, attemptQuery, scope);
+    const key = `${lane}:${attemptKey(kind, attemptQuery, scope)}`;
     if (seenAttempts.has(key)) {
       return [];
     }
@@ -445,6 +472,7 @@ export async function resolveSearchContext(
     return undefined;
   };
 
+  let discovery: TestDiscoveryResult | undefined;
   const toResult = (
     route: "definition" | "conceptual",
     routedQuery: string,
@@ -463,12 +491,43 @@ export async function resolveSearchContext(
         tokenEstimate: baseDetails.tokenEstimate,
         truncated: false,
         recovery: buildRecoveryDetails(serializeAttempts(attemptStates), successIndex),
+        ...(discovery ? { testDiscovery: testDiscoveryMetadata(discovery) } : undefined),
         ...(input.diagnostic && {
           diagnostic: buildSearchDiagnostic(successState),
         }),
       },
     };
   };
+
+  const tryTestDiscovery = testSymbol && operations.discoverTests
+    ? async (scope: SearchScope, relaxed: Array<"directory" | "fileType">): Promise<CodebaseContextResult | undefined> => {
+        const results = await recordAttempt("conceptual", query!, scope, relaxed, async () => {
+          discovery = await operations.discoverTests!(testSymbol, scope);
+          return discovery.results;
+        }, "test-discovery");
+        if (results.length === 0) return undefined;
+        const pack = buildContextPack(results, {
+          tokenBudget, maxResults: limit, preserveInputOrder: true,
+          heading: `Bounded test references; not invariant coverage.${discovery!.capped ? " Source caps reached." : ""}\n${buildPackHeading("conceptual", decisions)}`,
+          evidenceLabel: (result) => (result as TestReferenceResult).evidenceKind === "direct_target_test_reference"
+            ? "Direct target test reference" : "Related caller test; not direct target coverage",
+          ...(input.diagnostic ? {
+            trace: (trace) => {
+              const state = findSuccessfulAttemptState("conceptual");
+              if (state) state.contextPackTrace = trace;
+            },
+          } : undefined),
+        });
+        const resolved = toResult("conceptual", query!, pack);
+        return {
+          ...resolved,
+          details: {
+            ...resolved.details!, resolution: discovery!.resolution,
+            testDiscovery: testDiscoveryMetadata(discovery!),
+          },
+        };
+      }
+    : undefined;
 
   if (definitionSymbol) {
     const scopedDefinitionResults = await tryDefinitionLookup(definitionSymbol, Boolean(explicitSymbol));
@@ -495,7 +554,7 @@ export async function resolveSearchContext(
       );
     }
 
-    if (explicitSymbol && hasFilters) {
+    if (explicitSymbol && hasFilters && input.allowUnscopedRecovery === true) {
       const relaxedDefinitionResults = await tryDefinitionLookup(
         definitionSymbol,
         Boolean(explicitSymbol),
@@ -562,55 +621,57 @@ export async function resolveSearchContext(
     conceptualQueries.push(inferredSymbol);
   }
 
-  const conceptualAttemptPlan: Array<{ queryText: string; scope: SearchScope; relaxed: Array<"directory" | "fileType"> }> = [];
-  for (const conceptQuery of conceptualQueries) {
-    conceptualAttemptPlan.push({ queryText: conceptQuery, scope: scopedScope, relaxed: [] });
-  }
-  if (hasFilters) {
-    for (const conceptQuery of conceptualQueries) {
-      conceptualAttemptPlan.push({ queryText: conceptQuery, scope: unscopedScope, relaxed: relaxedFields });
-    }
+  const conceptualScopes: Array<{ scope: SearchScope; relaxed: Array<"directory" | "fileType"> }> = [
+    { scope: scopedScope, relaxed: [] },
+  ];
+  if (hasFilters && input.allowUnscopedRecovery === true) {
+    conceptualScopes.push({ scope: unscopedScope, relaxed: relaxedFields });
   }
 
-  for (const attempt of conceptualAttemptPlan) {
-    const attemptIntent = analyzeQueryIntent(attempt.queryText);
-    const prioritizeSourcePaths = attemptIntent.primary !== "docs" && attemptIntent.primary !== "test";
-    if (inferredSymbol && attempt.queryText === inferredSymbol && attempt.queryText !== query) {
-      decisions.fallbackFromOriginalConceptualToInferred = true;
-    }
-    const results = await tryConceptualSearch(attempt.queryText, attempt.scope, attempt.relaxed, prioritizeSourcePaths);
-    if (results.length > 0) {
-      const heading = buildPackHeading("conceptual", decisions);
-      const intent = analyzeQueryIntent(attempt.queryText);
-      return toResult(
-        "conceptual",
-        attempt.queryText,
-        buildContextPack(results, {
-          origins,
-          tokenBudget,
-          maxResults: limit,
-          heading,
-          includeExactSearchHandoff: true,
-          preferImplementationPaths:
-            intent.preferSourcePaths || (intent.primary !== "docs" && intent.primary !== "test"),
-          ...(input.diagnostic ? {
-            trace: (trace) => {
-              const attemptState = findSuccessfulAttemptState("conceptual");
-              if (attemptState) {
-                attemptState.contextPackTrace = trace;
-              }
-            },
-          } : undefined),
-        }),
-        findSuccessfulAttemptState("conceptual"),
-      );
+  for (const attempt of conceptualScopes) {
+    const linked = await tryTestDiscovery?.(attempt.scope, attempt.relaxed);
+    if (linked) return linked;
+    for (const conceptQuery of conceptualQueries) {
+      const attemptIntent = analyzeQueryIntent(conceptQuery);
+      const prioritizeSourcePaths = attemptIntent.primary !== "docs" && attemptIntent.primary !== "test";
+      if (inferredSymbol && conceptQuery === inferredSymbol && conceptQuery !== query) {
+        decisions.fallbackFromOriginalConceptualToInferred = true;
+      }
+      const results = await tryConceptualSearch(conceptQuery, attempt.scope, attempt.relaxed, prioritizeSourcePaths);
+      if (results.length > 0) {
+        const heading = `${buildPackHeading("conceptual", decisions)}${discovery?.capped ? "\nTest discovery source caps reached; ordinary retrieval fallback." : ""}`;
+        const intent = analyzeQueryIntent(conceptQuery);
+        return toResult(
+          "conceptual",
+          conceptQuery,
+          buildContextPack(results, {
+            origins,
+            tokenBudget,
+            maxResults: limit,
+            heading,
+            includeExactSearchHandoff: true,
+            preferImplementationPaths:
+              intent.preferSourcePaths || (intent.primary !== "docs" && intent.primary !== "test"),
+            ...(input.diagnostic ? {
+              trace: (trace) => {
+                const attemptState = findSuccessfulAttemptState("conceptual");
+                if (attemptState) {
+                  attemptState.contextPackTrace = trace;
+                }
+              },
+            } : undefined),
+          }),
+          findSuccessfulAttemptState("conceptual"),
+        );
+      }
     }
   }
 
   const fallbackText = buildRecoveryFallbackText(
     attempts,
     tokenBudget,
-    "No matching code found. Try a different query or run index_codebase first.",
+    "No matching code found. Try a different query or run index_codebase first." +
+      (discovery?.capped ? " Test discovery source caps reached." : ""),
   );
   return {
     text: fallbackText.text,
@@ -620,6 +681,7 @@ export async function resolveSearchContext(
       tokenEstimate: fallbackText.tokenEstimate,
       truncated: fallbackText.truncated,
       recovery: buildRecoveryDetails(serializeAttempts(attemptStates), null),
+      ...(discovery ? { testDiscovery: testDiscoveryMetadata(discovery) } : undefined),
       ...(input.diagnostic && {
         diagnostic: buildSearchDiagnostic(attemptStates[attemptStates.length - 1]),
       }),

@@ -113,8 +113,10 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       maxDepth: allowNullAsUndefined(
         z.number().int().min(MIN_CONTEXT_PATH_DEPTH).max(MAX_CONTEXT_PATH_DEPTH).optional().default(10),
       ).describe(`Maximum call-graph traversal depth for from/to path lookup (${MIN_CONTEXT_PATH_DEPTH}-${MAX_CONTEXT_PATH_DEPTH})`),
-      fileType: allowNullAsUndefined(z.string().optional()).describe("Filter by file extension (e.g., 'ts', 'py', 'rs')"),
-      directory: allowNullAsUndefined(z.string().optional()).describe("Filter by directory path (e.g., 'src/utils', 'lib')"),
+      fileType: allowNullAsUndefined(z.string().optional()).describe("Retrieval-route filter by file extension (e.g., 'ts', 'py', 'rs'); not used for from/to graph paths."),
+      directory: allowNullAsUndefined(z.string().optional()).describe("Retrieval-route filter by directory path (e.g., 'src/utils', 'lib'); not used for from/to graph paths."),
+      allowUnscopedRecovery: z.boolean().optional()
+        .describe("Allow definition and conceptual retrieval fallbacks to remove supplied fileType/directory filters after a scoped miss. Defaults to false; only true enables recovery."),
       tokenBudget: allowNullAsUndefined(
         z.number().int().min(MIN_CONTEXT_PACK_TOKEN_BUDGET).max(MAX_CONTEXT_PACK_TOKEN_BUDGET).optional()
           .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),

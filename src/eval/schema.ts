@@ -132,6 +132,7 @@ function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefin
     throw new Error(`${path}.depth must be at most 3`);
   }
   const tokenBudget = parsePositiveIntegerOrUndefined(value.tokenBudget, `${path}.tokenBudget`);
+  const allowUnscopedRecovery = parseOptionalBoolean(value.allowUnscopedRecovery, `${path}.allowUnscopedRecovery`);
   return {
     ...(symbol !== undefined ? { symbol } : {}),
     ...(filePath !== undefined ? { filePath } : {}),
@@ -141,7 +142,16 @@ function parseQueryArgs(value: unknown, path: string): GoldenQueryArgs | undefin
     ...(calleeLimit !== undefined ? { calleeLimit } : {}),
     ...(depth !== undefined ? { depth } : {}),
     ...(tokenBudget !== undefined ? { tokenBudget } : {}),
+    ...(allowUnscopedRecovery !== undefined ? { allowUnscopedRecovery } : {}),
   };
+}
+
+function parseOptionalBoolean(value: unknown, path: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") {
+    throw new Error(`${path} must be a boolean`);
+  }
+  return value;
 }
 
 function parsePositiveIntegerOrUndefined(value: unknown, path: string): number | undefined {

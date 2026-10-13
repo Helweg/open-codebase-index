@@ -337,6 +337,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
           symbol: query.args?.symbol,
           fileType: query.args?.fileType,
           directory: query.args?.directory,
+          allowUnscopedRecovery: query.args?.allowUnscopedRecovery,
           limit: 10,
           tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
         }, {
