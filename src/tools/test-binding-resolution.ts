@@ -51,7 +51,6 @@ export async function createTestBindingResolver(
   let workspacePackages: readonly LocalWorkspacePackage[] = [];
   let packageKey: string | undefined;
   let packageGeneration = 0;
-  let moduleResolver: LocalModuleCallResolver | undefined;
   const requestConfiguration = (filePath: string): string | undefined => {
     requested.add(filePath);
     return configurations.get(filePath);
@@ -72,7 +71,7 @@ export async function createTestBindingResolver(
     if (nextKey !== packageKey) {
       packageKey = nextKey;
       packageGeneration += 1;
-      moduleResolver?.setWorkspacePackages(workspacePackages);
+      resolver.setWorkspacePackages(workspacePackages);
     }
   };
   const loadImporters = async (filePaths: string[]): Promise<void> => {
@@ -107,7 +106,6 @@ export async function createTestBindingResolver(
     }
     if (changed) refreshPackages();
   };
-  await loadImporters(configurationImporters);
   const aliases = new TsConfigPathAliasCache(cachedConfiguration);
   let moduleReads = 0;
   const resolver = new LocalModuleCallResolver({
@@ -132,7 +130,7 @@ export async function createTestBindingResolver(
       return testModuleData(filePath, content, parsed);
     },
   });
-  moduleResolver = resolver;
+  await loadImporters(configurationImporters);
   return {
     moduleResolver: resolver,
     loadImporters,
