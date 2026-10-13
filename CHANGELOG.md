@@ -16,6 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Dependency override hygiene**: Remove five fresh-resolution-proven inert pins and obsolete `@hono/node-server`/`express-rate-limit` exact pins; retain Hono, IP-address, PostCSS, and Vite security floors using same-major selectors and patched caret ranges. Scope the necessary esbuild security exception to tsup 8.x, restoring chord's exact esbuild 0.28.2 edge and the native CLI's declared js-yaml 5.x range without broadly refreshing the lock or dropping existing Linux libc selectors. Both packed identities retain Node.js 22.13 compatibility; the OpenCode plugin remains pinned at 1.3.13.
 
+### Fixed
+
+- **Deterministic keyword ties**: Order equal BM25 scores by stable chunk ID before applying the native result limit. Repeated queries, reloads and equivalent index construction now retain tied ordering and cutoff membership instead of feeding randomized ranks into hybrid fusion. Keep BM25 scoring, score normalization and fusion formulas unchanged.
+
 ## [0.36.3] - 2026-10-09
 
 ### Fixed
