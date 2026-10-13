@@ -63,6 +63,39 @@ describe("InvertedIndex", () => {
       const chunk2Score = results.get("chunk2") || 0;
       expect(chunk1Score).toBeGreaterThan(chunk2Score);
     });
+
+    it("keeps tied ranks and cutoff membership stable across queries and reloads", () => {
+      const tiedIds = ["tie-f", "tie-b", "tie-e", "tie-a", "tie-d", "tie-c"];
+      for (const id of tiedIds) {
+        index.addChunk(id, "needle padding padding");
+      }
+      index.addChunk("strong", "needle needle needle");
+      index.addChunk("weak", "needle padding padding padding padding padding padding");
+      index.save();
+
+      const loaded = new InvertedIndex(indexPath);
+      loaded.load();
+      const independentlyBuilt = new InvertedIndex(path.join(tempDir, "independent.json"));
+      independentlyBuilt.addChunk("weak", "needle padding padding padding padding padding padding");
+      for (const id of [...tiedIds].reverse()) {
+        independentlyBuilt.addChunk(id, "needle padding padding");
+      }
+      independentlyBuilt.addChunk("strong", "needle needle needle");
+
+      const expectedIds = ["strong", ...[...tiedIds].sort(), "weak"];
+      const expected = [...index.search("needle", expectedIds.length)];
+      expect(expected.map(([id]) => id)).toEqual(expectedIds);
+      expect(expected[0][1]).toBeGreaterThan(expected[1][1]);
+      expect(new Set(expected.slice(1, -1).map(([, score]) => score)).size).toBe(1);
+      expect(expected[expected.length - 2][1]).toBeGreaterThan(expected[expected.length - 1][1]);
+
+      for (const candidate of [index, loaded, independentlyBuilt]) {
+        for (let round = 0; round < 5; round += 1) {
+          expect([...candidate.search("needle", expectedIds.length)]).toEqual(expected);
+          expect([...candidate.search("needle", 4)]).toEqual(expected.slice(0, 4));
+        }
+      }
+    });
   });
 
   describe("removeChunk", () => {
