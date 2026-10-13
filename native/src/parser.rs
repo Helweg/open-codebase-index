@@ -256,7 +256,8 @@ fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
         let node = cursor.node();
         match node.kind() {
             "variable_declarator" | "function_declaration" | "function_expression" | "function"
-            | "generator_function_declaration" | "generator_function" | "class_declaration" | "class" => {
+            | "generator_function_declaration" | "generator_function" | "class_declaration" | "class"
+            | "abstract_class_declaration" | "enum_declaration" => {
                 if let Some(name) = node.child_by_field_name("name") {
                     bindings_valid &= collect_binding_pattern(name, content, &mut bindings);
                 }

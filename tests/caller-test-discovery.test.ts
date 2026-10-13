@@ -467,6 +467,50 @@ it('uses a foreign path mapping whose package extends cannot be resolved here', 
     expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
   });
 
+  it.each([
+    ["abstract", "EnvelopeFactory", "abstract class Envelope\\u0046actory {}", "new EnvelopeFactory()"],
+    ["enum", "signalGate", "enum signal\\u0047ate { Foreign = 0 }", "signalGate([false])"],
+  ])("rejects escaped TypeScript %s value declarations as imported target evidence", async (kind, target, declaration, call) => {
+    await writeSource("src/factory.ts", "export class EnvelopeFactory { value = 1; }\n");
+    const module = target === "EnvelopeFactory" ? "factory" : "gate";
+    await writeSource(`tests/escaped-types/${kind}.test.ts`, `import { ${target} } from '../../src/${module}.js';
+it('uses a local escaped value declaration rather than the imported target', () => {
+  ${declaration}
+  ${call};
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: `tests for ${target}`, directory: "tests/escaped-types" });
+    expect(response.details?.results?.some((result) => result.filePath.endsWith(`${kind}.test.ts`))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("does not reuse a star-export result after a demanded package invalidates that traversal", async () => {
+    await writeSource("package.json", JSON.stringify({ name: "gate-package", type: "module", exports: "./src/gate.js" }));
+    await writeSource("tests/late/barrel.js", `export * from './a-primary.js';
+export * from './z-sub/marker.js';
+export const barrelMarker = 'registered barrel source for bounded import verification';
+`);
+    await writeSource("tests/late/a-primary.js", `export { signalGate } from 'gate-package';
+export const primaryMarker = 'registered primary source for bounded import verification';
+`);
+    await writeSource("tests/late/z-sub/package.json", JSON.stringify({
+      name: "gate-package", type: "module", exports: "./marker.js",
+    }));
+    await writeSource("tests/late/z-sub/marker.js",
+      "export const markerValue = 'registered marker metadata for the demanded nested package';\n");
+    await writeSource("tests/late/repeated.test.js", `import { signalGate } from './barrel.js';
+it('repeats a barrel import while nested package ambiguity is discovered', () => {
+  expect(signalGate([false])).toBe(false);
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/late" });
+    expect(response.details?.results?.some((result) => result.filePath.endsWith("repeated.test.js"))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
   it("preserves direct imported construction references with exact callback citations", async () => {
     await writeSource("src/factory.ts", "export class EnvelopeFactory { value = 1; }\n");
     await writeSource("tests/constructors/factory.test.ts", `import { EnvelopeFactory } from '../../src/factory.js';

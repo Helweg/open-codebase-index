@@ -1381,6 +1381,7 @@ export class LocalModuleCallResolver {
   private readonly moduleRecordContents = new Map<string, string>();
   private readonly goCallClassifiers = new Map<string, (site: CallSiteData) => boolean>();
   private readonly exportCache = new Map<string, SymbolData[]>();
+  private exportCacheEpoch = 0;
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
   private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
   private readonly workspacePackages = new Map<string, LocalWorkspacePackage | null>();
@@ -1401,6 +1402,7 @@ export class LocalModuleCallResolver {
   setWorkspacePackages(packages: readonly LocalWorkspacePackage[]): void {
     this.workspacePackages.clear();
     this.exportCache.clear();
+    this.exportCacheEpoch++;
     for (const workspacePackage of packages) {
       const existing = this.workspacePackages.get(workspacePackage.name);
       this.workspacePackages.set(workspacePackage.name, existing === undefined ? workspacePackage : null);
@@ -1710,6 +1712,7 @@ export class LocalModuleCallResolver {
     if (cached) return cached;
     if (visiting.has(cacheKey)) return [];
 
+    const cacheEpoch = this.exportCacheEpoch;
     const nextVisiting = new Set(visiting);
     nextVisiting.add(cacheKey);
     const record = await this.getModuleRecord(normalized);
@@ -1743,7 +1746,8 @@ export class LocalModuleCallResolver {
 
     const filtered = filterCallTargetCandidates(callType, deduplicateSymbols(candidates));
     const result = deduplicateSymbols(filtered);
-    this.exportCache.set(cacheKey, result);
+    // Demanded modules can refresh workspace packages while this traversal awaits.
+    if (cacheEpoch === this.exportCacheEpoch) this.exportCache.set(cacheKey, result);
     return result;
   }
 }
