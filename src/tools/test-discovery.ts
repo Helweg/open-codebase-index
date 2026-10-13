@@ -1,6 +1,6 @@
 import type { SearchResult, KeywordFileCandidateResult } from "../indexer/index.js";
 import type { CallGraphDataResult } from "./operations.js";
-import type { CallSiteData, CodeChunk, ParsedFile, SymbolData } from "../native/index.js";
+import type { CallSiteData, ParsedFile, SymbolData } from "../native/index.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
@@ -18,10 +18,6 @@ const LANGUAGES: Record<string, string> = {
   ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
   ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript",
 };
-const TEST_CALLBACK_TYPES: Record<string, true> = {
-  arrow_function: true, function: true, function_expression: true, expression_statement: true,
-};
-const SOURCE_LITERAL_RE = /\/\*[\s\S]*?\*\/|\/\/[^\n\r]*|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`/gu;
 
 export type TestEvidenceKind = "direct_target_test_reference" | "related_caller_test_reference";
 
@@ -89,20 +85,67 @@ async function readSource(root: string, filePath: string, markCapped: () => void
   }
 }
 
+type TestContainer = NonNullable<ParsedFile["testSyntax"]>["containers"][number];
+
+async function readConfiguration(root: string, filePath: string, markCapped: () => void, control?: OperationControl): Promise<{ content?: string; confirmedAbsent: boolean }> {
+  throwIfOperationAborted(control?.signal);
+  try {
+    await fs.lstat(path.resolve(root, filePath));
+  } catch (error: unknown) {
+    return { confirmedAbsent: error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR") };
+  }
+  return { content: await readSource(root, filePath, markCapped, control), confirmedAbsent: false };
+}
+
 interface SourceEvidence {
   parsed: ParsedFile;
   calls: CallSiteData[];
   lines: string[];
-  bindingContent: string;
+  bindings: Set<string>;
+  containersByCall: Map<CallSiteData, TestContainer>;
+  containerContents: Map<TestContainer, string>;
   content: string;
 }
 
 function parseSource(filePath: string, content: string): SourceEvidence | undefined {
   const language = LANGUAGES[path.extname(filePath).toLowerCase()];
   if (!language) return undefined;
-  const [parsed] = parseFiles([{ path: filePath, content }]);
-  if (!parsed || parsed.parseFailed) return undefined;
-  return { parsed, content, calls: extractCalls(content, language), lines: content.split("\n"), bindingContent: content.replace(SOURCE_LITERAL_RE, " ") };
+  const [parsed] = parseFiles([{ path: filePath, content }], undefined, undefined, true);
+  if (!parsed || parsed.parseFailed || !parsed.testSyntax?.valid) return undefined;
+  const calls = extractCalls(content, language).sort((left, right) => left.line - right.line || left.column - right.column);
+  const containers = parsed.testSyntax.containers.sort((left, right) =>
+    left.bodyStartLine - right.bodyStartLine || left.bodyStartCol - right.bodyStartCol
+    || right.bodyEndLine - left.bodyEndLine || right.bodyEndCol - left.bodyEndCol);
+  const containersByCall = new Map<CallSiteData, TestContainer>();
+  const active: TestContainer[] = [];
+  let nextContainer = 0;
+  for (const call of calls) {
+    while (nextContainer < containers.length) {
+      const candidate = containers[nextContainer];
+      if (candidate.bodyStartLine > call.line || (candidate.bodyStartLine === call.line && candidate.bodyStartCol > call.column)) break;
+      while (active.length > 0) {
+        const previous = active[active.length - 1];
+        if (previous.bodyEndLine > candidate.bodyStartLine || (previous.bodyEndLine === candidate.bodyStartLine && previous.bodyEndCol > candidate.bodyStartCol)) break;
+        active.pop();
+      }
+      active.push(candidate);
+      nextContainer += 1;
+    }
+    while (active.length > 0) {
+      const candidate = active[active.length - 1];
+      if (candidate.bodyEndLine > call.line || (candidate.bodyEndLine === call.line && candidate.bodyEndCol > call.column)) break;
+      active.pop();
+    }
+    if (active.length > 0) containersByCall.set(call, active[active.length - 1]);
+  }
+  const containerContents = new Map<TestContainer, string>();
+  if (containers.length > 0) {
+    const bytes = Buffer.from(content);
+    for (const container of containers) {
+      containerContents.set(container, bytes.subarray(container.startByte, container.endByte).toString("utf8"));
+    }
+  }
+  return { parsed, content, calls, lines: content.split("\n"), bindings: new Set(parsed.testSyntax.bindings), containersByCall, containerContents };
 }
 
 function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, definition: SearchResult, root: string): boolean {
@@ -116,37 +159,7 @@ function executableReference(call: CallSiteData, name: string): boolean {
 }
 
 function declaresName(source: SourceEvidence, name: string): boolean {
-  // Conservative: a same-file declaration makes an imported/global test reference uncertain.
-  if (source.parsed.symbols.some((symbol) => symbol.name === name)) return true;
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const identifier = `(?<![A-Za-z0-9_$])${escaped}(?![A-Za-z0-9_$])`;
-  const binding = new RegExp(`\\b(?:const|let|var|function|class)\\s+${identifier}|\\b(?:const|let|var)\\s*(?:\\{[^}]*|\\[[^\\]]*)${identifier}|${identifier}\\s*=>|\\([^)]*${identifier}[^)]*\\)\\s*(?::[^=;{]*)?(?:=>|\\{)`, "u");
-  return binding.test(source.bindingContent);
-}
-
-function testContainer(source: SourceEvidence, call: CallSiteData): { chunk: CodeChunk; startLine: number } | undefined {
-  const containers = source.parsed.chunks
-    .filter((chunk) => TEST_CALLBACK_TYPES[chunk.chunkType]
-      && chunk.startLine <= call.line && chunk.endLine >= call.line)
-    .sort((left, right) => left.endLine - left.startLine - (right.endLine - right.startLine));
-  for (const chunk of containers) {
-    if ((chunk.chunkType as string) === "expression_statement"
-      && source.calls.some((candidate) => (candidate.calleeName === "test" || candidate.calleeName === "it")
-        && candidate.callType === "Call" && candidate.line === chunk.startLine)
-      && /^\s*(?:test|it)\s*\(/u.test(chunk.content)) {
-      return { chunk, startLine: chunk.startLine };
-    }
-    const testCall = source.calls.find((candidate) => (candidate.calleeName === "test" || candidate.calleeName === "it")
-      && candidate.callType === "Call" && candidate.line <= chunk.startLine && chunk.startLine - candidate.line <= 3);
-    if (!testCall) continue;
-    const prefix = source.lines.slice(testCall.line - 1, chunk.startLine - 1).join("\n")
-      + (testCall.line < chunk.startLine ? "\n" : "")
-      + (source.lines[chunk.startLine - 1] ?? "").slice(0, chunk.startCol ?? 0);
-    if (/\b(?:test|it)\s*\(/u.test(prefix) && !/\)\s*;/u.test(prefix)) {
-      return { chunk, startLine: testCall.line };
-    }
-  }
-  return undefined;
+  return source.bindings.has(name) || source.parsed.symbols.some((symbol) => symbol.name === name);
 }
 
 function referenceTerms(text: string): Set<string> {
@@ -220,9 +233,10 @@ export async function discoverSymbolTests(
   const navigationFiles = callers.slice(0, TEST_DISCOVERY_MAX_CALLERS)
     .map((edge) => relativePath(root, edge.fromSymbolFilePath!))
     .filter((filePath): filePath is string => Boolean(filePath));
-  const resolver = await createTestBindingResolver(inventory, [targetPath, ...navigationFiles, ...candidates],
-    (filePath) => readSource(root, filePath, markCapped, control), markCapped, control);
-  resolver.seedModule(targetPath, testModuleData(targetPath, targetSource.content, targetSource.parsed));
+  const resolver = await createTestBindingResolver(inventory, [targetPath, ...navigationFiles],
+    (filePath) => readSource(root, filePath, markCapped, control),
+    (filePath) => readConfiguration(root, filePath, markCapped, control), markCapped, control);
+  resolver.moduleResolver.seedModule(targetPath, testModuleData(targetPath, targetSource.content, targetSource.parsed));
   const callerDefinitionsByName = new Map<string, SearchResult>();
   const seenCallers = new Set<string>();
   let navigatedCallers = 0;
@@ -239,7 +253,7 @@ export async function discoverSymbolTests(
     if (!source || declaresName(source, symbol)) continue;
     const sourceCall = source.calls.find((call) => executableReference(call, symbol) && call.line === edge.line);
     if (!sourceCall) continue;
-    resolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
+    resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
     const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall);
     throwIfOperationAborted(control?.signal);
     if (!resolvedReferenceMatchesDefinition(targetReference, target, root)) continue;
@@ -272,22 +286,25 @@ export async function discoverSymbolTests(
   const fileRanks = new Map(selectedFiles.map((filePath, index) => [path.resolve(root, filePath), index]));
   result.candidateFileCount = selectedFiles.length;
   result.capped ||= lexical.capped;
+  await resolver.loadImporters(selectedFiles);
 
   const references = new Map<string, TestReferenceResult>();
   const targetTerms = new Set([...referenceTerms(symbol)].filter((term) => term.length >= 3));
-  let directCount = 0;
-  let relatedCount = 0;
+  const compareReferences = (left: TestReferenceResult, right: TestReferenceResult): number => right.score - left.score
+    || fileRanks.get(left.filePath)! - fileRanks.get(right.filePath)!
+    || left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine
+    || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol);
   for (const filePath of selectedFiles) {
     throwIfOperationAborted(control?.signal);
     const testContent = await readSource(root, filePath, markCapped, control);
     const source = testContent === undefined ? undefined : parseSource(filePath, testContent);
     if (!source) continue;
     result.scannedFileCount += 1;
-    resolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
+    resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
     const names = [symbol, ...callerDefinitionsByName.keys()].filter((name) => !declaresName(source, name));
     for (const call of source.calls) {
       if (!names.some((name) => executableReference(call, name))) continue;
-      const container = testContainer(source, call);
+      const container = source.containersByCall.get(call);
       if (!container) continue;
       const expectedDefinition = call.calleeName === symbol ? target : callerDefinitionsByName.get(call.calleeName);
       if (!expectedDefinition) continue;
@@ -296,34 +313,36 @@ export async function discoverSymbolTests(
       if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition, root)) continue;
       const direct = call.calleeName === symbol;
       const startLine = container.startLine;
-      const endLine = container.chunk.endLine;
-      const key = `${filePath}:${startLine}:${endLine}`;
+      const endLine = container.endLine;
+      const key = `${filePath}:${container.startByte}:${container.endByte}`;
       const previous = references.get(key);
       if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
-      if ((direct ? directCount : relatedCount) >= TEST_DISCOVERY_MAX_REFERENCES) {
-        result.capped = true;
-        continue;
-      }
-      if (previous) relatedCount -= 1;
-      if (direct) directCount += 1;
-      else relatedCount += 1;
-      const content = source.lines.slice(startLine - 1, endLine).join("\n");
-      references.set(key, {
+      const content = source.containerContents.get(container)!;
+      const candidate: TestReferenceResult = {
         filePath: path.resolve(root, filePath), startLine, endLine,
         content, score: direct ? 1 : relatedReferenceScore(content, targetTerms),
-        chunkType: container.chunk.chunkType,
+        chunkType: "expression_statement" as TestReferenceResult["chunkType"],
         name: call.calleeName, evidenceKind: direct ? "direct_target_test_reference" : "related_caller_test_reference",
         referencedSymbol: call.calleeName, referenceLine: call.line,
-      });
+      };
+      if (!previous && references.size >= TEST_DISCOVERY_MAX_REFERENCES) {
+        result.capped = true;
+        let weakestKey: string | undefined;
+        let weakest: TestReferenceResult | undefined;
+        for (const [retainedKey, retained] of references) {
+          if (!weakest || compareReferences(retained, weakest) > 0) {
+            weakest = retained;
+            weakestKey = retainedKey;
+          }
+        }
+        if (compareReferences(candidate, weakest!) >= 0) continue;
+        references.delete(weakestKey!);
+      }
+      references.set(key, candidate);
     }
     await control?.heartbeat?.();
   }
   throwIfOperationAborted(control?.signal);
-  const ordered = [...references.values()].sort((left, right) => right.score - left.score
-    || fileRanks.get(left.filePath)! - fileRanks.get(right.filePath)!
-    || left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine
-    || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol));
-  result.capped ||= ordered.length > TEST_DISCOVERY_MAX_REFERENCES;
-  result.results = ordered.slice(0, TEST_DISCOVERY_MAX_REFERENCES);
+  result.results = [...references.values()].sort(compareReferences);
   return result;
 }

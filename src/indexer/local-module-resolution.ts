@@ -1368,6 +1368,7 @@ export class LocalModuleCallResolver {
   private readonly loadModule: LocalModuleResolverOptions["loadModule"];
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
+  private readonly moduleRecordContents = new Map<string, string>();
   private readonly goCallClassifiers = new Map<string, (site: CallSiteData) => boolean>();
   private readonly exportCache = new Map<string, SymbolData[]>();
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
@@ -1396,6 +1397,7 @@ export class LocalModuleCallResolver {
     this.moduleData.set(normalized, Promise.resolve(data));
     if (this.modulePaths.has(normalized)) {
       this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
+      this.moduleRecordContents.set(normalized, data.content);
     }
     if (this.goPackagePaths.has(normalized)) {
       this.goCallClassifiers.set(normalized, createGoDirectCallClassifier(data.content, data.symbols));
@@ -1422,7 +1424,7 @@ export class LocalModuleCallResolver {
     if (!record) return undefined;
 
     const candidates: SymbolData[] = [];
-    const qualifier = namespaceQualifier(importerContent, site);
+    const qualifier = site.callType === "Call" ? undefined : namespaceQualifier(importerContent, site);
     if (!qualifier) {
       for (const binding of record.imports.get(site.calleeName) ?? []) {
         candidates.push(...await this.resolveImportedBinding(importer, binding, site.callType));
@@ -1500,8 +1502,11 @@ export class LocalModuleCallResolver {
   private async getModuleRecord(filePath: string, knownContent?: string): Promise<ModuleRecord | undefined> {
     const normalized = normalizeFilePath(filePath);
     if (knownContent !== undefined) {
+      const existing = this.moduleRecords.get(normalized);
+      if (existing && this.moduleRecordContents.get(normalized) === knownContent) return existing;
       const parsed = Promise.resolve(parseModuleRecord(knownContent));
       this.moduleRecords.set(normalized, parsed);
+      this.moduleRecordContents.set(normalized, knownContent);
       return parsed;
     }
     const existing = this.moduleRecords.get(normalized);

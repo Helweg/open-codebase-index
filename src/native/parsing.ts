@@ -15,14 +15,16 @@ export function parseFiles(
   files: FileInput[],
   linesPerChunk?: number,
   maxMarkupChunks?: number,
+  includeTestSyntax?: boolean,
 ): ParsedFile[] {
-  const result = native.parseFiles(files, linesPerChunk, maxMarkupChunks);
+  const result = native.parseFiles(files, linesPerChunk, maxMarkupChunks, includeTestSyntax);
   return result.map((f: any) => ({
     path: f.path,
     chunks: f.chunks.map(mapChunk),
     symbols: (f.symbols ?? []).map(mapParsedSymbol),
     hash: f.hash,
     parseFailed: f.parseFailed ?? f.parse_failed ?? false,
+    ...(f.testSyntax ? { testSyntax: f.testSyntax } : {}),
   }));
 }
 

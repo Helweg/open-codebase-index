@@ -618,6 +618,10 @@ describe("eval runner", () => {
   });
 
   it("keeps strict context misses empty when ordinary scoped search has evidence", async () => {
+    writeFileSync(path.join(tempDir, ".opencode/codebase-index.json"), JSON.stringify({
+      indexing: { mode: "structural", watchFiles: false, autoIndex: false, requireProjectMarker: false },
+      search: { minScore: 0 },
+    }));
     mkdirSync(path.join(tempDir, "src/helpers"), { recursive: true });
     mkdirSync(path.join(tempDir, "lib"), { recursive: true });
     writeFileSync(path.join(tempDir, "src/helpers/request.ts"),

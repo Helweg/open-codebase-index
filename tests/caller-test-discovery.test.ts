@@ -266,6 +266,107 @@ it('signalGate is shadowed by a local destructured binding', () => {
     expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
   });
 
+  it("rejects every comma-separated local declarator before resolving an imported target", async () => {
+    await writeSource("tests/comma-shadow/shadow.test.ts", `import { signalGate } from '../../src/gate.js';
+it('uses a local substitute instead of the imported target', () => {
+  const sentinel = 0, signalGate = foreignGate;
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/comma-shadow" });
+    expect(response.details?.results?.map((result) => path.relative(root, result.filePath))).toEqual([
+      "tests/comma-shadow/shadow.test.ts",
+    ]);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("does not attribute same-line or merged adjacent outside calls to a test callback", async () => {
+    await writeSource("tests/outside/same-line.test.ts", `import { signalGate } from '../../src/gate.js';
+it('unrelated registration has a long title to remain an independent indexed source unit', () => { expect(true).toBe(true); }); signalGate([false, false, false, false, false, false]);
+`);
+    await writeSource("tests/outside/adjacent.test.ts", `import { signalGate } from '../../src/gate.js';
+it('independent arithmetic', () => { expect(true).toBe(true); });
+signalGate([false, false, false, false, false, false]);
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/outside" });
+    expect(new Set(response.details?.results?.map((result) => path.relative(root, result.filePath)))).toEqual(
+      new Set(["tests/outside/same-line.test.ts", "tests/outside/adjacent.test.ts"]),
+    );
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("keeps the strongest verified related reference after the twenty-reference boundary", async () => {
+    await writeSource("tests/ranking/related.test.ts", `import { createTransport } from '../../src/transport.js';
+${Array.from({ length: 20 }, (_, index) => `it('independent arithmetic preserves an ordinary transport result ${index}', () => {
+  expect(createTransport([true])).toBeTruthy();
+});
+`).join("")}it('signal gate behavior honors false inputs', () => {
+  expect(createTransport([true, false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/ranking", limit: 1 });
+    expect(response.details?.results?.map((result) => ({
+      start: result.startLine, end: result.endLine, score: result.score,
+      kind: result.evidenceKind, referenced: result.referencedSymbol,
+    }))).toEqual([{
+      start: 62, end: 64, score: 0.75, kind: "related_caller_test_reference", referenced: "createTransport",
+    }]);
+    expect(response.details?.testDiscovery?.capped).toBe(true);
+    const bounded = await retrieve({ directory: "tests/ranking", limit: 100, tokenBudget: 4000 });
+    expect(bounded.details?.results).toHaveLength(20);
+    expect(bounded.details?.results?.[0]?.startLine).toBe(62);
+  });
+
+  it("prioritizes selected test configuration over unrelated directories without asserting a foreign alias link", async () => {
+    await writeSource("tsconfig.json", JSON.stringify({
+      compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["src/gate.ts"] } },
+    }));
+    await writeSource("src/foreign.ts", "export function foreignGate(inputs: boolean[]) { return false; }\n");
+    for (let index = 0; index < 60; index += 1) {
+      await writeSource(`tests/config/a${String(index).padStart(2, "0")}/decoy.test.ts`,
+        "it('independent arithmetic', () => { expect(1 + 1).toBe(2); });\n");
+    }
+    await writeSource("tests/config/zz/deep/tsconfig.json", JSON.stringify({
+      compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["foreign.ts"] } },
+    }));
+    await writeSource("tests/config/zz/deep/foreign.ts",
+      "export { foreignGate as signalGate } from '../../../../src/foreign.js';\n");
+    await writeSource("tests/config/zz/deep/alias.test.ts", `import { signalGate } from '@logic/gate';
+it('uses the foreign gate through the nearest configured alias', () => {
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/config" });
+    expect(response.details?.results?.some((result) => result.filePath.endsWith("alias.test.ts"))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("fails linkage closed when a selected deep configuration chain exceeds the read budget", async () => {
+    await writeSource("tsconfig.json", JSON.stringify({
+      compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["src/gate.ts"] } },
+    }));
+    const directory = `tests/config-budget/${Array.from({ length: 25 }, (_, index) => `d${index}`).join("/")}`;
+    await writeSource(`${directory}/tsconfig.json`, JSON.stringify({ extends: "./base.json" }));
+    await writeSource(`${directory}/base.json`, JSON.stringify({
+      compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["foreign.ts"] } },
+    }));
+    await writeSource(`${directory}/foreign.ts`, "export function foreignGate(inputs: boolean[]) { return false; }\nexport { foreignGate as signalGate };\n");
+    await writeSource(`${directory}/alias.test.ts`, `import { signalGate } from '@logic/gate';
+it('uses signalGate through an incompletely probed local alias chain', () => {
+  expect(signalGate([false])).toBe(false);
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/config-budget" });
+    expect(response.details?.testDiscovery?.capped).toBe(true);
+    expect(response.details?.results?.some((result) => result.filePath.endsWith("alias.test.ts"))).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
   it("rejects parameter shadowing, escaped symlinks, oversized files, and unindexed tests", async () => {
     await writeSource("tests/shadow.test.ts", `it('uses a local parameter', (signalGate) => {
   expect(signalGate([true, false])).toBe(false);
