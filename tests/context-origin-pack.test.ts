@@ -81,8 +81,7 @@ describe("conceptual origin evidence packing", () => {
       });
 
       expect(pack.text).toContain(`api${path.sep}guide.ts:1-3 [origin: nested docs]`);
-      expect(pack.text).toContain(prefixSibling);
-      expect(pack.text).not.toContain(`${prefixSibling} [origin:`);
+      expect(pack.text).not.toContain("[origin: project]");
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

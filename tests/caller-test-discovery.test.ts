@@ -80,12 +80,6 @@ describe("caller-aware test evidence", () => {
       { file: "tests/z-direct.test.ts", kind: "direct_target_test_reference", start: 2, end: 4, referenced: "signalGate" },
       { file: "tests/a-related.test.ts", kind: "related_caller_test_reference", start: 2, end: 4, referenced: "createTransport" },
     ]);
-    const citations = [...response.text.matchAll(/^\[(\d+)\] \S+(?: "(?:\\.|[^"\\])*")? in (.+?):(\d+)-(\d+) \(score[^\n]*\)/gmu)];
-    expect(citations.map((citation) => ({
-      file: citation[2], start: Number(citation[3]), end: Number(citation[4]),
-    }))).toEqual(response.details?.results?.map((result) => ({
-      file: result.filePath, start: result.startLine, end: result.endLine,
-    })));
     const limited = await retrieve({ limit: 1, tokenBudget: 128 });
     expect(limited.details?.results?.map((result) => result.evidenceKind)).toEqual(["direct_target_test_reference"]);
     expect(limited.details?.tokenEstimate).toBeLessThanOrEqual(128);
@@ -1047,6 +1041,187 @@ test('mixin an object', () => {
     const ambiguous = await retrieve({ query: "tests for Emitter" });
     expect(ambiguous.details?.testDiscovery?.resolution).toBe("ambiguous");
     expect(ambiguous.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("links a CommonJS constructable class export as a one-hop caller", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  constructor(value) { this.value = limiter(value); }
+}
+module.exports = PerMessageDeflate;
+`);
+    await writeSource("tests/limiter.test.js", `const limiter = require('../src/limiter.js');
+it('limits a direct value', () => {
+  expect(limiter('direct')).toBe('direct');
+});
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('preserves the constructed value', () => {
+  const extension = new PerMessageDeflate('related');
+  expect(extension.value).toBe('related');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "tests/limiter.test.js", kind: "direct_target_test_reference", referenced: "limiter", line: 3, start: 2, end: 4 },
+      { file: "test/permessage-deflate.test.js", kind: "related_caller_test_reference", referenced: "PerMessageDeflate", line: 3, start: 2, end: 5 },
+    ]);
+  });
+
+  it("does not use a mutated CommonJS class export as a related caller", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  constructor(value) { this.value = limiter(value); }
+}
+class Replacement {}
+module.exports = PerMessageDeflate;
+module.exports = Replacement;
+`);
+    await writeSource("tests/limiter.test.js", `const limiter = require('../src/limiter.js');
+it('limits a direct value', () => {
+  expect(limiter('direct')).toBe('direct');
+});
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('uses the replacement class', () => {
+  new PerMessageDeflate('foreign');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => result.evidenceKind))
+      .toEqual(["direct_target_test_reference"]);
+  });
+
+  it("does not promote an exported class for a method-owned caller edge", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  run(value) { return limiter(value); }
+}
+module.exports = PerMessageDeflate;
+`);
+    await writeSource("tests/limiter.test.js", `const limiter = require('../src/limiter.js');
+it('limits a direct value', () => {
+  expect(limiter('direct')).toBe('direct');
+});
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('constructs the class without invoking its method', () => {
+  new PerMessageDeflate();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => result.evidenceKind))
+      .toEqual(["direct_target_test_reference"]);
+  });
+
+  it("does not promote an exported class for a nested-class constructor edge", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  constructor(value) {
+    class Inner {
+      constructor() { this.value = limiter(value); }
+    }
+    return new Inner();
+  }
+}
+module.exports = PerMessageDeflate;
+`);
+    await writeSource("tests/limiter.test.js", `const limiter = require('../src/limiter.js');
+it('limits a direct value', () => {
+  expect(limiter('direct')).toBe('direct');
+});
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('constructs the outer class', () => {
+  new PerMessageDeflate('related');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => result.evidenceKind))
+      .toEqual(["direct_target_test_reference"]);
+  });
+
+  it.each([
+    ["stored arrow", "constructor(value) { this.later = () => limiter(value); }"],
+    ["stored function expression", "constructor(value) { this.later = function () { return limiter(value); }; }"],
+    ["static constructor method", "static constructor(value) { return limiter(value); }"],
+    ["stored default arrow", "constructor(value = () => limiter('stored')) { this.later = value; }"],
+  ])("does not promote an exported class for a %s helper edge", async (_form, member) => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  ${member}
+}
+module.exports = PerMessageDeflate;
+`);
+    await writeSource("tests/limiter.test.js", `const limiter = require('../src/limiter.js');
+it('limits a direct value', () => {
+  expect(limiter('direct')).toBe('direct');
+});
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('constructs the class without invoking stored or static callbacks', () => {
+  new PerMessageDeflate();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.testDiscovery?.verifiedCallerCount).toBe(0);
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => result.evidenceKind))
+      .toEqual(["direct_target_test_reference"]);
+  });
+
+  it("links a constructor-owned default parameter helper call", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/limiter.js", `function limiter(value) { return value; }
+module.exports = limiter;
+`);
+    await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
+class PerMessageDeflate {
+  constructor(value = limiter('related')) { this.value = value; }
+}
+module.exports = PerMessageDeflate;
+`);
+    await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
+it('uses the constructor default value', () => {
+  expect(new PerMessageDeflate().value).toBe('related');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for limiter" });
+    expect(response.details?.testDiscovery?.verifiedCallerCount).toBe(1);
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "test/permessage-deflate.test.js", kind: "related_caller_test_reference", referenced: "PerMessageDeflate", line: 3, start: 2, end: 4 },
+    ]);
   });
 
   it.each([

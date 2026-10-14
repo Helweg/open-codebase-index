@@ -40,6 +40,15 @@ pub struct ModuleCallData {
     pub call_type: String,
     pub binding_index: Option<u32>,
     pub qualifier: Option<String>,
+    pub constructor_owner: Option<ModuleConstructorOwnerData>,
+}
+
+#[napi(object)]
+pub struct ModuleConstructorOwnerData {
+    pub start_line: u32,
+    pub start_col: u32,
+    pub end_line: u32,
+    pub end_col: u32,
 }
 
 #[napi(object)]
@@ -103,6 +112,7 @@ struct Proof<'tree, 'source> {
     bindings: Vec<Binding<'tree, 'source>>,
     names: HashMap<(usize, &'source str), Option<usize>>,
     calls: Vec<(Node<'tree>, usize, &'static str, Option<Node<'tree>>)>,
+    constructor_owners: Option<Vec<(usize, ModuleConstructorOwnerData)>>,
     writes: Vec<(Node<'tree>, usize)>,
     root_exports: Vec<(Node<'tree>, usize)>,
     esm_exports: Vec<EsmExport<'source>>,
@@ -159,6 +169,22 @@ fn is_function(node: Node<'_>) -> bool {
             | "arrow_function"
             | "method_definition"
     )
+}
+
+fn is_instance_constructor(node: Node<'_>, source: &str) -> bool {
+    if node.kind() != "method_definition"
+        || !node
+            .parent()
+            .is_some_and(|parent| parent.kind() == "class_body")
+        || !node.child_by_field_name("name").is_some_and(|name| {
+            name.kind() == "property_identifier" && text(name, source) == "constructor"
+        })
+    {
+        return false;
+    }
+    let mut cursor = node.walk();
+    let is_static = node.children(&mut cursor).any(|child| child.kind() == "static");
+    !is_static
 }
 
 fn constructable(node: Node<'_>) -> bool {
@@ -457,7 +483,14 @@ impl<'tree, 'source> Proof<'tree, 'source> {
         }
     }
 
-    fn visit(&mut self, node: Node<'tree>, parent_scope: usize, depth: usize, ambient: bool) {
+    fn visit(
+        &mut self,
+        node: Node<'tree>,
+        parent_scope: usize,
+        depth: usize,
+        ambient: bool,
+        constructor_owner: Option<Node<'tree>>,
+    ) {
         if depth > 1024 {
             self.valid = false;
             return;
@@ -474,6 +507,18 @@ impl<'tree, 'source> Proof<'tree, 'source> {
         }
         let mut scope = parent_scope;
         let function = is_function(node);
+        let constructor_owner = if self.constructor_owners.is_none() {
+            None
+        } else if function {
+            is_instance_constructor(node, self.source).then_some(node)
+        } else if matches!(
+            node.kind(),
+            "class" | "class_declaration" | "abstract_class_declaration" | "class_body"
+        ) {
+            None
+        } else {
+            constructor_owner
+        };
         let creates_scope = function
             || matches!(
                 node.kind(),
@@ -724,7 +769,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
             };
             if let Some(callee) = node.child_by_field_name(field).map(unparen) {
                 if callee.kind() == "identifier" {
-                    self.calls.push((callee, scope, call_type, None));
+                    self.push_call(callee, scope, call_type, None, constructor_owner);
                 } else if callee.kind() == "member_expression" {
                     if let (Some(object), Some(property)) = (
                         callee.child_by_field_name("object"),
@@ -732,7 +777,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                     ) {
                         if object.kind() == "identifier" && property.kind() == "property_identifier"
                         {
-                            self.calls.push((
+                            self.push_call(
                                 property,
                                 scope,
                                 if call_type == "Call" {
@@ -741,7 +786,8 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                                     call_type
                                 },
                                 Some(object),
-                            ));
+                                constructor_owner,
+                            );
                         }
                     }
                 }
@@ -749,7 +795,31 @@ impl<'tree, 'source> Proof<'tree, 'source> {
         }
         let mut cursor = node.walk();
         for child in node.named_children(&mut cursor) {
-            self.visit(child, scope, depth + 1, ambient);
+            self.visit(child, scope, depth + 1, ambient, constructor_owner);
+        }
+    }
+
+    fn push_call(
+        &mut self,
+        node: Node<'tree>,
+        scope: usize,
+        call_type: &'static str,
+        qualifier: Option<Node<'tree>>,
+        constructor_owner: Option<Node<'tree>>,
+    ) {
+        self.calls.push((node, scope, call_type, qualifier));
+        if let (Some(owners), Some(owner)) = (&mut self.constructor_owners, constructor_owner) {
+            let start = owner.start_position();
+            let end = owner.end_position();
+            owners.push((
+                self.calls.len() - 1,
+                ModuleConstructorOwnerData {
+                    start_line: start.row as u32 + 1,
+                    start_col: start.column as u32,
+                    end_line: end.row as u32 + 1,
+                    end_col: end.column as u32,
+                },
+            ));
         }
     }
 
@@ -1050,10 +1120,12 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                 }
             }
         }
+        let mut constructor_owners = self.constructor_owners.take().into_iter().flatten().peekable();
         let calls = self
             .calls
             .iter()
-            .map(|&(node, scope, call_type, qualifier)| {
+            .enumerate()
+            .map(|(call_index, &(node, scope, call_type, qualifier))| {
                 let position = node.start_position();
                 let binding_index = self
                     .lookup(scope, text(qualifier.unwrap_or(node), self.source))
@@ -1069,6 +1141,14 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                     call_type: call_type.to_owned(),
                     binding_index,
                     qualifier: qualifier.map(|qualifier| text(qualifier, self.source).to_owned()),
+                    constructor_owner: if constructor_owners
+                        .peek()
+                        .is_some_and(|(owner_index, _)| *owner_index == call_index)
+                    {
+                        constructor_owners.next().map(|(_, owner)| owner)
+                    } else {
+                        None
+                    },
                 }
             })
             .collect();
@@ -1168,7 +1248,12 @@ impl<'tree, 'source> Proof<'tree, 'source> {
     }
 }
 
-pub fn extract_from_tree(tree: &Tree, source: &str, language: Language) -> ModuleSyntaxData {
+pub fn extract_from_tree(
+    tree: &Tree,
+    source: &str,
+    language: Language,
+    include_constructor_owners: bool,
+) -> ModuleSyntaxData {
     if tree.root_node().has_error() {
         return ModuleSyntaxData::default();
     }
@@ -1182,6 +1267,7 @@ pub fn extract_from_tree(tree: &Tree, source: &str, language: Language) -> Modul
         bindings: Vec::new(),
         names: HashMap::new(),
         calls: Vec::new(),
+        constructor_owners: include_constructor_owners.then(Vec::new),
         writes: Vec::new(),
         root_exports: Vec::new(),
         esm_exports: Vec::new(),
@@ -1194,7 +1280,7 @@ pub fn extract_from_tree(tree: &Tree, source: &str, language: Language) -> Modul
         exports_written: false,
         builtin_uses: Vec::new(),
     };
-    proof.visit(tree.root_node(), 0, 0, false);
+    proof.visit(tree.root_node(), 0, 0, false, None);
     proof.finish()
 }
 
@@ -1222,5 +1308,5 @@ pub fn extract_module_syntax(content: String, language: String) -> napi::Result<
     let tree = parser
         .parse(&content, None)
         .ok_or_else(|| napi::Error::from_reason("Failed to parse module"))?;
-    Ok(extract_from_tree(&tree, &content, language))
+    Ok(extract_from_tree(&tree, &content, language, false))
 }

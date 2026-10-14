@@ -1263,8 +1263,8 @@ export class LocalModuleCallResolver {
     return candidates.length === 1 ? candidates[0] : undefined;
   }
 
-  /** Literal callable declarations exported from this source module, never an imported namespace guess. */
-  async exportedFunctionSymbols(filePath: string): Promise<SymbolData[]> {
+  /** Literal exported root bindings executable by direct call or construction, never an imported namespace guess. */
+  async exportedRuntimeSymbols(filePath: string): Promise<SymbolData[]> {
     const normalized = normalizeFilePath(filePath);
     const data = await this.getModuleData(normalized);
     const record = await this.getModuleRecord(normalized);
@@ -1273,11 +1273,13 @@ export class LocalModuleCallResolver {
     if (!syntax.valid) return [];
     const candidates: SymbolData[] = [];
     for (const exports of record.exports.values()) {
-      if (exports.length !== 1 || exports[0].kind !== "local") continue;
+      if (exports.length !== 1 || (exports[0].kind !== "local" && exports[0].kind !== "root")) continue;
       const name = exports[0].localName;
       const bindings = syntax.bindings.filter((binding) => binding.kind !== "ambient" && binding.scopeId === 0 && binding.name === name);
-      if (bindings.length !== 1 || !bindingAcceptsCall(bindings[0], "Call")) continue;
-      candidates.push(...data.symbols.filter((symbol) => bindingMatchesSymbol(bindings[0], symbol)));
+      if (bindings.length !== 1) continue;
+      const binding = bindings[0];
+      if (!bindingAcceptsCall(binding, "Call") && !bindingAcceptsCall(binding, "Constructor")) continue;
+      candidates.push(...data.symbols.filter((symbol) => bindingMatchesSymbol(binding, symbol)));
     }
     return deduplicateSymbols(candidates);
   }

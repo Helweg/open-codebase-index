@@ -87,6 +87,12 @@ export interface ModuleCallData {
   callType: CallType;
   bindingIndex?: number;
   qualifier?: string;
+  constructorOwner?: {
+    startLine: number;
+    startCol: number;
+    endLine: number;
+    endCol: number;
+  };
 }
 
 export interface ModuleExportData {

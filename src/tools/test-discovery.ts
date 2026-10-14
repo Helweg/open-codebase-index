@@ -1,10 +1,10 @@
 import type { SearchResult, KeywordFileCandidateResult } from "../indexer/index.js";
 import type { CallGraphDataResult } from "./operations.js";
-import type { CallSiteData, ParsedFile, SymbolData } from "../native/index.js";
+import type { CallEdgeData, ModuleCallData, ParsedFile, SymbolData } from "../native/index.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
-import { extractCalls, parseFiles } from "../native/index.js";
+import { parseFiles } from "../native/index.js";
 import { isTestPath } from "../indexer/intent-aware-ranking.js";
 import { tokenizeTextForRanking } from "../indexer/definition-ranking.js";
 import { isJavaScriptRuntimeSourceFilePath } from "../indexer/local-module-resolution.js";
@@ -16,9 +16,9 @@ export const TEST_DISCOVERY_MAX_FILES = 200;
 export const TEST_DISCOVERY_MAX_DEFINITIONS = 100;
 export const TEST_DISCOVERY_MAX_FILE_BYTES = 256 * 1024;
 export const TEST_DISCOVERY_MAX_REFERENCES = 20;
-const LANGUAGES: Record<string, string> = {
-  ".js": "javascript", ".jsx": "javascript", ".mjs": "javascript", ".cjs": "javascript",
-  ".ts": "typescript", ".tsx": "typescript", ".mts": "typescript", ".cts": "typescript",
+const TEST_SOURCE_EXTENSIONS: Record<string, true> = {
+  ".js": true, ".jsx": true, ".mjs": true, ".cjs": true,
+  ".ts": true, ".tsx": true, ".mts": true, ".cts": true,
 };
 
 export type TestEvidenceKind = "direct_target_test_reference" | "related_caller_test_reference";
@@ -88,6 +88,46 @@ async function readSource(root: string, filePath: string, markCapped: () => void
 }
 
 type TestContainer = NonNullable<ParsedFile["testSyntax"]>["containers"][number];
+type SourceDeclaration = ParsedFile["symbols"][number];
+
+const CLASS_DECLARATION_KINDS: Record<string, true> = { class_declaration: true, abstract_class_declaration: true };
+
+function containsSourcePosition(declaration: SourceDeclaration, line: number, column: number): boolean {
+  return (declaration.startLine < line || (declaration.startLine === line && declaration.startCol <= column))
+    && (declaration.endLine > line || (declaration.endLine === line && declaration.endCol >= column));
+}
+
+function containsDeclaration(outer: SourceDeclaration, inner: SourceDeclaration): boolean {
+  return (outer.startLine < inner.startLine || (outer.startLine === inner.startLine && outer.startCol <= inner.startCol))
+    && (outer.endLine > inner.endLine || (outer.endLine === inner.endLine && outer.endCol >= inner.endCol));
+}
+
+function innermostDeclarationContaining(candidates: SourceDeclaration[]): SourceDeclaration | undefined {
+  const innermost = candidates.filter((candidate) => !candidates.some((other) =>
+    other !== candidate && containsDeclaration(candidate, other)));
+  return innermost.length === 1 ? innermost[0] : undefined;
+}
+
+function isExactExportedConstructorOwner(
+  source: SourceEvidence,
+  edge: CallEdgeData,
+  candidate: SourceDeclaration,
+  call: ModuleCallData,
+): boolean {
+  if (!CLASS_DECLARATION_KINDS[candidate.kind] || edge.fromSymbolName !== "constructor") return false;
+  const owner = call.constructorOwner;
+  if (!owner) return false;
+  const declarations = source.parsed.symbols;
+  const constructors = declarations.filter((declaration) => declaration.kind === "method_definition"
+    && declaration.name === "constructor" && declaration.startLine === owner.startLine
+    && declaration.startCol === owner.startCol && declaration.endLine === owner.endLine
+    && declaration.endCol === owner.endCol && containsSourcePosition(declaration, edge.line, edge.col));
+  if (constructors.length !== 1) return false;
+  const constructor = constructors[0];
+  const nearestClass = innermostDeclarationContaining(declarations.filter((declaration) =>
+    CLASS_DECLARATION_KINDS[declaration.kind] && containsDeclaration(declaration, constructor)));
+  return nearestClass === candidate;
+}
 
 async function readConfiguration(root: string, filePath: string, markCapped: () => void, control?: OperationControl): Promise<{ content?: string; confirmedAbsent: boolean }> {
   throwIfOperationAborted(control?.signal);
@@ -101,10 +141,9 @@ async function readConfiguration(root: string, filePath: string, markCapped: () 
 
 interface SourceEvidence {
   parsed: ParsedFile;
-  calls: CallSiteData[];
-  containersByCall: Map<CallSiteData, TestContainer>;
+  calls: ModuleCallData[];
+  containersByCall: Map<ModuleCallData, TestContainer>;
   containerContents: Map<TestContainer, string>;
-  directCalls: Set<string>;
   sourceBytes?: Buffer;
   content: string;
 }
@@ -117,41 +156,46 @@ interface RuntimeDefinition {
 }
 
 function parseSource(filePath: string, content: string): SourceEvidence | undefined {
-  const language = LANGUAGES[path.extname(filePath).toLowerCase()];
-  if (!language) return undefined;
+  if (!TEST_SOURCE_EXTENSIONS[path.extname(filePath).toLowerCase()]) return undefined;
   const [parsed] = parseFiles([{ path: filePath, content }], undefined, undefined, true);
   if (!parsed || parsed.parseFailed || !parsed.testSyntax?.valid || !parsed.moduleSyntax?.valid) return undefined;
-  const calls = extractCalls(content, language).sort((left, right) => left.line - right.line || left.column - right.column);
+  const calls = parsed.moduleSyntax.calls;
   const containers = parsed.testSyntax.containers.sort((left, right) =>
     left.bodyStartLine - right.bodyStartLine || left.bodyStartCol - right.bodyStartCol
     || right.bodyEndLine - left.bodyEndLine || right.bodyEndCol - left.bodyEndCol);
-  const containersByCall = new Map<CallSiteData, TestContainer>();
-  const active: TestContainer[] = [];
-  let nextContainer = 0;
-  for (const call of calls) {
-    while (nextContainer < containers.length) {
-      const candidate = containers[nextContainer];
-      if (candidate.bodyStartLine > call.line || (candidate.bodyStartLine === call.line && candidate.bodyStartCol > call.column)) break;
+  const containersByCall = new Map<ModuleCallData, TestContainer>();
+  if (containers.length > 0) {
+    for (let index = 1; index < calls.length; index += 1) {
+      const previous = calls[index - 1];
+      const current = calls[index];
+      if (previous.line > current.line || (previous.line === current.line && previous.column > current.column)) {
+        calls.sort((left, right) => left.line - right.line || left.column - right.column);
+        break;
+      }
+    }
+    const active: TestContainer[] = [];
+    let nextContainer = 0;
+    for (const call of calls) {
+      while (nextContainer < containers.length) {
+        const candidate = containers[nextContainer];
+        if (candidate.bodyStartLine > call.line || (candidate.bodyStartLine === call.line && candidate.bodyStartCol > call.column)) break;
+        while (active.length > 0) {
+          const previous = active[active.length - 1];
+          if (previous.bodyEndLine > candidate.bodyStartLine || (previous.bodyEndLine === candidate.bodyStartLine && previous.bodyEndCol > candidate.bodyStartCol)) break;
+          active.pop();
+        }
+        active.push(candidate);
+        nextContainer += 1;
+      }
       while (active.length > 0) {
-        const previous = active[active.length - 1];
-        if (previous.bodyEndLine > candidate.bodyStartLine || (previous.bodyEndLine === candidate.bodyStartLine && previous.bodyEndCol > candidate.bodyStartCol)) break;
+        const candidate = active[active.length - 1];
+        if (candidate.bodyEndLine > call.line || (candidate.bodyEndLine === call.line && candidate.bodyEndCol > call.column)) break;
         active.pop();
       }
-      active.push(candidate);
-      nextContainer += 1;
+      if (active.length > 0) containersByCall.set(call, active[active.length - 1]);
     }
-    while (active.length > 0) {
-      const candidate = active[active.length - 1];
-      if (candidate.bodyEndLine > call.line || (candidate.bodyEndLine === call.line && candidate.bodyEndCol > call.column)) break;
-      active.pop();
-    }
-    if (active.length > 0) containersByCall.set(call, active[active.length - 1]);
   }
-  const containerContents = new Map<TestContainer, string>();
-  const directCalls = new Set(parsed.moduleSyntax.calls.filter((call) => !call.qualifier
-    && (call.callType === "Call" || call.callType === "Constructor")).map((call) =>
-    `${call.line}:${call.column}:${call.callType}`));
-  return { parsed, content, calls, containersByCall, containerContents, directCalls };
+  return { parsed, content, calls, containersByCall, containerContents: new Map() };
 }
 
 function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, declaration: SourceEvidence["parsed"]["symbols"][number], filePath: string): boolean {
@@ -160,10 +204,9 @@ function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, d
     && reference.endLine === declaration.endLine && reference.endCol === declaration.endCol;
 }
 
-function executableReference(source: SourceEvidence, call: CallSiteData, name: string): boolean {
-  return call.calleeName === name && source.directCalls.has(`${call.line}:${call.column}:${call.callType}`);
+function executableReference(call: ModuleCallData, name: string): boolean {
+  return call.name === name && !call.qualifier && (call.callType === "Call" || call.callType === "Constructor");
 }
-
 
 function referenceTerms(text: string): Set<string> {
   return tokenizeTextForRanking(text.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2").replace(/_/gu, " "));
@@ -291,19 +334,27 @@ export async function discoverSymbolTests(
     if (!callerPath || isTestPath(callerPath)) continue;
     const source = await currentSource(callerPath);
     if (!source) continue;
-    const sourceCall = source.calls.find((call) => executableReference(source, call, symbol)
+    const sourceCall = source.calls.find((call) => executableReference(call, symbol)
       && call.line === edge.line && call.column === edge.col && call.callType === edge.callType);
     if (!sourceCall) continue;
     resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
-    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall);
+    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, {
+      calleeName: sourceCall.name,
+      line: sourceCall.line,
+      column: sourceCall.column,
+      callType: sourceCall.callType,
+      confidence: "Direct",
+    });
     throwIfOperationAborted(control?.signal);
     if (!resolvedReferenceMatchesDefinition(targetReference, targetDeclaration, targetPath)) continue;
-    const exportedSymbols = await resolver.moduleResolver.exportedFunctionSymbols(callerPath);
+    const exportedSymbols = await resolver.moduleResolver.exportedRuntimeSymbols(callerPath);
     throwIfOperationAborted(control?.signal);
     const exportedCandidates = new Set<SourceEvidence["parsed"]["symbols"][number]>();
     const enclosing = source.parsed.symbols.filter((candidate) => {
-      if (candidate.name === symbol || candidate.startLine > edge.line || candidate.endLine < edge.line) return false;
+      if (candidate.name === symbol || !containsSourcePosition(candidate, edge.line, edge.col)) return false;
       const exported = exportedSymbols.some((reference) => resolvedReferenceMatchesDefinition(reference, candidate, callerPath));
+      if (exported && CLASS_DECLARATION_KINDS[candidate.kind]
+        && !isExactExportedConstructorOwner(source, edge, candidate, sourceCall)) return false;
       if (exported) exportedCandidates.add(candidate);
       return exported || candidate.name === edge.fromSymbolName;
     }).sort((left, right) => Number(exportedCandidates.has(right)) - Number(exportedCandidates.has(left))
@@ -348,18 +399,24 @@ export async function discoverSymbolTests(
     resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
     const names = [symbol, ...callerDefinitionsByName.keys()];
     for (const call of source.calls) {
-      if (!names.some((name) => executableReference(source, call, name))) continue;
+      if (!names.some((name) => executableReference(call, name))) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
-      const expectedDefinition = call.calleeName === symbol ? unique[0] : callerDefinitionsByName.get(call.calleeName);
+      const expectedDefinition = call.name === symbol ? unique[0] : callerDefinitionsByName.get(call.name);
       if (!expectedDefinition) continue;
-      const direct = call.calleeName === symbol;
+      const direct = call.name === symbol;
       const startLine = container.startLine;
       const endLine = container.endLine;
       const key = `${filePath}:${container.startByte}:${container.endByte}`;
       const previous = references.get(key);
       if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
-      const reference = await resolver.resolveCallTarget(filePath, source.content, call);
+      const reference = await resolver.resolveCallTarget(filePath, source.content, {
+        calleeName: call.name,
+        line: call.line,
+        column: call.column,
+        callType: call.callType,
+        confidence: "Direct",
+      });
       throwIfOperationAborted(control?.signal);
       if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition.declaration, expectedDefinition.filePath)) continue;
       let content = source.containerContents.get(container);
@@ -372,8 +429,8 @@ export async function discoverSymbolTests(
         filePath: path.resolve(root, filePath), startLine, endLine,
         content, score: direct ? 1 : relatedReferenceScore(content, targetTerms),
         chunkType: "expression_statement" as TestReferenceResult["chunkType"],
-        name: call.calleeName, evidenceKind: direct ? "direct_target_test_reference" : "related_caller_test_reference",
-        referencedSymbol: call.calleeName, referenceLine: call.line,
+        name: call.name, evidenceKind: direct ? "direct_target_test_reference" : "related_caller_test_reference",
+        referencedSymbol: call.name, referenceLine: call.line,
       };
       if (!previous && references.size >= TEST_DISCOVERY_MAX_REFERENCES) {
         result.capped = true;

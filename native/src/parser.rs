@@ -217,6 +217,7 @@ fn parse_file_with_symbols_internal(
         .ok_or_else(|| anyhow!("Failed to parse file: {}", file_path))?;
     let chunks = extract_chunks(&tree, content, &language, lines_per_chunk)?;
     let symbols = extract_symbols(&tree, content, &language);
+    let include_constructor_owners = test_syntax.is_some();
     if let Some(syntax) = test_syntax {
         if matches!(
             language,
@@ -236,7 +237,12 @@ fn parse_file_with_symbols_internal(
                 | Language::TypeScript
                 | Language::TypeScriptTsx
         ) {
-            *syntax = crate::module_syntax::extract_from_tree(&tree, content, language);
+            *syntax = crate::module_syntax::extract_from_tree(
+                &tree,
+                content,
+                language,
+                include_constructor_owners,
+            );
         }
     }
     Ok((chunks, symbols))
