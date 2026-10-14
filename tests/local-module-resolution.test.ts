@@ -133,8 +133,10 @@ function symbol(id: string, filePath: string, name: string, kind = "function_dec
   };
 }
 
-function callSite(calleeName: string, line = 2, column = 2, callType: CallSiteData["callType"] = "Call"): CallSiteData {
-  return { calleeName, line, column, callType, confidence: "Direct" };
+function callSite(content: string, calleeName: string, callType: CallSiteData["callType"] = "Call"): CallSiteData {
+  const site = extractCalls(content, "typescript").find((call) => call.calleeName === calleeName && call.callType === callType);
+  if (!site) throw new Error(`Missing native ${callType} site for ${calleeName}`);
+  return site;
 }
 
 function goModule(filePath: string, content: string): LocalModuleData {
@@ -156,10 +158,26 @@ function goCall(content: string, calleeName: string, occurrence = 0): CallSiteDa
   return site;
 }
 
+function nativeFixtures(modules: Record<string, LocalModuleData>): Record<string, LocalModuleData> {
+  // Expected identities retain their test IDs but take all declaration fields from the actual native parse.
+  for (const [filePath, module] of Object.entries(modules)) {
+    if (filePath.endsWith(".go")) continue;
+    const [parsed] = parseFiles([{ path: filePath, content: module.content }]);
+    const symbols = parsed.symbols.map((nativeSymbol) => {
+      const expected = module.symbols.find((candidate) => candidate.name === nativeSymbol.name && candidate.kind === nativeSymbol.kind);
+      if (expected) return Object.assign(expected, nativeSymbol, { id: expected.id, filePath });
+      return { ...nativeSymbol, filePath, id: `${filePath}:${nativeSymbol.name}:${nativeSymbol.startLine}:${nativeSymbol.startCol}` };
+    });
+    modules[filePath] = { ...module, symbols };
+  }
+  return modules;
+}
+
 function resolver(
-  modules: Record<string, LocalModuleData>,
+  fixtures: Record<string, LocalModuleData>,
   workspaceManifestTexts: Record<string, string> = {},
 ): LocalModuleCallResolver {
+  const modules = nativeFixtures(fixtures);
   return new LocalModuleCallResolver({
     filePaths: Object.keys(modules),
     loadModule: async (filePath) => modules[filePath],
@@ -341,9 +359,9 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("rootTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "rootTarget")))
       .resolves.toEqual(rootTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("featureTarget", 3, 38)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "featureTarget")))
       .resolves.toEqual(featureTarget);
   });
 
@@ -481,15 +499,15 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("defaultFirstTarget", 12, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "defaultFirstTarget")))
       .resolves.toEqual(defaultFirstTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nodeFirstTarget", 13, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nodeFirstTarget")))
       .resolves.toEqual(nodeFirstTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nestedFallbackTarget", 14, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nestedFallbackTarget")))
       .resolves.toEqual(nestedFallbackTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("inactiveBranchTarget", 15, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "inactiveBranchTarget")))
       .resolves.toEqual(inactiveBranchTarget);
-    for (const [calleeName, line] of [
+    for (const [calleeName] of [
       ["blockedTarget", 16],
       ["unsafeTarget", 17],
       ["arrayTarget", 18],
@@ -497,7 +515,7 @@ describe("LocalModuleCallResolver", () => {
       ["invalidConditionTarget", 20],
       ["legacyTarget", 21],
     ] as const) {
-      await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(calleeName, line, 2)))
+      await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, calleeName)))
         .resolves.toBeUndefined();
     }
   });
@@ -531,9 +549,9 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nullRootTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nullRootTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("restrictedRootTarget", 3, 42)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "restrictedRootTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -586,11 +604,11 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("generalTarget", 5, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "generalTarget")))
       .resolves.toEqual(generalTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("specificTarget", 6, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "specificTarget")))
       .resolves.toEqual(specificTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("exactTarget", 7, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "exactTarget")))
       .resolves.toEqual(exactTarget);
   });
 
@@ -764,10 +782,10 @@ describe("LocalModuleCallResolver", () => {
       "ambiguousTarget",
       "invalidNameTarget",
     ]) {
-      await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(name, 20, 2)))
+      await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, name)))
         .resolves.toBeUndefined();
     }
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("conditionalTarget", 20, 2)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "conditionalTarget")))
       .resolves.toEqual(conditionalTarget);
   });
 
@@ -802,11 +820,11 @@ describe("LocalModuleCallResolver", () => {
       "packages/b/package.json": JSON.stringify({ name: "duplicate-package", main: "./index.ts" }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("nestedTarget", 4, 24)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "nestedTarget")))
       .resolves.toEqual(nestedTarget);
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("externalTarget", 4, 40)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "externalTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("duplicateTarget", 4, 58)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "duplicateTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -833,11 +851,11 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localAlias", 4, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localAlias")))
       .resolves.toEqual(directTarget);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("defaultTarget", 5, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "defaultTarget")))
       .resolves.toEqual(defaultTarget);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("directTarget", 6, 12, "MethodCall")))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "directTarget", "MethodCall")))
       .resolves.toEqual(directTarget);
   });
 
@@ -868,9 +886,9 @@ describe("LocalModuleCallResolver", () => {
       "src/star.ts": { content: "export function starTarget() { return 2; }", symbols: [star] },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localTarget", 3, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localTarget")))
       .resolves.toEqual(original);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("starTarget", 4, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "starTarget")))
       .resolves.toEqual(star);
   });
 
@@ -887,7 +905,7 @@ describe("LocalModuleCallResolver", () => {
       "src/b.ts": { content: "export function duplicateTarget() {}", symbols: [targetB] },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("duplicateTarget", 2, 24)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "duplicateTarget")))
       .resolves.toEqual(targetA);
   });
 
@@ -904,7 +922,7 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localAlias", 2, 61, "MethodCall")))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localAlias", "MethodCall")))
       .resolves.toBeUndefined();
   });
 
@@ -938,9 +956,9 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("ambiguousTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "ambiguousTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("extensionlessTarget", 3, 43)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "extensionlessTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -963,7 +981,7 @@ describe("LocalModuleCallResolver", () => {
     });
 
     for (const name of ["missingTarget", "externalTarget", "TypeOnlyTarget", "cyclicTarget"]) {
-      await expect(instance.resolveCallTarget("src/main.ts", main, callSite(name, 5, 24)))
+      await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, name)))
         .resolves.toBeUndefined();
     }
   });
@@ -982,7 +1000,7 @@ describe("LocalModuleCallResolver", () => {
         symbols: [interfaceSymbol, classSymbol],
       },
     });
-    const site = callSite("Service", 2, 35, "Constructor");
+    const site = callSite(main, "Service", "Constructor");
 
     const first = await instance.resolveCallTarget("src/main.ts", main, site);
     const second = await instance.resolveCallTarget("src/main.ts", main, site);
@@ -1052,16 +1070,17 @@ describe("LocalModuleCallResolver", () => {
       "export function run() { return inheritedTarget(); }",
     ].join("\n");
     const inheritedTarget = symbol("inherited", "src/core/target.ts", "inheritedTarget");
+    const modules = nativeFixtures({
+      "src/main.ts": { content: main, symbols: [symbol("run", "src/main.ts", "run")] },
+      "src/core/target.ts": { content: "export function inheritedTarget() {}", symbols: [inheritedTarget] },
+    });
     const instance = new LocalModuleCallResolver({
-      filePaths: ["src/main.ts", "src/core/target.ts"],
-      loadModule: async (filePath) => ({
-        "src/main.ts": { content: main, symbols: [symbol("run", "src/main.ts", "run")] },
-        "src/core/target.ts": { content: "export function inheritedTarget() {}", symbols: [inheritedTarget] },
-      })[filePath],
+      filePaths: Object.keys(modules),
+      loadModule: async (filePath) => modules[filePath],
       tsConfigPathAliases: aliases,
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("inheritedTarget", 2, 31)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "inheritedTarget")))
       .resolves.toEqual(inheritedTarget);
   });
 
@@ -1121,12 +1140,13 @@ describe("LocalModuleCallResolver", () => {
         symbols: [jsTarget],
       },
     };
+    nativeFixtures(modules);
     const instance = new LocalModuleCallResolver({
       filePaths: Object.keys(modules),
       loadModule: async (filePath) => modules[filePath],
       pathAliasesForImporter: (filePath) => aliasCache.getPathAliasesForImporter(filePath),
     });
-    const site = callSite("aliasTarget", 2, 24);
+    const site = callSite(importerContent, "aliasTarget");
 
     await expect(instance.resolveCallTarget("src/main.ts", importerContent, site)).resolves.toEqual(rootTarget);
     await expect(instance.resolveCallTarget("packages/app/src/main.ts", importerContent, site)).resolves.toEqual(appTarget);

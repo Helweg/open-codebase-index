@@ -222,6 +222,8 @@ function exactSymbolSearchResults(
         startLine: symbol.startLine,
         endLine: symbol.endLine,
         content,
+        startCol: symbol.startCol,
+        endCol: symbol.endCol,
         score: 1,
         chunkType: symbol.kind,
         name: symbol.name,

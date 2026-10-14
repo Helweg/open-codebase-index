@@ -560,6 +560,614 @@ it('constructs the imported EnvelopeFactory directly', () => {
     }
   });
 
+  it("ignores erased ambient wrapper ownership while retaining real require shadows", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/ambient-root.ts", `declare const module: { exports: unknown };
+declare const exports: unknown;
+declare class __dirname {}
+declare const { pathName: __filename }: { pathName: string };
+function AmbientRoot() { return 1; }
+module.exports = AmbientRoot;
+`);
+    await writeSource("src/ambient-import.cjs", `function AmbientImportRoot() { return 1; }
+module.exports = AmbientImportRoot;
+`);
+    await writeSource("tests/ambient/root.test.ts", `import AmbientRoot from '../../src/ambient-root.js';
+it('calls the runtime root beside erased declarations', () => {
+  AmbientRoot();
+});
+`);
+    await writeSource("tests/ambient/require.test.ts", `declare const require: (name: string) => unknown;
+const AmbientImportRoot = require('../../src/ambient-import.cjs');
+it('uses the unshadowed runtime require', () => {
+  AmbientImportRoot();
+});
+`);
+    await writeSource("tests/ambient/shadow.test.js", `var require = () => () => 1;
+const AmbientImportRoot = require('../../src/ambient-import.cjs');
+it('calls a foreign runtime require result', () => {
+  AmbientImportRoot();
+});
+`);
+    await indexer.index();
+    const ambient = await retrieve({ query: "tests for AmbientRoot", directory: "tests/ambient" });
+    expect(ambient.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: "tests/ambient/root.test.ts", line: 3, start: 2, end: 4 }]);
+    const importer = await retrieve({ query: "tests for AmbientImportRoot", directory: "tests/ambient" });
+    expect(importer.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: "tests/ambient/require.test.ts", line: 4, start: 3, end: 5 }]);
+  });
+
+  it("requires CommonJS importer origin for static require ancestry", async () => {
+    await writeSource("src/import-origin.cjs", `function ImportOriginRoot() { return 1; }
+module.exports = ImportOriginRoot;
+`);
+    await writeSource("tests/import-origin/mod/package.json", JSON.stringify({ type: "module" }));
+    for (const file of ["safe.test.cjs", "unknown.test.js", "explicit.test.mjs", "mod/typed.test.js"]) {
+      const specifier = file.startsWith("mod/") ? "../../../src/import-origin.cjs" : "../../src/import-origin.cjs";
+      await writeSource(`tests/import-origin/${file}`, `const ImportOriginRoot = require('${specifier}');
+it('calls the imported root', () => {
+  ImportOriginRoot();
+});
+`);
+    }
+    await writeSource("tests/import-origin/syntax.test.cjs", `export {};
+const ImportOriginRoot = require('../../src/import-origin.cjs');
+it('does not acquire a builtin require from ESM syntax', () => {
+  ImportOriginRoot();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for ImportOriginRoot", directory: "tests/import-origin" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: "tests/import-origin/safe.test.cjs", line: 3, start: 2, end: 4 }]);
+  });
+
+  it("abstains from unaccounted package format after the shared configuration budget is exhausted", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/budget-root.cjs", `function ConfigurationBudgetRoot() { return 1; }
+module.exports = ConfigurationBudgetRoot;
+`);
+    const directory = `tests/config-budget/${Array.from({ length: 50 }, (_, index) => `d${index}`).join("/")}`;
+    const relative = path.posix.relative(directory, "src/budget-root.cjs");
+    for (const extension of ["js", "cjs"]) {
+      await writeSource(`${directory}/root.test.${extension}`, `const ConfigurationBudgetRoot = require('${relative}');
+it('calls the root within a deep configuration hierarchy', () => {
+  ConfigurationBudgetRoot();
+});
+`);
+    }
+    await indexer.index();
+    const response = await retrieve({ query: "tests for ConfigurationBudgetRoot", directory: "tests/config-budget" });
+    expect(response.details?.testDiscovery?.capped).toBe(true);
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: `${directory}/root.test.cjs`, line: 3, start: 2, end: 4 }]);
+  });
+
+  it("flags top-level for-await and program-scope lexical wrapper conflicts as ESM origin", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/for-await.js", `for await (const value of []) {
+  void value;
+}
+function ForAwaitRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = ForAwaitRoot; }
+`);
+    await writeSource("src/async-for-await.js", `async function drain() {
+  for await (const value of []) {
+    void value;
+  }
+}
+function AsyncRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = AsyncRoot; }
+`);
+    await writeSource("src/lexical-wrapper.js", `const require = () => undefined;
+function LexicalRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = LexicalRoot; }
+`);
+    await writeSource("src/lexical-class.js", `class __dirname {}
+function ClassRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = ClassRoot; }
+`);
+    await writeSource("src/local-shadow.js", `function run() {
+  const require = () => undefined;
+  return require;
+}
+function LocalRoot() { run(); return 1; }
+if (typeof module !== 'undefined') { module.exports = LocalRoot; }
+`);
+    await writeSource("src/block-await.js", `{
+  const settled = await Promise.resolve(1);
+  void settled;
+}
+function BlockAwaitRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = BlockAwaitRoot; }
+`);
+    await writeSource("src/async-arrow.js", `const drain = async () => {
+  for await (const value of []) {
+    void value;
+  }
+};
+function AsyncArrowRoot() { drain(); return 1; }
+if (typeof module !== 'undefined') { module.exports = AsyncArrowRoot; }
+`);
+    await writeSource("src/destructured-object.js", `const { x: __filename } = {};
+function ObjectWrapperRoot() { return 1; }
+module.exports = ObjectWrapperRoot;
+`);
+    await writeSource("src/destructured-array.js", `const [__dirname] = [];
+function ArrayWrapperRoot() { return 1; }
+module.exports = ArrayWrapperRoot;
+`);
+    await writeSource("src/property-key.js", `const { __filename: localName } = {};
+function PropertyKeyRoot() { return localName; }
+module.exports = PropertyKeyRoot;
+`);
+    await writeSource("src/var-destructured.js", `var { x: __filename } = {};
+function VarWrapperRoot() { return 1; }
+module.exports = VarWrapperRoot;
+`);
+    await writeSource("src/local-destructured.js", `function runLocal() {
+  const [__dirname] = [];
+  return __dirname;
+}
+function LocalDestructuredRoot() { return runLocal(); }
+module.exports = LocalDestructuredRoot;
+`);
+    const cases = [
+      ["ForAwaitRoot", "../../src/for-await.js", false],
+      ["AsyncRoot", "../../src/async-for-await.js", true],
+      ["BlockAwaitRoot", "../../src/block-await.js", false],
+      ["AsyncArrowRoot", "../../src/async-arrow.js", true],
+      ["LexicalRoot", "../../src/lexical-wrapper.js", false],
+      ["ClassRoot", "../../src/lexical-class.js", false],
+      ["LocalRoot", "../../src/local-shadow.js", true],
+      ["ObjectWrapperRoot", "../../src/destructured-object.js", false],
+      ["ArrayWrapperRoot", "../../src/destructured-array.js", false],
+      ["PropertyKeyRoot", "../../src/property-key.js", true],
+      ["VarWrapperRoot", "../../src/var-destructured.js", true],
+      ["LocalDestructuredRoot", "../../src/local-destructured.js", true],
+    ] as const;
+    for (const [name, specifier] of cases) {
+      await writeSource(`tests/origin2/${name}.test.js`, `import ${name} from '${specifier}';
+it('uses the module root export', () => {
+  ${name}();
+});
+`);
+    }
+    await indexer.index();
+    for (const [name, , expected] of cases) {
+      const linked = await retrieve({ query: `tests for ${name}`, directory: "tests/origin2" });
+      const files = linked.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath));
+      expect(files).toEqual(expected ? [`tests/origin2/${name}.test.js`] : []);
+    }
+  });
+
+  it("requires provable CommonJS format before accepting a root export", async () => {
+    const rootBody = "function __NAME__() { return 1; }\n";
+    await writeSource("src/direct-esm.mjs", `${rootBody.replace("__NAME__", "MjsRoot")}if (typeof module !== 'undefined') { module.exports = MjsRoot; }\n`);
+    await writeSource("src/mod/package.json", JSON.stringify({ type: "module" }));
+    await writeSource("src/mod/root.js", `${rootBody.replace("__NAME__", "ModuleRoot")}if (typeof module !== 'undefined') { module.exports = ModuleRoot; }\n`);
+    await writeSource("src/meta.js", `const located = import.meta.url;\n${rootBody.replace("__NAME__", "MetaRoot")}if (typeof module !== 'undefined') { module.exports = MetaRoot; }\n`);
+    await writeSource("src/awaited.js", `const settled = await Promise.resolve(1);\nfunction AwaitRoot() { return settled; }\nif (typeof module !== 'undefined') { module.exports = AwaitRoot; }\n`);
+    await writeSource("src/direct-cjs.cjs", `function CjsRoot() { return 1; }\nmodule.exports = CjsRoot;\n`);
+    const cases = [
+      ["MjsRoot", "../../src/direct-esm.mjs"],
+      ["ModuleRoot", "../../src/mod/root.js"],
+      ["MetaRoot", "../../src/meta.js"],
+      ["AwaitRoot", "../../src/awaited.js"],
+      ["CjsRoot", "../../src/direct-cjs.cjs"],
+    ] as const;
+    for (const [name, specifier] of cases) {
+      await writeSource(`tests/format/${name}.test.js`, `import ${name} from '${specifier}';
+it('uses the module root export', () => {
+  ${name}();
+});
+`);
+    }
+    await indexer.index();
+    for (const [name] of cases) {
+      const linked = await retrieve({ query: `tests for ${name}`, directory: "tests/format" });
+      const files = linked.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath));
+      expect(files).toEqual(name === "CjsRoot" ? [`tests/format/CjsRoot.test.js`] : []);
+    }
+  });
+
+  it("keeps genuine exports beside type-only forms and binds a CommonJS root only as ESM default", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/typed.ts", `export type Alias = string;
+export interface Contract { value: string }
+export type { Contract as ReexportedContract } from './contract.js';
+export { type Contract as ContractValue } from './contract.js';
+export function RealTarget(value: string) {
+  return value;
+}
+export { RealTarget as RealAlias };
+`);
+    await writeSource("src/contract.ts", "export interface Contract { value: string }\n");
+    await writeSource("src/cjs-only.js", `function RootOnly(value) {
+  return value;
+}
+if (typeof module !== 'undefined') {
+  module.exports = RootOnly;
+}
+`);
+    await writeSource("tests/origins/typed.test.ts", `import { RealTarget } from '../../src/typed.js';
+it('uses the genuine runtime export beside type-only forms', () => {
+  RealTarget('value');
+});
+`);
+    await writeSource("tests/origins/cjs.test.ts", `import RootOnly from '../../src/cjs-only.js';
+it('reads a CommonJS root as an ESM default', () => {
+  RootOnly('value');
+});
+`);
+    await writeSource("tests/origins/cjs-named.test.ts", `import { RootOnly } from '../../src/cjs-only.js';
+it('cannot name-import a CommonJS root', () => {
+  RootOnly('value');
+});
+`);
+    await writeSource("src/cjs-typed.ts", `import type { Contract } from './contract.js';
+export type Alias = string;
+export interface Shape { value: string }
+function TypedRoot(value: string) {
+  return value;
+}
+if (typeof module !== 'undefined') {
+  module.exports = TypedRoot;
+}
+`);
+    await writeSource("tests/origins/cjs-typed.test.ts", `import TypedRoot from '../../src/cjs-typed.js';
+it('keeps a CommonJS root despite type-only syntax', () => {
+  TypedRoot('value');
+});
+`);
+    await indexer.index();
+    const typedRoot = await retrieve({ query: "tests for TypedRoot", directory: "tests/origins" });
+    expect(typedRoot.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath)))
+      .toEqual(["tests/origins/cjs-typed.test.ts"]);
+    const typed = await retrieve({ query: "tests for RealTarget", directory: "tests/origins" });
+    expect(typed.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath)))
+      .toEqual(["tests/origins/typed.test.ts"]);
+    const cjs = await retrieve({ query: "tests for RootOnly", directory: "tests/origins" });
+    expect(cjs.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "tests/origins/cjs.test.ts", kind: "direct_target_test_reference", referenced: "RootOnly", line: 3, start: 2, end: 4 },
+    ]);
+  });
+
+  it("refuses star fallback when an explicit export form is unsupported", async () => {
+    await writeSource("src/star-source.js", "export function NamespaceMember() {}\n");
+    await writeSource("src/star-plain.js", "export function StarTarget() {}\n");
+    await writeSource("src/star-barrel.js", `export * as StarTarget from './star-source.js';
+export * from './star-plain.js';
+`);
+    await writeSource("src/star-control.js", "export * from './star-plain.js';\n");
+    await writeSource("src/legit.js", "export function LegitTarget() {}\n");
+    await writeSource("tests/opaque/star.test.js", `import { StarTarget } from '../../src/star-barrel.js';
+it('imports through an unsupported explicit export', () => {
+  StarTarget();
+});
+`);
+    await writeSource("tests/opaque/star-control.test.js", `import { StarTarget } from '../../src/star-control.js';
+it('imports the unique target through a plain star export', () => {
+  StarTarget();
+});
+`);
+    await writeSource("tests/opaque/legit.test.js", `import { LegitTarget } from '../../src/legit.js';
+it('imports a plain named export', () => {
+  LegitTarget();
+});
+`);
+    await indexer.index();
+    // Only the plain star barrel may link: the opaque namespace re-export shadows the star fallback.
+    const opaque = await retrieve({ query: "tests for StarTarget", directory: "tests/opaque" });
+    expect(opaque.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath)))
+      .toEqual(["tests/opaque/star-control.test.js"]);
+    const legit = await retrieve({ query: "tests for LegitTarget", directory: "tests/opaque" });
+    expect(legit.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath)))
+      .toEqual(["tests/opaque/legit.test.js"]);
+  });
+
+  it("does not let export-like text inside a regex literal create a linkable export", async () => {
+    await writeSource("src/regexp.ts", `export const pattern = /export default Target/;
+export function Target(value: string) {
+  return value;
+}
+`);
+    await writeSource("src/regex-only.js", `const pattern = /export default Target/;
+module.exports = pattern;
+`);
+    await writeSource("tests/regexp/default.test.ts", `import Target from '../../src/regexp.js';
+it('would need a real default export', () => {
+  Target('value');
+});
+`);
+    await writeSource("tests/regexp/require.test.js", `const Target = require('../../src/regex-only.js');
+test('requires a non-callable module value', () => {
+  Target('value');
+});
+`);
+    await writeSource("tests/regexp/named.test.ts", `import { Target } from '../../src/regexp.js';
+it('uses the genuine named export', () => {
+  Target('value');
+});
+`);
+    await indexer.index();
+    const linked = await retrieve({ query: "tests for Target", directory: "tests/regexp" });
+    expect(linked.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, line: result.referenceLine,
+    }))).toEqual([{ file: "tests/regexp/named.test.ts", kind: "direct_target_test_reference", line: 3 }]);
+  });
+
+  it("fails closed when the nearest package manifest is unprovable inside the root", async () => {
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "caller-format-outside-"));
+    try {
+      await fs.writeFile(path.join(outside, "package.json"), JSON.stringify({ type: "commonjs" }));
+      await writeSource("src/linked/root.js", `function LinkedRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = LinkedRoot; }
+`);
+      await fs.symlink(path.join(outside, "package.json"), path.join(root, "src/linked/package.json"));
+      await writeSource("src/known/package.json", JSON.stringify({ type: "commonjs" }));
+      await writeSource("src/known/root.js", `function KnownRoot() { return 1; }
+if (typeof module !== 'undefined') { module.exports = KnownRoot; }
+`);
+      await writeSource("tests/boundary/linked.test.js", `import LinkedRoot from '../../src/linked/root.js';
+it('uses the linked root export', () => {
+  LinkedRoot();
+});
+`);
+      await writeSource("tests/boundary/known.test.js", `import KnownRoot from '../../src/known/root.js';
+it('uses the known root export', () => {
+  KnownRoot();
+});
+`);
+      await indexer.index();
+      const linked = await retrieve({ query: "tests for LinkedRoot", directory: "tests/boundary" });
+      expect(linked.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+      const known = await retrieve({ query: "tests for KnownRoot", directory: "tests/boundary" });
+      expect(known.details?.results?.filter((result) => result.evidenceKind).map((result) => path.relative(root, result.filePath)))
+        .toEqual(["tests/boundary/known.test.js"]);
+    } finally {
+      await fs.rm(outside, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves a guarded CommonJS root export to its current declaration", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("src/guarded.js", `function LocateTarget(value) {
+  return value;
+}
+if (typeof module !== 'undefined') {
+  module.exports = LocateTarget;
+}
+`);
+    await writeSource("tests/guarded/locate.test.js", `const LocateTarget = require('../../src/guarded.js');
+test('calls the guarded root export', () => {
+  LocateTarget('value');
+});
+`);
+    await indexer.index();
+    const guarded = await retrieve({ query: "tests for LocateTarget", directory: "tests/guarded" });
+    expect(guarded.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "tests/guarded/locate.test.js", kind: "direct_target_test_reference", referenced: "LocateTarget", line: 3, start: 2, end: 4 },
+    ]);
+  });
+
+  it("keeps consecutive named imports owned by their module and verifies a same-file callable target", async () => {
+    await writeSource("tsconfig.json", JSON.stringify({ extends: "unsupported-package-config" }));
+    await writeSource("src/parser.ts", `function tokensToFunction(tokens: string) {
+  return tokens;
+}
+export function compile(value: string) {
+  return tokensToFunction(value);
+}
+export function parse(value: string) {
+  return value;
+}
+`);
+    await writeSource("src/parser.spec.ts", `import { describe, it, expect } from 'vitest';
+import { parse, compile } from './parser.js';
+it('parse accepts input', () => {
+  expect(parse('input')).toBe('input');
+});
+it('compile preserves tokens', () => {
+  expect(compile('tokens')).toBe('tokens');
+});
+it('parse nested callback', () => {
+  expect(() => parse('nested')).not.toThrow();
+});
+`);
+    await indexer.index();
+    const direct = await retrieve({ query: "tests for parse", limit: 5 });
+    expect(direct.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "src/parser.spec.ts", kind: "direct_target_test_reference", referenced: "parse", line: 4, start: 3, end: 5 },
+      { file: "src/parser.spec.ts", kind: "direct_target_test_reference", referenced: "parse", line: 10, start: 9, end: 11 },
+    ]);
+    const related = await retrieve({ query: "tests for tokensToFunction", limit: 5 });
+    expect(related.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "src/parser.spec.ts", kind: "related_caller_test_reference", referenced: "compile", line: 7, start: 6, end: 8 },
+    ]);
+  });
+
+  it("links guarded CommonJS functions despite type-only declarations and classifies root test.js", async () => {
+    await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
+    await writeSource("index.js", `function Emitter(object) {
+  if (object) return mixin(object);
+}
+function mixin(object) {
+  return object;
+}
+Emitter.prototype.on = function on() {};
+if (typeof module !== 'undefined') {
+  module.exports = Emitter;
+}
+`);
+    await writeSource("index.d.ts", "export type Emitter = { on(): void };\n");
+    await writeSource("test.js", `const Emitter = require('./index.js');
+test('construct an emitter', () => {
+  new Emitter();
+});
+test('mixin an object', () => {
+  Emitter({});
+});
+`);
+    await indexer.index();
+    const direct = await retrieve({ query: "tests for Emitter", limit: 5 });
+    expect(direct.details?.testDiscovery?.resolution).toBe("resolved");
+    expect(direct.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol,
+      line: result.referenceLine, start: result.startLine, end: result.endLine,
+    }))).toEqual([
+      { file: "test.js", kind: "direct_target_test_reference", referenced: "Emitter", line: 3, start: 2, end: 4 },
+      { file: "test.js", kind: "direct_target_test_reference", referenced: "Emitter", line: 6, start: 5, end: 7 },
+    ]);
+    const related = await retrieve({ query: "tests for mixin", limit: 5 });
+    expect(related.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, referenced: result.referencedSymbol, line: result.referenceLine,
+    }))).toContainEqual({
+      file: "test.js", kind: "related_caller_test_reference", referenced: "Emitter", line: 6,
+    });
+    await writeSource("src/other-emitter.js", "export function Emitter() {}\n");
+    await indexer.index();
+    const ambiguous = await retrieve({ query: "tests for Emitter" });
+    expect(ambiguous.details?.testDiscovery?.resolution).toBe("ambiguous");
+    expect(ambiguous.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it.each([
+    ["declaration", "export function Constructable() {}"],
+    ["anonymous expression", "export const Constructable = function () {};"],
+    ["named expression", "export const Constructable = function InternalConstructor() {};"],
+  ])("uses actual runtime identity for ordinary %s construction", async (_form, declaration) => {
+    await writeSource("src/constructable.js", `${declaration}\n`);
+    await writeSource("spec.js", `import { Constructable } from './src/constructable.js';
+test('constructs an ordinary function', () => {
+  new Constructable();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for Constructable", directory: "", limit: 5 });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, line: result.referenceLine,
+      start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: "spec.js", kind: "direct_target_test_reference", line: 3, start: 2, end: 4 }]);
+  });
+
+  it.each([
+    ["arrow", "export const NonConstructor = () => {};"],
+    ["async", "export async function NonConstructor() {}"],
+    ["generator", "export function* NonConstructor() {}"],
+  ])("does not label a %s function as constructable", async (_form, declaration) => {
+    await writeSource("src/non-constructor.js", `${declaration}\n`);
+    await writeSource("test.js", `import { NonConstructor } from './src/non-constructor.js';
+test('contains an invalid construction', () => {
+  new NonConstructor();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for NonConstructor" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it("admits unrelated lexical shadows but rejects parameters, destructuring and hoisted locals at the call", async () => {
+    await writeSource("tests/scopes/proof.test.ts", `import { signalGate } from '../../src/gate.js';
+function unrelated(signalGate: unknown) {}
+it('calls the imported target despite an unrelated parameter', () => {
+  signalGate([false]);
+});
+it('shadows in a callback parameter', (signalGate) => {
+  signalGate([false]);
+});
+it('shadows through destructuring', () => {
+  const { signalGate } = foreign;
+  signalGate([false]);
+});
+it('shadows through a hoisted var', () => {
+  signalGate([false]);
+  var signalGate = foreignGate;
+});
+it('shadows through catch binding', () => {
+  try { throw foreignGate; } catch (signalGate) { signalGate([false]); }
+});
+signalGate([false]);
+`);
+    await indexer.index();
+    const response = await retrieve({ directory: "tests/scopes", limit: 5 });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, line: result.referenceLine,
+      start: result.startLine, end: result.endLine,
+    }))).toEqual([{ file: "tests/scopes/proof.test.ts", kind: "direct_target_test_reference", line: 4, start: 3, end: 5 }]);
+  });
+
+  it("rejects stale same-line target columns rather than accepting a declaration somewhere in the range", async () => {
+    await writeSource("src/local.ts", `export function actualTarget() { return 1; }
+export function localCaller() { return actualTarget(); }
+`);
+    await writeSource("tests/local.test.ts", `import { localCaller } from '../src/local.js';
+it('calls the local caller', () => {
+  localCaller();
+});
+`);
+    await indexer.index();
+    const before = await retrieve({ query: "tests for actualTarget" });
+    expect(before.details?.results?.filter((result) => result.evidenceKind).map((result) => result.referencedSymbol)).toEqual(["localCaller"]);
+    await writeSource("src/local.ts", `       export function actualTarget() { return 1; }
+export function localCaller() { return actualTarget(); }
+`);
+    const stale = await retrieve({ query: "tests for actualTarget" });
+    expect(stale.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it.each([
+    ["dynamic", "const DynamicTarget = require(modulePath);"],
+    ["conditional", "const DynamicTarget = condition ? require('../../src/dynamic.js') : foreign;"],
+    ["reassigned", "const DynamicTarget = require('../../src/dynamic.js'); DynamicTarget = foreign;"],
+    ["shadowed require", "function require() { return foreign; } const DynamicTarget = require('../../src/dynamic.js');"],
+  ])("rejects %s CommonJS importer ancestry", async (_form, importer) => {
+    await writeSource("src/dynamic.js", "function DynamicTarget() {}\nmodule.exports = DynamicTarget;\n");
+    await writeSource("tests/cjs/proof.test.js", `${importer}
+test('invokes a binding without static target ownership', () => {
+  DynamicTarget();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for DynamicTarget", directory: "tests/cjs" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
+  it.each([
+    ["conditional", "if (condition) module.exports = ExportTarget;"],
+    ["guard alternate", "if (typeof module !== 'undefined') module.exports = ExportTarget; else module.exports = foreign;"],
+    ["dynamic", "module.exports = choose(ExportTarget);"],
+    ["reassigned", "module.exports = ExportTarget; module.exports = foreign;"],
+    ["shadowed module", "const module = {}; module.exports = ExportTarget;"],
+  ])("rejects %s CommonJS exporter ancestry", async (_form, exporter) => {
+    await writeSource("src/exporter.js", `function ExportTarget() {}\n${exporter}\n`);
+    await writeSource("tests/cjs/exporter.test.js", `const ExportTarget = require('../../src/exporter.js');
+test('invokes a binding without a unique static root export', () => {
+  ExportTarget();
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for ExportTarget", directory: "tests/cjs" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind)).toEqual([]);
+  });
+
   it("stops a cancelled traversal rather than returning a partial linked pack", async () => {
     await indexer.index();
     const abort = new AbortController();

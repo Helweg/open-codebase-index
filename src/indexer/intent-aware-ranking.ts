@@ -257,7 +257,8 @@ export function isTestPath(filePath: string): boolean {
   const normalized = normalizePath(filePath);
   return /(?:^|\/)(?:test|tests|__tests__|spec|specs)(?:\/|$)/u.test(normalized) ||
     /(?:\.(?:test|spec)|_(?:test|spec))\.[^/]+$/u.test(normalized) ||
-    /(?:^|\/)(?:test|spec)_[^/]+\.[^/]+$/u.test(normalized);
+    /(?:^|\/)(?:test|spec)_[^/]+\.[^/]+$/u.test(normalized) ||
+    /(?:^|\/)(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/u.test(normalized);
 }
 
 export function isFixturePath(filePath: string): boolean {

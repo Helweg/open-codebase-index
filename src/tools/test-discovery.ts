@@ -7,11 +7,13 @@ import * as path from "node:path";
 import { extractCalls, parseFiles } from "../native/index.js";
 import { isTestPath } from "../indexer/intent-aware-ranking.js";
 import { tokenizeTextForRanking } from "../indexer/definition-ranking.js";
+import { isJavaScriptRuntimeSourceFilePath } from "../indexer/local-module-resolution.js";
 import { throwIfOperationAborted } from "../utils/operation-control.js";
 import { createTestBindingResolver, testModuleData } from "./test-binding-resolution.js";
 
 export const TEST_DISCOVERY_MAX_CALLERS = 8;
 export const TEST_DISCOVERY_MAX_FILES = 200;
+export const TEST_DISCOVERY_MAX_DEFINITIONS = 100;
 export const TEST_DISCOVERY_MAX_FILE_BYTES = 256 * 1024;
 export const TEST_DISCOVERY_MAX_REFERENCES = 20;
 const LANGUAGES: Record<string, string> = {
@@ -100,8 +102,6 @@ async function readConfiguration(root: string, filePath: string, markCapped: () 
 interface SourceEvidence {
   parsed: ParsedFile;
   calls: CallSiteData[];
-  lines: string[];
-  bindings: Set<string>;
   containersByCall: Map<CallSiteData, TestContainer>;
   containerContents: Map<TestContainer, string>;
   directCalls: Set<string>;
@@ -109,11 +109,18 @@ interface SourceEvidence {
   content: string;
 }
 
+interface RuntimeDefinition {
+  definition: SearchResult;
+  declaration: ParsedFile["symbols"][number];
+  source: SourceEvidence;
+  filePath: string;
+}
+
 function parseSource(filePath: string, content: string): SourceEvidence | undefined {
   const language = LANGUAGES[path.extname(filePath).toLowerCase()];
   if (!language) return undefined;
   const [parsed] = parseFiles([{ path: filePath, content }], undefined, undefined, true);
-  if (!parsed || parsed.parseFailed || !parsed.testSyntax?.valid) return undefined;
+  if (!parsed || parsed.parseFailed || !parsed.testSyntax?.valid || !parsed.moduleSyntax?.valid) return undefined;
   const calls = extractCalls(content, language).sort((left, right) => left.line - right.line || left.column - right.column);
   const containers = parsed.testSyntax.containers.sort((left, right) =>
     left.bodyStartLine - right.bodyStartLine || left.bodyStartCol - right.bodyStartCol
@@ -141,23 +148,22 @@ function parseSource(filePath: string, content: string): SourceEvidence | undefi
     if (active.length > 0) containersByCall.set(call, active[active.length - 1]);
   }
   const containerContents = new Map<TestContainer, string>();
-  const directCalls = new Set(parsed.testSyntax.directCalls.map((call) =>
-    `${call.line}:${call.column}:${call.isConstructor ? "Constructor" : "Call"}`));
-  return { parsed, content, calls, lines: content.split("\n"), bindings: new Set(parsed.testSyntax.bindings), containersByCall, containerContents, directCalls };
+  const directCalls = new Set(parsed.moduleSyntax.calls.filter((call) => !call.qualifier
+    && (call.callType === "Call" || call.callType === "Constructor")).map((call) =>
+    `${call.line}:${call.column}:${call.callType}`));
+  return { parsed, content, calls, containersByCall, containerContents, directCalls };
 }
 
-function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, definition: SearchResult, root: string): boolean {
-  return reference !== undefined && reference.name === definition.name && reference.filePath === relativePath(root, definition.filePath)
-    && reference.startLine >= definition.startLine && reference.startLine <= definition.endLine;
+function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, declaration: SourceEvidence["parsed"]["symbols"][number], filePath: string): boolean {
+  return reference !== undefined && reference.filePath === filePath && reference.name === declaration.name
+    && reference.kind === declaration.kind && reference.startLine === declaration.startLine && reference.startCol === declaration.startCol
+    && reference.endLine === declaration.endLine && reference.endCol === declaration.endCol;
 }
 
 function executableReference(source: SourceEvidence, call: CallSiteData, name: string): boolean {
   return call.calleeName === name && source.directCalls.has(`${call.line}:${call.column}:${call.callType}`);
 }
 
-function declaresName(source: SourceEvidence, name: string): boolean {
-  return source.bindings.has(name) || source.parsed.symbols.some((symbol) => symbol.name === name);
-}
 
 function referenceTerms(text: string): Set<string> {
   return tokenizeTextForRanking(text.replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2").replace(/_/gu, " "));
@@ -193,23 +199,61 @@ export async function discoverSymbolTests(
   };
   const markCapped = (): void => { result.capped = true; };
   throwIfOperationAborted(control?.signal);
-  const definitions = (await operations.lookup(symbol)).filter((definition) => definition.name === symbol);
-  throwIfOperationAborted(control?.signal);
-  const unique = [...new Map(definitions.map((definition) => [
-    `${definition.filePath}:${definition.startLine}`, definition,
-  ])).values()];
-  if (unique.length !== 1) {
-    result.resolution = unique.length > 1 ? "ambiguous" : "not_found";
+  const sources = new Map<string, Promise<SourceEvidence | undefined>>();
+  const currentSource = (filePath: string): Promise<SourceEvidence | undefined> => {
+    let pending = sources.get(filePath);
+    if (!pending) {
+      pending = readSource(root, filePath, markCapped, control).then((content) =>
+        content === undefined ? undefined : parseSource(filePath, content));
+      sources.set(filePath, pending);
+    }
+    return pending;
+  };
+  const runtimeDefinitions = async (name: string): Promise<{ candidates: RuntimeDefinition[]; complete: boolean }> => {
+    const definitions = await operations.lookup(name);
+    const executable: RuntimeDefinition[] = [];
+    let complete = definitions.length < TEST_DISCOVERY_MAX_DEFINITIONS;
+    if (!complete) {
+      markCapped();
+      return { candidates: executable, complete };
+    }
+    for (const definition of definitions) {
+      throwIfOperationAborted(control?.signal);
+      if (definition.name !== name) continue;
+      const filePath = relativePath(root, definition.filePath);
+      if (!filePath) { complete = false; continue; }
+      if (/\.d\.(?:ts|mts|cts)$/iu.test(filePath)) continue;
+      if (!isJavaScriptRuntimeSourceFilePath(filePath)) { complete = false; continue; }
+      const source = await currentSource(filePath);
+      if (!source) { complete = false; continue; }
+      const declarations = source.parsed.symbols.filter((declaration) => declaration.name === name
+        && declaration.kind === definition.chunkType && declaration.startLine === definition.startLine
+        && declaration.endLine === definition.endLine && declaration.startCol === definition.startCol
+        && declaration.endCol === definition.endCol);
+      if (declarations.length !== 1) { complete = false; continue; }
+      const declaration = declarations[0];
+      const bindings = source.parsed.moduleSyntax!.bindings.filter((binding) => binding.name === name
+        && binding.startLine === declaration.startLine && binding.startCol === declaration.startCol
+        && binding.endLine === declaration.endLine && binding.endCol === declaration.endCol);
+      if (bindings.some((binding) => (binding.callable || binding.constructable) && !binding.mutated)) {
+        executable.push({ definition, declaration, source, filePath });
+      } else if (!["type_alias_declaration", "interface_declaration", "enum_declaration", "function_signature"].includes(declaration.kind)
+        && !bindings.some((binding) => binding.kind === "ambient" && !binding.mutated)) {
+        complete = false;
+      }
+    }
+    if (!complete) markCapped();
+    return { candidates: [...new Map(executable.map((candidate) => [
+      `${candidate.filePath}:${candidate.declaration.startLine}:${candidate.declaration.startCol}`, candidate,
+    ])).values()], complete };
+  };
+  const targetLookup = await runtimeDefinitions(symbol);
+  const unique = targetLookup.candidates;
+  if (!targetLookup.complete || unique.length !== 1) {
+    result.resolution = !targetLookup.complete || unique.length > 1 ? "ambiguous" : "not_found";
     return result;
   }
-  const target = unique[0];
-  const targetPath = relativePath(root, target.filePath);
-  if (!targetPath) return result;
-  const content = await readSource(root, targetPath, markCapped, control);
-  const targetSource = content === undefined ? undefined : parseSource(targetPath, content);
-  const targetDeclaration = targetSource?.parsed.symbols.find((candidate) => candidate.name === symbol
-    && candidate.startLine >= target.startLine && candidate.startLine <= target.endLine);
-  if (!targetSource || !targetDeclaration) return result;
+  const { definition: target, declaration: targetDeclaration, source: targetSource, filePath: targetPath } = unique[0];
   result.resolution = "resolved";
 
   const graph = await operations.graph(symbol, target.filePath);
@@ -225,7 +269,7 @@ export async function discoverSymbolTests(
     .filter((filePath): filePath is string => Boolean(filePath)))].sort();
   throwIfOperationAborted(control?.signal);
   const candidates = inventory.filter((filePath) => isTestPath(filePath)
-    && Boolean(LANGUAGES[path.extname(filePath).toLowerCase()]) && inScope(filePath, scope));
+    && isJavaScriptRuntimeSourceFilePath(filePath) && inScope(filePath, scope));
   if (candidates.length === 0) return result;
   const navigationFiles = callers.slice(0, TEST_DISCOVERY_MAX_CALLERS)
     .map((edge) => relativePath(root, edge.fromSymbolFilePath!))
@@ -234,7 +278,7 @@ export async function discoverSymbolTests(
     (filePath) => readSource(root, filePath, markCapped, control),
     (filePath) => readConfiguration(root, filePath, markCapped, control), markCapped, control);
   resolver.moduleResolver.seedModule(targetPath, testModuleData(targetPath, targetSource.content, targetSource.parsed));
-  const callerDefinitionsByName = new Map<string, SearchResult>();
+  const callerDefinitionsByName = new Map<string, (typeof unique)[number]>();
   const seenCallers = new Set<string>();
   let navigatedCallers = 0;
   for (const edge of callers) {
@@ -245,20 +289,21 @@ export async function discoverSymbolTests(
     navigatedCallers += 1;
     const callerPath = relativePath(root, edge.fromSymbolFilePath!);
     if (!callerPath || isTestPath(callerPath)) continue;
-    const callerContent = await readSource(root, callerPath, markCapped, control);
-    const source = callerContent === undefined ? undefined : parseSource(callerPath, callerContent);
-    if (!source || declaresName(source, symbol)) continue;
-    const sourceCall = source.calls.find((call) => executableReference(source, call, symbol) && call.line === edge.line);
+    const source = await currentSource(callerPath);
+    if (!source) continue;
+    const sourceCall = source.calls.find((call) => executableReference(source, call, symbol)
+      && call.line === edge.line && call.column === edge.col && call.callType === edge.callType);
     if (!sourceCall) continue;
     resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
-    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall, true);
+    const targetReference = await resolver.resolveCallTarget(callerPath, source.content, sourceCall);
     throwIfOperationAborted(control?.signal);
-    if (!resolvedReferenceMatchesDefinition(targetReference, target, root)) continue;
+    if (!resolvedReferenceMatchesDefinition(targetReference, targetDeclaration, targetPath)) continue;
+    const exportedSymbols = await resolver.moduleResolver.exportedFunctionSymbols(callerPath);
+    throwIfOperationAborted(control?.signal);
     const exportedCandidates = new Set<SourceEvidence["parsed"]["symbols"][number]>();
     const enclosing = source.parsed.symbols.filter((candidate) => {
       if (candidate.name === symbol || candidate.startLine > edge.line || candidate.endLine < edge.line) return false;
-      const prefix = (source.lines[candidate.startLine - 1] ?? "").slice(0, candidate.startCol);
-      const exported = /^\s*export\s+(?:default\s+)?(?:async\s+)?$/u.test(prefix);
+      const exported = exportedSymbols.some((reference) => resolvedReferenceMatchesDefinition(reference, candidate, callerPath));
       if (exported) exportedCandidates.add(candidate);
       return exported || candidate.name === edge.fromSymbolName;
     }).sort((left, right) => Number(exportedCandidates.has(right)) - Number(exportedCandidates.has(left))
@@ -266,10 +311,14 @@ export async function discoverSymbolTests(
     // Anonymous callback owners may use their source-verified enclosing export, never a filename guess.
     if (enclosing.length > 2) result.capped = true;
     for (const candidate of enclosing.slice(0, 2)) {
-      const callerDefinitions = (await operations.lookup(candidate.name)).filter((definition) => definition.name === candidate.name);
-      if (callerDefinitions.length !== 1 || relativePath(root, callerDefinitions[0].filePath) !== callerPath) continue;
-      if (callerDefinitions[0].startLine > candidate.startLine || callerDefinitions[0].endLine < edge.line) continue;
-      callerDefinitionsByName.set(candidate.name, callerDefinitions[0]);
+      const callerLookup = await runtimeDefinitions(candidate.name);
+      const callerDefinitions = callerLookup.candidates;
+      if (!callerLookup.complete || callerDefinitions.length !== 1 || callerDefinitions[0].filePath !== callerPath) continue;
+      const caller = callerDefinitions[0];
+      if (caller.declaration.kind !== candidate.kind || caller.declaration.startLine !== candidate.startLine
+        || caller.declaration.startCol !== candidate.startCol || caller.declaration.endLine !== candidate.endLine
+        || caller.declaration.endCol !== candidate.endCol) continue;
+      callerDefinitionsByName.set(candidate.name, caller);
       break;
     }
     await control?.heartbeat?.();
@@ -293,17 +342,16 @@ export async function discoverSymbolTests(
     || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol);
   for (const filePath of selectedFiles) {
     throwIfOperationAborted(control?.signal);
-    const testContent = await readSource(root, filePath, markCapped, control);
-    const source = testContent === undefined ? undefined : parseSource(filePath, testContent);
+    const source = await currentSource(filePath);
     if (!source) continue;
     result.scannedFileCount += 1;
     resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
-    const names = [symbol, ...callerDefinitionsByName.keys()].filter((name) => !declaresName(source, name));
+    const names = [symbol, ...callerDefinitionsByName.keys()];
     for (const call of source.calls) {
       if (!names.some((name) => executableReference(source, call, name))) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
-      const expectedDefinition = call.calleeName === symbol ? target : callerDefinitionsByName.get(call.calleeName);
+      const expectedDefinition = call.calleeName === symbol ? unique[0] : callerDefinitionsByName.get(call.calleeName);
       if (!expectedDefinition) continue;
       const direct = call.calleeName === symbol;
       const startLine = container.startLine;
@@ -311,9 +359,9 @@ export async function discoverSymbolTests(
       const key = `${filePath}:${container.startByte}:${container.endByte}`;
       const previous = references.get(key);
       if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
-      const reference = await resolver.resolveCallTarget(filePath, source.content, call, true);
+      const reference = await resolver.resolveCallTarget(filePath, source.content, call);
       throwIfOperationAborted(control?.signal);
-      if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition, root)) continue;
+      if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition.declaration, expectedDefinition.filePath)) continue;
       let content = source.containerContents.get(container);
       if (content === undefined) {
         source.sourceBytes ??= Buffer.from(source.content);

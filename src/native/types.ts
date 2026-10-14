@@ -46,19 +46,55 @@ export interface ParsedFile {
   hash: string;
   parseFailed?: boolean;
   testSyntax?: TestSyntaxData;
+  moduleSyntax?: ModuleSyntaxData;
 }
 
 export interface TestSyntaxData {
   valid: boolean;
-  bindings: string[];
   containers: TestContainerData[];
-  directCalls: TestDirectCallPosition[];
 }
 
-export interface TestDirectCallPosition {
+export interface ModuleSyntaxData {
+  valid: boolean;
+  bindings: ModuleBindingData[];
+  calls: ModuleCallData[];
+  exports: ModuleExportData[];
+  starExports: string[];
+}
+
+export interface ModuleBindingData {
+  name: string;
+  kind: string;
+  declarationKind: string;
+  scopeId: number;
+  startLine: number;
+  startCol: number;
+  endLine: number;
+  endCol: number;
+  callable: boolean;
+  constructable: boolean;
+  mutated: boolean;
+  source?: string;
+  importedName?: string;
+  importLine?: number;
+  importCol?: number;
+}
+
+export interface ModuleCallData {
+  name: string;
   line: number;
   column: number;
-  isConstructor: boolean;
+  callType: CallType;
+  bindingIndex?: number;
+  qualifier?: string;
+}
+
+export interface ModuleExportData {
+  exportedName: string;
+  kind: "local" | "reexport" | "root";
+  localName?: string;
+  source?: string;
+  importedName?: string;
 }
 
 export interface TestContainerData {

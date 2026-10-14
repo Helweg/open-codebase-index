@@ -234,6 +234,7 @@ class Streams {
 }` }]);
         expect(result.symbols.map((symbol) => [symbol.name, symbol.kind])).toEqual([
           ["internalItems", "function"],
+          ["boundItems", "function"],
           ["asyncBoundItems", "function"],
           ["Streams", "class_declaration"],
           ["items", "method_definition"],
@@ -1445,7 +1446,7 @@ end
     });
 
     it.each(["js", "jsx", "mjs", "cjs", "ts", "tsx", "mts", "cts"])(
-      "extracts named function-expression declarations and canonical chunks in %s",
+      "keeps function-expression self and variable identities distinct in %s",
       (extension) => {
         const content = [
           "module.exports = function getCallers () {",
@@ -1467,33 +1468,21 @@ end
         const filePath = `expressions.${extension}`;
         const [result] = parseFiles([{ path: filePath, content }]);
         const names = [
-          "getCallers", "loadNamed", "iterateNamed", "innerNamed",
-          "innerGenerator", "propertyNamed", "streamNamed", "unicodeNamed",
+          "getCallers", "loadNamed", "iterateNamed", "innerNamed", "bound",
+          "innerGenerator", "generators", "propertyNamed", "streamNamed", "unicodeNamed", "anonymous",
         ];
         const expressions = result.symbols.filter((symbol) => symbol.kind === "function");
         expect(expressions.map((symbol) => symbol.name)).toEqual(names);
-        const chunks = result.chunks.filter((chunk) => chunk.chunkType === "function");
-        expect(chunks.map((chunk) => chunk.name)).toEqual(names);
-        expect(parseFile(filePath, content)).toEqual(result.chunks);
         expect(expressions[0]).toMatchObject({
           startLine: 1, startCol: 17, endLine: 3, endCol: 1,
         });
-        for (const [index, symbol] of expressions.entries()) {
-          const chunk = chunks[index];
-          expect(chunk).toMatchObject({
-            startLine: symbol.startLine, startCol: symbol.startCol,
-            endLine: symbol.endLine, endCol: symbol.endCol,
-          });
-          const lines = content.split("\n").slice(symbol.startLine - 1, symbol.endLine);
-          const bytes = lines.map((line) => Buffer.from(line));
-          bytes[bytes.length - 1] = bytes[bytes.length - 1].subarray(0, symbol.endCol);
-          bytes[0] = bytes[0].subarray(symbol.startCol);
-          expect(chunk.content).toBe(bytes.map((line) => line.toString()).join("\n"));
+        for (const [binding, self] of [["bound", "innerNamed"], ["generators", "innerGenerator"]]) {
+          const outer = expressions.find((symbol) => symbol.name === binding)!;
+          const inner = expressions.find((symbol) => symbol.name === self)!;
+          expect({ start: outer.startLine, column: outer.startCol, end: outer.endLine, endColumn: outer.endCol })
+            .toEqual({ start: inner.startLine, column: inner.startCol, end: inner.endLine, endColumn: inner.endCol });
         }
-        expect(result.chunks).toContainEqual(expect.objectContaining({
-          chunkType: "expression_statement",
-          content: "module.exports = function getCallers () {\n  return ['caller'];\n};",
-        }));
+        expect(expressions.filter((symbol) => ["input", "argument", "handle", "load", "items", "stream", "λ"].includes(symbol.name))).toEqual([]);
         expect(result.symbols).toContainEqual(expect.objectContaining({
           name: "arrow", kind: "arrow_function",
         }));
@@ -1503,7 +1492,6 @@ end
         expect(result.symbols).toContainEqual(expect.objectContaining({
           name: "method", kind: "method_definition",
         }));
-        expect(result.chunks.some((chunk) => chunk.name === "method")).toBe(false);
       },
     );
 

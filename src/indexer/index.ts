@@ -123,6 +123,7 @@ import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph
 import { createGoDirectCallClassifier, isGoFilePath } from "./go-package-resolution.js";
 import { isPythonFilePath } from "./python-import-resolution.js";
 import {
+  declaredPackageFormat,
   getLocalWorkspacePackageManifestPaths,
   getLocalWorkspacePackages,
   isJavaScriptFamilyFilePath,
@@ -211,8 +212,10 @@ function resolveSameCommunityCandidateIds(
     ))
     .map((candidate) => candidate.id));
 }
+const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
+
 // Existing indexes without this metadata are the implicit version 1.
-const CALL_GRAPH_RESOLUTION_VERSION = "11";
+const CALL_GRAPH_RESOLUTION_VERSION = "12";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -461,6 +464,9 @@ export interface SearchResult {
   filePath: string;
   startLine: number;
   endLine: number;
+  /** Canonical declaration columns; absent on non-definition retrieval chunks. */
+  startCol?: number;
+  endCol?: number;
   content: string;
   score: number;
   chunkType: string;
@@ -776,7 +782,7 @@ const INDEX_METADATA_VERSION = "1";
 const PROJECT_PATH_STORAGE_VERSION = "2";
 const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
-const JAVASCRIPT_PARSER_VERSION = "2";
+const JAVASCRIPT_PARSER_VERSION = "3";
 const SWIFT_PARSER_VERSION = "2";
 const METAL_PARSER_VERSION = "1";
 const MARKUP_PARSER_VERSION = "1";
@@ -5328,8 +5334,89 @@ export class Indexer {
         descriptor,
       ]),
     );
+    const moduleFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
+    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
+      const manifestPath = path.join(directory, "package.json");
+      let realManifest: string;
+      try {
+        const realDirectory = await fsPromises.realpath(directory);
+        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
+        realManifest = await fsPromises.realpath(manifestPath);
+      } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
+          ? undefined
+          : null;
+      }
+      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
+      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
+      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!handle) return null;
+      let content: string | null = null;
+      let interruption: unknown;
+      try {
+        const openedStats = await handle.stat();
+        throwIfOperationAborted(signal);
+        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
+          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
+          // One spare byte proves EOF and rejects growth beyond the observed size.
+          const buffer = Buffer.alloc(openedStats.size + 1);
+          let offset = 0;
+          while (true) {
+            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+            throwIfOperationAborted(signal);
+            if (bytesRead === 0) {
+              content = buffer.subarray(0, offset).toString("utf8");
+              break;
+            }
+            offset += bytesRead;
+            if (offset > openedStats.size) break;
+          }
+        }
+      } catch (error: unknown) {
+        if (isOperationInterruption(error)) interruption = error;
+      } finally {
+        try {
+          await handle.close();
+        } catch (error: unknown) {
+          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
+        }
+      }
+      if (interruption !== undefined) throw interruption;
+      return content;
+    };
+    const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
+      const cached = moduleFormats.get(filePath);
+      if (cached) return cached;
+      const lookup = (async () => {
+        const materializedPath = this.toMaterializedFilePath(filePath);
+        if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return "unknown" as const;
+        let directory = path.dirname(materializedPath);
+        while (isPathWithinRoot(directory, this.materializedProjectRoot)) {
+          throwIfOperationAborted(signal);
+          const content = await readBoundedManifest(directory);
+          if (content === null) return "unknown" as const;
+          if (content !== undefined) return declaredPackageFormat(content);
+          const parent = path.dirname(directory);
+          if (parent === directory) break;
+          directory = parent;
+        }
+        // The ownership boundary prevents proving the nearest enclosing format.
+        return "unknown" as const;
+      })();
+      moduleFormats.set(filePath, lookup);
+      return lookup;
+    };
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
+      moduleFormatForFile,
       loadModule: async (filePath) => {
         throwIfOperationAborted(signal);
         const descriptor = sourceDescriptorsByPath.get(filePath);
@@ -5347,10 +5434,13 @@ export class Indexer {
           [{ path: descriptor.storedPath, content }],
           this.config.indexing.linesPerChunk,
           this.config.indexing.maxChunksPerFile,
+          false,
+          true,
         )[0];
         return {
           content,
           symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
+          moduleSyntax: parsed?.moduleSyntax,
         };
       },
       pathAliasesForImporter: (filePath) => {
@@ -5460,6 +5550,7 @@ export class Indexer {
           this.config.indexing.linesPerChunk,
           signal,
           this.config.indexing.maxChunksPerFile,
+          true,
         );
         const preparedByPath = new Map(preparedSources.map((prepared) => [prepared.path, prepared]));
         const preparedEntries = (await Promise.all(readableEntries.map(async ({ descriptor, bytes }) => {
@@ -5614,7 +5705,7 @@ export class Indexer {
             allSymbolIds.add(symbol.id);
           }
           if (parsed.kind === "source") {
-            localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols });
+            localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
           }
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
@@ -5644,7 +5735,11 @@ export class Indexer {
 
             const isSupportedGoCall = classifyGoCall?.(site) ?? false;
             let candidates = symbolsByName.get(normalizeSymbolKey(site.calleeName));
-            if (fileLanguage === "go") {
+            if (isJavaScriptFamilyFilePath(parsed.path)
+              && (site.callType === "Call" || site.callType === "Constructor" || site.callType === "Import")) {
+              // JS/TS binding identity and constructability require current AST proof, never a name-only fallback.
+              candidates = undefined;
+            } else if (fileLanguage === "go") {
               candidates = isSupportedGoCall
                 ? candidates?.filter((candidate) => candidate.kind === "function_declaration")
                 : undefined;

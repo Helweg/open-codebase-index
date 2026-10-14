@@ -1,9 +1,13 @@
 import type { ParsedFile } from "../native/index.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import type { LocalModuleData, LocalWorkspacePackage } from "../indexer/local-module-resolution.js";
+
+import * as path from "node:path";
+
 import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
+  declaredPackageFormat,
   getLocalWorkspacePackages,
 } from "../indexer/local-module-resolution.js";
 import { parseFiles } from "../native/index.js";
@@ -15,6 +19,7 @@ export const TEST_DISCOVERY_MAX_CONFIG_FILES = 48;
 export function testModuleData(filePath: string, content: string, parsed: ParsedFile): LocalModuleData {
   return {
     content,
+    moduleSyntax: parsed.moduleSyntax,
     symbols: parsed.symbols.map((symbol) => ({
       ...symbol, filePath,
       id: `${filePath}:${symbol.kind}:${symbol.name}:${symbol.startLine}:${symbol.startCol}`,
@@ -51,6 +56,33 @@ export async function createTestBindingResolver(
   let workspacePackages: readonly LocalWorkspacePackage[] = [];
   let packageKey: string | undefined;
   let packageGeneration = 0;
+  const configurationReads = new Map<string, Promise<void>>();
+  const loadConfiguration = async (filePath: string): Promise<void> => {
+    if (configurations.has(filePath) || unknownConfigurations.has(filePath)) return;
+    const pending = configurationReads.get(filePath);
+    if (pending) return pending;
+    if (configurations.size + unknownConfigurations.size + configurationReads.size >= TEST_DISCOVERY_MAX_CONFIG_FILES) {
+      markCapped();
+      return;
+    }
+    const loading = Promise.resolve().then(async () => {
+      try {
+        throwIfOperationAborted(control?.signal);
+        const state = await readConfiguration(filePath);
+        throwIfOperationAborted(control?.signal);
+        if (state.content !== undefined || state.confirmedAbsent) {
+          configurations.set(filePath, state.content);
+        } else {
+          unknownConfigurations.add(filePath);
+          markCapped();
+        }
+      } finally {
+        configurationReads.delete(filePath);
+      }
+    });
+    configurationReads.set(filePath, loading);
+    return loading;
+  };
   const requestConfiguration = (filePath: string): string | undefined => {
     requested.add(filePath);
     return configurations.get(filePath);
@@ -88,28 +120,41 @@ export async function createTestBindingResolver(
       const missing = [...requested].filter((filePath) =>
         !configurations.has(filePath) && !unknownConfigurations.has(filePath));
       if (missing.length === 0) break;
-      const capacity = TEST_DISCOVERY_MAX_CONFIG_FILES - configurations.size - unknownConfigurations.size;
-      if (capacity <= 0 || loadingRounds >= 4) { markCapped(); break; }
-      if (missing.length > capacity) markCapped();
+      if (loadingRounds >= 4) { markCapped(); break; }
       loadingRounds += 1;
       changed = true;
-      for (const filePath of missing.slice(0, capacity)) {
-        throwIfOperationAborted(control?.signal);
-        const state = await readConfiguration(filePath);
-        if (state.content !== undefined || state.confirmedAbsent) {
-          configurations.set(filePath, state.content);
-        } else {
-          unknownConfigurations.add(filePath);
-          markCapped();
-        }
+      for (const filePath of missing) {
+        await loadConfiguration(filePath);
       }
     }
     if (changed) refreshPackages();
   };
   const aliases = new TsConfigPathAliasCache(cachedConfiguration);
   let moduleReads = 0;
+  const packageFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
+  const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
+    const cached = packageFormats.get(filePath);
+    if (cached) return cached;
+    const lookup = (async () => {
+      let directory = path.posix.dirname(filePath.replace(/\\/gu, "/"));
+      while (true) {
+        throwIfOperationAborted(control?.signal);
+        const manifest = directory === "." || directory === "" ? "package.json" : `${directory}/package.json`;
+        await loadConfiguration(manifest);
+        if (!configurations.has(manifest)) return "unknown" as const;
+        const content = configurations.get(manifest);
+        if (content !== undefined) return declaredPackageFormat(content);
+        const parent = path.posix.dirname(directory);
+        if (directory === "." || directory === "" || parent === directory) return "unknown" as const;
+        directory = parent;
+      }
+    })();
+    packageFormats.set(filePath, lookup);
+    return lookup;
+  };
   const resolver = new LocalModuleCallResolver({
     filePaths: inventory,
+    moduleFormatForFile,
     workspacePackages,
     pathAliasesForImporter: (filePath) => {
       const state = aliases.getPathAliasStateForImporter(filePath);
@@ -123,7 +168,7 @@ export async function createTestBindingResolver(
       const content = await readFile(filePath);
       if (content === undefined) return undefined;
       await loadImporters([filePath]);
-      const [parsed] = parseFiles([{ path: filePath, content }]);
+      const [parsed] = parseFiles([{ path: filePath, content }], undefined, undefined, false, true);
       throwIfOperationAborted(control?.signal);
       if (!parsed || parsed.parseFailed) return undefined;
       await control?.heartbeat?.();
@@ -134,10 +179,10 @@ export async function createTestBindingResolver(
   return {
     moduleResolver: resolver,
     loadImporters,
-    resolveCallTarget: async (filePath, content, call, directCallee) => {
+    resolveCallTarget: async (filePath, content, call) => {
       const generation = packageGeneration;
       try {
-        const result = await resolver.resolveCallTarget(filePath, content, call, directCallee);
+        const result = await resolver.resolveCallTarget(filePath, content, call);
         return generation === packageGeneration ? result : undefined;
       } catch (error: unknown) {
         if (!(error instanceof ConfigurationUncertainError)) throw error;
