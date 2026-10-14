@@ -183,7 +183,9 @@ fn is_instance_constructor(node: Node<'_>, source: &str) -> bool {
         return false;
     }
     let mut cursor = node.walk();
-    let is_static = node.children(&mut cursor).any(|child| child.kind() == "static");
+    let is_static = node
+        .children(&mut cursor)
+        .any(|child| child.kind() == "static");
     !is_static
 }
 
@@ -1120,7 +1122,12 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                 }
             }
         }
-        let mut constructor_owners = self.constructor_owners.take().into_iter().flatten().peekable();
+        let mut constructor_owners = self
+            .constructor_owners
+            .take()
+            .into_iter()
+            .flatten()
+            .peekable();
         let calls = self
             .calls
             .iter()
