@@ -1,6 +1,9 @@
 use crate::markup::extract_markup_chunks;
 use crate::types::Language;
-use crate::{CodeChunk, FileInput, ModuleSyntaxData, ParsedFile, ParsedSymbol, TestContainerData, TestSyntaxData};
+use crate::{
+    CodeChunk, FileInput, ModuleSyntaxData, ParsedFile, ParsedSymbol, TestContainerData,
+    TestSyntaxData,
+};
 use anyhow::{anyhow, Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
@@ -100,9 +103,21 @@ pub fn parse_files_parallel(
         .par_iter()
         .filter_map(|file| {
             let mut test_syntax = include_test_syntax.then(TestSyntaxData::default);
-            let language = Language::from_extension(Path::new(&file.path).extension().and_then(|extension| extension.to_str()).unwrap_or(""));
-            let javascript = matches!(language, Language::JavaScript | Language::JavaScriptJsx | Language::TypeScript | Language::TypeScriptTsx);
-            let mut module_syntax = (javascript && (include_test_syntax || include_module_syntax)).then(ModuleSyntaxData::default);
+            let language = Language::from_extension(
+                Path::new(&file.path)
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .unwrap_or(""),
+            );
+            let javascript = matches!(
+                language,
+                Language::JavaScript
+                    | Language::JavaScriptJsx
+                    | Language::TypeScript
+                    | Language::TypeScriptTsx
+            );
+            let mut module_syntax = (javascript && (include_test_syntax || include_module_syntax))
+                .then(ModuleSyntaxData::default);
             let parsed = parse_file_with_symbols_internal(
                 &file.path,
                 &file.content,
@@ -214,13 +229,18 @@ fn parse_file_with_symbols_internal(
         }
     }
     if let Some(syntax) = module_syntax {
-        if matches!(language, Language::JavaScript | Language::JavaScriptJsx | Language::TypeScript | Language::TypeScriptTsx) {
+        if matches!(
+            language,
+            Language::JavaScript
+                | Language::JavaScriptJsx
+                | Language::TypeScript
+                | Language::TypeScriptTsx
+        ) {
             *syntax = crate::module_syntax::extract_from_tree(&tree, content, language);
         }
     }
     Ok((chunks, symbols))
 }
-
 
 fn extract_test_syntax(tree: &Tree, content: &str) -> TestSyntaxData {
     let root = tree.root_node();
@@ -338,7 +358,10 @@ fn extract_symbol_nodes(
                 && node.child_by_field_name("name").is_some()
             {
                 if let Some(binding_name) = extract_arrow_binding_name(node, source) {
-                    if node.child_by_field_name("name").is_some_and(|name| source[name.byte_range()] != binding_name) {
+                    if node
+                        .child_by_field_name("name")
+                        .is_some_and(|name| source[name.byte_range()] != binding_name)
+                    {
                         symbols.push(ParsedSymbol {
                             name: binding_name,
                             kind: semantic_chunk_type(&node, source, language),
@@ -1030,7 +1053,11 @@ fn is_kotlin_property_parameter(node: tree_sitter::Node<'_>, language: &Language
     is_property
 }
 
-pub(crate) fn semantic_chunk_type(node: &tree_sitter::Node, source: &str, language: &Language) -> String {
+pub(crate) fn semantic_chunk_type(
+    node: &tree_sitter::Node,
+    source: &str,
+    language: &Language,
+) -> String {
     if *language == Language::Kotlin {
         return match node.kind() {
             "class_declaration" => {
@@ -1630,11 +1657,31 @@ exports.generator = function*(parameter) { yield parameter; };";
                     .collect::<Vec<_>>(),
                 names
             );
-            let alias = symbols.iter().find(|symbol| symbol.name == "alias" && symbol.kind == "function").unwrap();
-            let self_binding = symbols.iter().find(|symbol| symbol.name == "generatorNamed").unwrap();
-            assert_eq!((alias.start_line, alias.start_col, alias.end_line, alias.end_col),
-                (self_binding.start_line, self_binding.start_col, self_binding.end_line, self_binding.end_col));
-            assert!(!symbols.iter().any(|symbol| symbol.kind == "function" && symbol.name == "parameter"));
+            let alias = symbols
+                .iter()
+                .find(|symbol| symbol.name == "alias" && symbol.kind == "function")
+                .unwrap();
+            let self_binding = symbols
+                .iter()
+                .find(|symbol| symbol.name == "generatorNamed")
+                .unwrap();
+            assert_eq!(
+                (
+                    alias.start_line,
+                    alias.start_col,
+                    alias.end_line,
+                    alias.end_col
+                ),
+                (
+                    self_binding.start_line,
+                    self_binding.start_col,
+                    self_binding.end_line,
+                    self_binding.end_col
+                )
+            );
+            assert!(!symbols
+                .iter()
+                .any(|symbol| symbol.kind == "function" && symbol.name == "parameter"));
         }
     }
 

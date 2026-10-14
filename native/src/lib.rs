@@ -22,8 +22,8 @@ pub use bindings::database::*;
 pub use chunker::*;
 pub use hasher::*;
 pub use inverted_index::*;
-pub use parser::*;
 pub use module_syntax::*;
+pub use parser::*;
 pub use store::*;
 pub use types::*;
 
@@ -319,7 +319,6 @@ pub struct TestSyntaxData {
     pub valid: bool,
     pub containers: Vec<TestContainerData>,
 }
-
 
 #[napi(object)]
 pub struct TestContainerData {
