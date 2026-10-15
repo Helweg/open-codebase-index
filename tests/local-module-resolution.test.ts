@@ -520,6 +520,146 @@ describe("LocalModuleCallResolver", () => {
     }
   });
 
+  it("selects require export conditions for roots and wildcards without bypassing blocks or legacy main", async () => {
+    const main = `const Root = require('dual');
+const Feature = require('dual/features/value');
+const Blocked = require('dual/blocked');
+const Legacy = require('legacy');
+const ModuleOnly = require('module-only');
+function run() { Root(); Feature(); Blocked(); Legacy(); ModuleOnly(); }`;
+    const required = symbol("required", "src/required.cjs", "Required");
+    const feature = symbol("feature", "src/required/value.cjs", "Feature");
+    const legacy = symbol("legacy", "src/legacy.cjs", "Legacy");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "src/required.cjs": { content: "function Required() {}\nmodule.exports = Required;", symbols: [required] },
+      "src/imported.cjs": { content: "function Imported() {}\nmodule.exports = Imported;", symbols: [] },
+      "src/legacy.cjs": { content: "function Legacy() {}\nmodule.exports = Legacy;", symbols: [legacy] },
+      "src/required/value.cjs": { content: "function Feature() {}\nmodule.exports = Feature;", symbols: [feature] },
+      "src/imported/value.cjs": { content: "function ImportedFeature() {}\nmodule.exports = ImportedFeature;", symbols: [] },
+      "only/entry.cjs": { content: "function ModuleOnly() {}\nmodule.exports = ModuleOnly;", symbols: [] },
+    }, {
+      "package.json": JSON.stringify({
+        name: "dual",
+        exports: {
+          ".": { import: "./src/imported.cjs", require: "./src/required.cjs" },
+          "./features/*": { node: { import: "./src/imported/*.cjs", require: "./src/required/*.cjs" } },
+          "./blocked": { require: null, default: "./src/required.cjs" },
+        },
+      }),
+      "src/package.json": JSON.stringify({ name: "legacy", module: "./imported.cjs", main: "./legacy.cjs" }),
+      "only/package.json": JSON.stringify({ name: "module-only", module: "./entry.cjs", types: "./entry.cjs" }),
+    });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Root"))).resolves.toEqual(required);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Feature"))).resolves.toEqual(feature);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Blocked"))).resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Legacy"))).resolves.toEqual(legacy);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "ModuleOnly"))).resolves.toBeUndefined();
+  });
+
+  it.each([
+    "for (Target of [replacement]) {}",
+    "for (Target in { value: replacement }) {}",
+    "for await (Target of [replacement]) {}",
+    "for ([Target] of [[replacement]]) {}",
+    "for ({ value: Target } of [{ value: replacement }]) {}",
+    "(Target) = replacement;",
+    "((Target)) = replacement;",
+    "((Target)) &&= replacement;",
+    "((Target))++;",
+  ])("rejects a stale exported declaration after %s", async (write) => {
+    const main = "import { Target } from './target.mjs';\nexport function run() { Target(); }";
+    const instance = resolver({
+      "main.mjs": { content: main, symbols: [] },
+      "target.mjs": {
+        content: `export function Target() {}\nfunction replacement() {}\n${write}`,
+        symbols: [symbol("target", "target.mjs", "Target")],
+      },
+    });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toBeUndefined();
+  });
+
+  it("keeps writes to loop-local declarations and parameters separate from exported bindings", async () => {
+    const main = "import { Target } from './target.mjs';\nexport function run() { Target(); }";
+    const target = symbol("target", "target.mjs", "Target");
+    const instance = resolver({
+      "main.mjs": { content: main, symbols: [] },
+      "target.mjs": {
+        content: `export function Target() {}
+function replacement() {}
+function shadow(Target) { for (Target of [replacement]) {} }
+for (const Target of [replacement]) {}
+`,
+        symbols: [target],
+      },
+    });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toEqual(target);
+  });
+
+  it.each([
+    ["function run() { return arguments(); }", false],
+    ["function run() { return () => arguments(); }", false],
+    ["const run = function arguments() { return arguments(); };", false],
+    ["function* run() { return arguments(); }", false],
+    ["const run = { method() { return arguments(); } };", false],
+    ["const run = (arguments) => arguments();", false],
+    ["const run = () => arguments();", true],
+  ])("respects implicit and lexical arguments ownership in %s", async (body, inheritsOuter) => {
+    const main = `const arguments = require('./target.cjs');\n${body}`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"));
+    expect(resolved).toEqual(inheritsOuter ? target : undefined);
+  });
+
+  it.each([
+    ["function run() { if (true) { function Target() {} } return Target(); }", false],
+    ["const run = () => { if (true) { function Target() {} } return Target(); };", false],
+    ["'use strict';\nfunction run() { if (true) { function Target() {} } return Target(); }", true],
+    ["function run() { 'use strict'; if (true) { function Target() {} } return Target(); }", true],
+    ["class Runner { run() { if (true) { function Target() {} } return Target(); } }", true],
+    ["function run() { if (true) { async function Target() {} } return Target(); }", true],
+    ["if (true) { function Target() {} }\nfunction run() { return Target(); }", true],
+    ["function run() { { const Target = () => {}; { function Target() {} } } return Target(); }", true],
+    ["function run() { for (let Target of [() => {}]) { { function Target() {} } } return Target(); }", true],
+  ])("respects Annex B and strict lexical block-function ownership in %s", async (body, retainsOuter) => {
+    const main = body.startsWith("'use strict'")
+      ? `'use strict';\nconst Target = require('./target.cjs');\n${body.slice("'use strict';".length)}`
+      : `const Target = require('./target.cjs');\n${body}`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "Target"));
+    expect(resolved).toEqual(retainsOuter ? target : undefined);
+  });
+
+  it("uses an explicit body-local arguments function rather than either the implicit object or outer import", async () => {
+    const main = `const arguments = require('./target.cjs');
+function run() { function arguments() {} return arguments(); }`;
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [] },
+    });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"))).resolves.toMatchObject({
+      filePath: "main.cjs", name: "arguments", startLine: 2,
+    });
+  });
+
+  it("retains module-wide strict block-function semantics even when an export occurs later", async () => {
+    const main = `function Target() {}
+function run() { if (true) { function Target() {} } return Target(); }
+export { run };`;
+    const instance = resolver({ "main.mjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toMatchObject({
+      filePath: "main.mjs", name: "Target", startLine: 1,
+    });
+  });
+
   it("does not bypass null or subpath-only exports with legacy root entry fields", async () => {
     const main = [
       'import { nullRootTarget } from "null-root-package";',

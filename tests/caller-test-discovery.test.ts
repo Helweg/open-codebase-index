@@ -554,6 +554,37 @@ it('constructs the imported EnvelopeFactory directly', () => {
     }
   });
 
+  it("keeps require and import conditional exports bound to their actual executable targets", async () => {
+    await writeSource("package.json", JSON.stringify({
+      name: "dual",
+      type: "commonjs",
+      exports: { import: "./src/conditional-target.cjs", require: "./src/conditional-foreign.cjs" },
+    }));
+    await writeSource("src/conditional-target.cjs", "function ConditionalTarget() {}\nmodule.exports = ConditionalTarget;\n");
+    await writeSource("src/conditional-foreign.cjs", "function ConditionalForeign() {}\nmodule.exports = ConditionalForeign;\n");
+    await writeSource("tests/conditions/import.test.mjs", `import ConditionalTarget from 'dual';
+it('calls the import target', () => { ConditionalTarget(); });
+`);
+    await writeSource("tests/conditions/relative.test.cjs", `const ConditionalTarget = require('../../src/conditional-target.cjs');
+it('calls the direct target', () => { ConditionalTarget(); });
+`);
+    await writeSource("tests/conditions/foreign.test.cjs", `const ConditionalForeign = require('dual');
+it('calls the require target', () => { ConditionalForeign(); });
+`);
+    await writeSource("tests/conditions/decoy.test.cjs", `const ConditionalTarget = require('dual');
+it('calls a different function through the same spelling', () => { ConditionalTarget(); });
+`);
+    await indexer.index();
+    for (const [name, expected] of [
+      ["ConditionalTarget", ["tests/conditions/import.test.mjs", "tests/conditions/relative.test.cjs"]],
+      ["ConditionalForeign", ["tests/conditions/foreign.test.cjs"]],
+    ] as const) {
+      const response = await retrieve({ query: `tests for ${name}` });
+      expect(new Set(response.details?.results?.filter((result) => result.evidenceKind).map((result) =>
+        path.relative(root, result.filePath)))).toEqual(new Set(expected));
+    }
+  });
+
   it("ignores erased ambient wrapper ownership while retaining real require shadows", async () => {
     await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
     await writeSource("src/ambient-root.ts", `declare const module: { exports: unknown };

@@ -24,6 +24,7 @@ const JAVASCRIPT_SOURCE_EXTENSIONS = [
 ] as const;
 const JAVASCRIPT_RUNTIME_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
 const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "import", "default"]);
+const STATIC_COMMONJS_EXPORT_CONDITIONS = new Set(["node", "require", "default"]);
 const TYPESCRIPT_SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
 
 interface ImportBinding {
@@ -66,12 +67,16 @@ export interface LocalWorkspacePackageExportPattern {
   targets: readonly string[];
 }
 
-export interface LocalWorkspacePackage {
-  name: string;
-  rootPath: string;
+interface LocalWorkspacePackageExports {
   entryPoints: ReadonlyMap<string, readonly string[]>;
   exportPatterns: readonly LocalWorkspacePackageExportPattern[];
   restrictsSubpaths: boolean;
+}
+
+export interface LocalWorkspacePackage extends LocalWorkspacePackageExports {
+  name: string;
+  rootPath: string;
+  commonJs: LocalWorkspacePackageExports;
 }
 
 export interface LocalModuleData {
@@ -885,7 +890,10 @@ function isValidPackageConditionName(condition: string): boolean {
     && !/^(?:0|[1-9][0-9]*)$/u.test(condition);
 }
 
-function resolveStaticEsmPackageExportTarget(value: unknown): PackageExportTargetResolution {
+function resolveStaticPackageExportTarget(
+  value: unknown,
+  activeConditions: ReadonlySet<string>,
+): PackageExportTargetResolution {
   if (typeof value === "string") return { kind: "resolved", target: value };
   if (value === null) return { kind: "blocked" };
   if (typeof value !== "object" || Array.isArray(value)) return { kind: "unsupported" };
@@ -893,11 +901,10 @@ function resolveStaticEsmPackageExportTarget(value: unknown): PackageExportTarge
   const conditions = value as Record<string, unknown>;
   if (!Object.keys(conditions).every(isValidPackageConditionName)) return { kind: "unsupported" };
 
-  // Node resolves the first active condition in declaration order. Static ESM
-  // call graphs activate only the built-in node, import, and default branches.
+  // Node selects the first active condition in declaration order for this import mode.
   for (const [condition, target] of Object.entries(conditions)) {
-    if (!STATIC_ESM_EXPORT_CONDITIONS.has(condition)) continue;
-    const resolution = resolveStaticEsmPackageExportTarget(target);
+    if (!activeConditions.has(condition)) continue;
+    const resolution = resolveStaticPackageExportTarget(target, activeConditions);
     if (resolution.kind !== "no-match") return resolution;
   }
   return { kind: "no-match" };
@@ -929,6 +936,83 @@ function matchPackageExportPattern(specifierPath: string, pattern: string): stri
     return undefined;
   }
   return specifierPath.slice(prefix.length, specifierPath.length - suffix.length);
+}
+
+function parseWorkspacePackageExports(
+  rootPath: string,
+  document: Record<string, unknown>,
+  commonJs: boolean,
+): LocalWorkspacePackageExports {
+  const activeConditions = commonJs ? STATIC_COMMONJS_EXPORT_CONDITIONS : STATIC_ESM_EXPORT_CONDITIONS;
+  const entryPoints = new Map<string, readonly string[]>();
+  const exportPatterns: LocalWorkspacePackageExportPattern[] = [];
+  let exportPatternsOverflowed = false;
+  const addEntryPoint = (specifierPath: string, value: unknown, preserveDeclaration = false): void => {
+    const resolution = resolveStaticPackageExportTarget(value, activeConditions);
+    const target = resolution.kind === "resolved"
+      ? resolveWorkspacePackageTarget(rootPath, resolution.target)
+      : undefined;
+    if (target !== undefined) {
+      entryPoints.set(specifierPath, [target]);
+    } else if (preserveDeclaration) {
+      entryPoints.set(specifierPath, []);
+    }
+  };
+  const addExportPattern = (specifierPath: string, value: unknown): void => {
+    if (!isSafePackageExportPath(specifierPath, 1)) return;
+    if (exportPatterns.length >= MAX_WORKSPACE_EXPORT_PATTERNS) {
+      exportPatternsOverflowed = true;
+      return;
+    }
+
+    const resolution = resolveStaticPackageExportTarget(value, activeConditions);
+    exportPatterns.push({
+      specifierPath,
+      targets: resolution.kind === "resolved" && isSafePackageExportPath(resolution.target, 1)
+        ? [resolution.target]
+        : [],
+    });
+  };
+
+  const hasExports = Object.hasOwn(document, "exports");
+  const exportsValue = document.exports;
+  if (hasExports) {
+    if (typeof exportsValue === "string") {
+      addEntryPoint(".", exportsValue, true);
+    } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
+      const exportMap = exportsValue as Record<string, unknown>;
+      const keys = Object.keys(exportMap);
+      const hasSubpathKeys = keys.some((key) => key.startsWith("."));
+      const hasConditionKeys = keys.some((key) => !key.startsWith("."));
+      const hasInvalidSubpathKeys = keys.some((key) => key.startsWith(".")
+        && key !== "."
+        && !key.startsWith("./"));
+      if (!hasInvalidSubpathKeys && !(hasSubpathKeys && hasConditionKeys)) {
+        if (hasSubpathKeys) {
+          for (const [specifierPath, target] of Object.entries(exportMap)) {
+            if (specifierPath === "." || isSafePackageExportPath(specifierPath, 0)) {
+              addEntryPoint(specifierPath, target, true);
+            } else if (isSafePackageExportPath(specifierPath, 1)) {
+              addExportPattern(specifierPath, target);
+            }
+          }
+        } else {
+          addEntryPoint(".", exportsValue, true);
+        }
+      }
+    }
+  } else {
+    // require() ignores the ESM/bundler-only module field and declaration-only types field.
+    for (const field of commonJs ? ["main"] : ["types", "module", "main"]) {
+      if (typeof document[field] === "string") addEntryPoint(".", document[field]);
+    }
+  }
+
+  return {
+    entryPoints,
+    exportPatterns: exportPatternsOverflowed ? [] : exportPatterns.sort(comparePackageExportPatterns),
+    restrictsSubpaths: hasExports,
+  };
 }
 
 /**
@@ -964,79 +1048,12 @@ export function parseLocalWorkspacePackage(
   }
 
   const rootPath = path.posix.dirname(normalizedManifestPath);
-  const entryPoints = new Map<string, readonly string[]>();
-  const exportPatterns: LocalWorkspacePackageExportPattern[] = [];
-  let exportPatternsOverflowed = false;
-  const addEntryPoint = (specifierPath: string, value: unknown, preserveDeclaration = false): void => {
-    const resolution = resolveStaticEsmPackageExportTarget(value);
-    const target = resolution.kind === "resolved"
-      ? resolveWorkspacePackageTarget(rootPath, resolution.target)
-      : undefined;
-    if (target !== undefined) {
-      entryPoints.set(specifierPath, [target]);
-    } else if (preserveDeclaration) {
-      entryPoints.set(specifierPath, []);
-    }
-  };
-  const addExportPattern = (specifierPath: string, value: unknown): void => {
-    if (!isSafePackageExportPath(specifierPath, 1)) return;
-    if (exportPatterns.length >= MAX_WORKSPACE_EXPORT_PATTERNS) {
-      exportPatternsOverflowed = true;
-      return;
-    }
-
-    const resolution = resolveStaticEsmPackageExportTarget(value);
-    exportPatterns.push({
-      specifierPath,
-      targets: resolution.kind === "resolved" && isSafePackageExportPath(resolution.target, 1)
-        ? [resolution.target]
-        : [],
-    });
-  };
-
-  const hasExports = Object.hasOwn(document, "exports");
-  const exportsValue = document.exports;
-  let restrictsSubpaths = false;
-  if (hasExports) {
-    restrictsSubpaths = true;
-    if (typeof exportsValue === "string") {
-      addEntryPoint(".", exportsValue, true);
-    } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
-      const exportMap = exportsValue as Record<string, unknown>;
-      const keys = Object.keys(exportMap);
-      const hasSubpathKeys = keys.some((key) => key.startsWith("."));
-      const hasConditionKeys = keys.some((key) => !key.startsWith("."));
-      const hasInvalidSubpathKeys = keys.some((key) => key.startsWith(".")
-        && key !== "."
-        && !key.startsWith("./"));
-      if (!hasInvalidSubpathKeys && !(hasSubpathKeys && hasConditionKeys)) {
-        if (hasSubpathKeys) {
-          for (const [specifierPath, target] of Object.entries(exportMap)) {
-            if (specifierPath === "." || isSafePackageExportPath(specifierPath, 0)) {
-              addEntryPoint(specifierPath, target, true);
-            } else if (isSafePackageExportPath(specifierPath, 1)) {
-              addExportPattern(specifierPath, target);
-            }
-          }
-        } else {
-          addEntryPoint(".", exportsValue, true);
-        }
-      }
-    }
-  }
-
-  if (!hasExports && !entryPoints.has(".")) {
-    for (const field of ["types", "module", "main"] as const) {
-      if (typeof document[field] === "string") addEntryPoint(".", document[field]);
-    }
-  }
 
   return {
     name,
     rootPath,
-    entryPoints,
-    exportPatterns: exportPatternsOverflowed ? [] : exportPatterns.sort(comparePackageExportPatterns),
-    restrictsSubpaths,
+    ...parseWorkspacePackageExports(rootPath, document, false),
+    commonJs: parseWorkspacePackageExports(rootPath, document, true),
   };
 }
 
@@ -1380,7 +1397,7 @@ export class LocalModuleCallResolver {
     return parsed;
   }
 
-  private resolveModuleSpecifier(importerFilePath: string, specifier: string): string[] {
+  private resolveModuleSpecifier(importerFilePath: string, specifier: string, commonJs = false): string[] {
     if (specifier.startsWith(".")) {
       const base = normalizeFilePath(path.posix.join(path.posix.dirname(importerFilePath), specifier));
       return this.resolveModuleCandidates(base);
@@ -1394,10 +1411,10 @@ export class LocalModuleCallResolver {
       return aliasCandidates;
     }
 
-    return this.resolveModuleSpecifierFromWorkspacePackage(specifier);
+    return this.resolveModuleSpecifierFromWorkspacePackage(specifier, commonJs);
   }
 
-  private resolveModuleSpecifierFromWorkspacePackage(specifier: string): string[] {
+  private resolveModuleSpecifierFromWorkspacePackage(specifier: string, commonJs: boolean): string[] {
     const packageNames = [...this.workspacePackages.keys()]
       .filter((name) => specifier === name || specifier.startsWith(`${name}/`))
       .sort((left, right) => right.length - left.length || left.localeCompare(right));
@@ -1411,12 +1428,13 @@ export class LocalModuleCallResolver {
     const exportPath = suffix.length === 0 ? "." : `.${suffix}`;
     if (exportPath !== "." && !isSafePackageExportPath(exportPath, 0)) return [];
 
-    if (workspacePackage.entryPoints.has(exportPath)) {
-      const entryPoints = workspacePackage.entryPoints.get(exportPath) ?? [];
+    const exports = commonJs ? workspacePackage.commonJs : workspacePackage;
+    if (exports.entryPoints.has(exportPath)) {
+      const entryPoints = exports.entryPoints.get(exportPath) ?? [];
       return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint)))].sort();
     }
 
-    const matchedPattern = workspacePackage.exportPatterns
+    const matchedPattern = exports.exportPatterns
       .map((exportPattern) => ({
         exportPattern,
         wildcard: matchPackageExportPattern(exportPath, exportPattern.specifierPath),
@@ -1433,7 +1451,7 @@ export class LocalModuleCallResolver {
       });
       return [...new Set(targets)].sort();
     }
-    if (workspacePackage.restrictsSubpaths) return [];
+    if (exports.restrictsSubpaths) return [];
     if (suffix.length === 0) return [];
 
     return this.resolveModuleCandidates(path.posix.join(workspacePackage.rootPath, suffix));
@@ -1538,7 +1556,7 @@ export class LocalModuleCallResolver {
     callType: string,
   ): Promise<SymbolData[]> {
     const candidates: SymbolData[] = [];
-    for (const targetModule of this.resolveModuleSpecifier(importerFilePath, binding.source)) {
+    for (const targetModule of this.resolveModuleSpecifier(importerFilePath, binding.source, binding.commonJs === true)) {
       if (binding.commonJs) {
         const data = await this.getModuleData(targetModule);
         if (!data) continue;

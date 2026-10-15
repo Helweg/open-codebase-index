@@ -63,6 +63,7 @@ pub struct ModuleExportData {
 struct Scope {
     parent: Option<usize>,
     function: bool,
+    strict: bool,
 }
 
 struct Binding<'tree, 'source> {
@@ -73,10 +74,37 @@ struct Binding<'tree, 'source> {
     callable: bool,
     constructable: bool,
     mutated: bool,
+    lexical: bool,
     source: Option<&'source str>,
     imported_name: Option<&'source str>,
     require_scope: Option<usize>,
     import_node: Option<Node<'tree>>,
+}
+
+fn has_use_strict(node: Node<'_>, source: &str) -> bool {
+    let body = if node.kind() == "program" {
+        node
+    } else if let Some(body) = node.child_by_field_name("body") {
+        body
+    } else {
+        return false;
+    };
+    let mut cursor = body.walk();
+    for statement in body.named_children(&mut cursor) {
+        if matches!(statement.kind(), "comment" | "hash_bang_line") {
+            continue;
+        }
+        let Some(expression) = statement.named_child(0) else {
+            break;
+        };
+        if statement.kind() != "expression_statement" || expression.kind() != "string" {
+            break;
+        }
+        if matches!(text(expression, source), "'use strict'" | "\"use strict\"") {
+            return true;
+        }
+    }
+    false
 }
 
 fn binding_available(binding: &Binding<'_, '_>, use_node: Node<'_>) -> bool {
@@ -113,6 +141,7 @@ struct Proof<'tree, 'source> {
     names: HashMap<(usize, &'source str), Option<usize>>,
     calls: Vec<(Node<'tree>, usize, &'static str, Option<Node<'tree>>)>,
     constructor_owners: Option<Vec<(usize, ModuleConstructorOwnerData)>>,
+    block_functions: Vec<(Node<'tree>, usize)>,
     writes: Vec<(Node<'tree>, usize)>,
     root_exports: Vec<(Node<'tree>, usize)>,
     esm_exports: Vec<EsmExport<'source>>,
@@ -319,6 +348,13 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                 && node.child_by_field_name("body").is_some()
                 && constructable(node),
             mutated: false,
+            lexical: matches!(
+                node.kind(),
+                "class_declaration" | "abstract_class_declaration"
+            ) || (node.kind() == "variable_declarator"
+                && node
+                    .parent()
+                    .is_some_and(|parent| parent.kind() == "lexical_declaration")),
             source: None,
             imported_name: None,
             require_scope: None,
@@ -539,7 +575,18 @@ impl<'tree, 'source> Proof<'tree, 'source> {
             self.scopes.push(Scope {
                 parent: Some(parent_scope),
                 function,
+                strict: self.scopes[parent_scope].strict
+                    || matches!(
+                        node.kind(),
+                        "class" | "class_declaration" | "abstract_class_declaration" | "class_body"
+                    )
+                    || (function && has_use_strict(node, self.source)),
             });
+        }
+        if function && node.kind() != "arrow_function" && !ambient {
+            // An ordinary function's implicit arguments object blocks outer bindings.
+            // Explicit parameters or declarations may also make this name unprovable.
+            self.names.entry((scope, "arguments")).or_insert(None);
         }
         match node.kind() {
             "function_declaration"
@@ -563,6 +610,20 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                         parent_scope,
                         if ambient { "ambient" } else { "local" },
                     );
+                    if !ambient
+                        && node.kind() == "function_declaration"
+                        && constructable(node)
+                        && parent_scope != self.function_scope(parent_scope)
+                        && !self.scopes[parent_scope].strict
+                        && !node.parent().is_some_and(|body| {
+                            body.parent().is_some_and(|owner| {
+                                is_function(owner)
+                                    && owner.child_by_field_name("body") == Some(body)
+                            })
+                        })
+                    {
+                        self.block_functions.push((node, parent_scope));
+                    }
                 }
             }
             "function_expression" | "function" | "generator_function" | "class" => {
@@ -605,6 +666,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                         binding_scope,
                         if ambient { "ambient" } else { "local" },
                     );
+                    self.bindings[index].lexical = !is_var;
                     if let Some(value) = value.filter(|value| value.kind() == "call_expression") {
                         if let (Some(callee), Some(arguments)) = (
                             value.child_by_field_name("function"),
@@ -666,22 +728,31 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                     );
                 }
             }
-            "for_in_statement" if node.child_by_field_name("kind").is_some() => {
+            "for_in_statement" => {
                 if let Some(pattern) = node.child_by_field_name("left") {
-                    let binding_scope = if node
-                        .child_by_field_name("kind")
-                        .is_some_and(|kind| text(kind, self.source) == "var")
-                    {
-                        self.function_scope(scope)
-                    } else {
-                        scope
-                    };
-                    self.pattern(
-                        pattern,
-                        pattern,
-                        binding_scope,
-                        if ambient { "ambient" } else { "unsupported" },
-                    );
+                    if let Some(kind) = node.child_by_field_name("kind") {
+                        let is_var = text(kind, self.source) == "var";
+                        let binding_scope = if is_var {
+                            self.function_scope(scope)
+                        } else {
+                            scope
+                        };
+                        let first_binding = self.bindings.len();
+                        self.pattern(
+                            pattern,
+                            pattern,
+                            binding_scope,
+                            if ambient { "ambient" } else { "unsupported" },
+                        );
+                        for binding in &mut self.bindings[first_binding..] {
+                            binding.lexical = !is_var;
+                        }
+                    } else if !ambient {
+                        self.writes.push((pattern, scope));
+                        if touches_exports(pattern, self.source) {
+                            self.unknown_exports = true;
+                        }
+                    }
                 }
             }
             "enum_declaration" => {
@@ -1034,6 +1105,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
     }
 
     fn mark_write(&mut self, node: Node<'tree>, scope: usize) {
+        let node = unparen(node);
         match node.kind() {
             "identifier" | "shorthand_property_identifier_pattern" => {
                 let name = text(node, self.source);
@@ -1075,6 +1147,34 @@ impl<'tree, 'source> Proof<'tree, 'source> {
     }
 
     fn finish(mut self) -> ModuleSyntaxData {
+        if !self.esm_syntax {
+            for &(node, scope) in &self.block_functions {
+                let Some(name) = node.child_by_field_name("name") else {
+                    continue;
+                };
+                let name = text(name, self.source);
+                let function_scope = self.function_scope(scope);
+                let mut current = scope;
+                let mut lexical_conflict = false;
+                loop {
+                    if self.names.get(&(current, name)).is_some_and(|binding| {
+                        binding.is_some_and(|index| self.bindings[index].lexical)
+                    }) {
+                        lexical_conflict = true;
+                        break;
+                    }
+                    if current == function_scope {
+                        break;
+                    }
+                    current = self.scopes[current].parent.unwrap_or(function_scope);
+                }
+                if !lexical_conflict {
+                    // Annex B may initialize an additional function-scoped binding.
+                    // Its branch need not execute, so do not claim a unique target.
+                    self.names.insert((function_scope, name), None);
+                }
+            }
+        }
         for index in 0..self.writes.len() {
             let (node, scope) = self.writes[index];
             self.mark_write(node, scope);
@@ -1270,11 +1370,13 @@ pub fn extract_from_tree(
         scopes: vec![Scope {
             parent: None,
             function: true,
+            strict: has_use_strict(tree.root_node(), source),
         }],
         bindings: Vec::new(),
         names: HashMap::new(),
         calls: Vec::new(),
         constructor_owners: include_constructor_owners.then(Vec::new),
+        block_functions: Vec::new(),
         writes: Vec::new(),
         root_exports: Vec::new(),
         esm_exports: Vec::new(),
