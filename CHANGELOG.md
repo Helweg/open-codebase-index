@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Pi prompt composition**: Add codebase-index guidance through native prompt sections instead of a whole-prompt override, preserving later extensions' instructions. Retain the legacy string-return fallback on older Pi hosts; omp's array-valued prompt contract and tool registration remain unchanged.
+- **Pi prompt composition**: Add codebase-index guidance through native prompt sections instead of a whole-prompt override, preserving sibling section and append instructions in either extension order while respecting intentional whole-prompt overrides. Retain the legacy string-return fallback on older Pi hosts; omp's array-valued prompt contract and tool registration remain unchanged.
 
 ### Added
 
