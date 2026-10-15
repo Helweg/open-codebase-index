@@ -1228,20 +1228,25 @@ it('constructs the class without invoking stored or static callbacks', () => {
       .toEqual(["direct_target_test_reference"]);
   });
 
-  it("links a constructor-owned default parameter helper call", async () => {
+  it.each([
+    ["default parameter", "constructor(value = limiter('related')) { this.value = value; }",
+      "expect(new PerMessageDeflate().value).toBe('related');"],
+    ["computed method name", "constructor() { this.value = { [limiter('related')]() {} }; }",
+      "expect(Object.keys(new PerMessageDeflate().value)).toEqual(['related']);"],
+  ])("links a constructor-owned %s helper call", async (_form, member, assertion) => {
     await writeSource("package.json", JSON.stringify({ type: "commonjs" }));
     await writeSource("src/limiter.js", `function limiter(value) { return value; }
 module.exports = limiter;
 `);
     await writeSource("src/permessage-deflate.js", `const limiter = require('./limiter.js');
 class PerMessageDeflate {
-  constructor(value = limiter('related')) { this.value = value; }
+  ${member}
 }
 module.exports = PerMessageDeflate;
 `);
     await writeSource("test/permessage-deflate.test.js", `const PerMessageDeflate = require('../src/permessage-deflate.js');
-it('uses the constructor default value', () => {
-  expect(new PerMessageDeflate().value).toBe('related');
+it('uses the constructor-evaluated helper', () => {
+  ${assertion}
 });
 `);
     await indexer.index();

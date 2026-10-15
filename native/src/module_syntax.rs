@@ -63,6 +63,7 @@ pub struct ModuleExportData {
 struct Scope {
     parent: Option<usize>,
     function: bool,
+    function_body: bool,
     strict: bool,
 }
 
@@ -168,8 +169,18 @@ fn text<'source>(node: Node<'_>, source: &'source str) -> &'source str {
 
 fn unparen(mut node: Node<'_>) -> Node<'_> {
     while node.kind() == "parenthesized_expression" {
-        let Some(child) = node.named_child(0) else {
-            break;
+        let child = match node.named_child(0) {
+            Some(child) if !child.is_extra() => child,
+            _ => {
+                let mut cursor = node.walk();
+                let Some(child) = node
+                    .named_children(&mut cursor)
+                    .find(|child| !child.is_extra())
+                else {
+                    break;
+                };
+                child
+            }
         };
         node = child;
     }
@@ -198,6 +209,13 @@ fn is_function(node: Node<'_>) -> bool {
             | "arrow_function"
             | "method_definition"
     )
+}
+
+fn is_function_body(node: Node<'_>) -> bool {
+    node.kind() == "statement_block"
+        && node.parent().is_some_and(|owner| {
+            is_function(owner) && owner.child_by_field_name("body") == Some(node)
+        })
 }
 
 fn is_instance_constructor(node: Node<'_>, source: &str) -> bool {
@@ -527,7 +545,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
         parent_scope: usize,
         depth: usize,
         ambient: bool,
-        constructor_owner: Option<Node<'tree>>,
+        enclosing_constructor_owner: Option<Node<'tree>>,
     ) {
         if depth > 1024 {
             self.valid = false;
@@ -555,7 +573,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
         ) {
             None
         } else {
-            constructor_owner
+            enclosing_constructor_owner
         };
         let creates_scope = function
             || matches!(
@@ -575,6 +593,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
             self.scopes.push(Scope {
                 parent: Some(parent_scope),
                 function,
+                function_body: is_function_body(node),
                 strict: self.scopes[parent_scope].strict
                     || matches!(
                         node.kind(),
@@ -615,12 +634,7 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                         && constructable(node)
                         && parent_scope != self.function_scope(parent_scope)
                         && !self.scopes[parent_scope].strict
-                        && !node.parent().is_some_and(|body| {
-                            body.parent().is_some_and(|owner| {
-                                is_function(owner)
-                                    && owner.child_by_field_name("body") == Some(body)
-                            })
-                        })
+                        && !node.parent().is_some_and(is_function_body)
                     {
                         self.block_functions.push((node, parent_scope));
                     }
@@ -866,9 +880,25 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                 }
             }
         }
+        let computed_name = if node.kind() == "method_definition" {
+            node.child_by_field_name("name")
+                .filter(|name| name.kind() == "computed_property_name")
+        } else {
+            None
+        };
         let mut cursor = node.walk();
         for child in node.named_children(&mut cursor) {
-            self.visit(child, scope, depth + 1, ambient, constructor_owner);
+            if Some(child) == computed_name {
+                self.visit(
+                    child,
+                    parent_scope,
+                    depth + 1,
+                    ambient,
+                    enclosing_constructor_owner,
+                );
+            } else {
+                self.visit(child, scope, depth + 1, ambient, constructor_owner);
+            }
         }
     }
 
@@ -1155,8 +1185,12 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                 let name = text(name, self.source);
                 let function_scope = self.function_scope(scope);
                 let mut current = scope;
+                let mut body_scope = None;
                 let mut lexical_conflict = false;
                 loop {
+                    if self.scopes[current].function_body {
+                        body_scope = Some(current);
+                    }
                     if self.names.get(&(current, name)).is_some_and(|binding| {
                         binding.is_some_and(|index| self.bindings[index].lexical)
                     }) {
@@ -1172,6 +1206,12 @@ impl<'tree, 'source> Proof<'tree, 'source> {
                     // Annex B may initialize an additional function-scoped binding.
                     // Its branch need not execute, so do not claim a unique target.
                     self.names.insert((function_scope, name), None);
+                    if let Some(body_scope) = body_scope {
+                        if let Some(binding) = self.names.get_mut(&(body_scope, name)) {
+                            // Body-level function declarations share the hoisted runtime binding.
+                            *binding = None;
+                        }
+                    }
                 }
             }
         }
@@ -1370,6 +1410,7 @@ pub fn extract_from_tree(
         scopes: vec![Scope {
             parent: None,
             function: true,
+            function_body: false,
             strict: has_use_strict(tree.root_node(), source),
         }],
         bindings: Vec::new(),

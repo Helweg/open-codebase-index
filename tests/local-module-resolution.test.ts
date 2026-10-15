@@ -557,6 +557,51 @@ function run() { Root(); Feature(); Blocked(); Legacy(); ModuleOnly(); }`;
     await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "ModuleOnly"))).resolves.toBeUndefined();
   });
 
+  it.each(["module-sync", "node-addons"])("honors the built-in %s condition before mode-specific fallbacks", async (condition) => {
+    const specifiers = [
+      ["Root", "pkg"], ["Feature", "pkg/features/value"], ["Blocked", "pkg/blocked"],
+      ["First", "pkg/first"], ["Namespace", "pkg/esm"],
+    ];
+    const required = specifiers.map(([name, source]) => `const ${name} = require('${source}');`).join("\n")
+      + "\nfunction run() { Root(); Feature(); Blocked(); First(); Namespace(); }";
+    const imported = specifiers.map(([name, source]) => `import ${name} from '${source}';`).join("\n")
+      + "\nexport function run() { Root(); Feature(); Blocked(); First(); Namespace(); }";
+    const current = symbol("current", "src/current.cjs", "Current");
+    const feature = symbol("feature", "src/current/value.cjs", "Feature");
+    const legacy = symbol("legacy", "src/legacy.cjs", "Legacy");
+    const sync = symbol("sync", "src/sync.mjs", "Sync");
+    const instance = resolver({
+      "main.cjs": { content: required, symbols: [] },
+      "main.mjs": { content: imported, symbols: [] },
+      "src/current.cjs": { content: "function Current() {}\nmodule.exports = Current;", symbols: [current] },
+      "src/current/value.cjs": { content: "function Feature() {}\nmodule.exports = Feature;", symbols: [feature] },
+      "src/legacy.cjs": { content: "function Legacy() {}\nmodule.exports = Legacy;", symbols: [legacy] },
+      "src/legacy/value.cjs": { content: "function LegacyFeature() {}\nmodule.exports = LegacyFeature;", symbols: [] },
+      "src/sync.mjs": { content: "export default function Sync() {}", symbols: [sync] },
+    }, {
+      "package.json": JSON.stringify({
+        name: "pkg",
+        exports: {
+          ".": { [condition]: "./src/current.cjs", import: "./src/legacy.cjs", require: "./src/legacy.cjs" },
+          "./features/*": { node: {
+            [condition]: "./src/current/*.cjs", import: "./src/legacy/*.cjs", require: "./src/legacy/*.cjs",
+          } },
+          "./blocked": { [condition]: null, default: "./src/current.cjs" },
+          "./first": { default: "./src/legacy.cjs", [condition]: "./src/current.cjs" },
+          "./esm": { [condition]: "./src/sync.mjs", require: "./src/legacy.cjs" },
+        },
+      }),
+    });
+    for (const [file, content] of [["main.cjs", required], ["main.mjs", imported]]) {
+      for (const [name, expected] of [["Root", current], ["Feature", feature], ["First", legacy]] as const) {
+        await expect(instance.resolveCallTarget(file, content, callSite(content, name))).resolves.toEqual(expected);
+      }
+      await expect(instance.resolveCallTarget(file, content, callSite(content, "Blocked"))).resolves.toBeUndefined();
+      await expect(instance.resolveCallTarget(file, content, callSite(content, "Namespace")))
+        .resolves.toEqual(file.endsWith(".mjs") ? sync : undefined);
+    }
+  });
+
   it.each([
     "for (Target of [replacement]) {}",
     "for (Target in { value: replacement }) {}",
@@ -567,6 +612,10 @@ function run() { Root(); Feature(); Blocked(); Legacy(); ModuleOnly(); }`;
     "((Target)) = replacement;",
     "((Target)) &&= replacement;",
     "((Target))++;",
+    "(/* overwrite */ Target) = replacement;",
+    "(/* outer */ (/* inner */ Target)) &&= replacement;",
+    "(/* update */ Target)++;",
+    "for ((/* loop */ Target) of [replacement]) {}",
   ])("rejects a stale exported declaration after %s", async (write) => {
     const main = "import { Target } from './target.mjs';\nexport function run() { Target(); }";
     const instance = resolver({
@@ -636,6 +685,73 @@ for (const Target of [replacement]) {}
     });
     const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "Target"));
     expect(resolved).toEqual(retainsOuter ? target : undefined);
+  });
+
+  it.each([
+    ["sloppy", "", undefined],
+    ["strict", "'use strict';\n", 3],
+  ])("keeps function-body declarations sound under %s block-function semantics", async (_mode, prefix, expectedLine) => {
+    const main = `${prefix}function run() {
+  function LocalTarget() { return 'original'; }
+  if (true) { function LocalTarget() { return 'replacement'; } }
+  return LocalTarget();
+}
+module.exports = run;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "LocalTarget"));
+    if (expectedLine === undefined) {
+      expect(resolved).toBeUndefined();
+    } else {
+      expect(resolved).toMatchObject({ filePath: "main.cjs", name: "LocalTarget", startLine: expectedLine });
+    }
+  });
+
+  it("does not resolve a conditional Annex B declaration over a body-local var binding", async () => {
+    const main = `function run() {
+  var LocalTarget = function Original() { return 'original'; };
+  if (false) function LocalTarget() { return 'replacement'; }
+  return LocalTarget();
+}
+module.exports = run;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "LocalTarget"))).resolves.toBeUndefined();
+  });
+
+  it("retains parameter/var ambiguity when mapped arguments can overwrite the callable", async () => {
+    const main = `function replacement() { return 'replacement'; }
+function run(Target) {
+  var Target = () => 'original';
+  arguments[0] = replacement;
+  return Target();
+}
+module.exports = () => run(() => 'initial');`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Target"))).resolves.toBeUndefined();
+  });
+
+  it("tracks outer arguments writes evaluated by computed method names", async () => {
+    const main = `function arguments() { return 'original'; }
+function replacement() { return 'replacement'; }
+const obj = { [(arguments = replacement)]() {} };
+const run = () => arguments();
+module.exports = arguments;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"))).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["[arguments()]() {}", true],
+    ["['key'](value = arguments()) {}", false],
+    ["['key']() { return arguments(); }", false],
+  ])("separates computed-name arguments from method parameters and bodies in %s", async (member, inheritsOuter) => {
+    const main = `const arguments = require('./target.cjs');\nconst obj = { ${member} };`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"));
+    expect(resolved).toEqual(inheritsOuter ? target : undefined);
   });
 
   it("uses an explicit body-local arguments function rather than either the implicit object or outer import", async () => {

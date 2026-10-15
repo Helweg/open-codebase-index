@@ -23,8 +23,8 @@ const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".cjs",
 ] as const;
 const JAVASCRIPT_RUNTIME_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
-const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "import", "default"]);
-const STATIC_COMMONJS_EXPORT_CONDITIONS = new Set(["node", "require", "default"]);
+const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "node-addons", "module-sync", "import", "default"]);
+const STATIC_COMMONJS_EXPORT_CONDITIONS = new Set(["node", "node-addons", "module-sync", "require", "default"]);
 const TYPESCRIPT_SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
 
 interface ImportBinding {
