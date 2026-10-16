@@ -7,24 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Pi prompt composition**: Add codebase-index guidance through native prompt sections instead of a whole-prompt override, preserving sibling section and append instructions in either extension order while respecting intentional whole-prompt overrides. Retain the legacy string-return fallback on older Pi hosts; omp's array-valued prompt contract and tool registration remain unchanged.
+## [0.37.0] - 2026-10-16
 
 ### Added
 
+- **Caller-aware test discovery**: Route symbol-focused natural-language test requests containing one exact identifier through bounded, current-source-verified target/caller references in active-branch indexed JavaScript/TypeScript tests, using provider-free indexed lexical navigation before source-verification caps. Select direct target references before separately labeled related caller tests; neither label claims invariant coverage. Use native lexical module ownership, exact call/declaration identity and opt-in callback-body positions to reject real shadows, unsupported member and outside-test calls, with conservative runtime escaped-name handling. Reuse immutable per-file linkage records and lazily sliced test text, refresh selected package ambiguity without retaining stale in-flight export cache results, and fail linkage closed when nearer configuration is unknown or unresolved. Preserve behavioral qualifiers' ordinary query relevance, definition-only explicit symbols, hard output scopes and disclosed opt-in recovery, ordinary unlabelled fallback when linkage is uncertain, result/token budgets and generic retrieval scoring, without additional expansion embedding calls.
 - **Frozen candidate body/retrieval evidence**: Publish a separately sealed nine-repository, 100-task preferred-registry 0.36.2 versus source-candidate study with all 36 cold cells, 400 primary outcomes and 1,200 records. Preserve the original metrics, report a CRLF visible-fence extractor defect through separate EOL-preserving forensics, and disclose explicit-file discovery loss, structural wins/losses, strict citation exceptions and timing/gradeability limits. The measured candidate remains unmerged; no blind, speed or general-superiority claim.
 - **Historical candidate / current release distinction**: The frozen study's #432 candidate was rejected and closed without merging. The later #434 fixes and #435 release shipped 0.36.3 separately; this evidence publication does not rescore the original study or evaluate the published 0.36.3 release.
 
 ### Changed
 
 - **Dependency override hygiene**: Remove five fresh-resolution-proven inert pins and obsolete `@hono/node-server`/`express-rate-limit` exact pins; retain Hono, IP-address, PostCSS, and Vite security floors using same-major selectors and patched caret ranges. Scope the necessary esbuild security exception to tsup 8.x, restoring chord's exact esbuild 0.28.2 edge and the native CLI's declared js-yaml 5.x range without broadly refreshing the lock or dropping existing Linux libc selectors. Both packed identities retain Node.js 22.13 compatibility; the OpenCode plugin remains pinned at 1.3.13.
+- **Runtime and development dependencies**: Include the seven reviewed minor/patch updates from #438, retaining the Node.js 22.13 minimum and the OpenCode plugin 1.3.13 compatibility pin.
 - **Explicit context scopes**: Keep `codebase_context` directory/file-type constraints in definition and conceptual retrieval by default, including inferred-symbol fallbacks. Add `allowUnscopedRecovery: true` across MCP, OpenCode, Pi and omp to request the previous filter-relaxation behavior, retaining visible notices and structured diagnostics. Unscoped retrieval and `from`/`to` graph routing retain their existing policy; retrieval filters do not constrain graph paths.
 - **Scope-recovery evaluation input**: Support explicit recovery opt-in in golden-query arguments. Migrate the existing representative recovery request to dataset `2.3.0` without changing expected labels or rewriting historical evidence. Preserve context-mode no-results as authoritative instead of substituting generic-query evidence that disagrees with the reported route and recovery metadata; ordinary search mode is unchanged.
-- **Caller-aware test discovery**: Route symbol-focused natural-language test requests containing one exact identifier through bounded, current-source-verified target/caller references in active-branch indexed JavaScript/TypeScript tests, using provider-free indexed lexical navigation before source-verification caps. Select direct target references before separately labeled related caller tests; neither label claims invariant coverage. Use native lexical module ownership, exact call/declaration identity and opt-in callback-body positions to reject real shadows, unsupported member and outside-test calls, with conservative runtime escaped-name handling. Reuse immutable per-file linkage records and lazily sliced test text, refresh selected package ambiguity without retaining stale in-flight export cache results, and fail linkage closed when nearer configuration is unknown or unresolved. Preserve behavioral qualifiers' ordinary query relevance, definition-only explicit symbols, hard output scopes and disclosed opt-in recovery, ordinary unlabelled fallback when linkage is uncertain, result/token budgets and generic retrieval scoring, without additional expansion embedding calls.
 
 ### Fixed
 
+- **Pi prompt composition**: Add codebase-index guidance through native prompt sections instead of a whole-prompt override, preserving sibling section and append instructions in either extension order while respecting intentional whole-prompt overrides. Retain the legacy string-return fallback on older Pi hosts; omp's array-valued prompt contract and tool registration remain unchanged.
 - **Deterministic keyword ties**: Order equal BM25 scores by stable chunk ID before applying the native result limit. Repeated queries, reloads and equivalent index construction now retain tied ordering and cutoff membership instead of feeding randomized ranks into hybrid fusion. Keep BM25 scoring, score normalization and fusion formulas unchanged.
 - **Scoped test-discovery precedence**: Complete scoped caller-aware discovery and ordinary scoped retrieval before any opted-in unscoped recovery. Keep useful in-scope alias tests selected identically with recovery omitted, disabled or enabled, without manufactured linked labels or filter-relaxation notices.
 - **Test-reference citation compatibility**: Append direct/related evidence labels after the existing range-and-score citation instead of inserting them inside its grammar. Keep text source locations aligned with structured selected references.
@@ -1022,7 +1022,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...v0.37.0
 [0.36.3]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...v0.36.3
 [0.36.2]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...v0.36.2
 [0.36.1]: https://github.com/Helweg/open-codebase-index/compare/v0.36.0...v0.36.1
