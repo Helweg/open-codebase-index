@@ -182,15 +182,72 @@ it('signalGate rejects false input through an alias', () => {
       file: path.relative(root, result.filePath),
       start: result.startLine, end: result.endLine, evidenceKind: result.evidenceKind,
     }))).toEqual([{
-      file: "tests/aliases/alias.test.ts", start: 2, end: 4, evidenceKind: undefined,
+      file: "tests/aliases/alias.test.ts", start: 2, end: 4, evidenceKind: "direct_target_test_reference",
     }]);
-    expect(omitted.details?.recovery?.attempts).toEqual([
-      { kind: "conceptual", scope: "scoped", resultCount: 0, relaxedFields: [] },
-      { kind: "conceptual", scope: "scoped", resultCount: 1, relaxedFields: [] },
-    ]);
     for (const allowUnscopedRecovery of [false, true]) {
       expect(await retrieve({ ...scope, allowUnscopedRecovery })).toStrictEqual(omitted);
     }
+  });
+
+  it.each(["module-sync", "node-addons"])("links renamed package roots through %s with branch, null, order and ESM controls", async (condition) => {
+    await writeSource("package.json", JSON.stringify({
+      name: `fixture-${condition}`,
+      type: "commonjs",
+      exports: {
+        ".": { [condition]: "./src/current.cjs", require: "./src/legacy.cjs", import: "./src/legacy.cjs" },
+        "./feature": { node: { [condition]: "./src/feature.cjs", require: "./src/legacy.cjs", import: "./src/legacy.cjs" } },
+        "./blocked": { [condition]: null, default: "./src/current.cjs" },
+        "./first": { default: "./src/legacy.cjs", [condition]: "./src/current.cjs" },
+        "./esm": { [condition]: "./src/sync.mjs", require: "./src/legacy.cjs" },
+      },
+    }));
+    for (const name of ["Current", "Feature", "Legacy"]) {
+      await writeSource(`src/${name.toLowerCase()}.cjs`, `function ${name}() { return '${name}'; }\nmodule.exports = ${name};\n`);
+    }
+    await writeSource("src/sync.mjs", "export default function Sync() { return 'Sync'; }\n");
+    for (const branch of ["root", "feature", "blocked", "first", "esm"]) {
+      const specifier = `fixture-${condition}${branch === "root" ? "" : `/${branch}`}`;
+      await writeSource(`tests/require-${branch}.test.cjs`,
+        `const Selected = require('${specifier}');\nit('calls selected branch', () => { Selected(); });\n`);
+      await writeSource(`tests/import-${branch}.test.mjs`,
+        `import Selected from '${specifier}';\nit('calls selected branch', () => { Selected(); });\n`);
+    }
+    await indexer.index();
+    const expected = {
+      Current: ["tests/import-root.test.mjs", "tests/require-root.test.cjs"],
+      Feature: ["tests/import-feature.test.mjs", "tests/require-feature.test.cjs"],
+      Legacy: ["tests/import-first.test.mjs", "tests/require-first.test.cjs"],
+      Sync: ["tests/import-esm.test.mjs"],
+    };
+    for (const [name, files] of Object.entries(expected)) {
+      const response = await retrieve({ query: `tests for ${name}`, limit: 50, tokenBudget: 4000 });
+      const references = response.details?.results?.filter((result) => result.evidenceKind) ?? [];
+      expect(references.map((result) => path.relative(root, result.filePath)).sort()).toEqual(files);
+      expect(references.map((result) => ({ kind: result.evidenceKind, symbol: result.referencedSymbol })))
+        .toEqual(files.map(() => ({ kind: "direct_target_test_reference", symbol: name })));
+    }
+  });
+
+  it("verifies an aliased computed-key caller by its exact file despite duplicate owner names", async () => {
+    await writeSource("src/argument-target.cjs", "function ArgumentTarget() { return 'key'; }\nmodule.exports = ArgumentTarget;\n");
+    const owners = {
+      key: "({ [arguments()]() {} })",
+      parameter: "({ ['key'](value = arguments()) {} })",
+      body: "({ ['key']() { return arguments(); } })",
+    };
+    for (const [kind, body] of Object.entries(owners)) {
+      await writeSource(`src/method-${kind}.cjs`,
+        `const arguments = require('./argument-target.cjs');\nconst makeObject = () => ${body};\nmodule.exports = makeObject;\n`);
+      await writeSource(`tests/method-${kind}.test.cjs`,
+        `const makeObject = require('../src/method-${kind}.cjs');\nit('constructs object', () => { makeObject(); });\n`);
+    }
+    await indexer.index();
+    const response = await retrieve({ query: "tests for ArgumentTarget", tokenBudget: 4000 });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, symbol: result.referencedSymbol,
+    }))).toEqual([{
+      file: "tests/method-key.test.cjs", kind: "related_caller_test_reference", symbol: "makeObject",
+    }]);
   });
 
   it("does not manufacture relationships for missing targets, ambiguous definitions, or stale caller edges", async () => {
@@ -312,6 +369,75 @@ ${Array.from({ length: 20 }, (_, index) => `it('independent arithmetic preserves
     const bounded = await retrieve({ directory: "tests/ranking", limit: 100, tokenBudget: 4000 });
     expect(bounded.details?.results).toHaveLength(20);
     expect(bounded.details?.results?.[0]?.startLine).toBe(62);
+  });
+
+  it("preserves canonical references before unrelated imported helpers spend the module budget", async () => {
+    await writeSource("src/target.mjs",
+      "export function Target(value) { return String(value).toUpperCase(); }\n");
+    await writeSource("src/public.mjs", `// The public entry point exposes a differently named binding.
+export { Target as PublicTarget } from './target.mjs';
+`);
+    const imports = ["import { PublicTarget as Target } from '../src/public.mjs';"];
+    const calls: string[] = [];
+    for (let index = 0; index < 70; index += 1) {
+      await writeSource(`src/noise-${index}.mjs`,
+        `export function noise${index}(value) { return String(value) + 'noise-${index}'; }\n`);
+      imports.push(`import { noise${index} } from '../src/noise-${index}.mjs';`);
+      calls.push(`  noise${index}('value');`);
+    }
+    await writeSource("tests/target.test.mjs", `${imports.join("\n")}
+it('prepares unrelated helper values', () => {
+${calls.join("\n")}
+});
+it('Target executes through its public entry point', () => {
+  expect(Target('value')).toBe('VALUE');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for Target" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, symbol: result.referencedSymbol,
+    }))).toEqual([
+      { file: "tests/target.test.mjs", kind: "direct_target_test_reference", symbol: "Target" },
+    ]);
+  });
+
+  it("preserves lexical workspace references while configuring unranked aliases on demand", async () => {
+    await writeSource("package.json", JSON.stringify({
+      name: "dual", type: "commonjs", workspaces: ["packages/*"], exports: { ".": "./src/current.cjs" },
+    }));
+    await writeSource("src/current.cjs", `function Current() { return 'current'; }
+module.exports = Current;
+`);
+    await writeSource("tests/z-ranked.test.cjs", `const Current = require('dual');
+it('Current executes the package root', () => {
+  expect(Current()).toBe('current');
+});
+`);
+    for (const directory of ["valid", "invalid"]) {
+      await writeSource(`tests/${directory}/alias.test.cjs`, `const Selected = require('dual');
+it('calls the selected package value', () => {
+  expect(typeof Selected()).toBe('string');
+});
+`);
+    }
+    await writeSource("tests/invalid/tsconfig.json", JSON.stringify({ extends: "unavailable-config/base" }));
+    for (let index = 0; index < 60; index += 1) {
+      const directory = `packages/noise-${String(index).padStart(2, "0")}`;
+      await writeSource(`${directory}/package.json`, JSON.stringify({ name: `noise-${index}`, type: "commonjs" }));
+      await writeSource(`${directory}/test/unrelated.test.cjs`, `it('independent arithmetic fixture ${index}', () => {
+  expect(1 + 1).toBe(2);
+});
+`);
+    }
+    await indexer.index();
+    const response = await retrieve({ query: "tests for Current" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, symbol: result.referencedSymbol,
+    }))).toEqual([
+      { file: "tests/z-ranked.test.cjs", kind: "direct_target_test_reference", symbol: "Current" },
+      { file: "tests/valid/alias.test.cjs", kind: "direct_target_test_reference", symbol: "Current" },
+    ]);
   });
 
   it("prioritizes selected test configuration over unrelated directories without asserting a foreign alias link", async () => {
@@ -577,7 +703,7 @@ it('calls a different function through the same spelling', () => { ConditionalTa
     await indexer.index();
     for (const [name, expected] of [
       ["ConditionalTarget", ["tests/conditions/import.test.mjs", "tests/conditions/relative.test.cjs"]],
-      ["ConditionalForeign", ["tests/conditions/foreign.test.cjs"]],
+      ["ConditionalForeign", ["tests/conditions/foreign.test.cjs", "tests/conditions/decoy.test.cjs"]],
     ] as const) {
       const response = await retrieve({ query: `tests for ${name}` });
       expect(new Set(response.details?.results?.filter((result) => result.evidenceKind).map((result) =>

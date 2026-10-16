@@ -204,8 +204,8 @@ function resolvedReferenceMatchesDefinition(reference: SymbolData | undefined, d
     && reference.endLine === declaration.endLine && reference.endCol === declaration.endCol;
 }
 
-function executableReference(call: ModuleCallData, name: string): boolean {
-  return call.name === name && !call.qualifier && (call.callType === "Call" || call.callType === "Constructor");
+function executableReference(call: ModuleCallData): boolean {
+  return !call.qualifier && call.bindingIndex !== undefined && (call.callType === "Call" || call.callType === "Constructor");
 }
 
 function referenceTerms(text: string): Set<string> {
@@ -252,7 +252,7 @@ export async function discoverSymbolTests(
     }
     return pending;
   };
-  const runtimeDefinitions = async (name: string): Promise<{ candidates: RuntimeDefinition[]; complete: boolean }> => {
+  const runtimeDefinitions = async (name: string, expectedPath?: string): Promise<{ candidates: RuntimeDefinition[]; complete: boolean }> => {
     const definitions = await operations.lookup(name);
     const executable: RuntimeDefinition[] = [];
     let complete = definitions.length < TEST_DISCOVERY_MAX_DEFINITIONS;
@@ -265,6 +265,7 @@ export async function discoverSymbolTests(
       if (definition.name !== name) continue;
       const filePath = relativePath(root, definition.filePath);
       if (!filePath) { complete = false; continue; }
+      if (expectedPath && filePath !== expectedPath) continue;
       if (/\.d\.(?:ts|mts|cts)$/iu.test(filePath)) continue;
       if (!isJavaScriptRuntimeSourceFilePath(filePath)) { complete = false; continue; }
       const source = await currentSource(filePath);
@@ -301,10 +302,12 @@ export async function discoverSymbolTests(
 
   const graph = await operations.graph(symbol, target.filePath);
   throwIfOperationAborted(control?.signal);
+  const targetSymbolId = graph.resolution.status === "resolved" ? graph.resolution.symbolId : undefined;
   const callers = graph.resolution.status === "resolved" && graph.resolution.name === symbol
     && relativePath(root, graph.resolution.filePath) === targetPath
     ? graph.callers.filter((edge) => edge.fromSymbolName && edge.fromSymbolFilePath
-      && edge.targetName === symbol && (edge.callType === "Call" || edge.callType === "Constructor"))
+      && (edge.targetName === symbol || edge.toSymbolId === targetSymbolId)
+      && (edge.callType === "Call" || edge.callType === "Constructor"))
       .sort((left, right) => (left.fromSymbolFilePath ?? "").localeCompare(right.fromSymbolFilePath ?? "")
         || left.line - right.line || left.fromSymbolId.localeCompare(right.fromSymbolId))
     : [];
@@ -321,7 +324,7 @@ export async function discoverSymbolTests(
     (filePath) => readSource(root, filePath, markCapped, control),
     (filePath) => readConfiguration(root, filePath, markCapped, control), markCapped, control);
   resolver.moduleResolver.seedModule(targetPath, testModuleData(targetPath, targetSource.content, targetSource.parsed));
-  const callerDefinitionsByName = new Map<string, (typeof unique)[number]>();
+  const callerDefinitions = new Map<string, RuntimeDefinition>();
   const seenCallers = new Set<string>();
   let navigatedCallers = 0;
   for (const edge of callers) {
@@ -334,7 +337,7 @@ export async function discoverSymbolTests(
     if (!callerPath || isTestPath(callerPath)) continue;
     const source = await currentSource(callerPath);
     if (!source) continue;
-    const sourceCall = source.calls.find((call) => executableReference(call, symbol)
+    const sourceCall = source.calls.find((call) => executableReference(call)
       && call.line === edge.line && call.column === edge.col && call.callType === edge.callType);
     if (!sourceCall) continue;
     resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
@@ -362,28 +365,33 @@ export async function discoverSymbolTests(
     // Anonymous callback owners may use their source-verified enclosing export, never a filename guess.
     if (enclosing.length > 2) result.capped = true;
     for (const candidate of enclosing.slice(0, 2)) {
-      const callerLookup = await runtimeDefinitions(candidate.name);
-      const callerDefinitions = callerLookup.candidates;
-      if (!callerLookup.complete || callerDefinitions.length !== 1 || callerDefinitions[0].filePath !== callerPath) continue;
-      const caller = callerDefinitions[0];
+      const callerLookup = await runtimeDefinitions(candidate.name, callerPath);
+      if (!callerLookup.complete || callerLookup.candidates.length !== 1) continue;
+      const caller = callerLookup.candidates[0];
       if (caller.declaration.kind !== candidate.kind || caller.declaration.startLine !== candidate.startLine
         || caller.declaration.startCol !== candidate.startCol || caller.declaration.endLine !== candidate.endLine
         || caller.declaration.endCol !== candidate.endCol) continue;
-      callerDefinitionsByName.set(candidate.name, caller);
+      callerDefinitions.set(`${callerPath}\0${candidate.name}`, caller);
       break;
     }
     await control?.heartbeat?.();
   }
-  result.verifiedCallerCount = callerDefinitionsByName.size;
-  const lexical = await operations.lexicalFiles([symbol, ...callerDefinitionsByName.keys()], candidates);
+  result.verifiedCallerCount = callerDefinitions.size;
+  const referenceDefinitions = [unique[0], ...callerDefinitions.values()];
+  const canonicalNames = new Set(referenceDefinitions.map((definition) => definition.declaration.name));
+  const lexical = await operations.lexicalFiles([...canonicalNames], candidates);
   throwIfOperationAborted(control?.signal);
-  const allowedFiles = new Set(candidates);
+  const remainingFiles = new Set(candidates);
   const selectedFiles = [...new Set(lexical.filePaths.map((filePath) => relativePath(root, filePath))
-    .filter((filePath): filePath is string => filePath !== undefined && allowedFiles.has(filePath)))].slice(0, TEST_DISCOVERY_MAX_FILES);
+    .filter((filePath): filePath is string => filePath !== undefined && remainingFiles.has(filePath)))].slice(0, TEST_DISCOVERY_MAX_FILES);
+  await resolver.loadImporters(selectedFiles);
+  // Remaining files also track unranked importers whose configuration has not been loaded.
+  for (const filePath of selectedFiles) remainingFiles.delete(filePath);
+  // Tiny import/require headers can be absent from chunks; verify the whole inventory when it fits.
+  if (candidates.length <= TEST_DISCOVERY_MAX_FILES) selectedFiles.push(...remainingFiles);
   const fileRanks = new Map(selectedFiles.map((filePath, index) => [path.resolve(root, filePath), index]));
   result.candidateFileCount = selectedFiles.length;
   result.capped ||= lexical.capped;
-  await resolver.loadImporters(selectedFiles);
 
   const references = new Map<string, TestReferenceResult>();
   const targetTerms = new Set([...referenceTerms(symbol)].filter((term) => term.length >= 3));
@@ -391,25 +399,22 @@ export async function discoverSymbolTests(
     || fileRanks.get(left.filePath)! - fileRanks.get(right.filePath)!
     || left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine
     || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol);
-  for (const filePath of selectedFiles) {
+  const verifyCalls = async (filePath: string, canonicalNamesOnly: boolean): Promise<void> => {
     throwIfOperationAborted(control?.signal);
     const source = await currentSource(filePath);
-    if (!source) continue;
-    result.scannedFileCount += 1;
-    resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
-    const names = [symbol, ...callerDefinitionsByName.keys()];
+    if (!source) return;
+    if (canonicalNamesOnly) {
+      result.scannedFileCount += 1;
+      resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
+    }
     for (const call of source.calls) {
-      if (!names.some((name) => executableReference(call, name))) continue;
+      if (!executableReference(call) || canonicalNames.has(call.name) !== canonicalNamesOnly) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
-      const expectedDefinition = call.name === symbol ? unique[0] : callerDefinitionsByName.get(call.name);
-      if (!expectedDefinition) continue;
-      const direct = call.name === symbol;
-      const startLine = container.startLine;
-      const endLine = container.endLine;
       const key = `${filePath}:${container.startByte}:${container.endByte}`;
       const previous = references.get(key);
-      if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
+      if (previous?.evidenceKind === "direct_target_test_reference") continue;
+      if (remainingFiles.delete(filePath)) await resolver.loadImporters([filePath]);
       const reference = await resolver.resolveCallTarget(filePath, source.content, {
         calleeName: call.name,
         line: call.line,
@@ -418,7 +423,13 @@ export async function discoverSymbolTests(
         confidence: "Direct",
       });
       throwIfOperationAborted(control?.signal);
-      if (!resolvedReferenceMatchesDefinition(reference, expectedDefinition.declaration, expectedDefinition.filePath)) continue;
+      const expectedDefinition = referenceDefinitions.find((definition) =>
+        resolvedReferenceMatchesDefinition(reference, definition.declaration, definition.filePath));
+      if (!expectedDefinition) continue;
+      const direct = expectedDefinition === unique[0];
+      const startLine = container.startLine;
+      const endLine = container.endLine;
+      if (previous && !direct) continue;
       let content = source.containerContents.get(container);
       if (content === undefined) {
         source.sourceBytes ??= Buffer.from(source.content);
@@ -430,7 +441,7 @@ export async function discoverSymbolTests(
         content, score: direct ? 1 : relatedReferenceScore(content, targetTerms),
         chunkType: "expression_statement" as TestReferenceResult["chunkType"],
         name: call.name, evidenceKind: direct ? "direct_target_test_reference" : "related_caller_test_reference",
-        referencedSymbol: call.name, referenceLine: call.line,
+        referencedSymbol: expectedDefinition.declaration.name, referenceLine: call.line,
       };
       if (!previous && references.size >= TEST_DISCOVERY_MAX_REFERENCES) {
         result.capped = true;
@@ -448,7 +459,10 @@ export async function discoverSymbolTests(
       references.set(key, candidate);
     }
     await control?.heartbeat?.();
-  }
+  };
+  // Preserve canonical-spelling proofs before unrelated alias calls can spend their shared budgets.
+  for (const filePath of selectedFiles) await verifyCalls(filePath, true);
+  for (const filePath of selectedFiles) await verifyCalls(filePath, false);
   throwIfOperationAborted(control?.signal);
   result.results = [...references.values()].sort(compareReferences);
   return result;
