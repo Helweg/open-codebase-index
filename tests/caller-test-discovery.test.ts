@@ -634,7 +634,7 @@ it('calls a different function through the same spelling', () => { ConditionalTa
     await indexer.index();
     for (const [name, expected] of [
       ["ConditionalTarget", ["tests/conditions/import.test.mjs", "tests/conditions/relative.test.cjs"]],
-      ["ConditionalForeign", ["tests/conditions/foreign.test.cjs"]],
+      ["ConditionalForeign", ["tests/conditions/foreign.test.cjs", "tests/conditions/decoy.test.cjs"]],
     ] as const) {
       const response = await retrieve({ query: `tests for ${name}` });
       expect(new Set(response.details?.results?.filter((result) => result.evidenceKind).map((result) =>

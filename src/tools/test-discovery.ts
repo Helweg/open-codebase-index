@@ -306,7 +306,8 @@ export async function discoverSymbolTests(
   const callers = graph.resolution.status === "resolved" && graph.resolution.name === symbol
     && relativePath(root, graph.resolution.filePath) === targetPath
     ? graph.callers.filter((edge) => edge.fromSymbolName && edge.fromSymbolFilePath
-      && edge.toSymbolId === targetSymbolId && (edge.callType === "Call" || edge.callType === "Constructor"))
+      && (edge.targetName === symbol || edge.toSymbolId === targetSymbolId)
+      && (edge.callType === "Call" || edge.callType === "Constructor"))
       .sort((left, right) => (left.fromSymbolFilePath ?? "").localeCompare(right.fromSymbolFilePath ?? "")
         || left.line - right.line || left.fromSymbolId.localeCompare(right.fromSymbolId))
     : [];
@@ -336,7 +337,7 @@ export async function discoverSymbolTests(
     if (!callerPath || isTestPath(callerPath)) continue;
     const source = await currentSource(callerPath);
     if (!source) continue;
-    const sourceCall = source.calls.find((call) => executableReference(call) && call.name === edge.targetName
+    const sourceCall = source.calls.find((call) => executableReference(call)
       && call.line === edge.line && call.column === edge.col && call.callType === edge.callType);
     if (!sourceCall) continue;
     resolver.moduleResolver.seedModule(callerPath, testModuleData(callerPath, source.content, source.parsed));
