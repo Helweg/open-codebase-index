@@ -378,19 +378,17 @@ export async function discoverSymbolTests(
   }
   result.verifiedCallerCount = callerDefinitions.size;
   const referenceDefinitions = [unique[0], ...callerDefinitions.values()];
-  const lexical = await operations.lexicalFiles(
-    [...new Set(referenceDefinitions.map((definition) => definition.declaration.name))], candidates);
+  const canonicalNames = new Set(referenceDefinitions.map((definition) => definition.declaration.name));
+  const lexical = await operations.lexicalFiles([...canonicalNames], candidates);
   throwIfOperationAborted(control?.signal);
-  const allowedFiles = new Set(candidates);
+  const remainingFiles = new Set(candidates);
   const selectedFiles = [...new Set(lexical.filePaths.map((filePath) => relativePath(root, filePath))
-    .filter((filePath): filePath is string => filePath !== undefined && allowedFiles.has(filePath)))].slice(0, TEST_DISCOVERY_MAX_FILES);
-  const lexicalFileCount = selectedFiles.length;
+    .filter((filePath): filePath is string => filePath !== undefined && remainingFiles.has(filePath)))].slice(0, TEST_DISCOVERY_MAX_FILES);
   await resolver.loadImporters(selectedFiles);
+  // Remaining files also track unranked importers whose configuration has not been loaded.
+  for (const filePath of selectedFiles) remainingFiles.delete(filePath);
   // Tiny import/require headers can be absent from chunks; verify the whole inventory when it fits.
-  if (candidates.length <= TEST_DISCOVERY_MAX_FILES) {
-    for (const filePath of selectedFiles) allowedFiles.delete(filePath);
-    selectedFiles.push(...allowedFiles);
-  }
+  if (candidates.length <= TEST_DISCOVERY_MAX_FILES) selectedFiles.push(...remainingFiles);
   const fileRanks = new Map(selectedFiles.map((filePath, index) => [path.resolve(root, filePath), index]));
   result.candidateFileCount = selectedFiles.length;
   result.capped ||= lexical.capped;
@@ -401,22 +399,22 @@ export async function discoverSymbolTests(
     || fileRanks.get(left.filePath)! - fileRanks.get(right.filePath)!
     || left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine
     || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol);
-  for (let fileIndex = 0; fileIndex < selectedFiles.length; fileIndex += 1) {
-    const filePath = selectedFiles[fileIndex];
+  const verifyCalls = async (filePath: string, canonicalNamesOnly: boolean): Promise<void> => {
     throwIfOperationAborted(control?.signal);
     const source = await currentSource(filePath);
-    if (!source) continue;
-    result.scannedFileCount += 1;
-    resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
-    let importerConfigured = fileIndex < lexicalFileCount;
+    if (!source) return;
+    if (canonicalNamesOnly) {
+      result.scannedFileCount += 1;
+      resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
+    }
     for (const call of source.calls) {
-      if (!executableReference(call)) continue;
+      if (!executableReference(call) || canonicalNames.has(call.name) !== canonicalNamesOnly) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
-      if (!importerConfigured) {
-        await resolver.loadImporters([filePath]);
-        importerConfigured = true;
-      }
+      const key = `${filePath}:${container.startByte}:${container.endByte}`;
+      const previous = references.get(key);
+      if (previous?.evidenceKind === "direct_target_test_reference") continue;
+      if (remainingFiles.delete(filePath)) await resolver.loadImporters([filePath]);
       const reference = await resolver.resolveCallTarget(filePath, source.content, {
         calleeName: call.name,
         line: call.line,
@@ -431,9 +429,7 @@ export async function discoverSymbolTests(
       const direct = expectedDefinition === unique[0];
       const startLine = container.startLine;
       const endLine = container.endLine;
-      const key = `${filePath}:${container.startByte}:${container.endByte}`;
-      const previous = references.get(key);
-      if (previous && (previous.evidenceKind === "direct_target_test_reference" || !direct)) continue;
+      if (previous && !direct) continue;
       let content = source.containerContents.get(container);
       if (content === undefined) {
         source.sourceBytes ??= Buffer.from(source.content);
@@ -463,7 +459,10 @@ export async function discoverSymbolTests(
       references.set(key, candidate);
     }
     await control?.heartbeat?.();
-  }
+  };
+  // Preserve canonical-spelling proofs before unrelated alias calls can spend their shared budgets.
+  for (const filePath of selectedFiles) await verifyCalls(filePath, true);
+  for (const filePath of selectedFiles) await verifyCalls(filePath, false);
   throwIfOperationAborted(control?.signal);
   result.results = [...references.values()].sort(compareReferences);
   return result;

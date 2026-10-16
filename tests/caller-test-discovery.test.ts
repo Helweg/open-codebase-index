@@ -371,6 +371,37 @@ ${Array.from({ length: 20 }, (_, index) => `it('independent arithmetic preserves
     expect(bounded.details?.results?.[0]?.startLine).toBe(62);
   });
 
+  it("preserves canonical references before unrelated imported helpers spend the module budget", async () => {
+    await writeSource("src/target.mjs",
+      "export function Target(value) { return String(value).toUpperCase(); }\n");
+    await writeSource("src/public.mjs", `// The public entry point exposes a differently named binding.
+export { Target as PublicTarget } from './target.mjs';
+`);
+    const imports = ["import { PublicTarget as Target } from '../src/public.mjs';"];
+    const calls: string[] = [];
+    for (let index = 0; index < 70; index += 1) {
+      await writeSource(`src/noise-${index}.mjs`,
+        `export function noise${index}(value) { return String(value) + 'noise-${index}'; }\n`);
+      imports.push(`import { noise${index} } from '../src/noise-${index}.mjs';`);
+      calls.push(`  noise${index}('value');`);
+    }
+    await writeSource("tests/target.test.mjs", `${imports.join("\n")}
+it('prepares unrelated helper values', () => {
+${calls.join("\n")}
+});
+it('Target executes through its public entry point', () => {
+  expect(Target('value')).toBe('VALUE');
+});
+`);
+    await indexer.index();
+    const response = await retrieve({ query: "tests for Target" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, symbol: result.referencedSymbol,
+    }))).toEqual([
+      { file: "tests/target.test.mjs", kind: "direct_target_test_reference", symbol: "Target" },
+    ]);
+  });
+
   it("preserves lexical workspace references while configuring unranked aliases on demand", async () => {
     await writeSource("package.json", JSON.stringify({
       name: "dual", type: "commonjs", workspaces: ["packages/*"], exports: { ".": "./src/current.cjs" },
