@@ -1,4 +1,5 @@
 import { existsSync, statSync, type Stats } from "fs";
+import { stat } from "node:fs/promises";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
 
@@ -19,6 +20,7 @@ import {
 } from "./local-module-config.js";
 import { NativeRecursiveWatcher } from "./native-recursive-watcher.js";
 import { FileSnapshotReconciler, type SnapshotInvalidation } from "./snapshot-reconciler.js";
+import { buildFileSnapshotScan, isWithinPath, type FileSnapshotScan } from "./snapshot.js";
 
 export type FileChangeType = "add" | "change" | "unlink";
 
@@ -41,6 +43,13 @@ interface ConfigPathState {
   size: number;
 }
 
+interface ChokidarRecovery {
+  watcher: FSWatcher;
+  previousPaths: ReadonlySet<string>;
+  liveChanges: Map<string, FileChangeType>;
+  configOnly: boolean;
+}
+
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private activeCallbacks = 0;
@@ -58,6 +67,8 @@ export class FileWatcher {
   private resolveReady: (() => void) | null = null;
   private pollingFallbackAttempted = false;
   private pendingClose: Promise<void> | null = null;
+  private chokidarRecovery: ChokidarRecovery | null = null;
+  private recoveryTask: Promise<void> | null = null;
   private startupReadySignals = 1;
   private nativeWatcher: NativeRecursiveWatcher | null = null;
   private nativeReconciler: FileSnapshotReconciler | null = null;
@@ -139,10 +150,22 @@ export class FileWatcher {
     watchTargets?: string | string[],
     usePolling = false,
     reportsStartupReady = true,
+    recoveryPaths?: ReadonlySet<string>,
   ): void {
     let reportedStartupReady = false;
+    // Backend cutover invalidates the old scan owner, but not its already-observed changes.
+    const previousRecovery = this.chokidarRecovery;
+    this.chokidarRecovery = null;
+    if (previousRecovery) {
+      const selected = this.getChokidarRecoveryPathFilter();
+      this.recordChanges([...previousRecovery.liveChanges]
+        .filter(([filePath]) => previousRecovery.configOnly
+          ? this.isProjectConfigPath(filePath)
+          : previousRecovery.previousPaths.has(filePath) || selected(filePath))
+        .map(([filePath, type]) => ({ path: filePath, type })));
+    }
     this.refreshLocalModuleConfigTracker();
-    this.configPathStates = this.getConfigPathStates();
+    if (!usePolling && !previousRecovery) this.configPathStates = this.getConfigPathStates();
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
     const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
     const includeIgnored = this.config.indexing?.includeIgnored ?? [];
@@ -205,9 +228,20 @@ export class FileWatcher {
       watcher = new FSWatcher(watcherOptions);
     }
     this.watcher = watcher;
+    if (recoveryPaths) {
+      this.chokidarRecovery = {
+        watcher, previousPaths: recoveryPaths, liveChanges: new Map(),
+        configOnly: this.nativeWatcher !== null || this.nativeStarting,
+      };
+    }
     watcher.on("ready", () => {
       if (this.watcher !== watcher) return;
-      this.reconcileConfigPathStates();
+      const recovery = this.chokidarRecovery;
+      if (recovery?.watcher === watcher) {
+        this.recoveryTask = this.reconcileChokidarRecovery(recovery);
+      } else {
+        this.reconcileConfigPathStates();
+      }
       if (reportsStartupReady) {
         this.reportStartupReadySignal();
         reportedStartupReady = true;
@@ -229,6 +263,10 @@ export class FileWatcher {
       ) {
         this.pollingFallbackAttempted = true;
         console.warn("[codebase-index] File watcher exhausted open file handles; retrying with polling.");
+        // Capture before close clears Chokidar's inventory, including files deleted during replacement.
+        const recoveryPaths = this.nativeWatcher || this.nativeStarting
+          ? new Set(this.configPathStates.keys())
+          : this.getChokidarRecoveryPaths(watcher);
         this.pendingClose = watcher.close().catch((closeError: unknown) => {
           console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
         });
@@ -239,7 +277,7 @@ export class FileWatcher {
           } else if (reportedStartupReady) {
             this.startupReadySignals += 1;
           }
-          this.createWatcher(resolvedWatchTargets, true, replacementReportsStartupReady);
+          this.createWatcher(resolvedWatchTargets, true, replacementReportsStartupReady, recoveryPaths);
         } else {
           this.watcher = null;
         }
@@ -253,6 +291,127 @@ export class FileWatcher {
     watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
     watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
     watcher.add(resolvedWatchTargets);
+  }
+
+  private getChokidarRecoveryPathFilter(): (filePath: string) => boolean {
+    const ignoreFilter = createIgnoreFilter(this.projectRoot);
+    const gitIgnoreFilter = createGitIgnoreFilter(this.projectRoot);
+    const includePatterns = [...this.config.include, ...(this.config.additionalInclude ?? [])];
+    const includeIgnored = this.config.indexing?.includeIgnored ?? [];
+    const options = this.getPathFilterOptions();
+    const snapshotConfig = this.getSnapshotConfig();
+    return (filePath) => {
+      if (this.isProjectConfigPath(filePath) || this.localModuleConfigTracker.has(filePath)) return true;
+      if (this.isOutsideProjectPath(path.relative(this.projectRoot, filePath))) return false;
+      return (path.extname(filePath).toLowerCase() === ".json" && (
+        shouldTrackLocalModuleConfigPath(filePath, this.projectRoot, ignoreFilter, snapshotConfig)
+        || (path.basename(filePath) === "package.json" && this.localModuleConfigTracker.shouldTrackPackagePath(filePath))
+      )) || shouldIncludeFile(
+        filePath, this.projectRoot, includePatterns, this.config.exclude,
+        ignoreFilter, includeIgnored, gitIgnoreFilter, options,
+      );
+    };
+  }
+
+  private getChokidarRecoveryPaths(watcher: FSWatcher): ReadonlySet<string> {
+    const watched = watcher.getWatched();
+    const directories = new Set(Object.keys(watched));
+    const selected = this.getChokidarRecoveryPathFilter();
+    const paths = new Set([
+      ...this.configPathStates.keys(),
+      ...this.localModuleConfigTracker.getPaths().filter((filePath) => this.isExistingFile(filePath)),
+    ]);
+    for (const [directory, names] of Object.entries(watched)) {
+      for (const name of names) {
+        const filePath = path.join(directory, name);
+        if (!directories.has(filePath) && selected(filePath) && !this.isExistingDirectory(filePath)) {
+          paths.add(filePath);
+        }
+      }
+    }
+    return paths;
+  }
+
+  private async getRecoveryFileState(filePath: string): Promise<ConfigPathState | "missing" | "unreadable"> {
+    try {
+      const state = await stat(filePath);
+      return state.isFile() ? { size: state.size, mtimeMs: state.mtimeMs } : "missing";
+    } catch (error) {
+      if (error instanceof Error && "code" in error) {
+        if (error.code === "ENOENT" || error.code === "ENOTDIR") return "missing";
+        if (error.code === "EACCES" || error.code === "EPERM") return "unreadable";
+      }
+      throw error;
+    }
+  }
+
+  private async scanChokidarRecovery(recovery: ChokidarRecovery): Promise<FileSnapshotScan> {
+    if (!recovery.configOnly) {
+      return buildFileSnapshotScan(
+        this.projectRoot, this.getSnapshotConfig(),
+        [...this.projectConfigPaths, ...this.localModuleConfigTracker.getPaths()],
+      );
+    }
+    const entries = new Map<string, ConfigPathState>();
+    const unreadablePrefixes = new Set<string>();
+    for (const filePath of this.projectConfigPaths) {
+      const state = await this.getRecoveryFileState(filePath);
+      if (state === "unreadable") unreadablePrefixes.add(filePath);
+      else if (state !== "missing") entries.set(filePath, state);
+    }
+    return { entries, unreadablePrefixes };
+  }
+
+  private async reconcileChokidarRecovery(recovery: ChokidarRecovery): Promise<void> {
+    try {
+      const scan = await this.scanChokidarRecovery(recovery);
+      if (this.chokidarRecovery !== recovery || this.watcher !== recovery.watcher) return;
+      const changes = new Map<string, FileChangeType>();
+      for (const filePath of scan.entries.keys()) {
+        changes.set(filePath, recovery.previousPaths.has(filePath) ? "change" : "add");
+      }
+      const unreadablePrefixes = [...scan.unreadablePrefixes];
+      const recoveredConfigStates = new Map<string, ConfigPathState>();
+      for (const filePath of recovery.previousPaths) {
+        if (scan.entries.has(filePath) || unreadablePrefixes.some((prefix) => isWithinPath(prefix, filePath))) continue;
+        // A filtered snapshot omission is not evidence of deletion (depth, traversal, symlinks).
+        const state = await this.getRecoveryFileState(filePath);
+        if (this.chokidarRecovery !== recovery || this.watcher !== recovery.watcher) return;
+        if (state === "missing") changes.set(filePath, "unlink");
+        else if (state !== "unreadable") {
+          changes.set(filePath, "change");
+          if (this.isProjectConfigPath(filePath)) recoveredConfigStates.set(filePath, state);
+        }
+      }
+      if (this.chokidarRecovery !== recovery || this.watcher !== recovery.watcher) return;
+
+      // Refresh once for new importers/dependencies before filtering buffered events.
+      if (!recovery.configOnly) this.refreshLocalModuleConfigTracker(recovery.watcher);
+      const selected = this.getChokidarRecoveryPathFilter();
+      for (const [filePath, type] of recovery.liveChanges) {
+        if ((recovery.configOnly && this.isProjectConfigPath(filePath))
+          || (!recovery.configOnly && (recovery.previousPaths.has(filePath) || selected(filePath)))) {
+          changes.set(filePath, type);
+        }
+      }
+      for (const filePath of this.projectConfigPaths) {
+        // Buffered config events already updated the state; don't replace it with older scan metadata.
+        if (recovery.liveChanges.has(filePath)) continue;
+        const state = scan.entries.get(filePath) ?? recoveredConfigStates.get(filePath);
+        if (state) this.configPathStates.set(filePath, state);
+        else if (changes.get(filePath) === "unlink") this.configPathStates.delete(filePath);
+      }
+      // No async gap between overlaying newer events and handing delivery back to the live watcher.
+      this.chokidarRecovery = null;
+      this.recordChanges([...changes].map(([filePath, type]) => ({ path: filePath, type })));
+      if (this.pendingChanges.size > 0) this.scheduleFlush();
+    } catch (error) {
+      if (this.chokidarRecovery !== recovery) return;
+      console.error("[codebase-index] Failed to reconcile polling watcher replacement:", error);
+      this.chokidarRecovery = null;
+      for (const [filePath, type] of recovery.liveChanges) this.handleChange(recovery.watcher, type, filePath);
+      if (this.pendingChanges.size > 0) this.scheduleFlush();
+    }
   }
 
   private shouldUseNativeWatcher(): boolean {
@@ -512,6 +671,18 @@ export class FileWatcher {
       return;
     }
 
+    if (this.chokidarRecovery?.watcher === watcher) {
+      this.chokidarRecovery.liveChanges.set(filePath, type);
+      if (this.isProjectConfigPath(filePath)) {
+        if (type === "unlink") this.configPathStates.delete(filePath);
+        else {
+          const state = this.getConfigPathState(filePath);
+          if (state) this.configPathStates.set(filePath, state);
+        }
+      }
+      return;
+    }
+
     if (this.isProjectConfigPath(filePath)) {
       this.updateConfigPathState(filePath);
       this.pendingChanges.set(filePath, type);
@@ -711,11 +882,12 @@ export class FileWatcher {
   isBusy(): boolean {
     return this.activeCallbacks > 0 || this.resolveReady !== null || this.nativeStarting
       || this.nativeInitializing || this.nativeInvalidatedPaths.size > 0
+      || this.chokidarRecovery !== null
       || this.nativeReconcileTimer !== null || this.pendingChanges.size > 0;
   }
 
   private async flush(): Promise<void> {
-    if (this.pendingChanges.size === 0 || !this.onChanges) {
+    if (this.pendingChanges.size === 0 || !this.onChanges || this.chokidarRecovery !== null) {
       return;
     }
 
@@ -749,6 +921,9 @@ export class FileWatcher {
     const watcher = this.watcher;
     const nativeWatcher = this.nativeWatcher;
     const pendingClose = this.pendingClose;
+    const recoveryTask = this.recoveryTask;
+    this.chokidarRecovery = null;
+    this.recoveryTask = null;
     const resolveReady = this.resolveReady;
     this.watcher = null;
     this.nativeWatcher = null;
@@ -761,7 +936,7 @@ export class FileWatcher {
     this.readyPromise = null;
     this.pendingChanges.clear();
     this.onChanges = null;
-    await Promise.all([watcher?.close(), nativeWatcher?.stop(), pendingClose]);
+    await Promise.all([watcher?.close(), nativeWatcher?.stop(), pendingClose, recoveryTask]);
 
     resolveReady?.();
   }
@@ -771,6 +946,12 @@ export class FileWatcher {
   }
 
   async waitUntilReady(): Promise<void> {
-    await (this.readyPromise ?? Promise.resolve());
+    let ready = this.readyPromise;
+    while (ready) {
+      await ready;
+      // An EMFILE polling fallback replaces the promise while the first ready is still resolving.
+      if (this.readyPromise === ready) return;
+      ready = this.readyPromise;
+    }
   }
 }

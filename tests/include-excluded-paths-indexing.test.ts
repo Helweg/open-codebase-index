@@ -1,13 +1,36 @@
+import type * as FsPromises from "node:fs/promises";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { FSWatcher } from "chokidar";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { HostMode } from "../src/config/host.js";
 import { parseConfig, type ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
-import { FileWatcher, type FileWatcherBackend } from "../src/watcher/file-watcher.js";
+import { FileWatcher, type FileChange, type FileWatcherBackend, type FileWatcherOptions } from "../src/watcher/file-watcher.js";
+
+// Controlled filesystem boundaries only; successful reads always use the real filesystem.
+const snapshotFaults = vi.hoisted(() => ({
+  beforeRead: undefined as ((directory: string) => Promise<void>) | undefined,
+  afterStat: undefined as ((filePath: string) => Promise<void>) | undefined,
+}));
+vi.mock("node:fs/promises", async () => {
+  const actual = await vi.importActual<typeof FsPromises>("node:fs/promises");
+  return {
+    ...actual,
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      await snapshotFaults.beforeRead?.(String(args[0]));
+      return actual.readdir(...args);
+    },
+    stat: async (...args: Parameters<typeof actual.stat>) => {
+      const result = await actual.stat(...args);
+      await snapshotFaults.afterStat?.(String(args[0]));
+      return result;
+    },
+  };
+});
 
 const WATCH_TIMEOUT_MS = 20_000;
 const NODE_MAJOR_VERSION = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
@@ -21,6 +44,7 @@ interface StructuralConfigOptions {
   include?: string[];
   includeExcluded?: string[];
   includeIgnored?: string[];
+  maxDepth?: number;
 }
 
 function structuralConfig(options: StructuralConfigOptions = {}): ParsedCodebaseIndexConfig {
@@ -29,7 +53,7 @@ function structuralConfig(options: StructuralConfigOptions = {}): ParsedCodebase
     autoGc: true,
     watchFiles: false,
     requireProjectMarker: false,
-    maxDepth: -1,
+    maxDepth: options.maxDepth ?? -1,
     maxFilesPerDirectory: 1000,
   };
   if (options.includeExcluded !== undefined) {
@@ -94,6 +118,8 @@ describe("include-excluded path indexing acceptance", () => {
 
   afterEach(async () => {
     try {
+      snapshotFaults.beforeRead = undefined;
+      snapshotFaults.afterStat = undefined;
       const stopResults = await Promise.allSettled(watchers.map((watcher) => watcher.stop()));
       const handlerResults = await Promise.allSettled(handlerTails);
       const closeResults = await Promise.allSettled(indexers.map((indexer) => indexer.close()));
@@ -509,6 +535,517 @@ describe("include-excluded path indexing acceptance", () => {
     "preserves the default native watcher rejection of root build-named file changes",
     async () => {
       await exerciseDefaultRootBuildWatcherRejection("native");
+    },
+  );
+
+  it("indexes a change made right after waitUntilReady when EMFILE falls back to polling during the first ready", async () => {
+    const config = structuralConfig();
+    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+    writeSource(ordinaryPath, "emfileOriginalOrdinaryDefinition");
+
+    const indexer = createIndexer(config);
+    await indexer.index();
+
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const watcher = new FileWatcher(projectDir, config, "jcode", { backend: "chokidar" });
+    watchers.push(watcher);
+    const observedPaths: string[] = [];
+    let handlerTail = Promise.resolve();
+    watcher.start(async (changes) => {
+      observedPaths.push(...changes.map((change) => change.path));
+      handlerTail = handlerTail.then(async () => {
+        await indexer.index();
+      });
+      handlerTails.push(handlerTail);
+      await handlerTail;
+    });
+
+    // Fault boundary only: emit EMFILE on the real first watcher in the same ready emission as the
+    // application's ready listener, so the polling replacement is created before waiters resume.
+    const readWatcher = (): FSWatcher => (watcher as unknown as { watcher: FSWatcher }).watcher;
+    const first = readWatcher();
+    expect(first.options.usePolling).toBeFalsy();
+    let replacementReady = false;
+    first.on("ready", () => {
+      first.emit("error", Object.assign(new Error("EMFILE: too many open files"), { code: "EMFILE" }));
+      const replacement = readWatcher();
+      expect(replacement).not.toBe(first);
+      expect(replacement.options.usePolling).toBe(true);
+      replacement.on("ready", () => {
+        replacementReady = true;
+      });
+    });
+
+    await watcher.waitUntilReady();
+    expect(replacementReady).toBe(true);
+
+    const updatedDefinition = "emfileUpdatedOrdinaryDefinition";
+    writeSource(ordinaryPath, updatedDefinition);
+    await vi.waitFor(async () => {
+      expect(await hasDefinition(indexer, updatedDefinition, ordinaryPath)).toBe(true);
+      expect(observedPaths).toContain(ordinaryPath);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+  });
+
+  function startRecoveryConsumer(
+    config: ParsedCodebaseIndexConfig,
+    indexer: Indexer,
+    options: FileWatcherOptions = {},
+  ): { watcher: FileWatcher; observed: FileChange[] } {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const watcher = new FileWatcher(projectDir, config, "jcode", { backend: "chokidar", ...options });
+    watchers.push(watcher);
+    const observed: FileChange[] = [];
+    let handlerTail = Promise.resolve();
+    watcher.start(async (changes) => {
+      observed.push(...changes);
+      handlerTail = handlerTail.then(async () => { await indexer.index(); });
+      handlerTails.push(handlerTail);
+      await handlerTail;
+    });
+    return { watcher, observed };
+  }
+
+  async function prepareReadyWatcherReplacement(watcher: FileWatcher): Promise<() => FSWatcher> {
+    // Access only the controlled error boundary; both backends and all consumer work are real.
+    const internals = watcher as unknown as { watcher: FSWatcher };
+    await watcher.waitUntilReady();
+    const first = internals.watcher;
+    expect(first.options.usePolling).toBeFalsy();
+    return () => {
+      first.emit("error", Object.assign(new Error("CONTROLLED EMFILE injection"), { code: "EMFILE" }));
+      const replacement = internals.watcher;
+      expect(replacement).not.toBe(first);
+      expect(replacement.options.usePolling).toBe(true);
+      return replacement;
+    };
+  }
+
+  it.each(["change", "add", "unlink"] as const)(
+    "indexes an isolated %s during post-ready EMFILE polling replacement without another readiness wait",
+    async (mutation) => {
+      const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+      const ordinaryPath = path.join(projectDir, mutation === "change" ? "src" : "build-tools", "ordinary.ts");
+      if (mutation !== "add") writeSource(ordinaryPath, "postReadyOriginalOrdinaryDefinition");
+      const indexer = createIndexer(config);
+      await indexer.index();
+      const { watcher, observed } = startRecoveryConsumer(config, indexer);
+      const replace = await prepareReadyWatcherReplacement(watcher);
+      const replacement = replace();
+      let replacementReady = false;
+      replacement.on("ready", () => { replacementReady = true; });
+      expect(replacementReady).toBe(false);
+      if (mutation === "unlink") fs.rmSync(ordinaryPath);
+      else writeSource(ordinaryPath, "postReadyUpdatedOrdinaryDefinition");
+
+      await vi.waitFor(async () => {
+        if (mutation === "unlink") {
+          expect(await hasDefinition(indexer, "postReadyOriginalOrdinaryDefinition", ordinaryPath)).toBe(false);
+        } else {
+          expect(await hasDefinition(indexer, "postReadyUpdatedOrdinaryDefinition", ordinaryPath)).toBe(true);
+        }
+        expect(observed).toContainEqual({ path: ordinaryPath, type: mutation });
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+
+      // Ongoing delivery must survive the snapshot-to-live handoff as well.
+      expect(replacementReady).toBe(true);
+      writeSource(ordinaryPath, "postReadyOngoingOrdinaryDefinition");
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "postReadyOngoingOrdinaryDefinition", ordinaryPath)).toBe(true);
+        expect(await hasDefinition(indexer, "postReadyUpdatedOrdinaryDefinition", ordinaryPath)).toBe(false);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    },
+  );
+
+  it("preserves opt-in, ignore, root-build and protected path policy during post-ready EMFILE catch-up", async () => {
+    const config = structuralConfig({
+      includeExcluded: ["build-tools/**", ".github/**", "vendor/**", ".git/**", "private-index/**"],
+      exclude: ["build-tools/blocked.ts"],
+    });
+    const selectedPath = path.join(projectDir, "build-tools", "selected.ts");
+    const negativePaths = [
+      path.join(projectDir, "build-tools", "blocked.ts"),
+      path.join(projectDir, "vendor", "ignored.ts"),
+      path.join(projectDir, ".git", "protected.ts"),
+      path.join(projectDir, "private-index", "protected.ts"),
+      path.join(projectDir, "build-helper.ts"),
+      path.join(projectDir, ".hidden-sibling.ts"),
+    ];
+    fs.writeFileSync(path.join(projectDir, ".gitignore"), "vendor/ignored.ts\n");
+    writeSource(selectedPath, "policyOriginalSelectedDefinition");
+    for (const filePath of negativePaths) writeSource(filePath, "policyOriginalNegativeDefinition");
+    const indexer = createIndexer(config, { indexPath: path.join(projectDir, "private-index") });
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer, { indexPath: path.join(projectDir, "private-index") });
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    replace();
+    writeSource(selectedPath, "policyUpdatedSelectedDefinition");
+    for (const filePath of negativePaths) writeSource(filePath, "policyUpdatedNegativeDefinition");
+    await vi.waitFor(async () => {
+      expect(await hasDefinition(indexer, "policyUpdatedSelectedDefinition", selectedPath)).toBe(true);
+      expect(observed).toContainEqual({ path: selectedPath, type: "change" });
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    for (const filePath of negativePaths) expect(observed.some((change) => change.path === filePath)).toBe(false);
+    expect(observed.every((change) => !fs.existsSync(change.path) || fs.statSync(change.path).isFile())).toBe(true);
+  });
+
+  it.each(["change", "unlink"] as const)(
+    "retains project and local-module config %s during post-ready EMFILE catch-up",
+    async (mutation) => {
+      const config = structuralConfig();
+      const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+      const configPath = path.join(projectDir, ".codebase-index", "config.json");
+      const moduleConfigPath = path.join(projectDir, "tsconfig.json");
+      writeSource(ordinaryPath, "configOriginalOrdinaryDefinition");
+      fs.mkdirSync(path.dirname(configPath), { recursive: true });
+      fs.writeFileSync(configPath, "{}");
+      fs.writeFileSync(moduleConfigPath, "{}");
+      const indexer = createIndexer(config);
+      await indexer.index();
+      const { watcher, observed } = startRecoveryConsumer(config, indexer, { configPath });
+      const replace = await prepareReadyWatcherReplacement(watcher);
+      replace();
+      for (const filePath of [configPath, moduleConfigPath]) {
+        if (mutation === "unlink") fs.rmSync(filePath);
+        else fs.writeFileSync(filePath, '{"compilerOptions":{}}');
+      }
+      // The ordinary change proves the real callback's awaited index completed.
+      writeSource(ordinaryPath, "configUpdatedOrdinaryDefinition");
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "configUpdatedOrdinaryDefinition", ordinaryPath)).toBe(true);
+        for (const filePath of [configPath, moduleConfigPath]) {
+          expect(observed).toContainEqual({ path: filePath, type: mutation });
+        }
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    },
+  );
+
+  it("preserves unreadable paths instead of fabricating deletes during EMFILE catch-up", async () => {
+    const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+    const selectedPath = path.join(projectDir, "build-tools", "selected.ts");
+    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+    writeSource(selectedPath, "unreadableSelectedDefinition");
+    writeSource(ordinaryPath, "unreadableOriginalDefinition");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    let denied = false;
+    snapshotFaults.beforeRead = async (directory) => {
+      if (directory !== path.dirname(selectedPath)) return;
+      snapshotFaults.beforeRead = undefined;
+      denied = true;
+      throw Object.assign(new Error("CONTROLLED scan EACCES"), { code: "EACCES" });
+    };
+    replace();
+    writeSource(ordinaryPath, "unreadableUpdatedDefinition");
+    await vi.waitFor(async () => {
+      expect(denied).toBe(true);
+      expect(await hasDefinition(indexer, "unreadableUpdatedDefinition", ordinaryPath)).toBe(true);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(observed).not.toContainEqual({ path: selectedPath, type: "unlink" });
+    expect(await hasDefinition(indexer, "unreadableSelectedDefinition", selectedPath)).toBe(true);
+  });
+
+  it("merges real polling unlinks newer than an in-flight catch-up scan", async () => {
+    const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+    const selectedPath = path.join(projectDir, "build-tools", "selected.ts");
+    writeSource(selectedPath, "handoffSelectedDefinition");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    const { promise: scanGate, resolve: releaseScan } = Promise.withResolvers<void>();
+    let scanPaused = false;
+    snapshotFaults.afterStat = async (filePath) => {
+      if (filePath !== selectedPath) return;
+      snapshotFaults.afterStat = undefined;
+      scanPaused = true;
+      await scanGate;
+    };
+    try {
+      const replacement = replace();
+      await vi.waitFor(() => expect(scanPaused).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      let realUnlink = false;
+      replacement.on("unlink", (filePath) => { if (filePath === selectedPath) realUnlink = true; });
+      fs.rmSync(selectedPath);
+      await vi.waitFor(() => expect(realUnlink).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      releaseScan();
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "handoffSelectedDefinition", selectedPath)).toBe(false);
+        expect(observed).toContainEqual({ path: selectedPath, type: "unlink" });
+        expect(observed).not.toContainEqual({ path: selectedPath, type: "change" });
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    } finally {
+      releaseScan();
+    }
+  });
+
+  it("drains stale catch-up work without delivering it to a restarted consumer", async () => {
+    const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+    const selectedPath = path.join(projectDir, "build-tools", "selected.ts");
+    writeSource(selectedPath, "restartOriginalDefinition");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    const { promise: scanGate, resolve: releaseScan } = Promise.withResolvers<void>();
+    let scanPaused = false;
+    snapshotFaults.afterStat = async (filePath) => {
+      if (filePath !== selectedPath) return;
+      snapshotFaults.afterStat = undefined;
+      scanPaused = true;
+      await scanGate;
+    };
+    try {
+      replace();
+      await vi.waitFor(() => expect(scanPaused).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      const stopped = watcher.stop();
+      const restarted: FileChange[] = [];
+      watcher.start(async (changes) => {
+        restarted.push(...changes);
+        const indexed = indexer.index().then(() => undefined);
+        handlerTails.push(indexed);
+        await indexed;
+      });
+      await watcher.waitUntilReady();
+      releaseScan();
+      await stopped;
+      writeSource(selectedPath, "restartUpdatedDefinition");
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "restartUpdatedDefinition", selectedPath)).toBe(true);
+        expect(restarted).toContainEqual({ path: selectedPath, type: "change" });
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      expect(observed).toEqual([]);
+    } finally {
+      releaseScan();
+    }
+  });
+
+  it.runIf(SUPPORTS_NATIVE_RECURSIVE_WATCH)(
+    "keeps external-config EMFILE recovery separate from the live native source watcher",
+    async () => {
+      const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+      const selectedPath = path.join(projectDir, "build-tools", "selected.ts");
+      const configPath = path.join(indexRoot, "external-config.json");
+      writeSource(selectedPath, "externalConfigSelectedDefinition");
+      fs.writeFileSync(configPath, "{}");
+      const indexer = createIndexer(config);
+      await indexer.index();
+      const { watcher, observed } = startRecoveryConsumer(config, indexer, { backend: "native", configPath });
+      const replace = await prepareReadyWatcherReplacement(watcher);
+      replace();
+      fs.rmSync(configPath);
+      await vi.waitFor(() => {
+        expect(observed).toContainEqual({ path: configPath, type: "unlink" });
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      expect(observed.some((change) => change.path === selectedPath)).toBe(false);
+      expect(await hasDefinition(indexer, "externalConfigSelectedDefinition", selectedPath)).toBe(true);
+    },
+  );
+
+  it("does not classify still-present selected files outside snapshot depth as deleted during EMFILE recovery", async () => {
+    const config = structuralConfig({ maxDepth: 0, includeExcluded: ["build-tools/**"] });
+    const nestedPath = path.join(projectDir, "build-tools", "selected.ts");
+    const ordinaryPath = path.join(projectDir, "ordinary.ts");
+    writeSource(nestedPath, "depthSelectedDefinition");
+    writeSource(ordinaryPath, "depthOriginalDefinition");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    replace();
+    writeSource(ordinaryPath, "depthUpdatedDefinition");
+    await vi.waitFor(async () => {
+      expect(await hasDefinition(indexer, "depthUpdatedDefinition", ordinaryPath)).toBe(true);
+      expect(observed).toContainEqual({ path: nestedPath, type: "change" });
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(fs.statSync(nestedPath).isFile()).toBe(true);
+    expect(observed).not.toContainEqual({ path: nestedPath, type: "unlink" });
+  });
+
+  it("coalesces project config and new module dependencies with live events during a slow EMFILE scan", async () => {
+    const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+    const ordinaryPath = path.join(projectDir, "build-tools", "ordinary.ts");
+    const configPath = path.join(projectDir, ".codebase-index", "config.json");
+    const moduleConfigPath = path.join(projectDir, "tsconfig.json");
+    const dependencyPath = path.join(projectDir, "settings", "paths.json");
+    writeSource(ordinaryPath, "slowConfigOriginalDefinition");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.mkdirSync(path.dirname(dependencyPath), { recursive: true });
+    fs.writeFileSync(configPath, "{}");
+    fs.writeFileSync(moduleConfigPath, "{}");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer, { configPath });
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    const { promise: scanGate, resolve: releaseScan } = Promise.withResolvers<void>();
+    let scanPaused = false;
+    snapshotFaults.afterStat = async (filePath) => {
+      if (filePath !== ordinaryPath) return;
+      snapshotFaults.afterStat = undefined;
+      scanPaused = true;
+      await scanGate;
+    };
+    try {
+      const replacement = replace();
+      fs.writeFileSync(configPath, '{"search":{"minScore":0}}');
+      writeSource(ordinaryPath, "slowConfigUpdatedDefinition");
+      await vi.waitFor(() => expect(scanPaused).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      let liveConfigUnlink = false;
+      let liveDependencyAdd = false;
+      replacement.on("unlink", (filePath) => { if (filePath === configPath) liveConfigUnlink = true; });
+      replacement.on("add", (filePath) => { if (filePath === dependencyPath) liveDependencyAdd = true; });
+      fs.rmSync(configPath);
+      fs.writeFileSync(moduleConfigPath, '{"extends":"./settings/paths.json"}');
+      fs.writeFileSync(dependencyPath, '{"compilerOptions":{"baseUrl":".."}}');
+      await vi.waitFor(() => {
+        expect(liveConfigUnlink).toBe(true);
+        expect(liveDependencyAdd).toBe(true);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      // Real polling and debounce share platform time; fake timers would replace the handoff being tested.
+      // Hold the scan past the normal debounce so an early config batch cannot escape unnoticed.
+      const { promise: debounceElapsed, resolve: elapsed } = Promise.withResolvers<void>();
+      setTimeout(elapsed, 1100);
+      await debounceElapsed;
+      expect(observed).toEqual([]);
+      releaseScan();
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "slowConfigUpdatedDefinition", ordinaryPath)).toBe(true);
+        expect(observed).toContainEqual({ path: configPath, type: "unlink" });
+        expect(observed).toContainEqual({ path: dependencyPath, type: "add" });
+        expect(observed).not.toContainEqual({ path: configPath, type: "change" });
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    } finally {
+      releaseScan();
+    }
+  });
+
+  it("does not manufacture config deletes or reindex a root-build-only project during EMFILE recovery", async () => {
+    const config = structuralConfig();
+    const buildPath = path.join(projectDir, "build-helper.ts");
+    writeSource(buildPath, "rootBuildOriginalDefinition");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    replace();
+    writeSource(buildPath, "rootBuildUpdatedDefinition");
+    await vi.waitFor(() => expect(watcher.isBusy()).toBe(false), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(observed).toEqual([]);
+    expect(await hasDefinition(indexer, "rootBuildOriginalDefinition", buildPath)).toBe(true);
+    expect(await hasDefinition(indexer, "rootBuildUpdatedDefinition", buildPath)).toBe(false);
+  });
+
+  it("does not turn an unreadable project config into an EMFILE recovery delete", async () => {
+    const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+    const ordinaryPath = path.join(projectDir, "build-tools", "ordinary.ts");
+    const configPath = path.join(projectDir, ".codebase-index", "config.json");
+    writeSource(ordinaryPath, "permissionOriginalDefinition");
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, "{}");
+    const indexer = createIndexer(config);
+    await indexer.index();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer, { configPath });
+    const replace = await prepareReadyWatcherReplacement(watcher);
+    let denied = false;
+    snapshotFaults.afterStat = async (filePath) => {
+      if (filePath !== configPath) return;
+      snapshotFaults.afterStat = undefined;
+      denied = true;
+      throw Object.assign(new Error("CONTROLLED config EACCES"), { code: "EACCES" });
+    };
+    replace();
+    writeSource(ordinaryPath, "permissionUpdatedDefinition");
+    await vi.waitFor(async () => {
+      expect(denied).toBe(true);
+      expect(await hasDefinition(indexer, "permissionUpdatedDefinition", ordinaryPath)).toBe(true);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(observed).not.toContainEqual({ path: configPath, type: "unlink" });
+    expect(fs.statSync(configPath).isFile()).toBe(true);
+  });
+
+  it.runIf(SUPPORTS_NATIVE_RECURSIVE_WATCH)(
+    "preserves an unreadable auxiliary config while native source delivery stays live",
+    async () => {
+      const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+      const ordinaryPath = path.join(projectDir, "build-tools", "ordinary.ts");
+      const configPath = path.join(indexRoot, "external-config.json");
+      writeSource(ordinaryPath, "auxiliaryOriginalDefinition");
+      fs.writeFileSync(configPath, "{}");
+      const indexer = createIndexer(config);
+      await indexer.index();
+      const { watcher, observed } = startRecoveryConsumer(config, indexer, { backend: "native", configPath });
+      const replace = await prepareReadyWatcherReplacement(watcher);
+      let denied = false;
+      snapshotFaults.afterStat = async (filePath) => {
+        if (filePath !== configPath) return;
+        snapshotFaults.afterStat = undefined;
+        denied = true;
+        throw Object.assign(new Error("CONTROLLED auxiliary config EACCES"), { code: "EACCES" });
+      };
+      replace();
+      await vi.waitFor(() => {
+        expect(denied).toBe(true);
+        expect(watcher.isBusy()).toBe(false);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      expect(observed).toEqual([]);
+      writeSource(ordinaryPath, "auxiliaryUpdatedDefinition");
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, "auxiliaryUpdatedDefinition", ordinaryPath)).toBe(true);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      expect(observed).not.toContainEqual({ path: configPath, type: "unlink" });
+    },
+  );
+
+  it.runIf(SUPPORTS_NATIVE_RECURSIVE_WATCH)(
+    "hands auxiliary recovery ownership to a real full fallback after a native error",
+    async () => {
+      const config = structuralConfig({ includeExcluded: ["build-tools/**"] });
+      const ordinaryPath = path.join(projectDir, "build-tools", "ordinary.ts");
+      const configPath = path.join(indexRoot, "external-config.json");
+      writeSource(ordinaryPath, "ownershipOriginalDefinition");
+      fs.writeFileSync(configPath, "{}");
+      const indexer = createIndexer(config);
+      await indexer.index();
+      const { watcher, observed } = startRecoveryConsumer(config, indexer, { backend: "native", configPath });
+      const replace = await prepareReadyWatcherReplacement(watcher);
+      const { promise: scanGate, resolve: releaseScan } = Promise.withResolvers<void>();
+      let scanPaused = false;
+      snapshotFaults.afterStat = async (filePath) => {
+        if (filePath !== configPath) return;
+        snapshotFaults.afterStat = undefined;
+        scanPaused = true;
+        await scanGate;
+      };
+      try {
+        const auxiliary = replace();
+        await vi.waitFor(() => expect(scanPaused).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+        let configUnlinked = false;
+        auxiliary.on("unlink", (filePath) => { if (filePath === configPath) configUnlinked = true; });
+        fs.rmSync(configPath);
+        await vi.waitFor(() => expect(configUnlinked).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+
+        // Observe actual ready emissions without replacing backend creation or event delivery.
+        const emit = FSWatcher.prototype.emit;
+        let fullReady: FSWatcher | undefined;
+        vi.spyOn(FSWatcher.prototype, "emit").mockImplementation(function (this: FSWatcher, event, ...args) {
+          if (event === "ready" && this !== auxiliary) fullReady = this;
+          return emit.call(this, event, ...args);
+        });
+        const internals = watcher as unknown as { nativeWatcher: { watcher: fs.FSWatcher } };
+        internals.nativeWatcher.watcher.emit("error", new Error("CONTROLLED native watcher failure"));
+        await vi.waitFor(() => expect(fullReady).toBeDefined(), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+        writeSource(ordinaryPath, "ownershipUpdatedDefinition");
+        releaseScan();
+        await vi.waitFor(async () => {
+          expect(await hasDefinition(indexer, "ownershipUpdatedDefinition", ordinaryPath)).toBe(true);
+          expect(observed).toContainEqual({ path: configPath, type: "unlink" });
+          expect(watcher.isBusy()).toBe(false);
+        }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      } finally {
+        releaseScan();
+      }
     },
   );
 

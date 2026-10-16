@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Watcher readiness across polling fallback**: `FileWatcher.waitUntilReady()` now waits for the replacement readiness promise when an EMFILE polling fallback swaps watchers during the first watcher's ready emission, so changes made right after it returns are no longer swallowed by the still-scanning polling watcher.
+- **Watcher continuity after polling replacement**: Recover selected source and configuration changes made while an EMFILE-triggered polling replacement is starting, even after the initial `waitUntilReady()` has returned. Catch up in one policy-filtered batch, retain deletions and newer live events, and keep external-configuration recovery separate from an active native source watcher.
+- **Incremental recovery after source-read failure**: Leave a file uncached when its source cannot be read after hashing, so the next ordinary index retries unchanged restored bytes instead of permanently skipping their definitions. Preserve parse-failure diagnostics and recovery across indexer restarts without a forced rebuild.
 - **Pi prompt composition**: Add codebase-index guidance through native prompt sections instead of a whole-prompt override, preserving sibling section and append instructions in either extension order while respecting intentional whole-prompt overrides. Retain the legacy string-return fallback on older Pi hosts; omp's array-valued prompt contract and tool registration remain unchanged.
 
 ### Added

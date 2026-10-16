@@ -5539,6 +5539,7 @@ export class Indexer {
             return { descriptor, bytes };
           } catch (error) {
             if (isOperationInterruption(error)) throw error;
+            currentFileHashes.delete(descriptor.storedPath);
             stats.parseFailures.push(`${descriptor.storedPath}: ${getErrorMessage(error)}`);
             return null;
           }
