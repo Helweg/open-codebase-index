@@ -188,6 +188,48 @@ describe("provider-free structural indexing", () => {
     expect(await indexer.search("freshMarker", 10)).toEqual([]);
   });
 
+  it.each([false, true])("recovers an unchanged source after a transient read failure (reopen=%s)", async (reopen) => {
+    const targetPath = path.join(projectDir, "target.ts");
+    const controlPath = path.join(projectDir, "control.ts");
+    const updatedSource = Buffer.from("export function recoveredReadDefinition() { return 'updated'; }\n");
+    fs.writeFileSync(targetPath, "export function originalReadDefinition() { return 'old'; }\n");
+    fs.writeFileSync(controlPath, "export function unaffectedReadControl() { return 'control'; }\n");
+    const runtime = { indexPath: indexRoot };
+    let indexer = createIndexer(runtime);
+    const hasDefinition = async (name: string, filePath: string): Promise<boolean> =>
+      (await indexer.search(name, 10, { definitionIntent: true }))
+        .some((result) => result.name === name && result.filePath === filePath);
+    await indexer.index();
+    expect(await hasDefinition("originalReadDefinition", targetPath)).toBe(true);
+    expect(await hasDefinition("unaffectedReadControl", controlPath)).toBe(true);
+
+    fs.writeFileSync(targetPath, updatedSource);
+    let removedAfterHashing = false;
+    const failed = await indexer.index((progress) => {
+      if (progress.phase === "parsing" && !removedAfterHashing) {
+        // Public progress runs after hashing but before the asynchronous source read.
+        fs.rmSync(targetPath);
+        removedAfterHashing = true;
+      }
+    });
+    expect(removedAfterHashing).toBe(true);
+    expect(failed.parseFailures).toHaveLength(1);
+    expect(failed.parseFailures[0]).toMatch(/target\.ts:.*ENOENT/);
+    expect(await hasDefinition("unaffectedReadControl", controlPath)).toBe(true);
+
+    fs.writeFileSync(targetPath, updatedSource);
+    expect(fs.readFileSync(targetPath)).toEqual(updatedSource);
+    if (reopen) {
+      await indexer.close();
+      indexer = createIndexer(runtime);
+    }
+    const recovered = await indexer.index();
+    expect(recovered.parseFailures).toEqual([]);
+    expect(await hasDefinition("recoveredReadDefinition", targetPath)).toBe(true);
+    expect(await hasDefinition("unaffectedReadControl", controlPath)).toBe(true);
+    expect(await hasDefinition("originalReadDefinition", targetPath)).toBe(false);
+  });
+
   it("does not mutate hybrid artifacts when structural mode is selected", async () => {
     fs.writeFileSync(path.join(projectDir, "safe.ts"), "export const isolatedMarker = 1;\n");
     fs.mkdirSync(indexRoot, { recursive: true });
