@@ -371,6 +371,44 @@ ${Array.from({ length: 20 }, (_, index) => `it('independent arithmetic preserves
     expect(bounded.details?.results?.[0]?.startLine).toBe(62);
   });
 
+  it("preserves lexical workspace references while configuring unranked aliases on demand", async () => {
+    await writeSource("package.json", JSON.stringify({
+      name: "dual", type: "commonjs", workspaces: ["packages/*"], exports: { ".": "./src/current.cjs" },
+    }));
+    await writeSource("src/current.cjs", `function Current() { return 'current'; }
+module.exports = Current;
+`);
+    await writeSource("tests/z-ranked.test.cjs", `const Current = require('dual');
+it('Current executes the package root', () => {
+  expect(Current()).toBe('current');
+});
+`);
+    for (const directory of ["valid", "invalid"]) {
+      await writeSource(`tests/${directory}/alias.test.cjs`, `const Selected = require('dual');
+it('calls the selected package value', () => {
+  expect(typeof Selected()).toBe('string');
+});
+`);
+    }
+    await writeSource("tests/invalid/tsconfig.json", JSON.stringify({ extends: "unavailable-config/base" }));
+    for (let index = 0; index < 60; index += 1) {
+      const directory = `packages/noise-${String(index).padStart(2, "0")}`;
+      await writeSource(`${directory}/package.json`, JSON.stringify({ name: `noise-${index}`, type: "commonjs" }));
+      await writeSource(`${directory}/test/unrelated.test.cjs`, `it('independent arithmetic fixture ${index}', () => {
+  expect(1 + 1).toBe(2);
+});
+`);
+    }
+    await indexer.index();
+    const response = await retrieve({ query: "tests for Current" });
+    expect(response.details?.results?.filter((result) => result.evidenceKind).map((result) => ({
+      file: path.relative(root, result.filePath), kind: result.evidenceKind, symbol: result.referencedSymbol,
+    }))).toEqual([
+      { file: "tests/z-ranked.test.cjs", kind: "direct_target_test_reference", symbol: "Current" },
+      { file: "tests/valid/alias.test.cjs", kind: "direct_target_test_reference", symbol: "Current" },
+    ]);
+  });
+
   it("prioritizes selected test configuration over unrelated directories without asserting a foreign alias link", async () => {
     await writeSource("tsconfig.json", JSON.stringify({
       compilerOptions: { baseUrl: ".", paths: { "@logic/gate": ["src/gate.ts"] } },

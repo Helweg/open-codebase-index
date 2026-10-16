@@ -384,6 +384,8 @@ export async function discoverSymbolTests(
   const allowedFiles = new Set(candidates);
   const selectedFiles = [...new Set(lexical.filePaths.map((filePath) => relativePath(root, filePath))
     .filter((filePath): filePath is string => filePath !== undefined && allowedFiles.has(filePath)))].slice(0, TEST_DISCOVERY_MAX_FILES);
+  const lexicalFileCount = selectedFiles.length;
+  await resolver.loadImporters(selectedFiles);
   // Tiny import/require headers can be absent from chunks; verify the whole inventory when it fits.
   if (candidates.length <= TEST_DISCOVERY_MAX_FILES) {
     for (const filePath of selectedFiles) allowedFiles.delete(filePath);
@@ -392,7 +394,6 @@ export async function discoverSymbolTests(
   const fileRanks = new Map(selectedFiles.map((filePath, index) => [path.resolve(root, filePath), index]));
   result.candidateFileCount = selectedFiles.length;
   result.capped ||= lexical.capped;
-  await resolver.loadImporters(selectedFiles);
 
   const references = new Map<string, TestReferenceResult>();
   const targetTerms = new Set([...referenceTerms(symbol)].filter((term) => term.length >= 3));
@@ -400,16 +401,22 @@ export async function discoverSymbolTests(
     || fileRanks.get(left.filePath)! - fileRanks.get(right.filePath)!
     || left.filePath.localeCompare(right.filePath) || left.startLine - right.startLine
     || left.referenceLine - right.referenceLine || left.referencedSymbol.localeCompare(right.referencedSymbol);
-  for (const filePath of selectedFiles) {
+  for (let fileIndex = 0; fileIndex < selectedFiles.length; fileIndex += 1) {
+    const filePath = selectedFiles[fileIndex];
     throwIfOperationAborted(control?.signal);
     const source = await currentSource(filePath);
     if (!source) continue;
     result.scannedFileCount += 1;
     resolver.moduleResolver.seedModule(filePath, testModuleData(filePath, source.content, source.parsed));
+    let importerConfigured = fileIndex < lexicalFileCount;
     for (const call of source.calls) {
       if (!executableReference(call)) continue;
       const container = source.containersByCall.get(call);
       if (!container) continue;
+      if (!importerConfigured) {
+        await resolver.loadImporters([filePath]);
+        importerConfigured = true;
+      }
       const reference = await resolver.resolveCallTarget(filePath, source.content, {
         calleeName: call.name,
         line: call.line,
