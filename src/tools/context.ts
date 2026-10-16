@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { throwIfOperationAborted } from "../utils/operation-control.js";
 import { getProjectRoot } from "./operation-runtime.js";
-import { discoverSymbolTests, TEST_DISCOVERY_MAX_FILES } from "./test-discovery.js";
+import { discoverSymbolTests, TEST_DISCOVERY_MAX_DEFINITIONS, TEST_DISCOVERY_MAX_FILES } from "./test-discovery.js";
 import { loadRuntimeConfig } from "./config-state.js";
 import {
   getCallGraphData,
@@ -171,7 +171,7 @@ async function resolveCodebaseContextUnmeasured(
     discoverTests: (testSymbol, scope) => {
       const root = getProjectRoot(projectRoot, host);
       return discoverSymbolTests(root, testSymbol, scope, {
-        lookup: (name) => implementationLookup(root, host, name, { exactSymbol: true, limit: 100 }, control),
+        lookup: (name) => implementationLookup(root, host, name, { exactSymbol: true, limit: TEST_DISCOVERY_MAX_DEFINITIONS }, control),
         graph: (name, filePath) => getCallGraphData(root, host, { name, filePath, direction: "callers" }, control),
         indexedFiles: async () => {
           throwIfOperationAborted(control?.signal);

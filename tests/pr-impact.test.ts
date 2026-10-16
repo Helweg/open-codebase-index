@@ -23,20 +23,23 @@ function branchCommitMetadataKey(catalogIdentity: string): string {
   return `index.branchCommit.${hashContent(catalogIdentity).slice(0, 24)}`;
 }
 
-function symbolExtractorMetadataKey(catalogIdentity: string): string {
-  return `index.symbolExtractorVersion.${hashContent(catalogIdentity).slice(0, 24)}`;
-}
-
-function setBranchMigrationMetadataCurrent(database: Database, catalogIdentity: string): void {
-  const suffix = hashContent(catalogIdentity).slice(0, 24);
-  database.setMetadata(`index.callGraphResolutionVersion.${suffix}`, "11");
-  database.setMetadata(`index.parser.javascriptVersion.${suffix}`, "2");
-  database.setMetadata(`index.parser.swiftVersion.${suffix}`, "2");
-  database.setMetadata(`index.parser.metalVersion.${suffix}`, "1");
-  database.setMetadata(`index.parser.markupVersion.${suffix}`, "1");
-  database.setMetadata(`index.parser.kotlinVersion.${suffix}`, "1");
-  database.setMetadata(`index.parser.rubyVersion.${suffix}`, "1");
-  database.setMetadata(symbolExtractorMetadataKey(catalogIdentity), "2");
+function copyIndexedMigrationMetadataToBranch(database: Database, catalogIdentity: string): void {
+  const indexedSuffix = hashContent("main").slice(0, 24);
+  const branchSuffix = hashContent(catalogIdentity).slice(0, 24);
+  for (const prefix of [
+    "index.callGraphResolutionVersion",
+    "index.parser.javascriptVersion",
+    "index.parser.swiftVersion",
+    "index.parser.metalVersion",
+    "index.parser.markupVersion",
+    "index.parser.kotlinVersion",
+    "index.parser.rubyVersion",
+    "index.symbolExtractorVersion",
+  ]) {
+    const indexedVersion = database.getMetadata(`${prefix}.${indexedSuffix}`);
+    if (indexedVersion == null) throw new Error(`Indexed main catalog is missing ${prefix}`);
+    database.setMetadata(`${prefix}.${branchSuffix}`, indexedVersion);
+  }
 }
 
 vi.mock("../src/tools/changed-files.js", () => ({
@@ -515,7 +518,7 @@ describe("pr_impact tool", () => {
       ["other-branch", "2222222222222222222222222222222222222222"],
       ["third-branch", "3333333333333333333333333333333333333333"],
     ] as const) {
-      setBranchMigrationMetadataCurrent(db, catalogIdentity);
+      copyIndexedMigrationMetadataToBranch(db, catalogIdentity);
       db.setMetadata(branchCommitMetadataKey(catalogIdentity), commit);
     }
 
@@ -547,7 +550,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a", "sym_b", "sym_c"]);
     db.addSymbolsToBranch("other-branch", ["sym_b"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
-    setBranchMigrationMetadataCurrent(db, "feature-branch");
+    copyIndexedMigrationMetadataToBranch(db, "feature-branch");
 
     db.upsertCallEdge({
       id: "edge_ab",
@@ -623,7 +626,7 @@ describe("pr_impact tool", () => {
 
     const indexer = await createIndexer();
     const db = await getDatabase(indexer);
-    setBranchMigrationMetadataCurrent(db, "feature-branch");
+    copyIndexedMigrationMetadataToBranch(db, "feature-branch");
     db.setMetadata(
       branchCommitMetadataKey("feature-branch"),
       "1111111111111111111111111111111111111111",
@@ -681,7 +684,7 @@ describe("pr_impact tool", () => {
       ["feature-branch", "1111111111111111111111111111111111111111"],
       ["other-branch", "2222222222222222222222222222222222222222"],
     ] as const) {
-      setBranchMigrationMetadataCurrent(db, catalogIdentity);
+      copyIndexedMigrationMetadataToBranch(db, catalogIdentity);
       db.setMetadata(branchCommitMetadataKey(catalogIdentity), commit);
     }
 
@@ -716,7 +719,7 @@ describe("pr_impact tool", () => {
     db.addSymbolsToBranch("feature-branch", ["sym_a_feature"]);
     db.addSymbolsToBranch("other-branch", ["sym_a_other"]);
     db.setMetadata(branchCommitMetadataKey("feature-branch"), "1111111111111111111111111111111111111111");
-    setBranchMigrationMetadataCurrent(db, "feature-branch");
+    copyIndexedMigrationMetadataToBranch(db, "feature-branch");
 
     const result = await indexer.getPrImpact({ pr: 1, checkConflicts: true });
 

@@ -27,11 +27,12 @@ export async function prepareDocument(
   linesPerChunk: number,
   signal?: AbortSignal,
   maxMarkupChunks?: number,
+  includeModuleSyntax?: boolean,
 ): Promise<PreparedDocument> {
   throwIfOperationAborted(signal);
   if (!isPdf(filePath)) {
     const content = Buffer.from(bytes).toString("utf-8");
-    const parsed = parseFiles([{ path: filePath, content }], linesPerChunk, maxMarkupChunks)[0];
+    const parsed = parseFiles([{ path: filePath, content }], linesPerChunk, maxMarkupChunks, false, includeModuleSyntax)[0];
     return { ...parsed, kind: "source" };
   }
 
@@ -61,13 +62,14 @@ export async function prepareDocuments(
   linesPerChunk: number,
   signal?: AbortSignal,
   maxMarkupChunks?: number,
+  includeModuleSyntax?: boolean,
 ): Promise<PreparedDocument[]> {
   throwIfOperationAborted(signal);
   const sourceFiles = files.filter((file) => !isPdf(file.path));
   const sourceDocuments = parseFiles(sourceFiles.map((file) => ({
     path: file.path,
     content: Buffer.from(file.bytes).toString("utf-8"),
-  })), linesPerChunk, maxMarkupChunks).map((parsed) => ({ ...parsed, kind: "source" as const }));
+  })), linesPerChunk, maxMarkupChunks, false, includeModuleSyntax).map((parsed) => ({ ...parsed, kind: "source" as const }));
   throwIfOperationAborted(signal);
   const pdfDocuments = await Promise.all(
     files.filter((file) => isPdf(file.path)).map((file) =>

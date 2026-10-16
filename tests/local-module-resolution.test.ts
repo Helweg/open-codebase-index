@@ -133,8 +133,10 @@ function symbol(id: string, filePath: string, name: string, kind = "function_dec
   };
 }
 
-function callSite(calleeName: string, line = 2, column = 2, callType: CallSiteData["callType"] = "Call"): CallSiteData {
-  return { calleeName, line, column, callType, confidence: "Direct" };
+function callSite(content: string, calleeName: string, callType: CallSiteData["callType"] = "Call"): CallSiteData {
+  const site = extractCalls(content, "typescript").find((call) => call.calleeName === calleeName && call.callType === callType);
+  if (!site) throw new Error(`Missing native ${callType} site for ${calleeName}`);
+  return site;
 }
 
 function goModule(filePath: string, content: string): LocalModuleData {
@@ -156,10 +158,26 @@ function goCall(content: string, calleeName: string, occurrence = 0): CallSiteDa
   return site;
 }
 
+function nativeFixtures(modules: Record<string, LocalModuleData>): Record<string, LocalModuleData> {
+  // Expected identities retain their test IDs but take all declaration fields from the actual native parse.
+  for (const [filePath, module] of Object.entries(modules)) {
+    if (filePath.endsWith(".go")) continue;
+    const [parsed] = parseFiles([{ path: filePath, content: module.content }]);
+    const symbols = parsed.symbols.map((nativeSymbol) => {
+      const expected = module.symbols.find((candidate) => candidate.name === nativeSymbol.name && candidate.kind === nativeSymbol.kind);
+      if (expected) return Object.assign(expected, nativeSymbol, { id: expected.id, filePath });
+      return { ...nativeSymbol, filePath, id: `${filePath}:${nativeSymbol.name}:${nativeSymbol.startLine}:${nativeSymbol.startCol}` };
+    });
+    modules[filePath] = { ...module, symbols };
+  }
+  return modules;
+}
+
 function resolver(
-  modules: Record<string, LocalModuleData>,
+  fixtures: Record<string, LocalModuleData>,
   workspaceManifestTexts: Record<string, string> = {},
 ): LocalModuleCallResolver {
+  const modules = nativeFixtures(fixtures);
   return new LocalModuleCallResolver({
     filePaths: Object.keys(modules),
     loadModule: async (filePath) => modules[filePath],
@@ -341,9 +359,9 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("rootTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "rootTarget")))
       .resolves.toEqual(rootTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("featureTarget", 3, 38)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "featureTarget")))
       .resolves.toEqual(featureTarget);
   });
 
@@ -481,15 +499,15 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("defaultFirstTarget", 12, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "defaultFirstTarget")))
       .resolves.toEqual(defaultFirstTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nodeFirstTarget", 13, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nodeFirstTarget")))
       .resolves.toEqual(nodeFirstTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nestedFallbackTarget", 14, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nestedFallbackTarget")))
       .resolves.toEqual(nestedFallbackTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("inactiveBranchTarget", 15, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "inactiveBranchTarget")))
       .resolves.toEqual(inactiveBranchTarget);
-    for (const [calleeName, line] of [
+    for (const [calleeName] of [
       ["blockedTarget", 16],
       ["unsafeTarget", 17],
       ["arrayTarget", 18],
@@ -497,9 +515,265 @@ describe("LocalModuleCallResolver", () => {
       ["invalidConditionTarget", 20],
       ["legacyTarget", 21],
     ] as const) {
-      await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(calleeName, line, 2)))
+      await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, calleeName)))
         .resolves.toBeUndefined();
     }
+  });
+
+  it("selects require export conditions for roots and wildcards without bypassing blocks or legacy main", async () => {
+    const main = `const Root = require('dual');
+const Feature = require('dual/features/value');
+const Blocked = require('dual/blocked');
+const Legacy = require('legacy');
+const ModuleOnly = require('module-only');
+function run() { Root(); Feature(); Blocked(); Legacy(); ModuleOnly(); }`;
+    const required = symbol("required", "src/required.cjs", "Required");
+    const feature = symbol("feature", "src/required/value.cjs", "Feature");
+    const legacy = symbol("legacy", "src/legacy.cjs", "Legacy");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "src/required.cjs": { content: "function Required() {}\nmodule.exports = Required;", symbols: [required] },
+      "src/imported.cjs": { content: "function Imported() {}\nmodule.exports = Imported;", symbols: [] },
+      "src/legacy.cjs": { content: "function Legacy() {}\nmodule.exports = Legacy;", symbols: [legacy] },
+      "src/required/value.cjs": { content: "function Feature() {}\nmodule.exports = Feature;", symbols: [feature] },
+      "src/imported/value.cjs": { content: "function ImportedFeature() {}\nmodule.exports = ImportedFeature;", symbols: [] },
+      "only/entry.cjs": { content: "function ModuleOnly() {}\nmodule.exports = ModuleOnly;", symbols: [] },
+    }, {
+      "package.json": JSON.stringify({
+        name: "dual",
+        exports: {
+          ".": { import: "./src/imported.cjs", require: "./src/required.cjs" },
+          "./features/*": { node: { import: "./src/imported/*.cjs", require: "./src/required/*.cjs" } },
+          "./blocked": { require: null, default: "./src/required.cjs" },
+        },
+      }),
+      "src/package.json": JSON.stringify({ name: "legacy", module: "./imported.cjs", main: "./legacy.cjs" }),
+      "only/package.json": JSON.stringify({ name: "module-only", module: "./entry.cjs", types: "./entry.cjs" }),
+    });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Root"))).resolves.toEqual(required);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Feature"))).resolves.toEqual(feature);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Blocked"))).resolves.toBeUndefined();
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Legacy"))).resolves.toEqual(legacy);
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "ModuleOnly"))).resolves.toBeUndefined();
+  });
+
+  it.each(["module-sync", "node-addons"])("honors the built-in %s condition before mode-specific fallbacks", async (condition) => {
+    const specifiers = [
+      ["Root", "pkg"], ["Feature", "pkg/features/value"], ["Blocked", "pkg/blocked"],
+      ["First", "pkg/first"], ["Namespace", "pkg/esm"],
+    ];
+    const required = specifiers.map(([name, source]) => `const ${name} = require('${source}');`).join("\n")
+      + "\nfunction run() { Root(); Feature(); Blocked(); First(); Namespace(); }";
+    const imported = specifiers.map(([name, source]) => `import ${name} from '${source}';`).join("\n")
+      + "\nexport function run() { Root(); Feature(); Blocked(); First(); Namespace(); }";
+    const current = symbol("current", "src/current.cjs", "Current");
+    const feature = symbol("feature", "src/current/value.cjs", "Feature");
+    const legacy = symbol("legacy", "src/legacy.cjs", "Legacy");
+    const sync = symbol("sync", "src/sync.mjs", "Sync");
+    const instance = resolver({
+      "main.cjs": { content: required, symbols: [] },
+      "main.mjs": { content: imported, symbols: [] },
+      "src/current.cjs": { content: "function Current() {}\nmodule.exports = Current;", symbols: [current] },
+      "src/current/value.cjs": { content: "function Feature() {}\nmodule.exports = Feature;", symbols: [feature] },
+      "src/legacy.cjs": { content: "function Legacy() {}\nmodule.exports = Legacy;", symbols: [legacy] },
+      "src/legacy/value.cjs": { content: "function LegacyFeature() {}\nmodule.exports = LegacyFeature;", symbols: [] },
+      "src/sync.mjs": { content: "export default function Sync() {}", symbols: [sync] },
+    }, {
+      "package.json": JSON.stringify({
+        name: "pkg",
+        exports: {
+          ".": { [condition]: "./src/current.cjs", import: "./src/legacy.cjs", require: "./src/legacy.cjs" },
+          "./features/*": { node: {
+            [condition]: "./src/current/*.cjs", import: "./src/legacy/*.cjs", require: "./src/legacy/*.cjs",
+          } },
+          "./blocked": { [condition]: null, default: "./src/current.cjs" },
+          "./first": { default: "./src/legacy.cjs", [condition]: "./src/current.cjs" },
+          "./esm": { [condition]: "./src/sync.mjs", require: "./src/legacy.cjs" },
+        },
+      }),
+    });
+    for (const [file, content] of [["main.cjs", required], ["main.mjs", imported]]) {
+      for (const [name, expected] of [["Root", current], ["Feature", feature], ["First", legacy]] as const) {
+        await expect(instance.resolveCallTarget(file, content, callSite(content, name))).resolves.toEqual(expected);
+      }
+      await expect(instance.resolveCallTarget(file, content, callSite(content, "Blocked"))).resolves.toBeUndefined();
+      await expect(instance.resolveCallTarget(file, content, callSite(content, "Namespace")))
+        .resolves.toEqual(file.endsWith(".mjs") ? sync : undefined);
+    }
+  });
+
+  it.each([
+    "for (Target of [replacement]) {}",
+    "for (Target in { value: replacement }) {}",
+    "for await (Target of [replacement]) {}",
+    "for ([Target] of [[replacement]]) {}",
+    "for ({ value: Target } of [{ value: replacement }]) {}",
+    "(Target) = replacement;",
+    "((Target)) = replacement;",
+    "((Target)) &&= replacement;",
+    "((Target))++;",
+    "(/* overwrite */ Target) = replacement;",
+    "(/* outer */ (/* inner */ Target)) &&= replacement;",
+    "(/* update */ Target)++;",
+    "for ((/* loop */ Target) of [replacement]) {}",
+  ])("rejects a stale exported declaration after %s", async (write) => {
+    const main = "import { Target } from './target.mjs';\nexport function run() { Target(); }";
+    const instance = resolver({
+      "main.mjs": { content: main, symbols: [] },
+      "target.mjs": {
+        content: `export function Target() {}\nfunction replacement() {}\n${write}`,
+        symbols: [symbol("target", "target.mjs", "Target")],
+      },
+    });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toBeUndefined();
+  });
+
+  it("keeps writes to loop-local declarations and parameters separate from exported bindings", async () => {
+    const main = "import { Target } from './target.mjs';\nexport function run() { Target(); }";
+    const target = symbol("target", "target.mjs", "Target");
+    const instance = resolver({
+      "main.mjs": { content: main, symbols: [] },
+      "target.mjs": {
+        content: `export function Target() {}
+function replacement() {}
+function shadow(Target) { for (Target of [replacement]) {} }
+for (const Target of [replacement]) {}
+`,
+        symbols: [target],
+      },
+    });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toEqual(target);
+  });
+
+  it.each([
+    ["function run() { return arguments(); }", false],
+    ["function run() { return () => arguments(); }", false],
+    ["const run = function arguments() { return arguments(); };", false],
+    ["function* run() { return arguments(); }", false],
+    ["const run = { method() { return arguments(); } };", false],
+    ["const run = (arguments) => arguments();", false],
+    ["const run = () => arguments();", true],
+  ])("respects implicit and lexical arguments ownership in %s", async (body, inheritsOuter) => {
+    const main = `const arguments = require('./target.cjs');\n${body}`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"));
+    expect(resolved).toEqual(inheritsOuter ? target : undefined);
+  });
+
+  it.each([
+    ["function run() { if (true) { function Target() {} } return Target(); }", false],
+    ["const run = () => { if (true) { function Target() {} } return Target(); };", false],
+    ["'use strict';\nfunction run() { if (true) { function Target() {} } return Target(); }", true],
+    ["function run() { 'use strict'; if (true) { function Target() {} } return Target(); }", true],
+    ["class Runner { run() { if (true) { function Target() {} } return Target(); } }", true],
+    ["function run() { if (true) { async function Target() {} } return Target(); }", true],
+    ["if (true) { function Target() {} }\nfunction run() { return Target(); }", true],
+    ["function run() { { const Target = () => {}; { function Target() {} } } return Target(); }", true],
+    ["function run() { for (let Target of [() => {}]) { { function Target() {} } } return Target(); }", true],
+  ])("respects Annex B and strict lexical block-function ownership in %s", async (body, retainsOuter) => {
+    const main = body.startsWith("'use strict'")
+      ? `'use strict';\nconst Target = require('./target.cjs');\n${body.slice("'use strict';".length)}`
+      : `const Target = require('./target.cjs');\n${body}`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "Target"));
+    expect(resolved).toEqual(retainsOuter ? target : undefined);
+  });
+
+  it.each([
+    ["sloppy", "", undefined],
+    ["strict", "'use strict';\n", 3],
+  ])("keeps function-body declarations sound under %s block-function semantics", async (_mode, prefix, expectedLine) => {
+    const main = `${prefix}function run() {
+  function LocalTarget() { return 'original'; }
+  if (true) { function LocalTarget() { return 'replacement'; } }
+  return LocalTarget();
+}
+module.exports = run;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "LocalTarget"));
+    if (expectedLine === undefined) {
+      expect(resolved).toBeUndefined();
+    } else {
+      expect(resolved).toMatchObject({ filePath: "main.cjs", name: "LocalTarget", startLine: expectedLine });
+    }
+  });
+
+  it("does not resolve a conditional Annex B declaration over a body-local var binding", async () => {
+    const main = `function run() {
+  var LocalTarget = function Original() { return 'original'; };
+  if (false) function LocalTarget() { return 'replacement'; }
+  return LocalTarget();
+}
+module.exports = run;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "LocalTarget"))).resolves.toBeUndefined();
+  });
+
+  it("retains parameter/var ambiguity when mapped arguments can overwrite the callable", async () => {
+    const main = `function replacement() { return 'replacement'; }
+function run(Target) {
+  var Target = () => 'original';
+  arguments[0] = replacement;
+  return Target();
+}
+module.exports = () => run(() => 'initial');`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "Target"))).resolves.toBeUndefined();
+  });
+
+  it("tracks outer arguments writes evaluated by computed method names", async () => {
+    const main = `function arguments() { return 'original'; }
+function replacement() { return 'replacement'; }
+const obj = { [(arguments = replacement)]() {} };
+const run = () => arguments();
+module.exports = arguments;`;
+    const instance = resolver({ "main.cjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"))).resolves.toBeUndefined();
+  });
+
+  it.each([
+    ["[arguments()]() {}", true],
+    ["['key'](value = arguments()) {}", false],
+    ["['key']() { return arguments(); }", false],
+  ])("separates computed-name arguments from method parameters and bodies in %s", async (member, inheritsOuter) => {
+    const main = `const arguments = require('./target.cjs');\nconst obj = { ${member} };`;
+    const target = symbol("target", "target.cjs", "Target");
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [target] },
+    });
+    const resolved = await instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"));
+    expect(resolved).toEqual(inheritsOuter ? target : undefined);
+  });
+
+  it("uses an explicit body-local arguments function rather than either the implicit object or outer import", async () => {
+    const main = `const arguments = require('./target.cjs');
+function run() { function arguments() {} return arguments(); }`;
+    const instance = resolver({
+      "main.cjs": { content: main, symbols: [] },
+      "target.cjs": { content: "function Target() {}\nmodule.exports = Target;", symbols: [] },
+    });
+    await expect(instance.resolveCallTarget("main.cjs", main, callSite(main, "arguments"))).resolves.toMatchObject({
+      filePath: "main.cjs", name: "arguments", startLine: 2,
+    });
+  });
+
+  it("retains module-wide strict block-function semantics even when an export occurs later", async () => {
+    const main = `function Target() {}
+function run() { if (true) { function Target() {} } return Target(); }
+export { run };`;
+    const instance = resolver({ "main.mjs": { content: main, symbols: [] } });
+    await expect(instance.resolveCallTarget("main.mjs", main, callSite(main, "Target"))).resolves.toMatchObject({
+      filePath: "main.mjs", name: "Target", startLine: 1,
+    });
   });
 
   it("does not bypass null or subpath-only exports with legacy root entry fields", async () => {
@@ -531,9 +805,9 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("nullRootTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "nullRootTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("restrictedRootTarget", 3, 42)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "restrictedRootTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -586,11 +860,11 @@ describe("LocalModuleCallResolver", () => {
       }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("generalTarget", 5, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "generalTarget")))
       .resolves.toEqual(generalTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("specificTarget", 6, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "specificTarget")))
       .resolves.toEqual(specificTarget);
-    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite("exactTarget", 7, 2)))
+    await expect(instance.resolveCallTarget("apps/web/src/main.ts", main, callSite(main, "exactTarget")))
       .resolves.toEqual(exactTarget);
   });
 
@@ -764,10 +1038,10 @@ describe("LocalModuleCallResolver", () => {
       "ambiguousTarget",
       "invalidNameTarget",
     ]) {
-      await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(name, 20, 2)))
+      await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, name)))
         .resolves.toBeUndefined();
     }
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("conditionalTarget", 20, 2)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "conditionalTarget")))
       .resolves.toEqual(conditionalTarget);
   });
 
@@ -802,11 +1076,11 @@ describe("LocalModuleCallResolver", () => {
       "packages/b/package.json": JSON.stringify({ name: "duplicate-package", main: "./index.ts" }),
     });
 
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("nestedTarget", 4, 24)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "nestedTarget")))
       .resolves.toEqual(nestedTarget);
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("externalTarget", 4, 40)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "externalTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite("duplicateTarget", 4, 58)))
+    await expect(instance.resolveCallTarget("apps/web/main.ts", main, callSite(main, "duplicateTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -833,11 +1107,11 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localAlias", 4, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localAlias")))
       .resolves.toEqual(directTarget);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("defaultTarget", 5, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "defaultTarget")))
       .resolves.toEqual(defaultTarget);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("directTarget", 6, 12, "MethodCall")))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "directTarget", "MethodCall")))
       .resolves.toEqual(directTarget);
   });
 
@@ -868,9 +1142,9 @@ describe("LocalModuleCallResolver", () => {
       "src/star.ts": { content: "export function starTarget() { return 2; }", symbols: [star] },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localTarget", 3, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localTarget")))
       .resolves.toEqual(original);
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("starTarget", 4, 2)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "starTarget")))
       .resolves.toEqual(star);
   });
 
@@ -887,7 +1161,7 @@ describe("LocalModuleCallResolver", () => {
       "src/b.ts": { content: "export function duplicateTarget() {}", symbols: [targetB] },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("duplicateTarget", 2, 24)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "duplicateTarget")))
       .resolves.toEqual(targetA);
   });
 
@@ -904,7 +1178,7 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("localAlias", 2, 61, "MethodCall")))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "localAlias", "MethodCall")))
       .resolves.toBeUndefined();
   });
 
@@ -938,9 +1212,9 @@ describe("LocalModuleCallResolver", () => {
       },
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("ambiguousTarget", 3, 24)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "ambiguousTarget")))
       .resolves.toBeUndefined();
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("extensionlessTarget", 3, 43)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "extensionlessTarget")))
       .resolves.toBeUndefined();
   });
 
@@ -963,7 +1237,7 @@ describe("LocalModuleCallResolver", () => {
     });
 
     for (const name of ["missingTarget", "externalTarget", "TypeOnlyTarget", "cyclicTarget"]) {
-      await expect(instance.resolveCallTarget("src/main.ts", main, callSite(name, 5, 24)))
+      await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, name)))
         .resolves.toBeUndefined();
     }
   });
@@ -982,7 +1256,7 @@ describe("LocalModuleCallResolver", () => {
         symbols: [interfaceSymbol, classSymbol],
       },
     });
-    const site = callSite("Service", 2, 35, "Constructor");
+    const site = callSite(main, "Service", "Constructor");
 
     const first = await instance.resolveCallTarget("src/main.ts", main, site);
     const second = await instance.resolveCallTarget("src/main.ts", main, site);
@@ -1052,16 +1326,17 @@ describe("LocalModuleCallResolver", () => {
       "export function run() { return inheritedTarget(); }",
     ].join("\n");
     const inheritedTarget = symbol("inherited", "src/core/target.ts", "inheritedTarget");
+    const modules = nativeFixtures({
+      "src/main.ts": { content: main, symbols: [symbol("run", "src/main.ts", "run")] },
+      "src/core/target.ts": { content: "export function inheritedTarget() {}", symbols: [inheritedTarget] },
+    });
     const instance = new LocalModuleCallResolver({
-      filePaths: ["src/main.ts", "src/core/target.ts"],
-      loadModule: async (filePath) => ({
-        "src/main.ts": { content: main, symbols: [symbol("run", "src/main.ts", "run")] },
-        "src/core/target.ts": { content: "export function inheritedTarget() {}", symbols: [inheritedTarget] },
-      })[filePath],
+      filePaths: Object.keys(modules),
+      loadModule: async (filePath) => modules[filePath],
       tsConfigPathAliases: aliases,
     });
 
-    await expect(instance.resolveCallTarget("src/main.ts", main, callSite("inheritedTarget", 2, 31)))
+    await expect(instance.resolveCallTarget("src/main.ts", main, callSite(main, "inheritedTarget")))
       .resolves.toEqual(inheritedTarget);
   });
 
@@ -1121,12 +1396,13 @@ describe("LocalModuleCallResolver", () => {
         symbols: [jsTarget],
       },
     };
+    nativeFixtures(modules);
     const instance = new LocalModuleCallResolver({
       filePaths: Object.keys(modules),
       loadModule: async (filePath) => modules[filePath],
       pathAliasesForImporter: (filePath) => aliasCache.getPathAliasesForImporter(filePath),
     });
-    const site = callSite("aliasTarget", 2, 24);
+    const site = callSite(importerContent, "aliasTarget");
 
     await expect(instance.resolveCallTarget("src/main.ts", importerContent, site)).resolves.toEqual(rootTarget);
     await expect(instance.resolveCallTarget("packages/app/src/main.ts", importerContent, site)).resolves.toEqual(appTarget);

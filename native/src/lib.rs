@@ -9,6 +9,7 @@ mod db;
 mod hasher;
 mod inverted_index;
 mod markup;
+mod module_syntax;
 mod parser;
 mod store;
 mod types;
@@ -21,6 +22,7 @@ pub use bindings::database::*;
 pub use chunker::*;
 pub use hasher::*;
 pub use inverted_index::*;
+pub use module_syntax::*;
 pub use parser::*;
 pub use store::*;
 pub use types::*;
@@ -65,12 +67,14 @@ pub fn parse_files(
     lines_per_chunk: Option<u32>,
     max_markup_chunks: Option<u32>,
     include_test_syntax: Option<bool>,
+    include_module_syntax: Option<bool>,
 ) -> Result<Vec<ParsedFile>> {
     parser::parse_files_parallel(
         files,
         lines_per_chunk.unwrap_or(DEFAULT_LINES_PER_CHUNK) as usize,
         max_markup_chunks.map(|value| value as usize),
         include_test_syntax.unwrap_or(false),
+        include_module_syntax.unwrap_or(false),
     )
     .map_err(|e| Error::from_reason(e.to_string()))
 }
@@ -306,22 +310,14 @@ pub struct ParsedFile {
     pub hash: String,
     pub parse_failed: bool,
     pub test_syntax: Option<TestSyntaxData>,
+    pub module_syntax: Option<ModuleSyntaxData>,
 }
 
 #[napi(object)]
 #[derive(Default)]
 pub struct TestSyntaxData {
     pub valid: bool,
-    pub bindings: Vec<String>,
     pub containers: Vec<TestContainerData>,
-    pub direct_calls: Vec<TestDirectCallPosition>,
-}
-
-#[napi(object)]
-pub struct TestDirectCallPosition {
-    pub line: u32,
-    pub column: u32,
-    pub is_constructor: bool,
 }
 
 #[napi(object)]

@@ -1,4 +1,4 @@
-import type { ApiUsageExtractionData, CallSiteData, CodeChunk, FileInput, ParsedFile, ParsedSymbol, ChunkType } from "./types.js";
+import type { ApiUsageExtractionData, CallSiteData, CodeChunk, FileInput, ModuleSyntaxData, ParsedFile, ParsedSymbol, ChunkType } from "./types.js";
 import { native } from "./binding.js";
 
 export function parseFile(filePath: string, content: string, linesPerChunk?: number): CodeChunk[] {
@@ -16,8 +16,9 @@ export function parseFiles(
   linesPerChunk?: number,
   maxMarkupChunks?: number,
   includeTestSyntax?: boolean,
+  includeModuleSyntax?: boolean,
 ): ParsedFile[] {
-  const result = native.parseFiles(files, linesPerChunk, maxMarkupChunks, includeTestSyntax);
+  const result = native.parseFiles(files, linesPerChunk, maxMarkupChunks, includeTestSyntax, includeModuleSyntax);
   return result.map((f: any) => ({
     path: f.path,
     chunks: f.chunks.map(mapChunk),
@@ -25,6 +26,7 @@ export function parseFiles(
     hash: f.hash,
     parseFailed: f.parseFailed ?? f.parse_failed ?? false,
     ...(f.testSyntax ? { testSyntax: f.testSyntax } : {}),
+    ...(f.moduleSyntax ? { moduleSyntax: f.moduleSyntax } : {}),
   }));
 }
 
@@ -63,6 +65,10 @@ export function hashFile(filePath: string): string {
 
 export function extractCalls(content: string, language: string): CallSiteData[] {
   return native.extractCalls(content, language);
+}
+
+export function extractModuleSyntax(content: string, language: string): ModuleSyntaxData {
+  return native.extractModuleSyntax(content, language);
 }
 
 export function extractApiUsages(content: string, language: string): ApiUsageExtractionData {

@@ -1,6 +1,7 @@
-import type { CallSiteData, SymbolData } from "../native/types.js";
+import type { CallSiteData, ModuleBindingData, ModuleSyntaxData, SymbolData } from "../native/types.js";
 
 import * as path from "node:path";
+import { extractModuleSyntax } from "../native/parsing.js";
 import { isPythonFilePath, resolvePythonRelativeCall } from "./python-import-resolution.js";
 
 import {
@@ -22,26 +23,14 @@ const JAVASCRIPT_SOURCE_EXTENSIONS = [
   ".cjs",
 ] as const;
 const JAVASCRIPT_RUNTIME_EXTENSIONS = new Set([".js", ".jsx", ".mjs", ".cjs"]);
-const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "import", "default"]);
+const STATIC_ESM_EXPORT_CONDITIONS = new Set(["node", "node-addons", "module-sync", "import", "default"]);
+const STATIC_COMMONJS_EXPORT_CONDITIONS = new Set(["node", "node-addons", "module-sync", "require", "default"]);
 const TYPESCRIPT_SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts"] as const;
-const DECLARATION_MODIFIERS = new Set(["abstract", "async", "declare"]);
-const CLASS_SYMBOL_KINDS = new Set(["class", "class_declaration", "class_definition"]);
-const FUNCTION_SYMBOL_KINDS = new Set([
-  "arrow_function",
-  "function",
-  "function_declaration",
-  "function_definition",
-]);
-
-interface Token {
-  kind: "identifier" | "punctuation" | "string";
-  value: string;
-  braceDepth: number;
-}
 
 interface ImportBinding {
   importedName: string;
   source: string;
+  commonJs?: boolean;
 }
 
 interface NamespaceImportBinding {
@@ -50,6 +39,7 @@ interface NamespaceImportBinding {
 
 type ExportBinding =
   | { kind: "local"; localName: string }
+  | { kind: "root"; localName: string }
   | { kind: "reexport"; importedName: string; source: string };
 
 interface ModuleRecord {
@@ -77,17 +67,22 @@ export interface LocalWorkspacePackageExportPattern {
   targets: readonly string[];
 }
 
-export interface LocalWorkspacePackage {
-  name: string;
-  rootPath: string;
+interface LocalWorkspacePackageExports {
   entryPoints: ReadonlyMap<string, readonly string[]>;
   exportPatterns: readonly LocalWorkspacePackageExportPattern[];
   restrictsSubpaths: boolean;
 }
 
+export interface LocalWorkspacePackage extends LocalWorkspacePackageExports {
+  name: string;
+  rootPath: string;
+  commonJs: LocalWorkspacePackageExports;
+}
+
 export interface LocalModuleData {
   content: string;
   symbols: readonly SymbolData[];
+  moduleSyntax?: ModuleSyntaxData;
 }
 
 export interface LocalModuleResolverOptions {
@@ -95,15 +90,35 @@ export interface LocalModuleResolverOptions {
   loadModule: (filePath: string) => Promise<LocalModuleData | undefined>;
   tsConfigPathAliases?: LocalModulePathAliases;
   pathAliasesForImporter?: (filePath: string) => LocalModulePathAliases | undefined;
+  /** Nearest package-format evidence: absent package type is Node's CommonJS default; unreadable or malformed metadata must be reported as unknown. */
+  moduleFormatForFile?: (filePath: string) => Promise<"module" | "commonjs" | "unknown">;
   workspacePackages?: readonly LocalWorkspacePackage[];
 }
 
 export type LocalModuleResolutionConfigState = ReadonlyArray<readonly [path: string, content: string | null]>;
 
+export function declaredPackageFormat(content: string): "module" | "commonjs" | "unknown" {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return "unknown";
+  }
+  if (typeof parsed !== "object" || parsed === null || !("type" in parsed)) return "commonjs";
+  const declared = parsed.type;
+  if (declared === undefined || declared === "commonjs") return "commonjs";
+  // Any other declared format is unsupported rather than an assumed CommonJS default.
+  return declared === "module" ? "module" : "unknown";
+}
+
 export function isJavaScriptFamilyFilePath(filePath: string): boolean {
   return JAVASCRIPT_SOURCE_EXTENSIONS.includes(
     path.posix.extname(normalizeFilePath(filePath)).toLowerCase() as (typeof JAVASCRIPT_SOURCE_EXTENSIONS)[number],
   );
+}
+
+export function isJavaScriptRuntimeSourceFilePath(filePath: string): boolean {
+  return isJavaScriptFamilyFilePath(filePath) && !/\.d\.(?:ts|mts|cts)$/iu.test(filePath);
 }
 
 function normalizeFilePath(filePath: string): string {
@@ -875,7 +890,10 @@ function isValidPackageConditionName(condition: string): boolean {
     && !/^(?:0|[1-9][0-9]*)$/u.test(condition);
 }
 
-function resolveStaticEsmPackageExportTarget(value: unknown): PackageExportTargetResolution {
+function resolveStaticPackageExportTarget(
+  value: unknown,
+  activeConditions: ReadonlySet<string>,
+): PackageExportTargetResolution {
   if (typeof value === "string") return { kind: "resolved", target: value };
   if (value === null) return { kind: "blocked" };
   if (typeof value !== "object" || Array.isArray(value)) return { kind: "unsupported" };
@@ -883,11 +901,10 @@ function resolveStaticEsmPackageExportTarget(value: unknown): PackageExportTarge
   const conditions = value as Record<string, unknown>;
   if (!Object.keys(conditions).every(isValidPackageConditionName)) return { kind: "unsupported" };
 
-  // Node resolves the first active condition in declaration order. Static ESM
-  // call graphs activate only the built-in node, import, and default branches.
+  // Node selects the first active condition in declaration order for this import mode.
   for (const [condition, target] of Object.entries(conditions)) {
-    if (!STATIC_ESM_EXPORT_CONDITIONS.has(condition)) continue;
-    const resolution = resolveStaticEsmPackageExportTarget(target);
+    if (!activeConditions.has(condition)) continue;
+    const resolution = resolveStaticPackageExportTarget(target, activeConditions);
     if (resolution.kind !== "no-match") return resolution;
   }
   return { kind: "no-match" };
@@ -919,6 +936,83 @@ function matchPackageExportPattern(specifierPath: string, pattern: string): stri
     return undefined;
   }
   return specifierPath.slice(prefix.length, specifierPath.length - suffix.length);
+}
+
+function parseWorkspacePackageExports(
+  rootPath: string,
+  document: Record<string, unknown>,
+  commonJs: boolean,
+): LocalWorkspacePackageExports {
+  const activeConditions = commonJs ? STATIC_COMMONJS_EXPORT_CONDITIONS : STATIC_ESM_EXPORT_CONDITIONS;
+  const entryPoints = new Map<string, readonly string[]>();
+  const exportPatterns: LocalWorkspacePackageExportPattern[] = [];
+  let exportPatternsOverflowed = false;
+  const addEntryPoint = (specifierPath: string, value: unknown, preserveDeclaration = false): void => {
+    const resolution = resolveStaticPackageExportTarget(value, activeConditions);
+    const target = resolution.kind === "resolved"
+      ? resolveWorkspacePackageTarget(rootPath, resolution.target)
+      : undefined;
+    if (target !== undefined) {
+      entryPoints.set(specifierPath, [target]);
+    } else if (preserveDeclaration) {
+      entryPoints.set(specifierPath, []);
+    }
+  };
+  const addExportPattern = (specifierPath: string, value: unknown): void => {
+    if (!isSafePackageExportPath(specifierPath, 1)) return;
+    if (exportPatterns.length >= MAX_WORKSPACE_EXPORT_PATTERNS) {
+      exportPatternsOverflowed = true;
+      return;
+    }
+
+    const resolution = resolveStaticPackageExportTarget(value, activeConditions);
+    exportPatterns.push({
+      specifierPath,
+      targets: resolution.kind === "resolved" && isSafePackageExportPath(resolution.target, 1)
+        ? [resolution.target]
+        : [],
+    });
+  };
+
+  const hasExports = Object.hasOwn(document, "exports");
+  const exportsValue = document.exports;
+  if (hasExports) {
+    if (typeof exportsValue === "string") {
+      addEntryPoint(".", exportsValue, true);
+    } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
+      const exportMap = exportsValue as Record<string, unknown>;
+      const keys = Object.keys(exportMap);
+      const hasSubpathKeys = keys.some((key) => key.startsWith("."));
+      const hasConditionKeys = keys.some((key) => !key.startsWith("."));
+      const hasInvalidSubpathKeys = keys.some((key) => key.startsWith(".")
+        && key !== "."
+        && !key.startsWith("./"));
+      if (!hasInvalidSubpathKeys && !(hasSubpathKeys && hasConditionKeys)) {
+        if (hasSubpathKeys) {
+          for (const [specifierPath, target] of Object.entries(exportMap)) {
+            if (specifierPath === "." || isSafePackageExportPath(specifierPath, 0)) {
+              addEntryPoint(specifierPath, target, true);
+            } else if (isSafePackageExportPath(specifierPath, 1)) {
+              addExportPattern(specifierPath, target);
+            }
+          }
+        } else {
+          addEntryPoint(".", exportsValue, true);
+        }
+      }
+    }
+  } else {
+    // require() ignores the ESM/bundler-only module field and declaration-only types field.
+    for (const field of commonJs ? ["main"] : ["types", "module", "main"]) {
+      if (typeof document[field] === "string") addEntryPoint(".", document[field]);
+    }
+  }
+
+  return {
+    entryPoints,
+    exportPatterns: exportPatternsOverflowed ? [] : exportPatterns.sort(comparePackageExportPatterns),
+    restrictsSubpaths: hasExports,
+  };
 }
 
 /**
@@ -954,79 +1048,12 @@ export function parseLocalWorkspacePackage(
   }
 
   const rootPath = path.posix.dirname(normalizedManifestPath);
-  const entryPoints = new Map<string, readonly string[]>();
-  const exportPatterns: LocalWorkspacePackageExportPattern[] = [];
-  let exportPatternsOverflowed = false;
-  const addEntryPoint = (specifierPath: string, value: unknown, preserveDeclaration = false): void => {
-    const resolution = resolveStaticEsmPackageExportTarget(value);
-    const target = resolution.kind === "resolved"
-      ? resolveWorkspacePackageTarget(rootPath, resolution.target)
-      : undefined;
-    if (target !== undefined) {
-      entryPoints.set(specifierPath, [target]);
-    } else if (preserveDeclaration) {
-      entryPoints.set(specifierPath, []);
-    }
-  };
-  const addExportPattern = (specifierPath: string, value: unknown): void => {
-    if (!isSafePackageExportPath(specifierPath, 1)) return;
-    if (exportPatterns.length >= MAX_WORKSPACE_EXPORT_PATTERNS) {
-      exportPatternsOverflowed = true;
-      return;
-    }
-
-    const resolution = resolveStaticEsmPackageExportTarget(value);
-    exportPatterns.push({
-      specifierPath,
-      targets: resolution.kind === "resolved" && isSafePackageExportPath(resolution.target, 1)
-        ? [resolution.target]
-        : [],
-    });
-  };
-
-  const hasExports = Object.hasOwn(document, "exports");
-  const exportsValue = document.exports;
-  let restrictsSubpaths = false;
-  if (hasExports) {
-    restrictsSubpaths = true;
-    if (typeof exportsValue === "string") {
-      addEntryPoint(".", exportsValue, true);
-    } else if (typeof exportsValue === "object" && exportsValue !== null && !Array.isArray(exportsValue)) {
-      const exportMap = exportsValue as Record<string, unknown>;
-      const keys = Object.keys(exportMap);
-      const hasSubpathKeys = keys.some((key) => key.startsWith("."));
-      const hasConditionKeys = keys.some((key) => !key.startsWith("."));
-      const hasInvalidSubpathKeys = keys.some((key) => key.startsWith(".")
-        && key !== "."
-        && !key.startsWith("./"));
-      if (!hasInvalidSubpathKeys && !(hasSubpathKeys && hasConditionKeys)) {
-        if (hasSubpathKeys) {
-          for (const [specifierPath, target] of Object.entries(exportMap)) {
-            if (specifierPath === "." || isSafePackageExportPath(specifierPath, 0)) {
-              addEntryPoint(specifierPath, target, true);
-            } else if (isSafePackageExportPath(specifierPath, 1)) {
-              addExportPattern(specifierPath, target);
-            }
-          }
-        } else {
-          addEntryPoint(".", exportsValue, true);
-        }
-      }
-    }
-  }
-
-  if (!hasExports && !entryPoints.has(".")) {
-    for (const field of ["types", "module", "main"] as const) {
-      if (typeof document[field] === "string") addEntryPoint(".", document[field]);
-    }
-  }
 
   return {
     name,
     rootPath,
-    entryPoints,
-    exportPatterns: exportPatternsOverflowed ? [] : exportPatterns.sort(comparePackageExportPatterns),
-    restrictsSubpaths,
+    ...parseWorkspacePackageExports(rootPath, document, false),
+    commonJs: parseWorkspacePackageExports(rootPath, document, true),
   };
 }
 
@@ -1076,268 +1103,42 @@ export function getLocalWorkspacePackages(
     .filter((workspacePackage): workspacePackage is LocalWorkspacePackage => workspacePackage !== undefined);
 }
 
-function isIdentifierStart(char: string): boolean {
-  return /[A-Za-z_$]/u.test(char);
-}
-
-function isIdentifierPart(char: string): boolean {
-  return /[A-Za-z0-9_$]/u.test(char);
-}
-
-function tokenizeModuleSource(content: string): Token[] {
-  const tokens: Token[] = [];
-  let braceDepth = 0;
-  let index = 0;
-
-  while (index < content.length) {
-    const char = content[index];
-    const next = content[index + 1];
-
-    if (/\s/u.test(char)) {
-      index += 1;
-      continue;
-    }
-
-    if (char === "/" && next === "/") {
-      index += 2;
-      while (index < content.length && content[index] !== "\n") index += 1;
-      continue;
-    }
-
-    if (char === "/" && next === "*") {
-      index += 2;
-      while (index + 1 < content.length && !(content[index] === "*" && content[index + 1] === "/")) {
-        index += 1;
-      }
-      index = Math.min(content.length, index + 2);
-      continue;
-    }
-
-    if (char === "`" || char === "\"" || char === "'") {
-      const quote = char;
-      let value = "";
-      index += 1;
-      while (index < content.length) {
-        const current = content[index];
-        if (current === "\\") {
-          if (index + 1 < content.length) {
-            value += content[index + 1];
-            index += 2;
-          } else {
-            index += 1;
-          }
-          continue;
-        }
-        if (current === quote) {
-          index += 1;
-          break;
-        }
-        value += current;
-        index += 1;
-      }
-      if (quote !== "`") {
-        tokens.push({ kind: "string", value, braceDepth });
-      }
-      continue;
-    }
-
-    if (isIdentifierStart(char)) {
-      const start = index;
-      index += 1;
-      while (index < content.length && isIdentifierPart(content[index])) index += 1;
-      tokens.push({ kind: "identifier", value: content.slice(start, index), braceDepth });
-      continue;
-    }
-
-    tokens.push({ kind: "punctuation", value: char, braceDepth });
-    if (char === "{") braceDepth += 1;
-    if (char === "}") braceDepth = Math.max(0, braceDepth - 1);
-    index += 1;
-  }
-
-  return tokens;
-}
-
 function appendMapValue<T>(map: Map<string, T[]>, key: string, value: T): void {
   const values = map.get(key) ?? [];
   values.push(value);
   map.set(key, values);
 }
 
-function findFromSource(tokens: readonly Token[], start: number): string | undefined {
-  for (let index = start; index + 1 < tokens.length; index += 1) {
-    if (tokens[index].braceDepth !== 0) continue;
-    if (tokens[index].value === ";") return undefined;
-    if (tokens[index].value === "from" && tokens[index + 1]?.kind === "string") {
-      return tokens[index + 1].value;
-    }
-  }
-  return undefined;
-}
-
-function parseNamedSpecifiers(
-  tokens: readonly Token[],
-  openBraceIndex: number,
-): Array<{ importedName: string; exportedName: string }> {
-  const result: Array<{ importedName: string; exportedName: string }> = [];
-  const depth = tokens[openBraceIndex].braceDepth + 1;
-  let index = openBraceIndex + 1;
-
-  while (index < tokens.length) {
-    const token = tokens[index];
-    if (token.value === "}" && token.braceDepth === depth) break;
-    if (token.braceDepth !== depth || token.value === ",") {
-      index += 1;
-      continue;
-    }
-
-    let typeOnly = false;
-    if (token.value === "type") {
-      typeOnly = true;
-      index += 1;
-    }
-
-    const imported = tokens[index];
-    if (!imported || imported.kind !== "identifier" || imported.braceDepth !== depth) {
-      index += 1;
-      continue;
-    }
-    index += 1;
-
-    let exportedName = imported.value;
-    if (tokens[index]?.value === "as" && tokens[index]?.braceDepth === depth) {
-      const alias = tokens[index + 1];
-      if (alias?.kind === "identifier" && alias.braceDepth === depth) {
-        exportedName = alias.value;
-        index += 2;
-      }
-    }
-
-    if (!typeOnly) {
-      result.push({ importedName: imported.value, exportedName });
-    }
-    while (index < tokens.length && tokens[index].braceDepth === depth && tokens[index].value !== ",") {
-      index += 1;
-    }
-  }
-
-  return result;
-}
-
-function parseImportDeclaration(tokens: readonly Token[], index: number, record: ModuleRecord): void {
-  let cursor = index + 1;
-  if (tokens[cursor]?.value === "type") return;
-  if (tokens[cursor]?.kind === "string") return;
-
-  const pending: Array<{ importedName: string; localName: string }> = [];
-  let namespaceLocalName: string | undefined;
-
-  if (tokens[cursor]?.kind === "identifier") {
-    pending.push({ importedName: "default", localName: tokens[cursor].value });
-    cursor += 1;
-    if (tokens[cursor]?.value === ",") cursor += 1;
-  }
-
-  if (tokens[cursor]?.value === "{") {
-    for (const specifier of parseNamedSpecifiers(tokens, cursor)) {
-      pending.push({ importedName: specifier.importedName, localName: specifier.exportedName });
-    }
-  } else if (tokens[cursor]?.value === "*" && tokens[cursor + 1]?.value === "as") {
-    const local = tokens[cursor + 2];
-    if (local?.kind === "identifier") namespaceLocalName = local.value;
-  }
-
-  const source = findFromSource(tokens, index + 1);
-  if (!source) return;
-  for (const binding of pending) {
-    appendMapValue(record.imports, binding.localName, { importedName: binding.importedName, source });
-  }
-  if (namespaceLocalName) {
-    appendMapValue(record.namespaceImports, namespaceLocalName, { source });
-  }
-}
-
-function nextDeclarationToken(tokens: readonly Token[], start: number): number {
-  let cursor = start;
-  while (DECLARATION_MODIFIERS.has(tokens[cursor]?.value)) cursor += 1;
-  return cursor;
-}
-
-function parseExportDeclaration(tokens: readonly Token[], index: number, record: ModuleRecord): void {
-  let cursor = index + 1;
-  if (tokens[cursor]?.value === "type") return;
-
-  if (tokens[cursor]?.value === "*") {
-    if (tokens[cursor + 1]?.value === "as") return;
-    const source = findFromSource(tokens, cursor + 1);
-    if (source) record.starExports.push(source);
-    return;
-  }
-
-  if (tokens[cursor]?.value === "{") {
-    const specifiers = parseNamedSpecifiers(tokens, cursor);
-    const source = findFromSource(tokens, cursor + 1);
-    for (const specifier of specifiers) {
-      const binding: ExportBinding = source
-        ? { kind: "reexport", importedName: specifier.importedName, source }
-        : { kind: "local", localName: specifier.importedName };
-      appendMapValue(record.exports, specifier.exportedName, binding);
-    }
-    return;
-  }
-
-  let isDefault = false;
-  if (tokens[cursor]?.value === "default") {
-    isDefault = true;
-    cursor += 1;
-  }
-  cursor = nextDeclarationToken(tokens, cursor);
-
-  if (tokens[cursor]?.value === "function" || tokens[cursor]?.value === "class") {
-    cursor += 1;
-    if (tokens[cursor]?.value === "*") cursor += 1;
-    const name = tokens[cursor];
-    if (name?.kind === "identifier") {
-      appendMapValue(record.exports, isDefault ? "default" : name.value, {
-        kind: "local",
-        localName: name.value,
-      });
-    }
-    return;
-  }
-
-  if (["const", "let", "var", "enum"].includes(tokens[cursor]?.value)) {
-    const name = tokens[cursor + 1];
-    if (name?.kind === "identifier") {
-      appendMapValue(record.exports, isDefault ? "default" : name.value, {
-        kind: "local",
-        localName: name.value,
-      });
-    }
-    return;
-  }
-
-  if (isDefault && tokens[cursor]?.kind === "identifier") {
-    appendMapValue(record.exports, "default", { kind: "local", localName: tokens[cursor].value });
-  }
-}
-
-function parseModuleRecord(content: string): ModuleRecord {
+/** Import/export ancestry comes only from native AST evidence, never a token scan. */
+function parseModuleRecord(syntax: ModuleSyntaxData): ModuleRecord {
   const record: ModuleRecord = {
     imports: new Map(),
     namespaceImports: new Map(),
     exports: new Map(),
     starExports: [],
   };
-  const tokens = tokenizeModuleSource(content);
-
-  for (let index = 0; index < tokens.length; index += 1) {
-    const token = tokens[index];
-    if (token.braceDepth !== 0 || token.kind !== "identifier") continue;
-    if (token.value === "import") parseImportDeclaration(tokens, index, record);
-    if (token.value === "export") parseExportDeclaration(tokens, index, record);
+  if (!syntax.valid) return record;
+  for (const binding of syntax.bindings) {
+    if (binding.kind === "import" && binding.source && binding.importedName) {
+      appendMapValue(record.imports, binding.name, { source: binding.source, importedName: binding.importedName });
+    } else if (binding.kind === "namespace" && binding.source) {
+      appendMapValue(record.namespaceImports, binding.name, { source: binding.source });
+    } else if (binding.kind === "require" && !binding.mutated && binding.source && binding.importedName) {
+      appendMapValue(record.imports, binding.name, { source: binding.source, importedName: binding.importedName, commonJs: true });
+    }
   }
-
+  for (const exported of syntax.exports) {
+    if (exported.kind === "root" && exported.localName) {
+      appendMapValue(record.exports, exported.exportedName, { kind: "root", localName: exported.localName });
+    } else if (exported.kind === "local" && exported.localName) {
+      appendMapValue(record.exports, exported.exportedName, { kind: "local", localName: exported.localName });
+    } else if (exported.kind === "reexport" && exported.source && exported.importedName) {
+      appendMapValue(record.exports, exported.exportedName, {
+        kind: "reexport", source: exported.source, importedName: exported.importedName,
+      });
+    }
+  }
+  record.starExports.push(...syntax.starExports);
   record.starExports.sort();
   return record;
 }
@@ -1354,21 +1155,15 @@ function deduplicateSymbols(symbols: readonly SymbolData[]): SymbolData[] {
   );
 }
 
-function filterCallTargetCandidates(callType: string, symbols: readonly SymbolData[]): SymbolData[] {
-  if (callType === "Constructor") {
-    return symbols.filter((symbol) => CLASS_SYMBOL_KINDS.has(symbol.kind));
-  }
-  if (callType === "Call") {
-    return symbols.filter((symbol) => FUNCTION_SYMBOL_KINDS.has(symbol.kind));
-  }
-  return [...symbols];
+function bindingMatchesSymbol(binding: ModuleBindingData, symbol: SymbolData): boolean {
+  return binding.name === symbol.name && binding.declarationKind === symbol.kind
+    && binding.startLine === symbol.startLine && binding.startCol === symbol.startCol
+    && binding.endLine === symbol.endLine && binding.endCol === symbol.endCol;
 }
 
-function namespaceQualifier(content: string, site: CallSiteData): string | undefined {
-  const line = content.split(/\r?\n/u)[site.line - 1];
-  if (!line) return undefined;
-  const prefix = line.slice(0, site.column);
-  return prefix.match(/([A-Za-z_$][A-Za-z0-9_$]*)\s*(?:\?\.|\.)\s*$/u)?.[1];
+function bindingAcceptsCall(binding: ModuleBindingData, callType: string): boolean {
+  return !binding.mutated && (callType === "Constructor" || callType === "Inherits" ? binding.constructable
+    : callType === "Call" ? binding.callable : callType === "Import" || callType === "Implements");
 }
 
 export class LocalModuleCallResolver {
@@ -1379,11 +1174,13 @@ export class LocalModuleCallResolver {
   private readonly moduleData = new Map<string, Promise<LocalModuleData | undefined>>();
   private readonly moduleRecords = new Map<string, Promise<ModuleRecord | undefined>>();
   private readonly moduleRecordContents = new Map<string, string>();
+  private readonly moduleSyntax = new Map<string, { content: string; syntax: ModuleSyntaxData }>();
   private readonly goCallClassifiers = new Map<string, (site: CallSiteData) => boolean>();
   private readonly exportCache = new Map<string, SymbolData[]>();
   private exportCacheEpoch = 0;
   private readonly tsConfigPathAliases?: LocalModulePathAliases;
   private readonly pathAliasesForImporter?: LocalModuleResolverOptions["pathAliasesForImporter"];
+  private readonly moduleFormatForFile?: LocalModuleResolverOptions["moduleFormatForFile"];
   private readonly workspacePackages = new Map<string, LocalWorkspacePackage | null>();
 
   constructor(options: LocalModuleResolverOptions) {
@@ -1396,6 +1193,7 @@ export class LocalModuleCallResolver {
     this.loadModule = options.loadModule;
     this.tsConfigPathAliases = options.tsConfigPathAliases;
     this.pathAliasesForImporter = options.pathAliasesForImporter;
+    this.moduleFormatForFile = options.moduleFormatForFile;
     this.setWorkspacePackages(options.workspacePackages ?? []);
   }
 
@@ -1414,23 +1212,23 @@ export class LocalModuleCallResolver {
     if (!this.modulePaths.has(normalized) && !this.goPackagePaths.has(normalized) && !this.pythonModulePaths.has(normalized)) return;
     this.moduleData.set(normalized, Promise.resolve(data));
     if (this.modulePaths.has(normalized)) {
-      this.moduleRecords.set(normalized, Promise.resolve(parseModuleRecord(data.content)));
-      this.moduleRecordContents.set(normalized, data.content);
+      this.moduleRecords.delete(normalized);
+      this.moduleRecordContents.delete(normalized);
+      if (data.moduleSyntax) this.moduleSyntax.set(normalized, { content: data.content, syntax: data.moduleSyntax });
+      else if (this.moduleSyntax.get(normalized)?.content !== data.content) this.moduleSyntax.delete(normalized);
     }
     if (this.goPackagePaths.has(normalized)) {
       this.goCallClassifiers.set(normalized, createGoDirectCallClassifier(data.content, data.symbols));
     }
-    for (const key of this.exportCache.keys()) {
-      if (key.startsWith(`${normalized}\0`)) this.exportCache.delete(key);
-    }
+    this.exportCache.clear();
+    this.exportCacheEpoch++;
   }
 
-  /** Only a source-AST-proven bare callee may opt out of receiver inspection. */
+  /** Resolve only a current-AST call's exact lexical binding and source ancestry. */
   async resolveCallTarget(
     importerFilePath: string,
     importerContent: string,
     site: CallSiteData,
-    directCallee?: boolean,
   ): Promise<SymbolData | undefined> {
     const importer = normalizeFilePath(importerFilePath);
     if (this.pythonModulePaths.has(importer)) {
@@ -1440,28 +1238,76 @@ export class LocalModuleCallResolver {
       return this.resolveGoPackageCallTarget(importer, importerContent, site);
     }
     if (!this.modulePaths.has(importer)) return undefined;
+    const syntax = this.currentModuleSyntax(importer, importerContent);
+    if (!syntax.valid) return undefined;
+    if (site.callType === "Import") {
+      const imports = syntax.bindings.filter((binding) => (binding.kind === "import" || binding.kind === "namespace") && !binding.mutated
+        && binding.importLine === site.line && binding.importCol === site.column
+        && (binding.importedName === site.calleeName || (binding.importedName === "default" && binding.name === site.calleeName)));
+      if (imports.length !== 1 || !imports[0].source || !imports[0].importedName) return undefined;
+      const candidates = await this.resolveImportedBinding(importer,
+        { source: imports[0].source, importedName: imports[0].importedName }, site.callType);
+      return candidates.length === 1 ? candidates[0] : undefined;
+    }
+    const proof = syntax.calls.find((call) => call.name === site.calleeName && call.line === site.line
+      && call.column === site.column && call.callType === site.callType);
+    if (!proof || proof.bindingIndex === undefined) return undefined;
+    const binding = syntax.bindings[proof.bindingIndex];
+    if (!binding || binding.mutated) return undefined;
     const record = await this.getModuleRecord(importer, importerContent);
     if (!record) return undefined;
-
-    const candidates: SymbolData[] = [];
-    const qualifier = directCallee === true ? undefined : namespaceQualifier(importerContent, site);
-    if (!qualifier) {
-      for (const binding of record.imports.get(site.calleeName) ?? []) {
-        candidates.push(...await this.resolveImportedBinding(importer, binding, site.callType));
-      }
-    } else {
-      const namespaceCallType = site.callType === "MethodCall" ? "Call" : site.callType;
-      for (const binding of record.namespaceImports.get(qualifier) ?? []) {
-        candidates.push(...await this.resolveImportedBinding(
-          importer,
-          { importedName: site.calleeName, source: binding.source },
-          namespaceCallType,
-        ));
-      }
+    if (proof.qualifier) {
+      if (binding.kind !== "namespace" || !binding.source || binding.name !== proof.qualifier) return undefined;
+      const imports = record.namespaceImports.get(proof.qualifier) ?? [];
+      if (imports.length !== 1 || imports[0].source !== binding.source) return undefined;
+      const candidates = await this.resolveImportedBinding(importer,
+        { importedName: site.calleeName, source: binding.source },
+        site.callType === "MethodCall" ? "Call" : site.callType);
+      return candidates.length === 1 ? candidates[0] : undefined;
     }
+    if (binding.kind === "local") {
+      if (!bindingAcceptsCall(binding, site.callType)) return undefined;
+      const data = await this.getModuleData(importer);
+      if (!data || data.content !== importerContent) return undefined;
+      const candidates = data.symbols.filter((symbol) => bindingMatchesSymbol(binding, symbol));
+      return candidates.length === 1 ? candidates[0] : undefined;
+    }
+    if ((binding.kind !== "import" && binding.kind !== "require") || !binding.source || !binding.importedName) return undefined;
+    if (binding.kind === "require" && !await this.commonJsModuleEligible(importer)) return undefined;
+    const imports = record.imports.get(binding.name) ?? [];
+    if (imports.length !== 1 || imports[0].source !== binding.source || imports[0].importedName !== binding.importedName) return undefined;
+    const candidates = await this.resolveImportedBinding(importer, imports[0], site.callType);
+    return candidates.length === 1 ? candidates[0] : undefined;
+  }
 
-    const unique = deduplicateSymbols(candidates);
-    return unique.length === 1 ? unique[0] : undefined;
+  /** Literal exported root bindings executable by direct call or construction, never an imported namespace guess. */
+  async exportedRuntimeSymbols(filePath: string): Promise<SymbolData[]> {
+    const normalized = normalizeFilePath(filePath);
+    const data = await this.getModuleData(normalized);
+    const record = await this.getModuleRecord(normalized);
+    if (!data || !record) return [];
+    const syntax = this.currentModuleSyntax(normalized, data.content, data.moduleSyntax);
+    if (!syntax.valid) return [];
+    const candidates: SymbolData[] = [];
+    for (const exports of record.exports.values()) {
+      if (exports.length !== 1 || (exports[0].kind !== "local" && exports[0].kind !== "root")) continue;
+      const name = exports[0].localName;
+      const bindings = syntax.bindings.filter((binding) => binding.kind !== "ambient" && binding.scopeId === 0 && binding.name === name);
+      if (bindings.length !== 1) continue;
+      const binding = bindings[0];
+      if (!bindingAcceptsCall(binding, "Call") && !bindingAcceptsCall(binding, "Constructor")) continue;
+      candidates.push(...data.symbols.filter((symbol) => bindingMatchesSymbol(binding, symbol)));
+    }
+    return deduplicateSymbols(candidates);
+  }
+
+  /** Node wrapper ancestry requires a file whose module format is provably CommonJS. */
+  private async commonJsModuleEligible(filePath: string): Promise<boolean> {
+    const extension = path.posix.extname(filePath).toLowerCase();
+    if (extension === ".mjs" || extension === ".mts") return false;
+    if (extension === ".cjs" || extension === ".cts") return true;
+    // Ambiguous extensions require nearest package-format evidence; missing evidence fails closed.
+    return await this.moduleFormatForFile?.(filePath) === "commonjs";
   }
 
   private async resolveGoPackageCallTarget(
@@ -1519,24 +1365,39 @@ export class LocalModuleCallResolver {
     return loaded;
   }
 
+  private currentModuleSyntax(filePath: string, content: string, supplied?: ModuleSyntaxData): ModuleSyntaxData {
+    const existing = this.moduleSyntax.get(filePath);
+    if (existing?.content === content) return existing.syntax;
+    const extension = path.posix.extname(filePath).toLowerCase();
+    const language = extension === ".tsx" ? "tsx"
+      : TYPESCRIPT_SOURCE_EXTENSIONS.includes(extension as (typeof TYPESCRIPT_SOURCE_EXTENSIONS)[number]) ? "typescript" : "javascript";
+    const syntax = supplied ?? extractModuleSyntax(content, language);
+    this.moduleSyntax.set(filePath, { content, syntax });
+    return syntax;
+  }
+
   private async getModuleRecord(filePath: string, knownContent?: string): Promise<ModuleRecord | undefined> {
     const normalized = normalizeFilePath(filePath);
     if (knownContent !== undefined) {
       const existing = this.moduleRecords.get(normalized);
       if (existing && this.moduleRecordContents.get(normalized) === knownContent) return existing;
-      const parsed = Promise.resolve(parseModuleRecord(knownContent));
+      const parsed = Promise.resolve(parseModuleRecord(this.currentModuleSyntax(normalized, knownContent)));
       this.moduleRecords.set(normalized, parsed);
       this.moduleRecordContents.set(normalized, knownContent);
       return parsed;
     }
     const existing = this.moduleRecords.get(normalized);
     if (existing) return existing;
-    const parsed = this.getModuleData(normalized).then((data) => data ? parseModuleRecord(data.content) : undefined);
+    const parsed = this.getModuleData(normalized).then((data) => {
+      if (!data) return undefined;
+      this.moduleRecordContents.set(normalized, data.content);
+      return parseModuleRecord(this.currentModuleSyntax(normalized, data.content, data.moduleSyntax));
+    });
     this.moduleRecords.set(normalized, parsed);
     return parsed;
   }
 
-  private resolveModuleSpecifier(importerFilePath: string, specifier: string): string[] {
+  private resolveModuleSpecifier(importerFilePath: string, specifier: string, commonJs = false): string[] {
     if (specifier.startsWith(".")) {
       const base = normalizeFilePath(path.posix.join(path.posix.dirname(importerFilePath), specifier));
       return this.resolveModuleCandidates(base);
@@ -1550,10 +1411,10 @@ export class LocalModuleCallResolver {
       return aliasCandidates;
     }
 
-    return this.resolveModuleSpecifierFromWorkspacePackage(specifier);
+    return this.resolveModuleSpecifierFromWorkspacePackage(specifier, commonJs);
   }
 
-  private resolveModuleSpecifierFromWorkspacePackage(specifier: string): string[] {
+  private resolveModuleSpecifierFromWorkspacePackage(specifier: string, commonJs: boolean): string[] {
     const packageNames = [...this.workspacePackages.keys()]
       .filter((name) => specifier === name || specifier.startsWith(`${name}/`))
       .sort((left, right) => right.length - left.length || left.localeCompare(right));
@@ -1567,12 +1428,13 @@ export class LocalModuleCallResolver {
     const exportPath = suffix.length === 0 ? "." : `.${suffix}`;
     if (exportPath !== "." && !isSafePackageExportPath(exportPath, 0)) return [];
 
-    if (workspacePackage.entryPoints.has(exportPath)) {
-      const entryPoints = workspacePackage.entryPoints.get(exportPath) ?? [];
+    const exports = commonJs ? workspacePackage.commonJs : workspacePackage;
+    if (exports.entryPoints.has(exportPath)) {
+      const entryPoints = exports.entryPoints.get(exportPath) ?? [];
       return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint)))].sort();
     }
 
-    const matchedPattern = workspacePackage.exportPatterns
+    const matchedPattern = exports.exportPatterns
       .map((exportPattern) => ({
         exportPattern,
         wildcard: matchPackageExportPattern(exportPath, exportPattern.specifierPath),
@@ -1589,7 +1451,7 @@ export class LocalModuleCallResolver {
       });
       return [...new Set(targets)].sort();
     }
-    if (workspacePackage.restrictsSubpaths) return [];
+    if (exports.restrictsSubpaths) return [];
     if (suffix.length === 0) return [];
 
     return this.resolveModuleCandidates(path.posix.join(workspacePackage.rootPath, suffix));
@@ -1694,8 +1556,19 @@ export class LocalModuleCallResolver {
     callType: string,
   ): Promise<SymbolData[]> {
     const candidates: SymbolData[] = [];
-    for (const targetModule of this.resolveModuleSpecifier(importerFilePath, binding.source)) {
-      candidates.push(...await this.resolveExport(targetModule, binding.importedName, callType, new Set()));
+    for (const targetModule of this.resolveModuleSpecifier(importerFilePath, binding.source, binding.commonJs === true)) {
+      if (binding.commonJs) {
+        const data = await this.getModuleData(targetModule);
+        if (!data) continue;
+        if (!await this.commonJsModuleEligible(targetModule)) continue;
+        const syntax = this.currentModuleSyntax(targetModule, data.content, data.moduleSyntax);
+        // require(module) is the guarded CommonJS root assignment, never an ESM default export.
+        if (!syntax.valid || syntax.exports.length !== 1 || syntax.exports[0].kind !== "root"
+          || syntax.exports[0].exportedName !== "default") continue;
+      }
+      candidates.push(...await this.resolveExport(
+        targetModule, binding.importedName, callType, new Set(), binding.commonJs === true,
+      ));
     }
     return deduplicateSymbols(candidates);
   }
@@ -1705,9 +1578,11 @@ export class LocalModuleCallResolver {
     exportedName: string,
     callType: string,
     visiting: Set<string>,
+    commonJs = false,
   ): Promise<SymbolData[]> {
     const normalized = normalizeFilePath(moduleFilePath);
-    const cacheKey = `${normalized}\0${exportedName}\0${callType}`;
+    if ((callType === "Call" || callType === "Constructor") && !isJavaScriptRuntimeSourceFilePath(normalized)) return [];
+    const cacheKey = `${normalized}\0${exportedName}\0${callType}\0${commonJs ? "root" : "esm"}`;
     const cached = this.exportCache.get(cacheKey);
     if (cached) return cached;
     if (visiting.has(cacheKey)) return [];
@@ -1718,13 +1593,25 @@ export class LocalModuleCallResolver {
     const record = await this.getModuleRecord(normalized);
     const data = await this.getModuleData(normalized);
     if (!record || !data) return [];
+    const syntax = this.currentModuleSyntax(normalized, data.content, data.moduleSyntax);
+    if (!syntax.valid) return [];
 
     const candidates: SymbolData[] = [];
     const explicitBindings = record.exports.get(exportedName);
     if (explicitBindings) {
+      if (explicitBindings.length !== 1) return [];
+      const rootEligible = explicitBindings.some((binding) => binding.kind === "root")
+        ? await this.commonJsModuleEligible(normalized)
+        : false;
       for (const binding of explicitBindings) {
-        if (binding.kind === "local") {
-          candidates.push(...data.symbols.filter((symbol) => symbol.name === binding.localName));
+        // A CommonJS root is reachable only through require(), except that a Node ESM default
+        // import of a proven CommonJS module binds module.exports; named ESM imports never do.
+        if (binding.kind === "root" && !rootEligible) continue;
+        if (commonJs ? binding.kind !== "root" : binding.kind === "root" && exportedName !== "default") continue;
+        if (binding.kind === "local" || binding.kind === "root") {
+          const localBindings = syntax.bindings.filter((local) => local.kind !== "ambient" && local.scopeId === 0 && local.name === binding.localName);
+          if (localBindings.length !== 1 || !bindingAcceptsCall(localBindings[0], callType)) continue;
+          candidates.push(...data.symbols.filter((symbol) => bindingMatchesSymbol(localBindings[0], symbol)));
           continue;
         }
         for (const targetModule of this.resolveModuleSpecifier(normalized, binding.source)) {
@@ -1736,7 +1623,7 @@ export class LocalModuleCallResolver {
           ));
         }
       }
-    } else if (exportedName !== "default") {
+    } else if (!commonJs && exportedName !== "default") {
       for (const source of record.starExports) {
         for (const targetModule of this.resolveModuleSpecifier(normalized, source)) {
           candidates.push(...await this.resolveExport(targetModule, exportedName, callType, nextVisiting));
@@ -1744,8 +1631,7 @@ export class LocalModuleCallResolver {
       }
     }
 
-    const filtered = filterCallTargetCandidates(callType, deduplicateSymbols(candidates));
-    const result = deduplicateSymbols(filtered);
+    const result = deduplicateSymbols(candidates);
     // Demanded modules can refresh workspace packages while this traversal awaits.
     if (cacheEpoch === this.exportCacheEpoch) this.exportCache.set(cacheKey, result);
     return result;
