@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Watcher failure diagnostics for contributors**: Retain bounded, test-owned observations and private fixture snapshots only when the default-root-build watcher rejection scenarios fail, with failure-only CI artifact pickup. Production watcher behavior, consumer assertions, and test deadlines are unchanged; unavailable internal observations are explicitly marked missing.
+
 ### Fixed
 
 - **Pi real-host prompt tests**: Use Pi 1.3's user-trigger/options runner API and raise only the development host floor to 1.3, retaining sibling section/append preservation and intentional override assertions in both extension orders. The optional Pi peer contract, production extension, legacy string-return fallback, and omp behavior are unchanged.

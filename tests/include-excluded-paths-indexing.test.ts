@@ -10,6 +10,7 @@ import type { HostMode } from "../src/config/host.js";
 import { parseConfig, type ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { FileWatcher, type FileChange, type FileWatcherBackend, type FileWatcherOptions } from "../src/watcher/file-watcher.js";
+import { DefaultRootBuildFailureCapture } from "./watcher/default-root-build-failure-capture.js";
 
 // Controlled filesystem boundaries only; successful reads always use the real filesystem.
 const snapshotFaults = vi.hoisted(() => ({
@@ -80,9 +81,20 @@ function writeSource(filePath: string, definitionName: string): void {
   fs.writeFileSync(filePath, `export function ${definitionName}() { return "${definitionName}"; }\n`);
 }
 
-async function hasDefinition(indexer: Indexer, definitionName: string, filePath: string): Promise<boolean> {
-  const results = await indexer.search(definitionName, 20, { definitionIntent: true });
-  return results.some((result) => result.name === definitionName && result.filePath === filePath);
+async function hasDefinition(
+  indexer: Indexer, definitionName: string, filePath: string, capture?: DefaultRootBuildFailureCapture,
+): Promise<boolean> {
+  capture?.record("query-start", { definitionName, filePath });
+  try {
+    const results = await indexer.search(definitionName, 20, { definitionIntent: true });
+    const found = results.some((result) => result.name === definitionName && result.filePath === filePath);
+    capture?.record("query-end", { definitionName, filePath, found,
+      results: results.map((result) => ({ name: result.name, filePath: result.filePath })) });
+    return found;
+  } catch (error) {
+    capture?.record("query-error", error);
+    throw error;
+  }
 }
 
 describe("include-excluded path indexing acceptance", () => {
@@ -92,6 +104,7 @@ describe("include-excluded path indexing acceptance", () => {
   let watchers: FileWatcher[];
   let handlerTails: Promise<void>[];
   let fetchSpy: ReturnType<typeof vi.spyOn>;
+  let failureCapture: DefaultRootBuildFailureCapture | undefined;
 
   const createIndexer = (
     config: ParsedCodebaseIndexConfig,
@@ -113,16 +126,20 @@ describe("include-excluded path indexing acceptance", () => {
     indexers = [];
     watchers = [];
     handlerTails = [];
+    failureCapture = undefined;
     fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network access is forbidden in this suite"));
   });
 
-  afterEach(async () => {
+  afterEach(async ({ task }) => {
+    let indexClosed = false;
     try {
       snapshotFaults.beforeRead = undefined;
       snapshotFaults.afterStat = undefined;
       const stopResults = await Promise.allSettled(watchers.map((watcher) => watcher.stop()));
       const handlerResults = await Promise.allSettled(handlerTails);
       const closeResults = await Promise.allSettled(indexers.map((indexer) => indexer.close()));
+      indexClosed = closeResults.every((result) => result.status === "fulfilled");
+      failureCapture?.record("cleanup", { stop: stopResults, handlers: handlerResults, close: closeResults });
       const failures = [...stopResults, ...handlerResults, ...closeResults]
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) => result.reason);
@@ -130,10 +147,21 @@ describe("include-excluded path indexing acceptance", () => {
       if (failures.length > 0) {
         throw new AggregateError(failures, "Failed to close include-excluded acceptance test resources");
       }
+    } catch (error) {
+      failureCapture?.fail(error);
+      throw error;
     } finally {
-      vi.restoreAllMocks();
-      fs.rmSync(projectDir, { recursive: true, force: true });
-      fs.rmSync(indexRoot, { recursive: true, force: true });
+      try {
+        const retained = failureCapture?.retainFailure({ testFailed: task.result?.state === "fail", indexClosed });
+        if (retained?.directory) console.error(`[watcher failure capture] ${retained.directory}`);
+        if (retained?.missing) console.error(`[watcher failure capture] ${retained.missing}`);
+      } catch (error) {
+        failureCapture?.record("capture-error", { missing: "MISSING: retention/reporting failed", error });
+      } finally {
+        vi.restoreAllMocks();
+        fs.rmSync(projectDir, { recursive: true, force: true });
+        fs.rmSync(indexRoot, { recursive: true, force: true });
+      }
     }
   });
 
@@ -484,46 +512,95 @@ describe("include-excluded path indexing acceptance", () => {
   async function exerciseDefaultRootBuildWatcherRejection(
     backend: Exclude<FileWatcherBackend, "auto">,
   ): Promise<void> {
-    const config = structuralConfig();
-    const rootBuildHelperPath = path.join(projectDir, "build-helper.ts");
-    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
-    const originalBuildDefinition = `${backend}DefaultOriginalBuildHelperDefinition`;
-    const updatedBuildDefinition = `${backend}DefaultUpdatedBuildHelperDefinition`;
-    const originalOrdinaryDefinition = `${backend}DefaultOriginalOrdinaryDefinition`;
-    const updatedOrdinaryDefinition = `${backend}DefaultUpdatedOrdinaryDefinition`;
-    writeSource(rootBuildHelperPath, originalBuildDefinition);
-    writeSource(ordinaryPath, originalOrdinaryDefinition);
+    const capture = new DefaultRootBuildFailureCapture(projectDir, indexRoot, backend);
+    failureCapture = capture;
+    try {
+      const config = structuralConfig();
+      const rootBuildHelperPath = path.join(projectDir, "build-helper.ts");
+      const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+      const originalBuildDefinition = `${backend}DefaultOriginalBuildHelperDefinition`;
+      const updatedBuildDefinition = `${backend}DefaultUpdatedBuildHelperDefinition`;
+      const originalOrdinaryDefinition = `${backend}DefaultOriginalOrdinaryDefinition`;
+      const updatedOrdinaryDefinition = `${backend}DefaultUpdatedOrdinaryDefinition`;
+      writeSource(rootBuildHelperPath, originalBuildDefinition);
+      capture.record("write", { path: rootBuildHelperPath, definition: originalBuildDefinition });
+      writeSource(ordinaryPath, originalOrdinaryDefinition);
+      capture.record("write", { path: ordinaryPath, definition: originalOrdinaryDefinition });
 
-    const indexer = createIndexer(config);
-    await indexer.index();
-    expect(await hasDefinition(indexer, originalBuildDefinition, rootBuildHelperPath)).toBe(true);
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const watcher = new FileWatcher(projectDir, config, "jcode", { backend });
-    watchers.push(watcher);
-    const observedPaths: string[] = [];
-    let handlerTail = Promise.resolve();
-    watcher.start(async (changes) => {
-      observedPaths.push(...changes.map((change) => change.path));
-      handlerTail = handlerTail.then(async () => {
+      const indexer = createIndexer(config);
+      capture.record("index-start", { initial: true });
+      try {
         await indexer.index();
+        capture.record("index-end", { initial: true });
+      } catch (error) {
+        capture.record("index-error", error);
+        throw error;
+      }
+      expect(await hasDefinition(indexer, originalBuildDefinition, rootBuildHelperPath, capture)).toBe(true);
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation((...args) => {
+        capture.record("warning", args);
       });
-      handlerTails.push(handlerTail);
-      await handlerTail;
-    });
-    await watcher.waitUntilReady();
+      const watcher = new FileWatcher(projectDir, config, "jcode", { backend });
+      watchers.push(watcher);
+      const observedPaths: string[] = [];
+      let handlerTail = Promise.resolve();
+      watcher.start(async (changes) => {
+        capture.record("callback-start", changes);
+        try {
+          observedPaths.push(...changes.map((change) => change.path));
+          handlerTail = handlerTail.then(async () => {
+            capture.record("index-start", { initial: false });
+            try {
+              await indexer.index();
+              capture.record("index-end", { initial: false });
+            } catch (error) {
+              capture.record("index-error", error);
+              throw error;
+            }
+          });
+          handlerTails.push(handlerTail);
+          await handlerTail;
+          capture.record("callback-end");
+        } catch (error) {
+          capture.record("callback-error", error);
+          throw error;
+        }
+      });
+      // Passive listeners on this actual emitter only; replacement/native layers remain MISSING.
+      const internals = watcher as unknown as { watcher: FSWatcher | null; nativeWatcher: object | null };
+      const emitter = internals.watcher;
+      if (emitter) {
+        capture.record("backend", { emitter: "initial Chokidar", options: emitter.options });
+        emitter.on("raw", (event, filePath, details) => capture.record("raw", { event, filePath, details }));
+        emitter.on("all", (event, filePath) => capture.record("backend-event", { event, filePath }));
+        emitter.on("ready", () => capture.record("backend-ready", { emitter: "initial Chokidar" }));
+        emitter.on("error", (error) => capture.record("backend-error", error));
+      } else {
+        capture.record("backend", { emitter: "MISSING: no Chokidar emitter at start", requested: backend });
+      }
+      capture.record("ready-start");
+      await watcher.waitUntilReady();
+      capture.record("ready-end", { running: watcher.isRunning(), nativeActive: internals.nativeWatcher !== null,
+        chokidar: internals.watcher === emitter ? "same captured emitter" : "MISSING: replacement emitter" });
 
-    writeSource(rootBuildHelperPath, updatedBuildDefinition);
-    writeSource(ordinaryPath, updatedOrdinaryDefinition);
-    await vi.waitFor(async () => {
-      expect(await hasDefinition(indexer, updatedOrdinaryDefinition, ordinaryPath)).toBe(true);
-      expect(observedPaths).toContain(ordinaryPath);
-    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+      writeSource(rootBuildHelperPath, updatedBuildDefinition);
+      capture.record("write", { path: rootBuildHelperPath, definition: updatedBuildDefinition });
+      writeSource(ordinaryPath, updatedOrdinaryDefinition);
+      capture.record("write", { path: ordinaryPath, definition: updatedOrdinaryDefinition });
+      await vi.waitFor(async () => {
+        expect(await hasDefinition(indexer, updatedOrdinaryDefinition, ordinaryPath, capture)).toBe(true);
+        expect(observedPaths).toContain(ordinaryPath);
+      }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
 
-    expect(observedPaths).not.toContain(rootBuildHelperPath);
-    expect(await hasDefinition(indexer, updatedBuildDefinition, rootBuildHelperPath)).toBe(true);
-    if (backend === "native") {
-      expect(warnSpy.mock.calls.some(([message]) => String(message).includes("Chokidar fallback"))).toBe(false);
+      expect(observedPaths).not.toContain(rootBuildHelperPath);
+      expect(await hasDefinition(indexer, updatedBuildDefinition, rootBuildHelperPath, capture)).toBe(true);
+      if (backend === "native") {
+        expect(warnSpy.mock.calls.some(([message]) => String(message).includes("Chokidar fallback"))).toBe(false);
+      }
+    } catch (error) {
+      capture.fail(error);
+      throw error;
     }
   }
 
