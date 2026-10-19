@@ -240,13 +240,19 @@ Performance depends on repository size, parser coverage, provider latency, embed
 
 ## Development
 
+Source development requires Node.js `^22.19.0 || ^24.11.0 || >=26.0.0` (the already-required Pi SDK floor combined with tsup 9's qualified engine range). Prefer Node.js 24 LTS >=24.11.0; the published package still supports Node.js >=22.13.0.
+
 ```bash
 npm ci
+# Bootstrap once on a fresh checkout if the native addon is absent.
+npm run build:native
 npm run build
 npm run typecheck
 npm run lint
 npm run test:run
 ```
+
+The initial combined build's TypeScript CLI smoke requires the native addon before the normal native-build stage. Skip the bootstrap when an addon already exists.
 
 Pi integration tests use the development host `@earendil-works/pi-coding-agent`
 1.3 or newer and its `emitBeforeAgentStart(trigger, systemPromptOptions)` API.

@@ -35,14 +35,18 @@ Use this when you just want the shortest path to a good PR:
    ```
 4. **Build the project**:
    ```bash
+   # Bootstrap once after a fresh install if the native addon is absent.
+   npm run build:native
    npm run build
    ```
+
+The first combined build runs its TypeScript CLI smoke before its native-build stage. A fresh checkout therefore needs the bootstrap above; an existing native addon can skip it.
 
 ## Development Setup
 
 ### Prerequisites
 
-- Node.js 22.19 or newer for development (required by the Pi development dependencies). Node.js 24 LTS is recommended. The published package supports Node.js 22.13 or newer.
+- Node.js `^22.19.0 || ^24.11.0 || >=26.0.0` for source development: Pi already requires >=22.19.0, while tsup 9 supports only the qualified Node branches in its engine range. Node.js 24 LTS >=24.11.0 is recommended. The published package still supports Node.js >=22.13.0.
 - Rust toolchain (for native module)
 - npm
 
