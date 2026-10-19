@@ -82,8 +82,9 @@ directory is under `<os.tmpdir()>/ocbi-watcher-failures/`; CI uses
 `${RUNNER_TEMP}/ocbi-watcher-failures/` and uploads it on job failure as
 `watcher-failures-node-<version>-<run>-<attempt>` for 14 days.
 `capture.json` contains monotonic observations, first/last phase anchors,
-suppressed warnings, dropped-event counts, runtime/backend information, and a
-snapshot inventory. Only genuine notifications from the initially available
+suppressed warnings, dropped-event and explicit detail-byte-cut counts,
+bounded numeric index statistics, runtime/backend information, and a snapshot
+inventory. Only genuine notifications from the initially available
 Chokidar emitter are observed; replacement/native notifications and internal
 filtering, queueing, and flushing are marked `MISSING`, not inferred.
 
@@ -91,9 +92,13 @@ Limits per scenario: 512 tail events of at most 2 KiB each, fixed first/last
 phase anchors, 256 visited fixture entries, 16 MiB of combined source/index
 snapshots, and 18 MiB total including metadata. Caps, refused paths, capture
 errors, and unavailable evidence are reported as `MISSING`. Symlinks,
-hardlinks, special files, and replaced fixture roots are refused; an index
-whose close failed or is unknown is not copied. These checks are not an
-adversarial filesystem-race guarantee.
+hardlinks, special files, and replaced fixture roots are refused. Index
+snapshots require both all watcher stops and all indexer closes to succeed,
+after handler tails settle; otherwise only safe source fixtures are retained.
+These quiescence checks do not prove database consistency. POSIX mode and
+directory-FD guards may refuse Windows snapshots as `MISSING`; Windows
+snapshot coverage has not been verified. These checks are not an adversarial
+filesystem-race guarantee.
 
 Diagnostic text redacts absolute private paths, but **raw fixture index files
 can contain temporary paths**. Inspect artifacts privately; do not commit them

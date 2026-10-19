@@ -45,8 +45,10 @@ export class DefaultRootBuildFailureCapture {
   private readonly started = performance.now();
   private readonly roots: Root[] = [];
   private readonly events: Event[] = [];
+  private nextEvent = 0;
   private readonly anchors: Record<string, { first: Event; last: Event }> = {};
   private dropped = 0;
+  private detailByteCuts = 0;
   private failed = false;
   private readonly missing: string[] = [];
 
@@ -83,7 +85,9 @@ export class DefaultRootBuildFailureCapture {
       .replaceAll(os.tmpdir(), "<tmp>");
     // Raw backend errors may name unrelated absolute paths. Never retain those names.
     text = text.replace(/(?<![\w>])(?:[A-Za-z]:[\\/]|\/)[^\s'"<>),\]}]+/g, "<external-path>");
-    return Buffer.from(text).subarray(0, 1500).toString("utf8");
+    const bytes = Buffer.from(text);
+    if (bytes.length > 1500) this.detailByteCuts += 1;
+    return bytes.subarray(0, 1500).toString("utf8");
   }
 
   record(phase: string, detail?: unknown): void {
@@ -92,12 +96,11 @@ export class DefaultRootBuildFailureCapture {
       const event = { ms: performance.now() - this.started, phase: phase.slice(0, 64), detail: this.text(detail) };
       while (Buffer.byteLength(JSON.stringify(event)) > CAPTURE_LIMITS.eventBytes) {
         event.detail = event.detail.slice(0, Math.floor(event.detail.length / 2));
+        this.detailByteCuts += 1;
       }
-      if (this.events.length === CAPTURE_LIMITS.events) {
-        this.events.shift();
-        this.dropped += 1;
-      }
-      this.events.push(event);
+      if (this.events.length === CAPTURE_LIMITS.events) this.dropped += 1;
+      this.events[this.nextEvent] = event;
+      this.nextEvent = (this.nextEvent + 1) % CAPTURE_LIMITS.events;
       if (Object.hasOwn(ANCHORED_PHASES, phase)) {
         const anchor = this.anchors[phase];
         this.anchors[phase] = { first: anchor?.first ?? event, last: event };
@@ -161,7 +164,9 @@ export class DefaultRootBuildFailureCapture {
 
   // Called only after watcher stop, handler tails, and indexer close have settled.
   // The caller still owns unconditional fixture deletion and the original test outcome.
-  retainFailure(options: { testFailed: boolean; indexClosed: boolean }): { directory?: string; missing?: string } {
+  retainFailure(options: {
+    testFailed: boolean; watchersStopped: boolean; indexClosed: boolean;
+  }): { directory?: string; missing?: string } {
     if (!this.failed && !options.testFailed) return {};
     try {
       const requestedBase = process.env.CI && process.env.RUNNER_TEMP ? process.env.RUNNER_TEMP : os.tmpdir();
@@ -247,8 +252,8 @@ export class DefaultRootBuildFailureCapture {
         }
       };
       for (const root of this.roots) {
-        if (root.label === "index" && !options.indexClosed) {
-          this.missing.push("index: MISSING: indexer close did not succeed; database snapshot refused");
+        if (root.label === "index" && (!options.watchersStopped || !options.indexClosed)) {
+          this.missing.push("index: MISSING: watcher stop or indexer close did not succeed; quiescence unverified; database snapshot refused");
           continue;
         }
         try {
@@ -271,20 +276,25 @@ export class DefaultRootBuildFailureCapture {
           this.missing.push(`${root.label}: ${this.text(error)}`);
         }
       }
+      const events = this.events.length === CAPTURE_LIMITS.events
+        ? [...this.events.slice(this.nextEvent), ...this.events.slice(0, this.nextEvent)]
+        : this.events;
       let metadata = JSON.stringify({ schema: 1, backend: this.backend, host: "jcode", limits: CAPTURE_LIMITS,
         runtime: { node: process.version, versions: process.versions, platform: process.platform,
           arch: process.arch, osRelease: os.release(), pid: process.pid },
-        elapsedMs: performance.now() - this.started, droppedEvents: this.dropped,
-        events: this.events, anchors: this.anchors,
+        elapsedMs: performance.now() - this.started, droppedEvents: this.dropped, detailByteCuts: this.detailByteCuts,
+        events, anchors: this.anchors,
         missing: [...this.missing, "filtering: MISSING", "queued: MISSING", "flush: MISSING",
-          "native notifications: MISSING", "replacement Chokidar emitter coverage: MISSING"],
+          "native notifications: MISSING", "replacement Chokidar emitter coverage: MISSING",
+          "snapshot portability: POSIX mode/directory-FD guards; Windows coverage MISSING"],
         native: this.nativeObservation(), snapshot: { bytes, visited, entryCapReached: visited >= CAPTURE_LIMITS.entries,
-          indexClosed: options.indexClosed, entries },
+          watchersStopped: options.watchersStopped, indexClosed: options.indexClosed, entries },
         privacy: "Raw fixture index bytes may embed fixture paths; diagnostic text is redacted. Not an adversarial race-proof copier.",
       }, null, 2);
       if (Buffer.byteLength(metadata) + bytes > CAPTURE_LIMITS.totalBytes) {
         metadata = JSON.stringify({ missing: "MISSING: shared metadata byte cap", limits: CAPTURE_LIMITS,
-          snapshotBytes: bytes, visited, droppedEvents: this.dropped, anchors: this.anchors });
+          snapshotBytes: bytes, visited, droppedEvents: this.dropped, detailByteCuts: this.detailByteCuts,
+          watchersStopped: options.watchersStopped, indexClosed: options.indexClosed, anchors: this.anchors });
       }
       fs.writeFileSync(path.join(directory, "capture.json"), metadata, { flag: "wx", mode: 0o600 });
       return { directory };

@@ -131,15 +131,18 @@ describe("include-excluded path indexing acceptance", () => {
   });
 
   afterEach(async ({ task }) => {
+    const capture = failureCapture;
+    let watchersStopped = false;
     let indexClosed = false;
     try {
       snapshotFaults.beforeRead = undefined;
       snapshotFaults.afterStat = undefined;
       const stopResults = await Promise.allSettled(watchers.map((watcher) => watcher.stop()));
+      watchersStopped = stopResults.every((result) => result.status === "fulfilled");
       const handlerResults = await Promise.allSettled(handlerTails);
       const closeResults = await Promise.allSettled(indexers.map((indexer) => indexer.close()));
       indexClosed = closeResults.every((result) => result.status === "fulfilled");
-      failureCapture?.record("cleanup", { stop: stopResults, handlers: handlerResults, close: closeResults });
+      capture?.record("cleanup", { watchersStopped, indexClosed, stop: stopResults, handlers: handlerResults, close: closeResults });
       const failures = [...stopResults, ...handlerResults, ...closeResults]
         .filter((result): result is PromiseRejectedResult => result.status === "rejected")
         .map((result) => result.reason);
@@ -148,15 +151,15 @@ describe("include-excluded path indexing acceptance", () => {
         throw new AggregateError(failures, "Failed to close include-excluded acceptance test resources");
       }
     } catch (error) {
-      failureCapture?.fail(error);
+      capture?.fail(error);
       throw error;
     } finally {
       try {
-        const retained = failureCapture?.retainFailure({ testFailed: task.result?.state === "fail", indexClosed });
+        const retained = capture?.retainFailure({ testFailed: task.result?.state === "fail", watchersStopped, indexClosed });
         if (retained?.directory) console.error(`[watcher failure capture] ${retained.directory}`);
         if (retained?.missing) console.error(`[watcher failure capture] ${retained.missing}`);
       } catch (error) {
-        failureCapture?.record("capture-error", { missing: "MISSING: retention/reporting failed", error });
+        capture?.record("capture-error", { missing: "MISSING: retention/reporting failed", error });
       } finally {
         vi.restoreAllMocks();
         fs.rmSync(projectDir, { recursive: true, force: true });
@@ -530,8 +533,10 @@ describe("include-excluded path indexing acceptance", () => {
       const indexer = createIndexer(config);
       capture.record("index-start", { initial: true });
       try {
-        await indexer.index();
-        capture.record("index-end", { initial: true });
+        const stats = await indexer.index();
+        capture.record("index-end", { initial: true,
+          totalFiles: stats.totalFiles, totalChunks: stats.totalChunks, indexedChunks: stats.indexedChunks,
+          failedChunks: stats.failedChunks, existingChunks: stats.existingChunks, removedChunks: stats.removedChunks });
       } catch (error) {
         capture.record("index-error", error);
         throw error;
@@ -552,8 +557,10 @@ describe("include-excluded path indexing acceptance", () => {
           handlerTail = handlerTail.then(async () => {
             capture.record("index-start", { initial: false });
             try {
-              await indexer.index();
-              capture.record("index-end", { initial: false });
+              const stats = await indexer.index();
+              capture.record("index-end", { initial: false,
+                totalFiles: stats.totalFiles, totalChunks: stats.totalChunks, indexedChunks: stats.indexedChunks,
+                failedChunks: stats.failedChunks, existingChunks: stats.existingChunks, removedChunks: stats.removedChunks });
             } catch (error) {
               capture.record("index-error", error);
               throw error;
