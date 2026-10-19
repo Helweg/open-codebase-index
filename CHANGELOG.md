@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Source-build and override hygiene**: Document the qualified Node.js source-development range and one-time native bootstrap while retaining the installed Node.js 22.13 minimum; remove the fresh-resolution-proven inert tsup 8 esbuild exception and update its security-policy history without weakening other patched floors.
+
 ### Fixed
 
 - **Pi real-host prompt tests**: Use Pi 1.3's user-trigger/options runner API and raise only the development host floor to 1.3, retaining sibling section/append preservation and intentional override assertions in both extension orders. The optional Pi peer contract, production extension, legacy string-return fallback, and omp behavior are unchanged.
