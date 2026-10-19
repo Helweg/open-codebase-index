@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Pi real-host prompt tests**: Use Pi 1.3's user-trigger/options runner API and raise only the development host floor to 1.3, retaining sibling section/append preservation and intentional override assertions in both extension orders. The optional Pi peer contract, production extension, legacy string-return fallback, and omp behavior are unchanged.
+
 ## [0.37.0] - 2026-10-16
 
 ### Added

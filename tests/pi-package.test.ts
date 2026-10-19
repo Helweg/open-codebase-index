@@ -120,7 +120,11 @@ describe("Pi package integration", () => {
       );
       const errors: ExtensionError[] = [];
       runner.onError((error) => errors.push(error));
-      await runner.emitBeforeAgentStart("Compose extension instructions", undefined, {
+      await runner.emitBeforeAgentStart({
+        messageType: "user",
+        prompt: "Compose extension instructions",
+        images: undefined,
+      }, {
         cwd: root,
         customPrompt: "Base policy",
         sections: { existing: "Existing guidance" },

@@ -248,6 +248,11 @@ npm run lint
 npm run test:run
 ```
 
+Pi integration tests use the development host `@earendil-works/pi-coding-agent`
+1.3 or newer and its `emitBeforeAgentStart(trigger, systemPromptOptions)` API.
+This test-host floor does not narrow the optional Pi peer contract or change the
+extension's native-section and legacy string-return prompt behavior.
+
 Native changes require Rust and `npm run build:native`. See [Contributing](CONTRIBUTING.md), [Architecture](ARCHITECTURE.md), and [Adding language support](docs/adding-language-support.md).
 
 ## Documentation
