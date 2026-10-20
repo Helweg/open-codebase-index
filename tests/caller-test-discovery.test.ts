@@ -80,6 +80,22 @@ describe("caller-aware test evidence", () => {
       { file: "tests/z-direct.test.ts", kind: "direct_target_test_reference", start: 2, end: 4, referenced: "signalGate" },
       { file: "tests/a-related.test.ts", kind: "related_caller_test_reference", start: 2, end: 4, referenced: "createTransport" },
     ]);
+    const results = response.details!.results!;
+    const citations = [...response.text.matchAll(/^\[(\d+)\] \S+(?: "(?:\\.|[^"\\])*")? in (.+?):(\d+)-(\d+) \(score[^\n]*\)/gmu)];
+    expect(citations.map((citation) => ({
+      start: Number(citation[3]), end: Number(citation[4]),
+    }))).toEqual(results.map((result) => ({ start: result.startLine, end: result.endLine })));
+    for (const [index, result] of results.entries()) {
+      const file = citations[index][2];
+      if (file.startsWith("…")) {
+        const suffix = file.slice(1);
+        expect(suffix).not.toBe("");
+        expect(result.filePath.endsWith(suffix)).toBe(true);
+        expect(suffix.endsWith(path.relative(root, result.filePath))).toBe(true);
+      } else {
+        expect(file).toBe(result.filePath);
+      }
+    }
     const limited = await retrieve({ limit: 1, tokenBudget: 128 });
     expect(limited.details?.results?.map((result) => result.evidenceKind)).toEqual(["direct_target_test_reference"]);
     expect(limited.details?.tokenEstimate).toBeLessThanOrEqual(128);
