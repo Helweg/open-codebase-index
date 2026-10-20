@@ -1,6 +1,6 @@
 {
   "name": "opencode-codebase-index",
-  "version": "0.37.0",
+  "version": "0.37.1",
   "description": "Host-neutral semantic codebase search with embeddings, symbol discovery, and call-graph tooling",
   "type": "module",
   "main": "dist/index.js",
@@ -38,7 +38,7 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "build": "npm run build:ts && npm run build:native",
+    "build": "npm run build:native && npm run build:ts",
     "build:ts": "tsup && node scripts/smoke-test-built-cli.mjs",
     "smoke:package": "node scripts/smoke-test-packed-cli.mjs",
     "build:native": "cd native && cargo build --release && napi build --release --platform",
