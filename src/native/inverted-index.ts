@@ -11,8 +11,8 @@ export class InvertedIndex {
     this.inner.load();
   }
 
-  save(): void {
-    this.inner.save();
+  save(destination?: string): void {
+    this.inner.save(destination);
   }
 
   serialize(): string {

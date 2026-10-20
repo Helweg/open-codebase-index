@@ -116,6 +116,39 @@ describe("provider-free structural indexing", () => {
     fetchSpy.mockRestore();
   });
 
+  it("retains the previous keyword artifact and generation and removes staging files after a failed save", async () => {
+    const sourcePath = path.join(projectDir, "durable.ts");
+    fs.writeFileSync(sourcePath, "export const durableNeedle = 'original';\n");
+    const indexer = createIndexer({ indexPath: indexRoot });
+    await indexer.index();
+    const structuralPath = path.join(indexRoot, "structural");
+    const keywordPath = path.join(structuralPath, "inverted-index.json");
+    const generationPath = path.join(structuralPath, "structural-generation");
+    const previousKeyword = fs.readFileSync(keywordPath);
+    const previousGeneration = fs.readFileSync(generationPath);
+    fs.writeFileSync(sourcePath, "export const replacementNeedle = 'changed';\n");
+
+    const save = InvertedIndex.prototype.save;
+    const failure = vi.spyOn(InvertedIndex.prototype, "save").mockImplementation(function (this: InvertedIndex, destination?: string) {
+      save.call(this, destination);
+      throw new Error("Injected failure after writing staged keyword data");
+    });
+    await expect(indexer.index()).rejects.toThrow("Injected failure");
+    failure.mockRestore();
+
+    expect(fs.readFileSync(keywordPath)).toEqual(previousKeyword);
+    expect(fs.readFileSync(generationPath)).toEqual(previousGeneration);
+    expect(fs.readdirSync(structuralPath).filter((name) => name.includes(".tmp."))).toEqual([]);
+    const retained = new InvertedIndex(keywordPath);
+    retained.load();
+    expect(retained.search("durableNeedle").size).toBeGreaterThan(0);
+    expect(retained.search("replacementNeedle").size).toBe(0);
+    await indexer.index();
+    await indexer.close();
+    const reader = createIndexer({ indexPath: indexRoot });
+    expect((await reader.search("replacementNeedle", 10)).some((result) => result.filePath === sourcePath)).toBe(true);
+  });
+
   it.each([
     { fusionStrategy: "rrf" as const, rerankTopN: 0 },
     { fusionStrategy: "rrf" as const, rerankTopN: 50 },

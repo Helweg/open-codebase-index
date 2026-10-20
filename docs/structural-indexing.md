@@ -32,6 +32,8 @@ Structural artifacts live in a `structural/` child of the normal resolved index 
 
 Structural mode persists source chunks, symbols and graph edges in SQLite and publishes a BM25 keyword index. It does not create semantic vectors or embedding records. Status distinguishes stored chunks across branches from active-branch coverage and reports no embedding provider. A compatible mode alone does not prove that current source bytes were indexed.
 
+BM25 saves in both modes stream native data to a lease-owned temporary file, then atomically rename the completed file into place. Saving does not clone the whole index or transfer its JSON through a JavaScript string. Write or publication failures clean the owned temporary file and retain the previous keyword artifact; structural generation publication still follows successful keyword publication. The JSON schema and loading behavior are unchanged; loading still reads the complete JSON into native memory.
+
 Generation checks detect interrupted SQLite/keyword publication. A damaged or incomplete keyword index should block readiness and require normal indexing to recover. Recovery uses persisted branch-referenced source text where available. Older structural artifacts without recoverable source text may require an explicit force rebuild. Force and deletion checks should always use an isolated test project before operating on valuable indexes.
 
 ## Scope

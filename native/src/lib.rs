@@ -489,10 +489,12 @@ impl InvertedIndex {
     }
 
     #[napi]
-    pub fn save(&self) -> Result<()> {
-        self.inner
-            .save()
-            .map_err(|e| Error::from_reason(e.to_string()))
+    pub fn save(&self, destination: Option<String>) -> Result<()> {
+        let result = match destination {
+            Some(destination) => self.inner.save_to(std::path::Path::new(&destination)),
+            None => self.inner.save(),
+        };
+        result.map_err(|e| Error::from_reason(e.to_string()))
     }
 
     #[napi]

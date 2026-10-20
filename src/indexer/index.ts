@@ -1694,15 +1694,15 @@ export class Indexer {
     for (const [k, v] of this.fileHashCache) {
       obj[k] = v;
     }
-    this.atomicWriteSync(this.fileHashCachePath, JSON.stringify(obj));
+    this.atomicPublishSync(this.fileHashCachePath, (tempPath) => writeFileSync(tempPath, JSON.stringify(obj)));
   }
 
-  private atomicWriteSync(targetPath: string, data: string): void {
+  private atomicPublishSync(targetPath: string, writeTemporary: (tempPath: string) => void): void {
     const lease = this.requireActiveLease();
     const tempPath = createLeaseTemporaryPath(targetPath, lease.owner, "tmp");
     mkdirSync(path.dirname(targetPath), { recursive: true });
     try {
-      writeFileSync(tempPath, data);
+      writeTemporary(tempPath);
       renameSync(tempPath, targetPath);
     } finally {
       removeLeaseTemporaryPath(tempPath);
@@ -1710,9 +1710,9 @@ export class Indexer {
   }
 
   private saveInvertedIndex(invertedIndex: InvertedIndex): void {
-    this.atomicWriteSync(
+    this.atomicPublishSync(
       path.join(this.indexPath, "inverted-index.json"),
-      invertedIndex.serialize(),
+      (tempPath) => invertedIndex.save(tempPath),
     );
   }
 
@@ -1730,7 +1730,7 @@ export class Indexer {
 
   private publishStructuralKeywordGeneration(invertedIndex: InvertedIndex, generation: string): void {
     this.saveInvertedIndex(invertedIndex);
-    this.atomicWriteSync(this.getStructuralGenerationPath(), generation);
+    this.atomicPublishSync(this.getStructuralGenerationPath(), (tempPath) => writeFileSync(tempPath, generation));
   }
 
   private publishClearedStructuralKeywordCatalog(invertedIndex: InvertedIndex, database: Database): void {
