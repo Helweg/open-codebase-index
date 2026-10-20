@@ -132,6 +132,36 @@ describe("InvertedIndex", () => {
       expect(results.has("chunk1")).toBe(true);
     });
 
+    it("roundtrips streamed snapshots and legacy JSON without changing scores or the default destination", () => {
+      const destination = path.join(tempDir, "staging", "snapshot.json");
+      index.save();
+      const empty = fs.readFileSync(indexPath, "utf-8");
+      expect(JSON.parse(empty)).toEqual({ term_to_chunks: {}, chunk_tokens: {}, avg_doc_length: 100 });
+
+      index.addChunk("removed", "obsolete needle");
+      for (let i = 0; i < 2000; i++) {
+        index.addChunk(`chunk-${i}-日本語`, `café needle group${i} repeated repeated`);
+      }
+      index.removeChunk("removed");
+      const expected = [...index.search("café needle", 2000)];
+      index.save(destination);
+      expect(fs.readFileSync(indexPath, "utf-8")).toBe(empty);
+      const streamed = new InvertedIndex(destination);
+      streamed.load();
+      const legacy = new InvertedIndex(path.join(tempDir, "legacy.json"));
+      legacy.deserialize(index.serialize());
+      for (const candidate of [streamed, legacy]) {
+        expect(candidate.getDocumentCount()).toBe(2000);
+        expect(candidate.hasChunk("removed")).toBe(false);
+        expect(candidate.search("obsolete").size).toBe(0);
+        expect([...candidate.search("café needle", 2000)]).toEqual(expected);
+      }
+      index.save();
+      const reloaded = new InvertedIndex(indexPath);
+      reloaded.load();
+      expect([...reloaded.search("café needle", 2000)]).toEqual(expected);
+    });
+
     it("should handle loading empty index", () => {
       const newIndex = new InvertedIndex(indexPath);
       expect(() => newIndex.load()).not.toThrow();

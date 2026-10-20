@@ -2,12 +2,20 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize, Deserialize, Default)]
 struct InvertedIndexData {
     term_to_chunks: HashMap<String, Vec<String>>,
     chunk_tokens: HashMap<String, HashMap<String, u32>>,
+    avg_doc_length: f64,
+}
+
+#[derive(Serialize)]
+struct InvertedIndexSnapshot<'a> {
+    term_to_chunks: &'a HashMap<String, HashSet<String>>,
+    chunk_tokens: &'a HashMap<String, HashMap<String, u32>>,
     avg_doc_length: f64,
 }
 
@@ -55,38 +63,31 @@ impl InvertedIndexInner {
     }
 
     pub fn save(&self) -> Result<()> {
-        if let Some(parent) = self.index_path.parent() {
+        self.save_to(&self.index_path)
+    }
+
+    pub fn save_to(&self, destination: &Path) -> Result<()> {
+        if let Some(parent) = destination.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let mut data = InvertedIndexData {
-            term_to_chunks: HashMap::new(),
-            chunk_tokens: self.chunk_tokens.clone(),
-            avg_doc_length: self.get_avg_doc_length(),
-        };
-
-        for (term, chunk_ids) in &self.term_to_chunks {
-            data.term_to_chunks
-                .insert(term.clone(), chunk_ids.iter().cloned().collect());
-        }
-
-        let json = serde_json::to_string(&data)?;
-        fs::write(&self.index_path, json)?;
-
+        let mut writer = BufWriter::new(fs::File::create(destination)?);
+        serde_json::to_writer(&mut writer, &self.snapshot())?;
+        // BufWriter's drop ignores errors; publication must observe flush failures.
+        writer.flush()?;
         Ok(())
     }
 
     pub fn serialize(&self) -> Result<String> {
-        let mut data = InvertedIndexData {
-            term_to_chunks: HashMap::new(),
-            chunk_tokens: self.chunk_tokens.clone(),
+        Ok(serde_json::to_string(&self.snapshot())?)
+    }
+
+    fn snapshot(&self) -> InvertedIndexSnapshot<'_> {
+        InvertedIndexSnapshot {
+            term_to_chunks: &self.term_to_chunks,
+            chunk_tokens: &self.chunk_tokens,
             avg_doc_length: self.get_avg_doc_length(),
-        };
-        for (term, chunk_ids) in &self.term_to_chunks {
-            data.term_to_chunks
-                .insert(term.clone(), chunk_ids.iter().cloned().collect());
         }
-        Ok(serde_json::to_string(&data)?)
     }
 
     pub fn deserialize(&mut self, json: &str) -> Result<()> {
