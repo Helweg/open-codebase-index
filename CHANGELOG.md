@@ -7,14 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.1] - 2026-10-20
+
 ### Added
 
-- **Watcher failure diagnostics for contributors**: Retain bounded, test-owned observations and private fixture snapshots only when the default-root-build watcher rejection scenarios fail, with failure-only CI artifact pickup. Production watcher behavior, consumer assertions, and test deadlines are unchanged; unavailable internal observations are explicitly marked missing.
+- **Watcher failure diagnostics for contributors** (#451): Retain bounded, test-owned observations and private fixture snapshots only when the default-root-build watcher rejection scenarios fail, with failure-only CI artifact pickup. Production watcher behavior, consumer assertions, and test deadlines are unchanged; unavailable internal observations are explicitly marked missing.
+
+### Changed
+
+- **Runtime dependencies** (#446, #449): Update the internal queue from `p-queue` 9.3.3 to 10.0.0 and locked Zod from 4.6.5 to 4.6.7. The published Node.js minimum remains 22.13. Custom-provider `requestIntervalMs` values above 2,147,483,647 ms are now rejected by the queue instead of overflowing Node's timer delay.
+- **Development toolchain** (#447, #448, #449): Update tsup from 8.5.1 to 9.0.0, the Pi development host to 1.3.0, Vitest and coverage tooling to 5.0.5, and typescript-eslint to 8.71.2. Development requires Node.js 22.19 or newer within 22.x, 24.11 or newer within 24.x, or 26 or newer; this does not raise the published runtime floor.
+- **Linked citation regression coverage** (#453): Assert selected caller-test citation paths and source ranges alongside the existing linkage expectations without changing production test-discovery behavior.
 
 ### Fixed
 
-- **Large BM25 index saves** (#452): Stream borrowed native index data directly to a lease-owned temporary file instead of cloning the index and transferring complete JSON through a JavaScript string. Preserve the existing JSON format, atomic rename and cleanup, and structural generation ordering; report buffered-write failures before publication.
-- **Pi real-host prompt tests**: Use Pi 1.3's user-trigger/options runner API and raise only the development host floor to 1.3, retaining sibling section/append preservation and intentional override assertions in both extension orders. The optional Pi peer contract, production extension, legacy string-return fallback, and omp behavior are unchanged.
+- **Fresh-checkout builds**: Build the native module before TypeScript's built-CLI smoke so `npm ci` followed by `npm run build` works without a pre-existing native binding. Keep the actual CLI smoke enabled.
+- **Large BM25 index saves** (#452, #454): Stream borrowed native index data directly to a lease-owned temporary file instead of cloning the index and transferring complete JSON through a JavaScript string. Preserve the existing JSON format, atomic rename and cleanup, and structural generation ordering; report buffered-write failures before publication. The native `save(destination)` option is a backward-compatible API addition supporting this fix.
+- **Pi real-host prompt tests** (#448): Use Pi 1.3's user-trigger/options runner API, retaining sibling section/append preservation and intentional override assertions in both extension orders. The optional Pi peer contract, production extension, legacy string-return fallback, and omp behavior are unchanged.
 
 ## [0.37.0] - 2026-10-16
 
@@ -1035,7 +1044,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...HEAD
+[0.37.1]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...v0.37.0
 [0.36.3]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...v0.36.3
 [0.36.2]: https://github.com/Helweg/open-codebase-index/compare/v0.36.1...v0.36.2
