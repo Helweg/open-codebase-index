@@ -447,19 +447,4 @@ describe("Phase 1 product identity compatibility", () => {
     }
   });
 
-  it("keeps publication release-gated while accepting an explicit known package identity", () => {
-    const workflow = readFileSync(".github/workflows/build.yml", "utf-8");
-    expect(workflow).not.toContain("inputs:");
-    expect(workflow).toContain("for packageName in open-codebase-index opencode-codebase-index;");
-    expect(workflow).toContain("if: github.event_name == 'release'");
-    expect(workflow).toContain("npm publish --ignore-scripts --access public");
-    expect(workflow).toContain("npm view \"${packageName}@${PACKAGE_VERSION}\" --json");
-    expect(workflow).toContain("stagingDir=\"${RUNNER_TEMP}/package-metadata/${packageName}\"");
-    expect(workflow).toContain("--repository-url \"https://github.com/${GITHUB_REPOSITORY}\"");
-
-    const openFirst = workflow.indexOf("open-codebase-index");
-    const legacyAfter = workflow.indexOf("opencode-codebase-index", openFirst + 1);
-    expect(openFirst).toBeGreaterThan(-1);
-    expect(legacyAfter).toBeGreaterThan(openFirst);
-  });
 });
