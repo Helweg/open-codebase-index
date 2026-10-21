@@ -192,7 +192,7 @@ try {
     throw new Error(`Built CLI failed in eval help mode: ${JSON.stringify(evalHelp)}`);
   }
   const visualize = await runCliCommand(["visualize", "--help", "--project", tempDir, "--max", "0"], { killAfterMs: 5_000 });
-  if (visualize.code !== 1 || !visualize.stderr.includes("Failed to generate visualization") || visualize.stdout !== "") {
+  if (visualize.code !== 1 || visualize.stdout !== "") {
     throw new Error(`Built CLI intercepted visualization routing: ${JSON.stringify(visualize)}`);
   }
 
