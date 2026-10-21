@@ -90,7 +90,7 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: Smoke-test packed CLI identities
+      - name: Smoke-test packed CLI and TypeScript consumer identities
         run: npm run smoke:package
 
       - name: Run typecheck

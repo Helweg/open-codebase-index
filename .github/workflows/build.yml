@@ -126,12 +126,6 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: Read package version
-        id: package-version
-        run: |
-          packageVersion=$(node -p "require('./package.json').version")
-          echo "version=${packageVersion}" >> "$GITHUB_OUTPUT"
-
       - name: List native binaries
         run: ls -la native/*.node
 
@@ -164,26 +158,19 @@ jobs:
             fi
           done
 
-      - name: Publish to npm
-        env:
-          PACKAGE_VERSION: ${{ steps.package-version.outputs.version }}
-        run: |
-          for packageName in open-codebase-index opencode-codebase-index; do
-            stagingDir="${RUNNER_TEMP}/package-metadata/${packageName}"
-            node scripts/prepare-package-metadata.mjs \
-              --package-name "${packageName}" \
-              --project-root "${GITHUB_WORKSPACE}" \
-              --output-dir "${stagingDir}" \
-              --repository-url "https://github.com/${GITHUB_REPOSITORY}"
+      - name: Validate both packed package identities
+        run: npm run smoke:package -- --output-dir "${RUNNER_TEMP}/validated-packages"
 
-            if npm view "${packageName}@${PACKAGE_VERSION}" --json >/dev/null 2>&1; then
-              echo "Skipping ${packageName} because version already exists."
-              continue
-            fi
+      - name: Publish exact validated tarballs to npm
+        run: node scripts/publish-validated-packages.mjs "${RUNNER_TEMP}/validated-packages/validated-packages.json"
 
-            cd "${stagingDir}"
-            # Artifacts were built before staging, which intentionally excludes
-            # development dependencies and cannot rerun prepublishOnly.
-            npm publish --ignore-scripts --access public
-            cd "${GITHUB_WORKSPACE}"
-          done
+      - name: Retain package validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: validated-packages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/validated-packages/*.json
+            ${{ runner.temp }}/validated-packages/stage-*/*.tgz
+          if-no-files-found: warn
+          retention-days: 14

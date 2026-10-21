@@ -3,7 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: ["src/index.ts", "src/cli.ts", "src/mcp-worker.ts", "src/cbi.ts", "src/pi-extension.ts", "src/omp-extension.ts"],
   format: ["esm", "cjs"],
-  dts: false,
+  dts: { entry: { index: "src/index.ts" } },
   sourcemap: true,
   clean: true,
   splitting: false,

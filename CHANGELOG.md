@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.37.2] - 2026-10-21
+
+### Fixed
+
+- **Published TypeScript declarations**: Generate the root plugin's declarations from `src/index.ts` and route ESM and CommonJS consumers to their respective `.d.ts` and `.d.cts` contracts, preserving the actual `id`, `setup`, and v1 `server` types. Previous packages declared a root type file without shipping it.
+- **Zero-directory globstar selection**: Match whole `**/` directory segments at any position against zero or more directories. Conventional includes such as `src/**/*.ts` now select direct source files as well as nested files, with the same exclusion precedence and path boundaries.
+
+### Changed
+
+- **Packed release acceptance**: Compile isolated ESM and CommonJS consumers of both package identities with strict TypeScript 5.9.3 and complete declaration checking, alongside the packed runtime and CLI checks. Validate both identities before publication and publish only those retained, SHA512-checked tarball bytes, without restaging unchecked packages.
+
 ## [0.37.1] - 2026-10-20
 
 ### Added
@@ -1044,7 +1055,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...HEAD
+[0.37.2]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...v0.37.2
 [0.37.1]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...v0.37.0
 [0.36.3]: https://github.com/Helweg/open-codebase-index/compare/v0.36.2...v0.36.3

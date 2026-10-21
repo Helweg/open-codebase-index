@@ -4,6 +4,8 @@
 
 The published package includes the MCP server dependencies and native binaries for supported platforms.
 
+Both identities expose the same root plugin object (`id`, `setup`, and the v1 `server` callback). Root declarations are generated from the implementation: ESM imports resolve `dist/index.d.ts`, while CommonJS consumers resolve `dist/index.d.cts` and access the object's `default` export. Packed consumer checks use TypeScript 5.9.3 with strict NodeNext resolution and `skipLibCheck: false`; this is the tested compiler version, not a claimed minimum TypeScript version.
+
 ## OpenCode
 
 Install the package:
@@ -288,9 +290,11 @@ Progress and diagnostics for `index` are written to `stderr`; the final formatte
 
 ## Local source checkout
 
+Development requires Node.js 22.19 or newer within 22.x, 24.11 or newer within 24.x, or 26 or newer. This build-tool requirement does not raise the published Node.js 22.13 runtime floor.
+
 ```bash
 npm ci
-npm run build:ts
+npm run build
 npm run dev:link-mcp
 ```
 

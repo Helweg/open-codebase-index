@@ -319,6 +319,72 @@ describe("files utilities", () => {
   });
 
   describe("collectFiles", () => {
+    it("collects three direct source files with a conventional directory globstar", async () => {
+      const sources = ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"];
+      for (const relativePath of sources) {
+        const filePath = path.join(tempDir, relativePath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, `export function ${path.basename(relativePath, ".ts")}() { return 1; }\n`);
+      }
+
+      const result = await collectFiles(tempDir, ["src/**/*.ts"], [], 1048576);
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        sources.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+    });
+
+    it.each([
+      {
+        include: ["packages/**/src/**/*.ts"],
+        exclude: [],
+        expected: ["packages/app/src/deep/keep.ts", "packages/app/src/direct.ts", "packages/src/direct.ts"],
+      },
+      {
+        include: ["src/**/*.ts"],
+        exclude: ["src/**/excluded/**/*.ts"],
+        expected: ["src/deep/keep.ts", "src/direct.ts", "src/item12.ts", "src/item2.ts"],
+      },
+      {
+        include: ["src/*.ts"],
+        exclude: [],
+        expected: ["src/direct.ts", "src/item12.ts", "src/item2.ts"],
+      },
+      {
+        include: ["src/**/item?.{ts,js}"],
+        exclude: [],
+        expected: ["src/deep/item1.js", "src/item2.ts"],
+      },
+    ])("keeps globstar directory boundaries and exclusion precedence: $include / $exclude", async ({
+      include, exclude, expected,
+    }) => {
+      const sources = [
+        "packages/src/direct.ts",
+        "packages/app/src/direct.ts",
+        "packages/app/src/deep/keep.ts",
+        "packages/application/source/no.ts",
+        "packages-other/src/no.ts",
+        "src/direct.ts",
+        "src/deep/keep.ts",
+        "src/excluded/direct.ts",
+        "src/deep/excluded/nested/no.ts",
+        "src2/no.ts",
+        "other/src/no.ts",
+        "src/deep/item1.js",
+        "src/item2.ts",
+        "src/item12.ts",
+      ];
+      for (const relativePath of sources) {
+        const filePath = path.join(tempDir, relativePath);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, "export const value = 1;\n");
+      }
+
+      const result = await collectFiles(tempDir, include, exclude, 1048576);
+      expect(result.files.map((file) => path.relative(tempDir, file.path)).sort()).toEqual(
+        expected.map((relativePath) => path.normalize(relativePath)).sort(),
+      );
+    });
+
     it("preserves builder and rebuild sources under defaults without admitting generated or ignored directories", async () => {
       const sources = [
         "build.rs",

@@ -219,6 +219,8 @@ Every migration phase should pass this matrix before release:
 - Built CLI smoke tests for ESM and CommonJS.
 - `npm pack --dry-run` and inspection of included files.
 - Clean installation from the produced tarball under both package names.
+- Strict NodeNext ESM (`.mts`) and CommonJS (`.cts`) consumer compilation against each installed tarball, with the actual mode-specific declaration branch and complete local/external type closure checked. Keep consumer installs separate from repository development dependencies.
+- Retained pack manifests and actual tarball SHA512 integrity for both identities before either can publish. Publish those exact validated tarballs after rechecking integrity; do not restage or repack unchecked bytes.
 - Both binary aliases execute the same artifact.
 - Native module loads on macOS ARM64/x64, Linux x64/ARM64, and Windows x64.
 

@@ -345,26 +345,18 @@ export function shouldIncludeFile(
 }
 
 function matchGlob(filePath: string, pattern: string): boolean {
-  if (pattern.startsWith("**/")) {
-    const withoutPrefix = pattern.slice(3);
-    if (withoutPrefix && matchGlob(filePath, withoutPrefix)) {
-      return true;
-    }
-  }
-
   const escapedPattern = pattern.replace(/[.+^$()|[\]\\]/g, "\\$&");
 
-  let regexPattern = escapedPattern
+  const regexPattern = escapedPattern
+    // A whole **/ directory segment also matches zero directories, anywhere.
+    .replace(/(^|\/)\*\*(?=\/)/g, "$1<<<DIRECTORIES>>>")
+    .replace(/<<<DIRECTORIES>>>\//g, "<<<OPTIONAL_DIRECTORIES>>>")
     .replace(/\*\*/g, "<<<DOUBLESTAR>>>")
     .replace(/\*/g, "[^/]*")
     .replace(/<<<DOUBLESTAR>>>/g, ".*")
     .replace(/\?/g, ".")
-    .replace(/\{([^}]+)\}/g, (_, p1) => `(${p1.split(",").join("|")})`);
-
-  // **/*.js → matches both root "file.js" and nested "dir/file.js"
-  if (regexPattern.startsWith(".*/")) {
-    regexPattern = `(.*\\/)?${regexPattern.slice(3)}`;
-  }
+    .replace(/\{([^}]+)\}/g, (_, p1) => `(${p1.split(",").join("|")})`)
+    .replace(/<<<OPTIONAL_DIRECTORIES>>>/g, "(?:[^/]+/)*");
 
   const regex = new RegExp(`^${regexPattern}$`);
   return regex.test(filePath);
