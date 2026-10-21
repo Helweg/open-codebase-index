@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Published TypeScript declarations**: Generate the root plugin's declarations from `src/index.ts` and route ESM and CommonJS consumers to their respective `.d.ts` and `.d.cts` contracts, preserving the actual `id`, `setup`, and v1 `server` types. Previous packages declared a root type file without shipping it.
 - **Zero-directory globstar selection**: Match whole `**/` directory segments at any position against zero or more directories. Conventional includes such as `src/**/*.ts` now select direct source files as well as nested files, with the same exclusion precedence and path boundaries.
+- **Hono security floor**: Raise the qualified Hono override floor to 4.13.11 and resolve 4.13.13, addressing the `serveStatic` double-decoding middleware bypass in [GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7) (CVE-2026-111757). The SDK and peer dependency ranges, other dependency versions, and published Node.js minimum are unchanged.
 
 ### Changed
 
