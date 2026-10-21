@@ -49,7 +49,7 @@ Track override decisions in [#379](https://github.com/Helweg/open-codebase-index
 
 | Selector | Replacement range | Security purpose |
 | --- | --- | --- |
-| `hono@>=4.0.0 <4.13.7` | `^4.13.7` | [GHSA-hxh3-vqpv-xpqv](https://github.com/advisories/GHSA-hxh3-vqpv-xpqv) |
+| `hono@>=4.0.0 <4.13.11` | `^4.13.11` | [GHSA-hxh3-vqpv-xpqv](https://github.com/advisories/GHSA-hxh3-vqpv-xpqv) and [GHSA-5r4p-p66f-jhc7](https://github.com/advisories/GHSA-5r4p-p66f-jhc7) |
 | `ip-address@>=10.0.0 <10.7.1` | `^10.7.1` | [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv) and [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw) |
 | `postcss@>=8.0.0 <8.5.26` | `^8.5.26` | Retain the sourceMappingURL map-file-disclosure floor from commit `5b0cf22`, including earlier PostCSS fixes |
 | `vite@>=8.0.0 <8.0.16` | `^8.0.16` | [GHSA-v6wh-96g9-6wx3](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) and [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) |
