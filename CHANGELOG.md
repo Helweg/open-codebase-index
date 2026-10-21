@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **MCP root help**: Both `open-codebase-index-mcp` and `opencode-codebase-index-mcp` now print useful root usage to stdout and exit successfully for `--help` and `-h`, before loading project configuration or starting the MCP worker, providers, indexing, or watchers. Subcommand routing and no-argument stdio MCP startup are unchanged.
+
 ## [0.37.2] - 2026-10-21
 
 ### Fixed

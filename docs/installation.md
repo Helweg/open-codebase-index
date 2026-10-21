@@ -257,6 +257,8 @@ Example MCP configuration:
 --project <path>  Repository to index. Defaults to the containing Git checkout, or cwd outside Git.
 --config <path>   Explicit configuration file.
 --host <mode>     opencode, codex, claude, pi, or jcode.
+--mcp-idle-timeout <seconds>  Idle engine timeout; 0 disables (default: 900 for codex, 0 otherwise).
+--help, -h        Print root usage to stdout and exit without starting the MCP server.
 ```
 
 Examples:
@@ -268,6 +270,8 @@ open-codebase-index-mcp --host jcode
 ```
 
 Use `--host` when you want the corresponding host's configuration and storage paths. Without it, the CLI uses OpenCode-compatible behavior.
+
+Both `open-codebase-index-mcp --help` and `opencode-codebase-index-mcp -h` show the MCP options and available `index`, `eval`, and `visualize` commands without loading project configuration or starting indexing, providers, or watchers. With no command or help flag, the binary starts the stdio MCP server. Use `index --help` or `eval --help` for their existing command-specific usage.
 
 The same binary also accepts a dedicated indexing mode:
 
