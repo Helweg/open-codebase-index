@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -15,12 +15,13 @@ function runCliCommand(args, {
   actionAfterStdout = null,
   stdinText = null,
   cliPathOverride = null,
+  cwd = process.cwd(),
 } = {}) {
   return new Promise((resolve, reject) => {
     const commandPath = cliPathOverride ?? cliPath;
     const command = [commandPath, ...args];
     const child = spawn(process.execPath, command, {
-      cwd: process.cwd(),
+      cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -58,7 +59,7 @@ function runCliCommand(args, {
 
     if (stdinText !== null) child.stdin.write(stdinText);
 
-    child.once("exit", (code, signal) => {
+    child.once("close", (code, signal) => {
       if (cleanupTimer !== null) {
         clearTimeout(cleanupTimer);
       }
@@ -86,18 +87,22 @@ function withTimeout(promise, timeoutMs, description) {
   });
 }
 
-async function runMcpHandshake(args, { commandPath = cliPath, resume = false } = {}) {
+async function runMcpHandshake(args, { commandPath = cliPath, resume = false, cwd = process.cwd() } = {}) {
   const stderr = [];
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [commandPath, ...args, ...(resume ? ["--mcp-idle-timeout", "1"] : [])],
-    cwd: process.cwd(),
+    cwd,
     stderr: "pipe",
   });
   transport.stderr?.on("data", (chunk) => stderr.push(String(chunk)));
   const client = new Client({ name: "built-cli-smoke", version: "1.0.0" });
   try {
     await withTimeout(client.connect(transport), 5_000, "MCP initialize");
+    const listed = await withTimeout(client.listTools(), 5_000, "MCP tools/list");
+    for (const name of ["index_status", "codebase_context"]) {
+      if (!listed.tools.some((tool) => tool.name === name)) throw new Error(`MCP tools/list missing ${name}`);
+    }
     if (resume) {
       const first = await withTimeout(client.callTool({ name: "index_status", arguments: {} }), 5_000, "MCP status");
       if (first.isError) throw new Error("MCP status failed before idle shutdown.");
@@ -134,6 +139,39 @@ try {
   );
   const projectArgs = ["--host", "codex", "--project", tempDir, "--config", configPath];
 
+  const invalidConfigPath = path.join(tempDir, "invalid.json");
+  writeFileSync(invalidConfigPath, JSON.stringify({ embeddingProvider: "invalid-help-provider" }));
+  // Only the lightweight facade is available: no worker, native addon, or providers.
+  const facadeRoot = path.join(tempDir, "facade-only");
+  mkdirSync(facadeRoot);
+  writeFileSync(path.join(facadeRoot, "package.json"), '{"type":"module"}');
+  for (const extension of ["js", "cjs"]) {
+    const builtPath = path.resolve(path.dirname(cliPath), `cli.${extension}`);
+    const isolatedPath = path.join(facadeRoot, `cli.${extension}`);
+    copyFileSync(builtPath, isolatedPath);
+    for (const commandPath of [builtPath, isolatedPath]) {
+      for (const flag of ["--help", "-h"]) {
+        for (const options of [
+          ["--config", path.join(tempDir, "missing.json"), "--host", "invalid-host", "--mcp-idle-timeout", "invalid"],
+          ["--config", invalidConfigPath, "--host", "codex", "--mcp-idle-timeout", "1"],
+        ]) {
+          const help = await runCliCommand([...options, flag], {
+            cliPathOverride: commandPath, cwd: facadeRoot, killAfterMs: 5_000,
+          });
+          if (help.code !== 0 || help.signal !== null || help.stderr !== ""
+            || !["Usage:", "open-codebase-index-mcp", "opencode-codebase-index-mcp", "--project", "--config",
+              "--host", "--mcp-idle-timeout", "index", "eval", "visualize"].every((text) => help.stdout.includes(text))) {
+            throw new Error(`Root help failed (${commandPath} ${flag}): ${JSON.stringify(help)}`);
+          }
+        }
+      }
+    }
+  }
+
+  mkdirSync(path.join(tempDir, ".opencode"));
+  copyFileSync(configPath, path.join(tempDir, ".opencode", "codebase-index.json"));
+  await runMcpHandshake([], { commandPath: path.resolve(cliPath), cwd: tempDir });
+
   const cbiHelp = await runCliCommand(["--help"], { cliPathOverride: "dist/cbi.js" });
   if (cbiHelp.code !== 0 || !cbiHelp.stdout.includes("Usage: ocbi")) {
     throw new Error(`Built OCBI CLI failed on --help (code=${cbiHelp.code}):\nstdout=${cbiHelp.stdout}\nstderr=${cbiHelp.stderr}`);
@@ -148,6 +186,14 @@ try {
   const indexHelp = await runCliCommand(["index", "--help"]);
   if (indexHelp.code !== 0 || !indexHelp.stderr.includes("Usage:")) {
     throw new Error(`Built ESM CLI failed in index mode:\n${indexHelp.stderr}`);
+  }
+  const evalHelp = await runCliCommand(["eval", "--help"], { killAfterMs: 5_000 });
+  if (evalHelp.code !== 0 || !evalHelp.stdout.includes("eval run")) {
+    throw new Error(`Built CLI failed in eval help mode: ${JSON.stringify(evalHelp)}`);
+  }
+  const visualize = await runCliCommand(["visualize", "--help", "--project", tempDir, "--max", "0"], { killAfterMs: 5_000 });
+  if (visualize.code !== 1 || !visualize.stderr.includes("Failed to generate visualization") || visualize.stdout !== "") {
+    throw new Error(`Built CLI intercepted visualization routing: ${JSON.stringify(visualize)}`);
   }
 
   const cjsModule = require("../dist/index.cjs");
