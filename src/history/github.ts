@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { HistoryError, canonicalRepository } from "./config.js";
+import { projectHistoryResponse } from "./responses.js";
+import type { HistoryRestResponse } from "./responses.js";
 
 const execFileAsync = promisify(execFile);
 export interface GitHubRecord {
@@ -49,7 +51,7 @@ export interface HistoryAccess {
   principalId: string;
 }
 export interface HistoryApi {
-  get(endpoint: string): Promise<unknown>;
+  get(endpoint: string, etag?: string): Promise<HistoryRestResponse>;
   access(): Promise<HistoryAccess>;
   discover(kind: "issues" | "pullRequests", after: string | null): Promise<HistoryDiscoveryPage>;
 }
@@ -72,19 +74,31 @@ function graphQLFailure(value: unknown): GitHubApiError | undefined {
   return new GitHubApiError(denied ? 403 : rateLimited ? 429 : 502, rateLimited);
 }
 
+function restResponse(stdout: string): HistoryRestResponse {
+  const boundary = /\r?\n\r?\n/.exec(stdout);
+  if (!boundary) throw new HistoryError("HISTORY_API", "missing GitHub response headers");
+  const headers = stdout.slice(0, boundary.index);
+  const status = Number(/^HTTP\/\S+\s+(\d{3})/.exec(headers)?.[1]);
+  if (status !== 200 && status !== 304) throw new GitHubApiError(status || 502, status === 429);
+  const etag = /^etag:\s*(.+)$/im.exec(headers)?.[1].trim();
+  if (etag && !/^[\x21-\x7e]{1,1024}$/.test(etag)) throw new HistoryError("HISTORY_API", "invalid GitHub response validator");
+  return { status, etag, value: status === 304 ? undefined : JSON.parse(stdout.slice(boundary.index + boundary[0].length)) as unknown };
+}
+
 export function createGitHubApi(repository: string, cwd: string, signal?: AbortSignal): HistoryApi {
   const canonical = canonicalRepository(repository);
   const [owner, name] = canonical.split("/");
-  const request = async (args: string[]): Promise<unknown> => {
+  const request = async (args: string[], headers = false): Promise<unknown> => {
     try {
       const { stdout } = await execFileAsync("gh", ["api", "--hostname", "github.com", "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28", ...args], {
         cwd, shell: false, timeout: 60_000, maxBuffer: 32 * 1024 * 1024, encoding: "utf8",
         signal,
         env: { ...process.env, GH_HOST: "github.com", GH_PROMPT_DISABLED: "1", GH_DEBUG: undefined },
       });
-      return JSON.parse(stdout) as unknown;
+      return headers ? restResponse(stdout) : JSON.parse(stdout) as unknown;
     } catch (error) {
       // Never forward gh stderr/stdout: these may include private data or credentials.
+      if (error instanceof HistoryError) throw error;
       const failure = error as { stderr?: string; stdout?: string };
       if (args.includes("graphql") && failure.stdout) {
         let parsed: unknown;
@@ -92,10 +106,15 @@ export function createGitHubApi(repository: string, cwd: string, signal?: AbortS
         const classified = graphQLFailure(parsed);
         if (classified) throw classified;
       }
-      if (signal?.aborted) throw new HistoryError("HISTORY_CANCELLED", "manual history sync was cancelled; fetch staging retained");
       const diagnostic = `${failure.stderr ?? ""} ${failure.stdout ?? ""}`;
-      const match = /HTTP (\d{3})/.exec(diagnostic);
-      if (match) throw new GitHubApiError(Number(match[1]), /rate limit|secondary rate|abuse detection/i.test(diagnostic));
+      const status = Number(/^HTTP\/\S+\s+(\d{3})/.exec(failure.stdout ?? "")?.[1] ?? /HTTP (\d{3})/.exec(failure.stderr ?? "")?.[1]);
+      const rateLimited = /rate limit|secondary rate|abuse detection/i.test(diagnostic);
+      // A received known denial dominates a coincident cancellation; body text alone is not an HTTP status.
+      if ([401, 403, 404].includes(status) && !rateLimited) throw new GitHubApiError(status, false);
+      if (signal?.aborted) throw new HistoryError("HISTORY_CANCELLED", "manual history sync was cancelled; fetch staging retained");
+      // gh exits nonzero for a valid conditional response; hydrate it like the successful GET path.
+      if (headers && status === 304 && failure.stdout) return restResponse(failure.stdout);
+      if (status) throw new GitHubApiError(status, rateLimited);
       throw new HistoryError("HISTORY_API", "GitHub read request failed; authentication, transport, or invalid response; sync was not committed");
     }
   };
@@ -112,11 +131,13 @@ export function createGitHubApi(repository: string, cwd: string, signal?: AbortS
       if (!Number.isSafeInteger(repo.databaseId) || !repo.nameWithOwner) throw new HistoryError("HISTORY_API", "invalid repository capability response");
       return { repositoryId: String(repo.databaseId), repositoryName: repo.nameWithOwner, principalId };
     },
-    async get(endpoint) {
+    async get(endpoint, etag) {
       if (!(endpoint === `repos/${canonical}` || endpoint.startsWith(`repos/${canonical}/`)) || !/^repos\/[A-Za-z0-9_./-]+(?:\?[A-Za-z0-9_=&%.-]+)?$/.test(endpoint)) {
         throw new HistoryError("HISTORY_API", "refusing non-repository API endpoint");
       }
-      return request(["--method", "GET", endpoint]);
+      if (etag && !/^[\x21-\x7e]{1,1024}$/.test(etag)) throw new HistoryError("HISTORY_STORAGE", "invalid cached response validator");
+      const response = await request(["--method", "GET", "--include", ...(etag ? ["-H", `If-None-Match: ${etag}`] : []), endpoint], true) as HistoryRestResponse;
+      return response.status === 304 ? response : { ...response, value: projectHistoryResponse(endpoint, response.value) };
     },
     async discover(kind, after) {
       // A fixed GraphQL QUERY over repository connections, never a mutation or search (no search1000 cap).
@@ -148,7 +169,9 @@ export function record(value: unknown): GitHubRecord {
 export async function allPages(api: HistoryApi, endpoint: string, maxItems?: number): Promise<GitHubRecord[]> {
   const records = new Map<string, GitHubRecord>();
   for (let page = 1; ; page++) {
-    const response = await api.get(`${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`);
+    const fetched = await api.get(`${endpoint}${endpoint.includes("?") ? "&" : "?"}per_page=100&page=${page}`);
+    if (fetched.status !== 200) throw new HistoryError("HISTORY_INCOMPLETE", "unresolved conditional pagination response");
+    const response = fetched.value;
     if (!Array.isArray(response)) throw new HistoryError("HISTORY_API", "invalid GitHub pagination response");
     let added = 0;
     for (const item of response) {

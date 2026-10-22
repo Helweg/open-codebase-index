@@ -16,7 +16,7 @@ export function registerMcpHistoryTools(server: McpServer, projectRoot: string, 
   }, (args, extra) => respond(() => runRepositoryHistorySync(args, projectRoot, host, { signal: extra.signal })));
   server.tool(TOOL_NAME.REPOSITORY_HISTORY_SEARCH, "Search LOCAL cached untrusted historical issue/PR evidence, separate from current code. Returns exact source citations/state/timestamps/commit provenance. No network, embeddings, or reranking; current code is authoritative.", {
     query: z.string(), repository, kind: z.enum(["issue", "pull_request"]).optional(), state: z.enum(["open", "closed", "merged", "draft"]).optional(), author: z.string().optional(), limit: z.number().int().min(1).max(100).optional(),
-  }, (args) => respond(() => runRepositoryHistorySearch(args, projectRoot, host)));
+  }, (args, extra) => respond(() => runRepositoryHistorySearch(args, projectRoot, host, { signal: extra.signal })));
   server.tool(TOOL_NAME.REPOSITORY_HISTORY_STATUS, "Show local history opt-in, cached freshness, counts and last sync error without activating a code index/provider. Offline cache does not imply real-time GitHub permissions.", { repository },
     (args) => respond(() => runRepositoryHistoryStatus(args, projectRoot, host)));
   server.tool(TOOL_NAME.REPOSITORY_HISTORY_CLEAR, "Clear ONLY local history and unfinished fetch staging for a source, even if disabled. Does not change code indexes, credentials, or GitHub.", { repository },

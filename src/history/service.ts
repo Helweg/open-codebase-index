@@ -1,22 +1,29 @@
 import { rmSync } from "node:fs";
 import * as path from "node:path";
 import type { RepositoryHistorySource } from "./config.js";
-import { HistoryError, historySince } from "./config.js";
+import { HistoryError } from "./config.js";
 import { allPages, GitHubApiError, record } from "./github.js";
 import type { GitHubRecord, HistoryApi } from "./github.js";
 import { readSnapshot, withHistoryLock, writeSnapshot } from "./storage.js";
-import { openHistoryStage } from "./staging.js";
+import { openHistoryStage, readHistoryStageWindow, retireHistoryStage } from "./staging.js";
 import type { HistoryDocument, HistoryEntity, HistorySnapshot } from "./types.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import { throwIfOperationAborted } from "../utils/operation-control.js";
-import { normalizeHistoryLexicalText } from "./lexical.js";
+import { HISTORY_LEXICAL_VERSION } from "./lexical.js";
+import { updateHistoryLexical } from "./lexical-index.js";
+import { checkpointHistoryWork } from "./work.js";
+import { effectiveHistoryWindow } from "./window.js";
+import { HISTORY_HTTP_CACHE_VERSION } from "./responses.js";
 
 function document(item: GitHubRecord, kind: HistoryDocument["documentKind"], url: string): HistoryDocument {
   const createdAt = item.created_at ?? item.submitted_at;
-  const updatedAt = item.updated_at ?? createdAt;
-  if (!Number.isFinite(Date.parse(createdAt)) || !Number.isFinite(Date.parse(updatedAt))) throw new HistoryError("HISTORY_API", "missing discussion timestamp");
-  return { id: `${kind}:${item.id}`, documentKind: kind, documentUrl: url, body: String(item.body ?? ""),
-    author: String(item.user?.login ?? "[deleted]"), createdAt, updatedAt, reviewState: kind === "review" ? item.state : undefined };
+  const updatedAt = item.updated_at ?? null;
+  const id = item.id ?? item.node_id;
+  if (id === undefined || !Number.isFinite(Date.parse(createdAt)) || updatedAt !== null && !Number.isFinite(Date.parse(updatedAt))) throw new HistoryError("HISTORY_API", "missing discussion identity or timestamp");
+  return { id: `${kind}:${id}`, documentKind: kind, documentUrl: url, body: String(item.body ?? ""),
+    author: String(item.user?.login ?? "[deleted]"), createdAt, updatedAt,
+    timestampProvenance: { createdAt: item.created_at ? "created_at" : "submitted_at", updatedAt: updatedAt === null ? "unavailable" : "updated_at" },
+    reviewState: kind === "review" ? item.state : undefined };
 }
 
 async function fetchEntity(api: HistoryApi, repository: string, issue: GitHubRecord, canonicalName: string): Promise<HistoryEntity> {
@@ -24,7 +31,7 @@ async function fetchEntity(api: HistoryApi, repository: string, issue: GitHubRec
   if (!Number.isSafeInteger(number) || number < 1 || typeof issue.title !== "string") throw new HistoryError("HISTORY_API", "invalid issue response");
   const base = `repos/${repository}`;
   const isPr = Boolean(issue.pull_request);
-  const pr = isPr ? record(await api.get(`${base}/pulls/${number}`)) : undefined;
+  const pr = isPr ? record((await api.get(`${base}/pulls/${number}`)).value) : undefined;
   const url = `https://github.com/${canonicalName}/${isPr ? "pull" : "issues"}/${number}`;
   const documents = [document(issue, "body", url)];
   for (const item of await allPages(api, `${base}/issues/${number}/comments`)) documents.push(document(item, "comment", `${url}#issuecomment-${item.id}`));
@@ -87,44 +94,40 @@ function repositoryIdentity(repo: GitHubRecord): string {
 
 export async function syncHistory(source: RepositoryHistorySource, directory: string, api: HistoryApi, since?: string, control?: OperationControl): Promise<HistorySnapshot & { syncedEntities: number; removedEntities: number; complete: true }> {
   return withHistoryLock(directory, "index", async (lease) => {
+    retireHistoryStage(directory);
     const old = readSnapshot(directory, source.repository);
-    if (old?.lastSyncedAt && since !== undefined) throw new HistoryError("HISTORY_CONFIG", "since only applies to the initial sync; clear before changing the window");
-    if (old && since !== undefined && historySince(since) !== old.initialSince) throw new HistoryError("HISTORY_CONFIG", "clear before changing the initial window");
-    const initialSince = old ? old.initialSince : historySince(since) ?? source.initialSince;
-    const snapshot: HistorySnapshot = old ?? { version: 1, repository: source.repository, status: "error", initialSince, maxNumber: 0, entities: [], lexical: "" };
+    const initialSince = effectiveHistoryWindow(source, old ?? readHistoryStageWindow(directory), since);
+    const configuredInitialSince = source.initialSince ?? null;
+    const snapshot: HistorySnapshot = old ?? { version: 2, repository: source.repository, status: "error", initialSince, configuredInitialSince, maxNumber: 0, entities: [], lexical: "", lexicalVersion: HISTORY_LEXICAL_VERSION };
+    let committed = false;
     try {
       throwIfOperationAborted(control?.signal);
-      // Always fresh, bypassing resumable response checkpoints; no known-revoked private cache is served.
-      const repo = record(await api.get(`repos/${source.repository}`));
+      const repo = record((await api.get(`repos/${source.repository}`)).value);
       if (String(repo.full_name).toLowerCase() !== source.repository) throw new HistoryError("HISTORY_INACCESSIBLE", "repository renamed/transferred; cached source is blocked until explicitly reconfigured");
       const repositoryId = repositoryIdentity(repo);
       if (old?.repositoryId && old.repositoryId !== repositoryId) throw new HistoryError("HISTORY_INACCESSIBLE", "repository identity changed; old cached evidence was blocked");
       const access = await api.access();
       if (access.repositoryId !== repositoryId || access.repositoryName.toLowerCase() !== source.repository) throw new HistoryError("HISTORY_INACCESSIBLE", "fresh repository capability identity differs");
       if (old?.principalId && old.principalId !== access.principalId) throw new HistoryError("HISTORY_INACCESSIBLE", "public authentication principal changed; old cached evidence was blocked");
-      snapshot.repositoryId = repositoryId;
-      snapshot.principalId = access.principalId;
-      const stage = openHistoryStage(directory, api, lease, repositoryId, access.principalId, initialSince);
+      const stage = openHistoryStage(directory, api, lease, repositoryId, access.principalId, initialSince, configuredInitialSince, old);
       const entities = new Map<number, HistoryEntity>();
       let maxNumber = 0;
-      // Full cursor discovery every successful manual cycle handles imports, deletion, and nonmonotonic createdAt.
-      // GitHub pages are not a global remote transaction; a later sweep reconciles concurrent remote changes.
+      // Complete discovery and per-page revalidation reconcile imports/deletions without parent timestamp assumptions.
       for (const kind of ["issues", "pullRequests"] as const) {
         let after: string | null = null;
         const cursors = new Set<string>();
         do {
-          throwIfOperationAborted(control?.signal);
-          await control?.heartbeat?.();
+          await checkpointHistoryWork(control);
           const page = await stage.api.discover(kind, after);
           for (const node of page.nodes) {
             throwIfOperationAborted(control?.signal);
             maxNumber = Math.max(maxNumber, node.number);
             if (initialSince && Date.parse(node.createdAt) < Date.parse(initialSince)) continue;
             try {
-              const issue = record(await stage.api.get(`repos/${source.repository}/issues/${node.number}`));
+              const issue = record((await stage.api.get(`repos/${source.repository}/issues/${node.number}`)).value);
               entities.set(node.number, await fetchEntity(stage.api, source.repository, issue, String(repo.full_name)));
             } catch (error) {
-              if (error instanceof GitHubApiError && error.status === 404) continue; // deleted or individually inaccessible
+              if (error instanceof GitHubApiError && error.status === 404) continue;
               throw error;
             }
           }
@@ -134,52 +137,36 @@ export async function syncHistory(source: RepositoryHistorySource, directory: st
           after = page.endCursor;
         } while (after !== null);
       }
-      // Every cached entity/discussion is replaced or removed; updatedAt is never used to infer deletion.
-      throwIfOperationAborted(control?.signal);
-      const finalRepo = record(await api.get(`repos/${source.repository}`));
-      if (repositoryIdentity(finalRepo) !== repositoryId || String(finalRepo.full_name).toLowerCase() !== source.repository) {
-        throw new HistoryError("HISTORY_INACCESSIBLE", "repository identity/access changed while fetching history");
-      }
-      const finalAccess = await api.access();
-      if (finalAccess.repositoryId !== repositoryId || finalAccess.repositoryName.toLowerCase() !== source.repository || finalAccess.principalId !== access.principalId) {
-        throw new HistoryError("HISTORY_INACCESSIBLE", "repository capability or public auth principal changed during fetching");
-      }
-      // Lazy native loading keeps disabled/status/clear usable without a native code runtime.
-      const { InvertedIndex } = await import("../native/inverted-index.js");
-      const lexical = new InvertedIndex(directory);
-      if (old?.lexical) lexical.deserialize(old.lexical);
       const ordered = [...entities.values()].sort((a, b) => a.number - b.number);
-      const previousContent = new Map<string, string>();
-      const nextContent = new Map<string, string>();
-      for (const [collection, content] of [[old?.entities ?? [], previousContent], [ordered, nextContent]] as const) {
-        for (const entity of collection) for (const doc of entity.documents) {
-          const references = doc.documentKind === "body" ? `\n${entity.files.join("\n")}\n${entity.commits.join(" ")}` : "";
-          content.set(`${entity.number}:${doc.id}`, normalizeHistoryLexicalText(`${source.repository} #${entity.number} ${entity.url}\n${entity.title}\n${doc.body}${references}`));
+      const lexical = await updateHistoryLexical(old, source.repository, ordered, directory, control);
+      const next: HistorySnapshot = { version: 2, repository: source.repository, repositoryId, principalId: access.principalId, status: "ready", initialSince, configuredInitialSince, maxNumber,
+        cursor: stage.startedAt, syncGeneration: stage.generation, lastSyncedAt: new Date().toISOString(), entities: ordered, lexical, lexicalVersion: HISTORY_LEXICAL_VERSION, httpCacheVersion: HISTORY_HTTP_CACHE_VERSION, httpCache: stage.cache(ordered) };
+      await writeSnapshot(directory, next, lease, control, async () => {
+        // Capability proofs are fresh AFTER expensive preparation, never replayed from staging/cache.
+        const finalRepo = record((await api.get(`repos/${source.repository}`)).value);
+        if (repositoryIdentity(finalRepo) !== repositoryId || String(finalRepo.full_name).toLowerCase() !== source.repository) {
+          throw new HistoryError("HISTORY_INACCESSIBLE", "repository identity/access changed while fetching history");
         }
-      }
-      for (const id of previousContent.keys()) if (!nextContent.has(id)) lexical.removeChunk(id);
-      for (const [id, content] of nextContent) {
-        throwIfOperationAborted(control?.signal);
-        if (previousContent.get(id) === content && old?.lexical) continue;
-        if (previousContent.has(id)) lexical.removeChunk(id);
-        lexical.addChunk(id, content);
-      }
-      const next: HistorySnapshot = { version: 1, repository: source.repository, repositoryId, principalId: access.principalId, status: "ready", initialSince, maxNumber,
-        cursor: stage.startedAt, lastSyncedAt: new Date().toISOString(), entities: ordered, lexical: lexical.serialize() };
-      throwIfOperationAborted(control?.signal);
-      writeSnapshot(directory, next, lease);
-      stage.clear();
+        const finalAccess = await api.access();
+        if (finalAccess.repositoryId !== repositoryId || finalAccess.repositoryName.toLowerCase() !== source.repository || finalAccess.principalId !== access.principalId) {
+          throw new HistoryError("HISTORY_INACCESSIBLE", "repository capability or public auth principal changed during fetching");
+        }
+      });
+      committed = true;
+      try { stage.clear(); }
+      catch { throw new HistoryError("HISTORY_STORAGE", "history was committed, but fetch-staging cleanup failed; a later sync will retire that committed stage"); }
       return { ...next, syncedEntities: ordered.length, removedEntities: (old?.entities ?? []).filter((entity) => !entities.has(entity.number)).length, complete: true };
     } catch (error) {
+      if (committed) throw error;
       const inaccessible = error instanceof GitHubApiError && !error.rateLimited && [401, 403, 404].includes(error.status)
         || error instanceof HistoryError && error.code === "HISTORY_INACCESSIBLE";
-      const failure = error instanceof HistoryError ? error : control?.signal?.aborted
-        ? new HistoryError("HISTORY_CANCELLED", "manual history sync was cancelled; fetch staging retained")
-        : new HistoryError("HISTORY_SYNC", "history sync failed; previous cursor was not advanced");
-      // Incomplete/corrupt remote traversal must be restarted explicitly on the next manual request.
+      if (!inaccessible && (control?.signal?.aborted || error instanceof HistoryError && error.code === "HISTORY_CANCELLED")) {
+        throw new HistoryError("HISTORY_CANCELLED", "manual history sync was cancelled before commit; published snapshot unchanged and fetch staging retained");
+      }
+      const failure = error instanceof HistoryError ? error : new HistoryError("HISTORY_SYNC", "history sync failed; previous cursor was not advanced");
       if (inaccessible || failure.code === "HISTORY_INCOMPLETE") rmSync(path.join(directory, "fetch-staging"), { recursive: true, force: true });
-      writeSnapshot(directory, { ...snapshot, status: inaccessible ? "inaccessible" : "error", lastError: failure.message,
-        ...(inaccessible ? { repositoryId: undefined, principalId: undefined, entities: [], lexical: "", maxNumber: 0, lastSyncedAt: undefined } : {}) }, lease);
+      await writeSnapshot(directory, { ...snapshot, status: inaccessible ? "inaccessible" : "error", lastError: failure.message,
+        ...(inaccessible ? { repositoryId: undefined, principalId: undefined, entities: [], lexical: "", httpCache: {}, maxNumber: 0, lastSyncedAt: undefined } : {}) }, lease);
       throw failure;
     }
   });

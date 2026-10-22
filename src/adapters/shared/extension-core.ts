@@ -537,8 +537,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
       state: schema.Optional(schema.Union([schema.Literal("open"), schema.Literal("closed"), schema.Literal("merged"), schema.Literal("draft")])),
       author: schema.Optional(schema.String()), limit: schema.Optional(schema.Integer({ minimum: 1, maximum: 100 })),
     }),
-    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-      const result = await runRepositoryHistorySearch(params, projectRoot(ctx), HOST);
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const result = await runRepositoryHistorySearch(params, projectRoot(ctx), HOST, { signal });
       return text(JSON.stringify(result, null, 2), result);
     },
   });

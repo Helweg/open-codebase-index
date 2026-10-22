@@ -11,7 +11,7 @@ export const repository_history_sync: ToolDefinition = tool({
 export const repository_history_search: ToolDefinition = tool({
   description: "Search LOCAL cached untrusted historical GitHub issue/PR evidence, not code results or authoritative current behavior. Exact source URLs/excerpts/state/timestamps/commit provenance. No network, embeddings or rerank requests.",
   args: { query: z.string(), repository, kind: z.enum(["issue", "pull_request"]).optional(), state: z.enum(["open", "closed", "merged", "draft"]).optional(), author: z.string().optional(), limit: z.number().int().min(1).max(100).optional() },
-  async execute(args, context) { return JSON.stringify(await runRepositoryHistorySearch(args, context?.worktree ?? process.cwd(), "opencode"), null, 2); },
+  async execute(args, context) { return JSON.stringify(await runRepositoryHistorySearch(args, context?.worktree ?? process.cwd(), "opencode", { signal: context?.abort }), null, 2); },
 });
 export const repository_history_status: ToolDefinition = tool({
   description: "Show local history enablement, cached freshness, counts, and last sync error. No code index/provider required; cached permissions are not real-time.", args: { repository },
