@@ -395,6 +395,22 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 - `includeExcluded` patterns are evaluated relative to each additional knowledge-base root too. Project `includeIgnored` patterns do not bypass a knowledge base's Git-ignore rules.
 - Use narrow patterns: opting in broad excluded trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
 
+## Private GitHub history
+
+`repositoryHistory.repositories` is a **project-local only** source list. Each source requires `repository: "owner/repo"` (GitHub.com only) and explicit `enabled: true`; `initialSince` optionally bounds initial **created-at** history. Omit it to include all history. History configuration is independent of embedding/code-index configuration and is not inherited from global settings or another worktree.
+
+```json
+{
+  "repositoryHistory": {
+    "repositories": [
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" }
+    ]
+  }
+}
+```
+
+Use `ocbi history sync` manually, then local `history search`, `status`, and `clear` (pass the appropriate `--project`/`--host`). The four matching `repository_history_*` tools are available across hosts. `open-codebase-index-mcp --history-only --project /path --host codex` serves history without the code/native/provider runtime. No history embedding/reranker requests occur. Full API reconciliation may be expensive but is resumable across explicit syncs; incremental BM25 updates reuse unchanged documents. Clear before changing a stored initial window. Disabled sync/search never access the API or expose cached bodies; clear removes both published and staged history even when disabled. See [history privacy, permissions, freshness, and lifecycle](tools.md#private-github-repository-history).
+
 ## Knowledge bases
 
 Index additional directories alongside the project:

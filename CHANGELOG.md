@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Private GitHub repository history**: Add manually synchronized, project-opt-in local issue and pull-request history with cited local search, status, and explicit cache clearing across supported tool hosts and CLI surfaces.
+
 ### Changed
 
 - **Inert override cleanup** (Refs #379): Remove the obsolete tsup 8.x scoped esbuild override after equal fresh resolutions with and without it. tsup 9 already declares patched esbuild `^0.28.2`; the checked-in lockfile, retained security floors, bundler version, and published Node.js `22.13.0` minimum are unchanged. This is configuration cleanup, not new security remediation.

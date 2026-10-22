@@ -8,21 +8,10 @@ import { parseHostMode } from "../config/host.js";
 import { loadConfigFile } from "../config/merger.js";
 import { parseConfig } from "../config/schema.js";
 import { resolveDefaultProjectRoot } from "../git/index.js";
-import {
-  executeCallGraph,
-  executeImplementationLookup,
-  executeIndexStatus,
-} from "../tools/execute-common.js";
-import { initializeTools } from "../tools/operation-runtime.js";
-import { searchCodebase } from "../tools/operations.js";
-import { formatSearchResults } from "../tools/utils.js";
-import {
-  formatWorkspaceStatus,
-  getWorkspaceStatus,
-  parseWorkspaceRepoSpecs,
-  type WorkspaceStatusResult,
-} from "../tools/workspace-status.js";
-import { handleIndexCommand, redactSensitiveText } from "./mcp/cli.js";
+import type { WorkspaceStatusResult } from "../tools/workspace-status.js";
+import type { handleIndexCommand } from "./mcp/cli.js";
+import { redactSensitiveText } from "../utils/redact.js";
+import { runHistoryCli } from "./history-cli.js";
 
 type TextSink = (text: string) => void;
 type Result = { text: string; isError?: boolean };
@@ -67,6 +56,7 @@ Commands:
   graph <callers|callees> <symbol> Inspect direct call-graph edges
   workspace status --repo NAME=PATH [--repo NAME=PATH ...] [--host <mode>] [--json]
                                   Show bounded multi-repository readiness
+  history <sync|search|status|clear> Local-only opt-in GitHub issue/PR evidence
 
 Global options:
   --project <path>  Project root, default: containing Git checkout or current directory
@@ -151,10 +141,15 @@ async function initializeFromConfig(args: CbiCommandArgs, deps: CbiDeps): Promis
   if (!args.config) return;
   const rawConfig = (deps.readConfigFile ?? loadConfigFile)(args.config);
   if (rawConfig === null) throw new Error(`Config file not found: ${args.config}`);
+  // Native code runtime is only loaded for an explicit code command, never history/status/clear.
+  const { initializeTools } = await import("../tools/operation-runtime.js");
   (deps.initializeRuntimeForConfig ?? initializeTools)(args.project, parseConfig(rawConfig), args.host);
 }
 
 const defaultSearch = async (projectRoot: string | undefined, host: HostMode, query: string, limit: number): Promise<Result> => {
+  // Search is a code-only execution boundary; history never imports the code runtime.
+  const { searchCodebase } = await import("../tools/operations.js");
+  const { formatSearchResults } = await import("../tools/utils.js");
   const results = await searchCodebase(projectRoot, host, query, { limit });
   return results.length === 0
     ? { text: "No matching code found. Try a different query or run `ocbi index` first." }
@@ -172,6 +167,7 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
   const stdout = deps.printStdout ?? ((text) => console.log(text));
   const stderr = deps.printStderr ?? ((text) => console.error(redactSensitiveText(text)));
   const command = argv[2];
+  if (command === "history") return runHistoryCli(argv.slice(3), cwd, { printStdout: stdout, printStderr: stderr });
 
   if (!command || command === "help" || command === "--help" || command === "-h") {
     printUsage(stdout);
@@ -185,6 +181,10 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
   }
 
   try {
+    // Keep the public CLI facade native-free until a code command actually executes.
+    const { executeCallGraph, executeImplementationLookup, executeIndexStatus } = await import("../tools/execute-common.js");
+    const { formatWorkspaceStatus, getWorkspaceStatus, parseWorkspaceRepoSpecs } = await import("../tools/workspace-status.js");
+    const { handleIndexCommand } = await import("./mcp/cli.js");
     if (command === "workspace") {
       const args = argv.slice(3);
       if (args[0] !== "status") throw new Error("workspace requires the status subcommand.");

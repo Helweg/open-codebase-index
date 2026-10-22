@@ -1,3 +1,4 @@
+import { redactSensitiveText } from "../../utils/redact.js";
 import { parseArgs, loadCliRawConfig } from "./cli-options.js";
 export { parseArgs, loadCliRawConfig, isCliEntrypoint } from "./cli-options.js";
 export type { CliArgs } from "./cli-options.js";
@@ -411,12 +412,6 @@ function isSensitiveKey(key: string): boolean {
   return /(?:api[-_]?key|token|password|secret|authorization)/i.test(key);
 }
 
-export function redactSensitiveText(text: string): string {
-  return text.replace(
-    /((?:api[-_]?key|token|password|secret|authorization)\s*[=:]\s*)([^\s,;]+)/gi,
-    "$1[REDACTED]",
-  );
-}
 
 export async function handleIndexCommand(
   argv: string[],

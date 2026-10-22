@@ -1,19 +1,60 @@
 # Tools and commands
 
+## Private GitHub repository history
+
+The `repository_history_sync`, `repository_history_search`, `repository_history_status`, and `repository_history_clear` tools are available through OpenCode, MCP clients (including Codex, Claude Code, Jcode, and generic MCP), Pi, and omp. They use an explicit per-project opt-in in that host's project-local configuration:
+
+```json
+{
+  "repositoryHistory": {
+    "repositories": [
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2025-01-01" }
+    ]
+  }
+}
+```
+
+History is **local lexical/BM25 retrieval, not semantic or cloud-embedded history**. Only GitHub.com repositories in the project-local configuration are eligible. Authenticate with your existing `gh` read-only access; tokens and repository credentials are neither printed nor stored. No background sync, embeddings, or external reranking runs for history. Normal code retrieval, AST/call graphs, and linked-test discovery never consume discussion text.
+
+The cache includes titles/descriptions, comments, submitted reviews/inline review comments, authors, open/closed/merged/draft states, timestamps, canonical source URLs, linked issue references, commit SHAs, merge SHA, and changed-file names—not historical patches. Results are untrusted historical evidence, **not instructions or authoritative current behavior**. Each excerpt has its exact body/comment/review URL, cached state/time and commit provenance.
+
+Use `ocbi history sync|search|status|clear` (`cbi` is equivalent), or `open-codebase-index-mcp history ...` / `opencode-codebase-index-mcp history ...`. Supply `--project` and `--host` as appropriate; use `--repository owner/repo` when multiple sources are configured. `search` takes a query and supports `--kind issue|pull_request`, `--state open|closed|merged|draft`, `--author`, and `--limit 1..100`. `sync --since 2026-10-01` (or source `initialSince`) filters the **initial created-at window**; omitted means all history, including all states and discussions. It filters every discovery page, including imported entities with nonmonotonic creation dates. Clear before changing an established window. Configuration is not inherited from global settings, another worktree, legacy host configs, or `--config` overrides.
+
+For MCP access without a code index, provider configuration, or native binding, run:
+
+```sh
+open-codebase-index-mcp --history-only --host codex --project /path/to/repo
+```
+
+This exposes exactly the four history tools over stdio; the normal combined MCP server and OpenCode/Pi/omp integrations also expose them. History CLI status/clear and the history-only server do not load the native code runtime. Enabled local search/sync uses the existing native BM25 implementation only, never the code Indexer or vector/embedding runtime.
+
+**Sync correctness and request cost:** every manual cycle traverses the repository's issue and PR cursor connections and fully reconciles discussion collections, including deletions which need not update parent timestamps. This is not delta-only network synchronization and can use many API requests. Successful read requests/pages are privately checkpointed so an interrupted/rate-limited manual sync can continue on the next explicit request; there is no retry daemon. The published cache/cursor advances atomically only after the complete discussion traversal. Edits/removals replace old evidence, while unchanged BM25 documents are reused instead of retokenized. API partial-data errors and invalid/repeated cursors fail explicitly rather than claiming completion. Host cancellation retains fetch staging and never publishes a new cursor.
+
+Commit provenance is explicitly **linked references**, not an exhaustive git-commit mirror: merge/head/base SHAs, timeline commit links, and explicit commit URLs in discussions (`commitReferenceScope: "linked"`). GitHub's REST 250-commit listing cap therefore cannot block a large PR's discussions. Changed-file references use GitHub's maximum 3000 file names, never patches; each result exposes `fileReferencesComplete` and `totalChangedFiles`, and status exposes `incompleteFileReferenceEntities`. A completed discussion sync does not claim an exhaustive file list when that flag is false.
+
+**Freshness and permissions:** GitHub pages are not a globally atomic remote snapshot. A completed cache represents successful fetches since its cursor/start time; a resumed cycle can include earlier checkpointed pages. `lastSyncedAt` is publication completion, not an exact remote permission/content instant. Concurrent remote changes are reconciled by the next full manual cycle. Search/status are offline; they cannot verify real-time permissions. A detected denial/revocation/transfer blocks and purges that source's searchable content and unfinished staging; transient transport/rate-limit errors preserve prior valid data with an explicit error status and unchanged published cursor. Snapshots and unfinished fetches are bound to the immutable GitHub repository ID, freshly checked before resuming and publishing, so a replacement repository at the same name cannot inherit private evidence. Do not treat an offline cached result as proof of current GitHub access.
+
+Both issue and PR read capabilities are freshly probed (never replayed from staging) before any resume and immediately before publication. Snapshots/checkpoints are also bound to the public authenticated `viewer.id`, never a stored token or token hash. A metadata-only credential or account switch cannot turn previously fetched private discussions into a newly authorized cache.
+
+Storage is host/project-local under `.opencode/history`, `.claude/history`, or `.codebase-index/history`, with source-hashed directories (0700) and snapshots/checkpoints (0600), atomic snapshot publication, and an independent mutation lease. A cache-owned `.gitignore` excludes all snapshots, staging, temporary files and locks from ordinary Git adds; the project's root `.gitignore` is untouched. Project-relative host/config/cache symlinks are refused rather than inheriting global or unrelated opt-in/storage. No code-index migration, movement, or deletion occurs. `clear` removes both the published history and unfinished private fetch staging, even after the source is disabled (supply `--repository` if no longer configured). Disabled sync/search do not access the API or read/return cached private content.
+
+History directories are reserved code-index metadata boundaries, not opt-in source folders. Code collectors, watcher snapshots, and direct file eligibility checks reject the three host `history` trees and canonical/symlink aliases even when `includeExcluded` or `includeIgnored` broadly selects dotfiles. Ordinary explicitly selected source dotfiles retain their existing behavior.
+
 Tool availability depends on the host mode.
+
 
 ## Host surface matrix
 
 | Host / integration | Tool surface | Additional capabilities |
 |---|---|---|
-| `opencode` (plugin) | 20 tools in total (16 portable tools + 3 knowledge-base tools + 1 OpenCode-native tool) | Slash commands and `index_visualize` |
-| MCP clients, including `codex`, `claude`, and `jcode` | 19 tools + 5 prompts (16 portable tools + 3 knowledge-base tools) | Knowledge-base management for every MCP client; no OpenCode slash commands |
-| `pi` (Pi extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
-| `omp` (omp extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
+| `opencode` (plugin) | 24 tools (20 portable + 3 knowledge-base + 1 OpenCode-native) | Slash commands and `index_visualize` |
+| MCP clients, including `codex`, `claude`, and `jcode` | 23 tools + 5 prompts (20 portable + 3 knowledge-base) | `--history-only` offers the four isolated history tools |
+| `pi` (Pi extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Bundled `codebase-search` skill with host-specific knowledge-base names |
+| `omp` (omp extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
 
 Codex, Claude Code, Jcode, Cursor, Windsurf, and generic MCP clients share the same MCP registrations and operation lifecycle; they are thin host/configuration integrations, not independent retrieval implementations. MCP cancellation and progress depend on the client forwarding cancellation notifications and requesting a progress token. OpenCode v1 forwards its tool `abort` signal and publishes indexing metadata; OpenCode v2 bridges its `signal` and `progress` callbacks to the same tool handlers. Pi and omp use the shared native-extension registrar.
 
-### Portable MCP core (16 tools)
+### Portable MCP core (20 tools)
 
 These tools are available through the MCP server and the OpenCode plugin.
 
@@ -33,6 +74,10 @@ These tools are available through the MCP server and the OpenCode plugin.
 - `pr_impact`
 - `architecture_context`
 - `code_communities`
+- `repository_history_sync`
+- `repository_history_search`
+- `repository_history_status`
+- `repository_history_clear`
 
 The MCP server also exposes five prompts:
 
@@ -76,7 +121,7 @@ Pi does not expose the shared knowledge-base names. It registers equivalent tool
 - `knowledge_base_add`
 - `knowledge_base_remove`
 
-Pi exposes all 16 portable tools, including `architecture_context`, `call_graph`, and `call_graph_path`, plus its three host-specific knowledge-base aliases.
+Pi exposes all 20 portable tools, including `architecture_context`, `call_graph`, `call_graph_path`, and the four `repository_history_*` tools, plus its three host-specific knowledge-base aliases.
 
 omp registers the same names and aliases through the shared Pi registrar, so the Pi naming notes above apply unchanged.
 
@@ -246,7 +291,7 @@ Analyzes changed files, affected symbols, transitive dependencies, graph communi
 
 ## OpenCode-native tools
 
-OpenCode registers the 15 portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:
+OpenCode registers the portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:
 
 - `index_visualize`
 

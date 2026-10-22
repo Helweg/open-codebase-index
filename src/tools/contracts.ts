@@ -129,3 +129,33 @@ export const CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD = 5;
 export const CODE_COMMUNITIES_MIN_COUPLING = 1;
 export const CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT = 20;
 export const CODE_COMMUNITIES_MAX_COUPLING_LIMIT = 100;
+
+export interface SharedRepositoryHistorySyncArgs {
+  repository?: string;
+  since?: string;
+}
+
+export interface SharedRepositoryHistorySearchArgs {
+  query: string;
+  repository?: string;
+  kind?: "issue" | "pull_request";
+  state?: "open" | "closed" | "merged" | "draft";
+  author?: string;
+  limit?: number;
+}
+
+export interface SharedRepositoryHistoryStatusArgs {
+  repository?: string;
+}
+
+export interface SharedRepositoryHistoryClearArgs {
+  repository?: string;
+}
+
+export type {
+  RepositoryHistoryStatusResult,
+  RepositoryHistorySyncResult,
+  RepositoryHistorySearchResult,
+  RepositoryHistorySearchHit,
+  RepositoryHistoryClearResult,
+} from "../history/types.js";

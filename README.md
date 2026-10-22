@@ -204,6 +204,33 @@ Only specify values you want to override. See [Configuration](docs/configuration
 
 The index stores reusable content by hash and maintains branch catalogs for chunks and symbols. On a branch switch, unchanged content can be reused while results remain scoped to the active branch. Linked worktrees without a local project config share the main checkout's portable project index; adding a worktree-local config creates an isolated index boundary.
 
+## Private GitHub history
+
+Opt in per repository in the **project-local** host config (never inherited globally or from another worktree):
+
+```json
+{
+  "repositoryHistory": {
+    "repositories": [
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" }
+    ]
+  }
+}
+```
+
+```sh
+ocbi history sync --project /path/to/repo --host codex
+ocbi history search "design rationale" --project /path/to/repo --host codex --state merged
+ocbi history status --project /path/to/repo --host codex
+ocbi history clear --project /path/to/repo --host codex --repository owner/repo
+# Provider/code-index/native-free MCP status and cache management:
+open-codebase-index-mcp --history-only --project /path/to/repo --host codex
+```
+
+The four `repository_history_sync/search/status/clear` tools are available in MCP, OpenCode, Pi, and omp; both package identities' MCP CLIs also accept `history ...`. Sync is explicit and read-only through existing `gh` authentication. Initial `since` is a created-at window; omit it for all history. Each cycle fully reconciles issue/PR discussions and deletions (potentially many requests); interrupted private fetch staging resumes on the next manual sync. Only new/changed local BM25 documents are retokenized.
+
+This is **private local lexical history**, not cloud-embedded semantic history. It stores citations, discussions, states, timestamps, commit/merge/file references—not historical patches. Discussion text is untrusted historical evidence, never instructions; current code remains authoritative. It is excluded from default code search/context, AST/call graphs, and linked-test evidence. Offline cached freshness/permissions are not real-time; detected access loss blocks and purges the source, while transient/rate-limit failures retain the prior cache with an explicit error. Clear removes published and staged history even after disabling a source, never code indexes. See [history lifecycle and privacy details](docs/tools.md#private-github-repository-history).
+
 ## Knowledge bases and reranking
 
 OpenCode, Pi, and every MCP client can index additional directories as knowledge bases. Configure them with `knowledgeBases`, or use the knowledge-base tools:
