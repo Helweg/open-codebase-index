@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-10-22
+
 ### Added
 
 - **Private GitHub repository history**: Add manually synchronized, project-opt-in local issue and pull-request history with cited local search, status, and explicit cache clearing across supported tool hosts and CLI surfaces.
@@ -1074,7 +1076,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...v0.38.0
 [0.37.2]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...v0.37.2
 [0.37.1]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...v0.37.1
 [0.37.0]: https://github.com/Helweg/open-codebase-index/compare/v0.36.3...v0.37.0
