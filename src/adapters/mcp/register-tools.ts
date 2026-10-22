@@ -1,3 +1,4 @@
+import { registerMcpHistoryTools } from "./history-tools.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ShapeOutput, ZodRawShapeCompat } from "@modelcontextprotocol/sdk/server/zod-compat.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
@@ -436,6 +437,7 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
     },
   );
 
+  registerMcpHistoryTools(server, runtime.projectRoot, runtime.host);
   registerMcpTool(server, runtime,
     TOOL_NAME.ADD_KNOWLEDGE_BASE,
     "Add a folder as a knowledge base to the semantic search index. The folder is indexed "

@@ -22,6 +22,7 @@ import {
   isValidScope,
 } from "./validators.js";
 
+import { parseRepositoryHistoryConfig, type RepositoryHistoryConfig } from "../history/config.js";
 export { isValidModel } from "./validators.js";
 
 export type IndexScope = "project" | "global";
@@ -238,6 +239,8 @@ export interface CodebaseIndexConfig {
   reranker?: Partial<RerankerConfig>;
   /** MCP transport and long-running operation behavior. */
   mcp?: Partial<McpConfig>;
+  /** Project-local, explicit opt-in GitHub history sources; never embedded. */
+  repositoryHistory?: RepositoryHistoryConfig;
   /** External directories to index as knowledge bases (absolute or relative paths) */
   knowledgeBases?: string[];
   /** Override the default include patterns (replaces defaults) */
@@ -560,6 +563,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     mcp,
     reranker,
     knowledgeBases,
+    repositoryHistory: parseRepositoryHistoryConfig(input.repositoryHistory),
   };
 }
 

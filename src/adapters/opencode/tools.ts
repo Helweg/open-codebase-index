@@ -1,3 +1,4 @@
+export { repository_history_sync, repository_history_search, repository_history_status, repository_history_clear } from "./history-tools.js";
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 
 import type { HostMode } from "../../config/host.js";

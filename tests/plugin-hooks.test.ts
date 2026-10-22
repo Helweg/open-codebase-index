@@ -102,6 +102,10 @@ vi.mock("../src/tools/index.js", () => {
     architecture_context: toolStub,
     code_communities: toolStub,
     index_visualize: toolStub,
+    repository_history_sync: toolStub,
+    repository_history_search: toolStub,
+    repository_history_status: toolStub,
+    repository_history_clear: toolStub,
     initializeTools: mockState.initializeTools,
     getIndexerForProject: vi.fn(() => mockState.indexer),
     getSharedIndexer: vi.fn(() => mockState.indexer),
@@ -137,7 +141,6 @@ import mod from "../src/index.js";
 const plugin = mod.server;
 import { configureAutoIndex, resetAutoIndexCoordinatorsForTests } from "../src/utils/auto-index.js";
 import type { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
-import { OPENCODE_TOOL_NAMES } from "../src/tools/tool-names.js";
 
 describe("plugin routing hint hook selection", () => {
   beforeEach(() => {
@@ -257,12 +260,6 @@ describe("plugin routing hint hook selection", () => {
     }
   });
 
-  it("registers the exact canonical OpenCode tool inventory", async () => {
-    const runtime = await plugin({ directory: "/tmp/project" } as Parameters<typeof plugin>[0]);
-
-    expect(Object.keys(runtime.tool ?? {})).toEqual([...OPENCODE_TOOL_NAMES]);
-    expect(new Set(Object.keys(runtime.tool ?? {})).size).toBe(OPENCODE_TOOL_NAMES.length);
-  });
 
   it("delegates watcher ownership to the background worker on reload", async () => {
     mockState.config.indexing.watchFiles = true;

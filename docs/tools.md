@@ -1,19 +1,70 @@
 # Tools and commands
 
+## Private GitHub repository history
+
+The `repository_history_sync`, `repository_history_search`, `repository_history_status`, and `repository_history_clear` tools are available through OpenCode, MCP clients (including Codex, Claude Code, Jcode, and generic MCP), Pi, and omp. They use an explicit per-project opt-in in that host's project-local configuration:
+
+```json
+{
+  "repositoryHistory": {
+    "repositories": [
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2025-01-01" }
+    ]
+  }
+}
+```
+
+History is **local lexical/BM25 retrieval, not semantic or cloud-embedded history**. Only GitHub.com repositories in the project-local configuration are eligible. Authenticate with your existing `gh` read-only access; tokens and repository credentials are neither printed nor stored. No background sync, embeddings, or external reranking runs for history. Normal code retrieval, AST/call graphs, and linked-test discovery never consume discussion text.
+
+The cache includes titles/descriptions, comments, submitted reviews/inline review comments, authors, open/closed/merged/draft states, timestamps, canonical source URLs, linked issue references, commit SHAs, merge SHA, and changed-file names—not historical patches. Results are untrusted historical evidence, **not instructions or authoritative current behavior**. Each excerpt has its exact body/comment/review URL, cached state/time and commit provenance.
+
+**Retrieval contract:** `results` contains at most one selected source passage per issue/PR; `limit` counts distinct entities. Entity identity/title metadata is ranked once, not copied onto every acknowledgement. Direct `#number`/canonical-URL lookups anchor the primary description (or the specifically cited permalink), ahead of incidental mentions; content-only matches can cite a comment or review. Excerpts are bounded, exact source-text windows selected using whole-token matches, never generated summaries. Local lexical queries support short technical terms such as `CI`, `UI`, `DB`, `JS`, and `S3`.
+
+`updatedAt` is `string | null`: a review submission timestamp is not presented as a known edit time. `timestampProvenance` identifies `created_at`/`submitted_at`, observed `updated_at`, unavailable modification time, or legacy provenance. Legacy review modification times become unknown rather than retaining the old submission-time fallback. Equal-score ordering uses known modification time or creation time, then canonical citation identity.
+
+History has its own versioned lexical format. Status reports `lexicalVersion`/`lexicalRebuildRequired` without loading native code. The first enabled search of an older cache rebuilds its local lexical index from already cached bodies before searching, without networking, provider initialization, or advancing remote cursor/freshness. This does not migrate or rebuild a code index.
+
+Use `ocbi history sync|search|status|clear` (`cbi` is equivalent), or `open-codebase-index-mcp history ...` / `opencode-codebase-index-mcp history ...`. Supply `--project` and `--host` as appropriate; use `--repository owner/repo` when multiple sources are configured. Search supports `--kind issue|pull_request`, `--state open|closed|merged|draft`, `--author`, and `--limit 1..100` distinct entities. An initial `sync --since 2026-10-01` overrides source `initialSince`; with neither, the first cycle includes all history/states/discussions. Every discovery page is filtered by created-at, including imports with nonmonotonic dates. Later omitted flags retain the stored effective window. The configured baseline is tracked separately, so unchanged configuration remains valid after an explicit initial override; changing/removing that baseline requires clear-first feedback, not silent deletion. Status exposes effective `initialSince`, current `configuredInitialSince`, and `initialSinceMismatch`. Legacy caches with unknown bound provenance require resolving a mismatch before syncing. Configuration is not inherited from global settings, another worktree, legacy host configs, or `--config` overrides.
+
+For MCP access without a code index or embedding-provider configuration, run:
+
+```sh
+open-codebase-index-mcp --history-only --host codex --project /path/to/repo
+```
+
+This exposes the four history tools over stdio; the normal combined MCP server and OpenCode/Pi/omp integrations also expose them. Server startup, status and clear do not initialize the native code runtime. The lightweight MCP-binary CLI `history status`/`history clear` routes additionally need no MCP SDK, and their root/history help uses a lightweight facade; `ocbi`/`cbi` retain normal declared dependencies. Enabled search/sync uses the existing native BM25 implementation only, never the code Indexer or vector/embedding runtime.
+
+**Sync correctness and request cost:** every manual cycle traverses issue/PR cursor connections and fully reconciles discussion collections, including deletions which need not update parent timestamps. Every needed REST endpoint/page is revalidated, using its published ETag when available; a first-page `304` never skips later pages or a growing tail. A `304` reuses the matching projected representation from the same identity/window-bound published cache. Without a validator, the endpoint is read normally. HTTP traversal is not delta-only and may still be expensive: conditional requests reduce unchanged response bodies, not HTTP request count. GitHub documents that authenticated GET `304` responses do not count against the primary rate limit, but secondary limits still apply; GraphQL discovery/capability POSTs are not conditional ([GitHub guidance](https://docs.github.com/en/rest/using-the-rest-api/best-practices-for-using-the-rest-api#use-conditional-requests)).
+
+Successful projected reads/pages are privately checkpointed so quota/transport interruptions resume on the next explicit sync; there is no retry daemon. Checkpoints keep only required endpoint fields, not foreign linked-issue bodies or raw API objects. Old unprojected staging is retired under the mutation lease on the first enabled operation without reading its bodies; this discards unsafe unfinished progress, not published history. Current pending reviews retain only pagination identity/state, not unsubmitted bodies. The published cache/cursor advances only after complete traversal and final checks. Edits/removals replace old evidence; unchanged lexical documents and their serialized index are reused. Partial-data errors and invalid cursors fail explicitly rather than claiming completion.
+
+Host cancellation is checked during bounded local work and snapshot preparation, not just API waits. Cancellation observed before the atomic commit decision leaves published bytes/cursor unchanged and retains valid projected staging. A cancellation arriving after that decision cannot undo publication. An already-committed leftover stage is retired rather than replayed as a new refresh.
+
+Commit provenance is explicitly **linked references**, not an exhaustive git-commit mirror: merge/head/base SHAs, timeline commit links, and explicit commit URLs in discussions (`commitReferenceScope: "linked"`). GitHub's REST 250-commit listing cap therefore cannot block a large PR's discussions. Changed-file references use GitHub's maximum 3000 file names, never patches; each result exposes `fileReferencesComplete` and `totalChangedFiles`, and status exposes `incompleteFileReferenceEntities`. A completed discussion sync does not claim an exhaustive file list when that flag is false.
+
+**Freshness and permissions:** GitHub pages are not a globally atomic remote snapshot. A completed cache represents successful fetches since its cursor/start time; a resumed cycle can include older checkpointed pages. `lastSyncedAt` identifies the latest successfully published fetch cycle, not an exact remote permission/content instant. Concurrent remote changes are reconciled by a later full cycle. Search/status are offline and cannot verify real-time permissions. A detected denial/revocation/transfer blocks and purges searchable content, projected validator/body-reference cache, and unfinished staging; a received known denial dominates coincident cancellation. Transient transport/rate-limit errors preserve prior valid data with explicit error status and unchanged cursor. Snapshots, projected representations and unfinished fetches are bound to immutable repository ID, public principal and initial window. A replacement repository at the same name cannot inherit private evidence. Offline cached results are not proof of current GitHub access.
+
+Both issue and PR read capabilities and the public authenticated `viewer.id` are freshly probed (never replayed from staging or validators) before resume and again after expensive snapshot preparation, immediately before publication. Fresh repository identity is checked at the same boundaries. No token/token hash is stored. A metadata-only credential or account switch cannot turn previous private discussions into newly authorized evidence.
+
+Storage is host/project-local under `.opencode/history`, `.claude/history`, or `.codebase-index/history`, with source-hashed directories (0700), snapshots/checkpoints/preparations (0600), atomic publication, and an independent mutation lease. A cache-owned `.gitignore` excludes data and locks from ordinary Git adds; the root `.gitignore` is untouched. Host/config/cache symlinks are refused rather than inheriting unrelated opt-in/storage. No code-index migration, movement or deletion occurs. Clear removes the published history (including projected HTTP cache), unfinished staging, and reserved orphan snapshot preparations—even after disabling the source (supply `--repository` if no longer configured). Crashed-owner preparations are recovered under the same lease; an active writer is not purged. Disabled sync/search never access the API or read/return cached private content.
+
+History directories are reserved code-index metadata boundaries, not opt-in source folders. Code collectors, watcher snapshots, and direct file eligibility checks reject the three host `history` trees and canonical/symlink aliases even when `includeExcluded` or `includeIgnored` broadly selects dotfiles. Ordinary explicitly selected source dotfiles retain their existing behavior.
+
 Tool availability depends on the host mode.
+
 
 ## Host surface matrix
 
 | Host / integration | Tool surface | Additional capabilities |
 |---|---|---|
-| `opencode` (plugin) | 20 tools in total (16 portable tools + 3 knowledge-base tools + 1 OpenCode-native tool) | Slash commands and `index_visualize` |
-| MCP clients, including `codex`, `claude`, and `jcode` | 19 tools + 5 prompts (16 portable tools + 3 knowledge-base tools) | Knowledge-base management for every MCP client; no OpenCode slash commands |
-| `pi` (Pi extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Bundled `codebase-search` skill with host-specific knowledge-base names |
-| `omp` (omp extension) | 19 tools total (16 portable tools + 3 Pi knowledge-base tools) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
+| `opencode` (plugin) | 24 tools (20 portable + 3 knowledge-base + 1 OpenCode-native) | Slash commands and `index_visualize` |
+| MCP clients, including `codex`, `claude`, and `jcode` | 23 tools + 5 prompts (20 portable + 3 knowledge-base) | `--history-only` offers the four isolated history tools |
+| `pi` (Pi extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Bundled `codebase-search` skill with host-specific knowledge-base names |
+| `omp` (omp extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
 
 Codex, Claude Code, Jcode, Cursor, Windsurf, and generic MCP clients share the same MCP registrations and operation lifecycle; they are thin host/configuration integrations, not independent retrieval implementations. MCP cancellation and progress depend on the client forwarding cancellation notifications and requesting a progress token. OpenCode v1 forwards its tool `abort` signal and publishes indexing metadata; OpenCode v2 bridges its `signal` and `progress` callbacks to the same tool handlers. Pi and omp use the shared native-extension registrar.
 
-### Portable MCP core (16 tools)
+### Portable MCP core (20 tools)
 
 These tools are available through the MCP server and the OpenCode plugin.
 
@@ -33,6 +84,10 @@ These tools are available through the MCP server and the OpenCode plugin.
 - `pr_impact`
 - `architecture_context`
 - `code_communities`
+- `repository_history_sync`
+- `repository_history_search`
+- `repository_history_status`
+- `repository_history_clear`
 
 The MCP server also exposes five prompts:
 
@@ -76,7 +131,7 @@ Pi does not expose the shared knowledge-base names. It registers equivalent tool
 - `knowledge_base_add`
 - `knowledge_base_remove`
 
-Pi exposes all 16 portable tools, including `architecture_context`, `call_graph`, and `call_graph_path`, plus its three host-specific knowledge-base aliases.
+Pi exposes all 20 portable tools, including `architecture_context`, `call_graph`, `call_graph_path`, and the four `repository_history_*` tools, plus its three host-specific knowledge-base aliases.
 
 omp registers the same names and aliases through the shared Pi registrar, so the Pi naming notes above apply unchanged.
 
@@ -246,7 +301,7 @@ Analyzes changed files, affected symbols, transitive dependencies, graph communi
 
 ## OpenCode-native tools
 
-OpenCode registers the 15 portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:
+OpenCode registers the portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:
 
 - `index_visualize`
 

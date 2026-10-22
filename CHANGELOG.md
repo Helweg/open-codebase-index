@@ -7,11 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Private GitHub repository history**: Add manually synchronized, project-opt-in local issue and pull-request history with cited local search, status, and explicit cache clearing across supported tool hosts and CLI surfaces.
+
 ### Changed
+
+- **History retrieval contract**: Rank entity metadata once and return one selected passage per issue/PR, prioritize direct identifiers/permalinks and primary descriptions, support short technical terms, and select whole-token source excerpt windows. Older lexical snapshots rebuild locally before search; unknown review edit times are nullable with explicit timestamp provenance.
+- **History conditional reconciliation**: Revalidate every required REST page with published ETags where available, reusing minimal source-bound representations for `304` responses—including `gh api`'s nonzero exit status—without skipping deletion/tail reconciliation or fresh capability checks. Reuse unchanged serialized BM25 state; keep projected checkpoints instead of raw foreign issue bodies.
 
 - **Inert override cleanup** (Refs #379): Remove the obsolete tsup 8.x scoped esbuild override after equal fresh resolutions with and without it. tsup 9 already declares patched esbuild `^0.28.2`; the checked-in lockfile, retained security floors, bundler version, and published Node.js `22.13.0` minimum are unchanged. This is configuration cleanup, not new security remediation.
 
 ### Fixed
+
+- **History cancellation and private cleanup**: Honor host cancellation through local indexing/snapshot preparation before atomic publication, preserve published bytes and resumable staging on observed precommit cancellation, retire already-committed stage leftovers, and reclaim orphan preparations under the history lease. Known denials override cancellation and purge projected cache data as well as searchable/staged content.
+- **History initial-window provenance**: Preserve explicit initial CLI overrides across later unchanged configuration and staged-only cancelled retries. Changed/removed or ambiguous legacy bounds now receive clear-first feedback rather than silent scope drift or deletion.
 
 - **MCP root help**: Both `open-codebase-index-mcp` and `opencode-codebase-index-mcp` now print useful root usage to stdout and exit successfully for `--help` and `-h`, before loading project configuration or starting the MCP worker, providers, indexing, or watchers. Subcommand routing and no-argument stdio MCP startup are unchanged.
 

@@ -29,6 +29,10 @@ import {
   getIndexerForProject,
   initializeTools,
   pr_impact,
+  repository_history_sync,
+  repository_history_search,
+  repository_history_status,
+  repository_history_clear,
 } from "../tools/index.js";
 import { TOOL_NAME } from "../tools/tool-names.js";
 import { loadCommandsFromDirectory } from "../commands/loader.js";
@@ -168,6 +172,10 @@ export const v2Definition = {
         [TOOL_NAME.ARCHITECTURE_CONTEXT]: architecture_context,
         [TOOL_NAME.CODE_COMMUNITIES]: code_communities,
         [TOOL_NAME.INDEX_VISUALIZE]: index_visualize,
+        [TOOL_NAME.REPOSITORY_HISTORY_SYNC]: repository_history_sync,
+        [TOOL_NAME.REPOSITORY_HISTORY_SEARCH]: repository_history_search,
+        [TOOL_NAME.REPOSITORY_HISTORY_STATUS]: repository_history_status,
+        [TOOL_NAME.REPOSITORY_HISTORY_CLEAR]: repository_history_clear,
       };
 
       const regTools = await ctx.tool.transform((editor) => {

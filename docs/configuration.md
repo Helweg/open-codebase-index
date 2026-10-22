@@ -395,6 +395,22 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 - `includeExcluded` patterns are evaluated relative to each additional knowledge-base root too. Project `includeIgnored` patterns do not bypass a knowledge base's Git-ignore rules.
 - Use narrow patterns: opting in broad excluded trees can index generated or sensitive files and increase indexing time or embedding costs. Git itself continues to ignore these paths.
 
+## Private GitHub history
+
+`repositoryHistory.repositories` is a **project-local only** source list. Each source requires `repository: "owner/repo"` (GitHub.com only) and explicit `enabled: true`; `initialSince` optionally bounds initial **created-at** history. Omit it to include all history. History configuration is independent of embedding/code-index configuration and is not inherited from global settings or another worktree.
+
+```json
+{
+  "repositoryHistory": {
+    "repositories": [
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" }
+    ]
+  }
+}
+```
+
+Use `ocbi history sync` manually, then local `history search`, `status`, and `clear` (pass the appropriate `--project`/`--host`). The matching `repository_history_*` tools are available across hosts. `open-codebase-index-mcp --history-only --project /path --host codex` starts without code-index/embedding-provider initialization; status/clear also work without the native addon, while enabled sync/search uses native BM25. No history embedding/reranker requests occur. Full per-page reconciliation remains explicit/resumable; ETags reduce unchanged response bodies and supported GET primary-quota cost, not HTTP count or secondary limits. Unchanged lexical content reuses its serialized index. An initial `--since` overrides configuration, and the configured baseline is recorded separately so later unchanged configuration keeps that effective window; changed/removed bounds give clear-first feedback. Status reports `initialSinceMismatch` and `lexicalRebuildRequired`; older lexical caches rebuild locally before first search, without network or cursor/freshness advancement. Old raw staging is retired under lease. Disabled sync/search do not access APIs or cached bodies; clear removes published/projected/staged history and orphan preparations even when disabled. See [privacy, permissions, timestamp provenance and lifecycle](tools.md#private-github-repository-history).
+
 ## Knowledge bases
 
 Index additional directories alongside the project:

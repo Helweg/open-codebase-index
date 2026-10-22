@@ -211,7 +211,7 @@ function hasProtectedMetadataSegments(relativePath: string): boolean {
       (segments[index] === ".codebase-index"
         || segments[index] === ".opencode"
         || segments[index] === ".claude")
-      && segments[index + 1] === "index"
+      && (segments[index + 1] === "index" || segments[index + 1] === "history")
     ) {
       return true;
     }
