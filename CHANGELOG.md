@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Inert override cleanup** (Refs #379): Remove the obsolete tsup 8.x scoped esbuild override after equal fresh resolutions with and without it. tsup 9 already declares patched esbuild `^0.28.2`; the checked-in lockfile, retained security floors, bundler version, and published Node.js `22.13.0` minimum are unchanged. This is configuration cleanup, not new security remediation.
+
 ### Fixed
 
 - **MCP root help**: Both `open-codebase-index-mcp` and `opencode-codebase-index-mcp` now print useful root usage to stdout and exit successfully for `--help` and `-h`, before loading project configuration or starting the MCP worker, providers, indexing, or watchers. Subcommand routing and no-argument stdio MCP startup are unchanged.
