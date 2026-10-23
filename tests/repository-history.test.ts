@@ -29,6 +29,7 @@ function issue(number: number, body = "original design rationale"): FixtureIssue
   return { id: number, number, title: `Title ${number}`, body, state: "open", user: { login: "author" }, created_at: timestamp, updated_at: timestamp };
 }
 class FixtureApi implements HistoryApi {
+  hostname = "github.com";
   issues = new Map<number, FixtureIssue>([[1, issue(1)]]);
   comments: Record<string, unknown>[] = [];
   commentsByIssue = new Map<number, Record<string, unknown>[]>();
@@ -58,7 +59,7 @@ class FixtureApi implements HistoryApi {
     this.accessCalls++;
     if (this.metadataOnly || this.revoked) throw new GitHubApiError(403, false);
     if (this.accessCalls === this.failAccessAt) throw new GitHubApiError(429, true);
-    return { repositoryId: String(this.repositoryId), repositoryName: this.repositoryName, principalId: this.principalId };
+    return { hostname: this.hostname, repositoryId: String(this.repositoryId), repositoryName: this.repositoryName, principalId: this.principalId };
   }
   async discover(kind: "issues" | "pullRequests", after: string | null): Promise<HistoryDiscoveryPage> {
     this.calls.push(`discover ${kind} ${after}`);

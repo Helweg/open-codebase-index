@@ -96,7 +96,7 @@ The first index creates embeddings. Later runs reuse unchanged content and proce
 | OpenCode | Native plugin | `.opencode/` |
 | Jcode | Per-session MCP server | `.codebase-index/` |
 | Pi | Pi package | `.codebase-index/` |
-| omp (oh-my-pi) | omp package | `.codebase-index/` |
+| omp (oh-my-pi) | omp package; CLI `--host omp` aliases `pi` | `.codebase-index/` (same as Pi) |
 | Codex | Marketplace plugin with MCP and skill guidance | `.codebase-index/` |
 | Claude Code | Marketplace plugin with MCP and skill guidance | `.claude/` |
 | Cursor, Windsurf, other MCP clients | `open-codebase-index-mcp` (legacy alias: `opencode-codebase-index-mcp`) | Selected by `--host`; default is OpenCode-compatible |
@@ -212,16 +212,21 @@ Opt in per repository in the **project-local** host config (never inherited glob
 {
   "repositoryHistory": {
     "repositories": [
-      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" }
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" },
+      { "repository": "github.example.com/team/service", "enabled": true, "initialSince": "2026-10-01" }
     ]
   }
 }
 ```
 
+Selectors use `[HOST/]OWNER/REPO`: bare `owner/repo` defaults to GitHub.com, and `github.com/OWNER/REPO` normalizes to the same lowercase `owner/repo`. Enterprise selectors normalize to lowercase `hostname/owner/repo`. The host must be a DNS hostname, not a URL, credential-bearing address, or host with a port; traversal components are not accepted. For Enterprise, authenticate separately using normal `gh auth login --hostname github.example.com`; sync uses existing authentication and requires `gh` REST/GraphQL access on that selected server.
+
+The server hostname is part of source, cache, staging, citation, and permission identity: the same owner/repo on different hosts stays isolated. Citation URLs and `#number` references use the selected server; explicit URL references are validated, never rewritten across hosts or fetched from another host.
+
 ```sh
-ocbi history sync --project /path/to/repo --host codex
-ocbi history search "design rationale" --project /path/to/repo --host codex --state merged
-ocbi history status --project /path/to/repo --host codex
+ocbi history sync --project /path/to/repo --host codex --repository github.example.com/team/service
+ocbi history search "design rationale" --project /path/to/repo --host codex --repository github.example.com/team/service --state merged
+ocbi history status --project /path/to/repo --host codex --repository github.example.com/team/service
 ocbi history clear --project /path/to/repo --host codex --repository owner/repo
 # Provider/code-index/native-free MCP status and cache management:
 open-codebase-index-mcp --history-only --project /path/to/repo --host codex

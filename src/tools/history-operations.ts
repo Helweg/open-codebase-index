@@ -61,7 +61,7 @@ export async function runRepositoryHistoryStatus(args: SharedRepositoryHistorySt
   const directory = historyDirectory(projectRoot, host, source.repository);
   await cleanLegacyHistoryStaging(directory);
   const snapshot = readSnapshot(directory, source.repository);
-  return { ...statusResult(source, snapshot), syncProgress: readHistorySyncProgress(directory, snapshot) };
+  return { ...statusResult(source, snapshot), syncProgress: readHistorySyncProgress(directory, source.repository, snapshot) };
 }
 
 export async function runRepositoryHistorySync(args: SharedRepositoryHistorySyncArgs, projectRoot: string, host: HostMode, control?: OperationControl): Promise<RepositoryHistorySyncResult> {

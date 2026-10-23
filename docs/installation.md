@@ -137,6 +137,8 @@ omp plugin link /path/to/open-codebase-index
 
 The package declares `omp.extensions` and `omp.skills`, so omp loads `dist/omp-extension.js` and the bundled `codebase-search` skill. The extension registers the same native tool surface as the Pi package and reuses `.codebase-index/` project storage, preferring the host's TypeBox-compatible schema builder when omp exposes one. omp still accepts the `pi` manifest as a fallback and takes `omp` first when both are declared.
 
+The human and MCP CLIs accept `--host omp` as an alias for canonical `pi`. Both spellings use the same existing `.codebase-index/config.json` and `.codebase-index/index/` paths (and `.codebase-index/history/` for history), not a separate omp storage tree. This CLI alias does not add a programmatic `HostMode` value.
+
 The omp extension preserves existing system-prompt blocks and appends its repository guidance as a separate block; Pi retains its string-based prompt format.
 
 Use either the native extension or the MCP server, not both. If a repository's portable `.mcp.json` also declares `codebase-index`, merge `"disabledServers": ["codebase-index"]` into your omp user configuration at `~/.omp/agent/mcp.json` to suppress that MCP copy while retaining the native extension. Preserve any existing server definitions and disabled entries. Run `/mcp reload` or start a new session after changing MCP configuration; this omp-only exclusion does not affect other hosts.
@@ -150,7 +152,7 @@ To use the MCP server instead of the native extension, register it in `.omp/mcp.
   "mcpServers": {
     "codebase-index": {
       "command": "npx",
-      "args": ["-y", "--package", "open-codebase-index", "open-codebase-index-mcp", "--host", "pi"]
+      "args": ["-y", "--package", "open-codebase-index", "open-codebase-index-mcp", "--host", "omp"]
     }
   }
 }
@@ -217,6 +219,18 @@ Use `ocbi index --dry-run` for a parse-only embedding-token total, `--estimate-o
 
 Without `--project`, the CLI discovers the nearest containing Git checkout and reuses its project configuration and branch catalog, even from a nested package directory. MCP startup uses the same rule. Nested repositories, submodules, and linked worktrees retain their own checkout roots. Non-Git directories keep the current directory as their scope. An explicit `--project` is never widened, so use `--project .` to deliberately index only a child directory.
 
+### Private history on GitHub.com and Enterprise
+
+Enable sources in the **project-local** host configuration using `repositoryHistory.repositories` (see [Configuration](configuration.md#private-github-history)). Selectors accept `[HOST/]OWNER/REPO`: bare `owner/repo` defaults to GitHub.com, and explicit `github.com/OWNER/REPO` normalizes to that same lowercase identity. Enterprise selectors normalize to lowercase `hostname/owner/repo`. Use a DNS hostname only, with no URL scheme, credentials, port, or traversal components.
+
+For Enterprise, authenticate separately with normal `gh auth login --hostname github.example.com`. History uses existing authentication without changing it or copying credentials; sync depends on `gh` REST and GraphQL access on the selected server.
+
+```sh
+ocbi history sync --project /path/to/repo --host omp --repository github.example.com/team/service
+```
+
+Here `--host omp` chooses Pi-compatible local config/storage; the `--repository` hostname chooses the GitHub server. That hostname binds source/cache/staging/citation/permission identity, so matching owner/repo names on different servers remain isolated. Citations and `#number` references use the selected server; explicit URL references are validated, not cross-host rewritten or fetched. History remains manually synchronized, read-only, and local lexical/BM25 retrieval with no cloud embeddings. Offline reads cannot establish current permissions; see [Tools and commands](tools.md#private-github-repository-history) for freshness and selected-source access-loss cleanup limitations.
+
 ## Generic MCP clients
 
 Run the published MCP server with `npx`:
@@ -256,7 +270,7 @@ Example MCP configuration:
 ```text
 --project <path>  Repository to index. Defaults to the containing Git checkout, or cwd outside Git.
 --config <path>   Explicit configuration file.
---host <mode>     opencode, codex, claude, pi, or jcode.
+--host <mode>     opencode, codex, claude, pi, omp (alias for pi), or jcode.
 --mcp-idle-timeout <seconds>  Idle engine timeout; 0 disables (default: 900 for codex, 0 otherwise).
 --help, -h        Print root usage to stdout and exit without starting the MCP server.
 ```
@@ -269,7 +283,7 @@ open-codebase-index-mcp --config /path/to/config.json
 open-codebase-index-mcp --host jcode
 ```
 
-Use `--host` when you want the corresponding host's configuration and storage paths. Without it, the CLI uses OpenCode-compatible behavior.
+Use `--host` when you want the corresponding host's configuration and storage paths. `--host omp` and `--host pi` select the same canonical Pi mode and existing `.codebase-index` config/storage. Without it, the CLI uses OpenCode-compatible behavior.
 
 Both `open-codebase-index-mcp --help` and `opencode-codebase-index-mcp -h` show the MCP options and available `index`, `eval`, and `visualize` commands without loading project configuration or starting indexing, providers, or watchers. With no command or help flag, the binary starts the stdio MCP server. Use `index --help` or `eval --help` for their existing command-specific usage.
 

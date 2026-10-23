@@ -4,6 +4,7 @@ import type { HistoryDocument, HistorySnapshot, RepositoryHistorySearchHit } fro
 import { historyTokens, normalizeHistoryLexicalText } from "./lexical.js";
 import { historyDocumentId, historyMetadataId } from "./lexical-index.js";
 import { checkpointHistoryWork } from "./work.js";
+import { canonicalRepository } from "./config.js";
 
 /** A source-text window with whole-token coverage, not an arbitrary title/substring prefix. */
 export function historyExcerpt(body: string, query: string): string {
@@ -62,10 +63,17 @@ function identity(query: string, repository: string): { number: number; document
   const text = query.trim();
   const number = /^#([1-9][0-9]*)$/.exec(text);
   if (number) return { number: Number(number[1]) };
-  const qualified = /^([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)#([1-9][0-9]*)$/.exec(text);
-  if (qualified?.[1].toLowerCase() === repository) return { number: Number(qualified[2]) };
-  const url = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/(?:issues|pull)\/([1-9][0-9]*)(#[^\s]+)?\/?$/i.exec(text);
-  if (url?.[1].toLowerCase() === repository) return { number: Number(url[2]), documentFragment: url[3] };
+  const qualified = /^([A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){1,2})#([1-9][0-9]*)$/.exec(text);
+  if (qualified) {
+    try { if (canonicalRepository(qualified[1]) === repository) return { number: Number(qualified[2]) }; }
+    catch { /* Invalid or foreign selectors remain ordinary lexical queries. */ }
+  }
+  const url = /^https:\/\/([^/]+)\/([^/]+\/[^/]+)\/(?:issues|pull)\/([1-9][0-9]*)(#[^\s]+)?\/?$/i.exec(text);
+  if (url) {
+    try {
+      if (canonicalRepository(`${url[1]}/${url[2]}`) === repository) return { number: Number(url[3]), documentFragment: url[4] };
+    } catch { /* Do not promote malformed or credentialled URLs to direct identities. */ }
+  }
   return undefined;
 }
 

@@ -2,9 +2,9 @@ import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import { runRepositoryHistoryClear, runRepositoryHistorySearch, runRepositoryHistoryStatus, runRepositoryHistorySync } from "../../tools/history-operations.js";
 
 const z = tool.schema;
-const repository = z.string().optional().describe("Configured GitHub.com owner/repo (not a URL)");
+const repository = z.string().optional().describe("Configured [HOST/]OWNER/REPO; HOST defaults to github.com (not a URL)");
 export const repository_history_sync: ToolDefinition = tool({
-  description: "Manually sync explicitly enabled GitHub.com PR/issue history, including discussions. Read-only, local private lexical storage; no embeddings. Full reconciliation is resumable and may use many API requests.",
+  description: "Manually sync explicitly enabled GitHub.com or GitHub Enterprise PR/issue history, including discussions. Read-only, local private lexical storage; no embeddings. Full reconciliation is resumable and may use many API requests.",
   args: { repository, since: z.string().optional().describe("Initial created-at window only; ISO date, omitted/config absent means all history") },
   async execute(args, context) { return JSON.stringify(await runRepositoryHistorySync(args, context?.worktree ?? process.cwd(), "opencode", { signal: context?.abort }), null, 2); },
 });

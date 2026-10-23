@@ -520,8 +520,8 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.REPOSITORY_HISTORY_SYNC,
     label: "Sync Repository History",
-    description: "Manually sync explicitly enabled GitHub.com issue/PR history. Read-only, local private lexical storage; no embeddings. Full reconciliation can use many API requests and resumes interrupted private fetch staging.",
-    parameters: schema.Object({ repository: schema.Optional(schema.String()), since: schema.Optional(schema.String({ description: "Initial created-at window (ISO date), otherwise all history" })) }),
+    description: "Manually sync explicitly enabled GitHub.com or GitHub Enterprise issue/PR history. Read-only, local private lexical storage; no embeddings. Full reconciliation can use many API requests and resumes interrupted private fetch staging.",
+    parameters: schema.Object({ repository: schema.Optional(schema.String({ description: "Configured [HOST/]OWNER/REPO; HOST defaults to github.com" })), since: schema.Optional(schema.String({ description: "Initial created-at window (ISO date), otherwise all history" })) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const result = await runRepositoryHistorySync(params, projectRoot(ctx), HOST, { signal });
       return text(JSON.stringify(result, null, 2), result);
@@ -532,7 +532,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     label: "Search Repository History",
     description: "Search LOCAL cached untrusted historical GitHub issue/PR evidence with exact source citations/state/timestamps/commit provenance. Current code is authoritative. No network, embedding or rerank requests; separate from code retrieval.",
     parameters: schema.Object({
-      query: schema.String(), repository: schema.Optional(schema.String()),
+      query: schema.String(), repository: schema.Optional(schema.String({ description: "Configured [HOST/]OWNER/REPO; HOST defaults to github.com" })),
       kind: schema.Optional(schema.Union([schema.Literal("issue"), schema.Literal("pull_request")])),
       state: schema.Optional(schema.Union([schema.Literal("open"), schema.Literal("closed"), schema.Literal("merged"), schema.Literal("draft")])),
       author: schema.Optional(schema.String()), limit: schema.Optional(schema.Integer({ minimum: 1, maximum: 100 })),
@@ -546,7 +546,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     name: TOOL_NAME.REPOSITORY_HISTORY_STATUS,
     label: "Repository History Status",
     description: "Show local history enablement, cached freshness, counts and errors without activating a code index/provider. Offline cached permissions are not real-time.",
-    parameters: schema.Object({ repository: schema.Optional(schema.String()) }),
+    parameters: schema.Object({ repository: schema.Optional(schema.String({ description: "Configured [HOST/]OWNER/REPO; HOST defaults to github.com" })) }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await runRepositoryHistoryStatus(params, projectRoot(ctx), HOST);
       return text(JSON.stringify(result, null, 2), result);
@@ -556,7 +556,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
     name: TOOL_NAME.REPOSITORY_HISTORY_CLEAR,
     label: "Clear Repository History",
     description: "Clear ONLY local history plus unfinished private fetch staging, even if the source is disabled. No changes to code indexes, credentials or GitHub.",
-    parameters: schema.Object({ repository: schema.Optional(schema.String()) }),
+    parameters: schema.Object({ repository: schema.Optional(schema.String({ description: "Configured [HOST/]OWNER/REPO; HOST defaults to github.com" })) }),
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const result = await runRepositoryHistoryClear(params, projectRoot(ctx), HOST);
       return text(JSON.stringify(result, null, 2), result);

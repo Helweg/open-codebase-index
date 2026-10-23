@@ -4,28 +4,24 @@ import * as path from "node:path";
 import { z } from "zod";
 import { createLeaseTemporaryPath } from "../indexer/index-lock.js";
 import type { IndexLockLease } from "../indexer/index-lock.js";
-import { HistoryError } from "./config.js";
+import { HistoryError, parseRepositoryIdentity } from "./config.js";
 import type { HistoryApi, HistoryDiscoveryPage } from "./github.js";
 import type { HistoryCachedResponse, HistoryEntity, HistorySnapshot, HistorySyncProgress } from "./types.js";
 import { assertHistoryProjectPath } from "./paths.js";
 import { hydrateHistoryCache, packHistoryCache, projectHistoryResponse } from "./responses.js";
 import { withHistoryLock } from "./storage.js";
 
-const STAGE_VERSION = 2;
-interface StageMetadata {
-  version: typeof STAGE_VERSION;
-  startedAt: string;
-  generation: string;
-  repositoryId: string;
-  principalId: string;
-  initialSince?: string;
-  configuredInitialSince: string | null;
-}
-const stageMetadataSchema: z.ZodType<StageMetadata> = z.object({
-  version: z.literal(STAGE_VERSION), startedAt: z.string().datetime(), generation: z.string().uuid(),
+const STAGE_VERSION = 3;
+const legacyStageMetadataSchema = z.object({
+  version: z.literal(2), startedAt: z.string().datetime(), generation: z.string().uuid(),
   repositoryId: z.string().min(1), principalId: z.string().min(1), initialSince: z.string().optional(),
   configuredInitialSince: z.string().nullable(),
 });
+const stageMetadataSchema = z.discriminatedUnion("version", [
+  legacyStageMetadataSchema,
+  legacyStageMetadataSchema.extend({ version: z.literal(STAGE_VERSION), repository: z.string() }),
+]);
+type StageMetadata = z.infer<typeof stageMetadataSchema>;
 export interface HistoryStage {
   api: HistoryApi;
   startedAt: string;
@@ -40,10 +36,22 @@ function metadata(directory: string): StageMetadata | undefined {
   try { return stageMetadataSchema.parse(JSON.parse(readFileSync(file, "utf8"))); } catch { return undefined; }
 }
 
+function belongsToRepository(state: StageMetadata, directory: string, repository: string): boolean {
+  const identity = parseRepositoryIdentity(repository);
+  if (state.version === STAGE_VERSION) return state.repository === identity.canonical;
+  // Version 2 was produced only by the former github.com-only transport. Its
+  // original source directory and fresh capability/window proofs must agree
+  // before openHistoryStage upgrades metadata and replays any checkpoint.
+  return identity.hostname === "github.com"
+    && path.basename(directory) === createHash("sha256").update(identity.canonical).digest("hex");
+}
+
 /** Caller holds the lease; scope metadata can recover an initial cancelled sync without body replay. */
-export function readHistoryStageWindow(directory: string): { initialSince?: string; configuredInitialSince: string | null } | undefined {
+export function readHistoryStageWindow(directory: string, repository: string): { initialSince?: string; configuredInitialSince: string | null } | undefined {
   const state = metadata(directory);
-  return state ? { initialSince: state.initialSince, configuredInitialSince: state.configuredInitialSince } : undefined;
+  return state && belongsToRepository(state, directory, repository)
+    ? { initialSince: state.initialSince, configuredInitialSince: state.configuredInitialSince }
+    : undefined;
 }
 
 /** Caller holds the history lease. Old raw payloads are deleted without reading their bodies. */
@@ -59,12 +67,12 @@ export function retireHistoryStage(directory: string, published?: HistorySnapsho
 export async function cleanLegacyHistoryStaging(directory: string): Promise<void> {
   const staging = path.join(directory, "fetch-staging");
   assertHistoryProjectPath(path.dirname(path.dirname(path.dirname(directory))), staging);
-  if (existsSync(staging) && metadata(directory)?.version !== STAGE_VERSION) {
+  if (existsSync(staging) && !metadata(directory)) {
     await withHistoryLock(directory, "index", async () => retireHistoryStage(directory));
   }
 }
 
-export function openHistoryStage(directory: string, api: HistoryApi, lease: IndexLockLease, repositoryId: string, principalId: string, initialSince: string | undefined, configuredInitialSince: string | null, published?: HistorySnapshot): HistoryStage {
+export function openHistoryStage(directory: string, api: HistoryApi, lease: IndexLockLease, repository: string, repositoryId: string, principalId: string, initialSince: string | undefined, configuredInitialSince: string | null, published?: HistorySnapshot): HistoryStage {
   retireHistoryStage(directory, published);
   const staging = path.join(directory, "fetch-staging");
   mkdirSync(staging, { recursive: true, mode: 0o700 });
@@ -78,10 +86,18 @@ export function openHistoryStage(directory: string, api: HistoryApi, lease: Inde
       renameSync(temporary, target);
     } finally { rmSync(temporary, { force: true }); }
   };
-  const state: StageMetadata = metadata(directory) ?? { version: STAGE_VERSION, startedAt: new Date().toISOString(), generation: lease.owner.token, repositoryId, principalId, initialSince, configuredInitialSince };
-  if (state.repositoryId !== repositoryId || state.principalId !== principalId) throw new HistoryError("HISTORY_INACCESSIBLE", "unfinished sync belongs to a different repository or public auth principal");
+  let state: StageMetadata = metadata(directory) ?? { version: STAGE_VERSION, repository, startedAt: new Date().toISOString(), generation: lease.owner.token, repositoryId, principalId, initialSince, configuredInitialSince };
+  if (!belongsToRepository(state, directory, repository)
+    || state.repositoryId !== repositoryId || state.principalId !== principalId) {
+    throw new HistoryError("HISTORY_INACCESSIBLE", "unfinished sync belongs to a different host, repository, or authentication principal");
+  }
   if (state.initialSince !== initialSince || state.configuredInitialSince !== configuredInitialSince) throw new HistoryError("HISTORY_CONFIG", "initial window differs from unfinished sync; clear history before changing it");
-  if (!existsSync(file)) atomicWrite(file, state);
+  if (state.version === 2) {
+    state = { ...state, version: STAGE_VERSION, repository };
+    atomicWrite(file, state);
+  } else if (!existsSync(file)) {
+    atomicWrite(file, state);
+  }
   const oldResponses = hydrateHistoryCache(published);
   const used = new Map<string, HistoryCachedResponse>();
   const checkpoint = async <T>(key: string, fetch: () => Promise<T>): Promise<{ fetchedAt: string; value: T }> => {
@@ -118,10 +134,10 @@ export function openHistoryStage(directory: string, api: HistoryApi, lease: Inde
   };
 }
 
-export function readHistorySyncProgress(directory: string, published?: HistorySnapshot): HistorySyncProgress | undefined {
+export function readHistorySyncProgress(directory: string, repository: string, published?: HistorySnapshot): HistorySyncProgress | undefined {
   const staging = path.join(directory, "fetch-staging");
   const state = metadata(directory);
-  if (state?.version !== STAGE_VERSION) return undefined;
+  if (!state || !belongsToRepository(state, directory, repository)) return undefined;
   if (published?.syncGeneration ? state.generation === published.syncGeneration : published?.cursor === state.startedAt) return undefined;
   return { resumable: true, startedAt: state.startedAt, cachedRequests: readdirSync(staging).filter((name) => /^[a-f0-9]{64}\.json$/.test(name)).length };
 }
