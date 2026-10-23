@@ -33,7 +33,7 @@ function hostState(needle: string) {
       reviews: [{ id: 30, body: `${needle}review`, submitted_at: date, state: "APPROVED", user: { login: "reviewer" } }],
       reviewComments: [{ id: 40, body: `${needle}inline`, created_at: date, updated_at: date, user: { login: "reviewer" } }],
       files: [{ filename: "src/feature.ts", patch }], commits: [],
-      timeline: [{ event: "cross-referenced", source: { issue: { html_url: `https://${enterprise}/${name}/issues/13` } } }],
+      timeline: [{ event: "cross-referenced", created_at: date, source: { issue: { html_url: `https://${enterprise}/${name}/issues/13` } } }],
     }],
   };
 }
