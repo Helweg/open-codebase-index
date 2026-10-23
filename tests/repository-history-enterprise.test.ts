@@ -5,8 +5,7 @@ import * as path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { createHistoryMcpServer } from "../src/adapters/mcp/history-server.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { canonicalRepository, parseRepositoryHistoryConfig, parseRepositoryIdentity } from "../src/history/config.js";
 import { createGitHubApi } from "../src/history/github.js";
 import { syncHistory } from "../src/history/service.js";
@@ -303,24 +302,47 @@ describe("Enterprise user-facing surfaces", () => {
     expect(fixture.routes().every((route) => route.hostname === enterprise && route.ghHost === enterprise)).toBe(true);
   }, 30_000);
 
-  it("runs MCP SDK sync/search/status/clear against selected Enterprise transport and local native lexical evidence", async () => {
+  it("runs built MCP stdio sync/search/status/clear against selected Enterprise transport and local native lexical evidence", async () => {
     const fixture = setup();
-    const server = createHistoryMcpServer(fixture.root, "codex");
+    const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined));
+    const transport = new StdioClientTransport({
+      command: process.execPath,
+      args: [path.resolve("dist/cli.js"), "--history-only", "--project", fixture.root, "--host", "codex"],
+      cwd: fixture.root, env, stderr: "pipe",
+    });
+    let stderr = "";
+    transport.stderr?.on("data", (chunk) => { stderr += String(chunk); });
     const client = new Client({ name: "enterprise-history-test", version: "1" });
-    const [left, right] = InMemoryTransport.createLinkedPair();
-    await server.connect(right); await client.connect(left);
+    const protocolErrors: Error[] = [];
+    client.onerror = (error) => { protocolErrors.push(error); };
     const call = (operation: string, args = {}) => client.callTool({ name: `repository_history_${operation}`, arguments: { repository: selected, ...args } });
     try {
-      expect(JSON.parse(text(await call("sync")))).toMatchObject({ complete: true, repository: selected });
-      expect(JSON.parse(text(await call("search", { query: "enterpriseneedlereview" }))).results[0].documentUrl).toBe(`https://${enterprise}/${name}/pull/1#pullrequestreview-30`);
-      expect(JSON.parse(text(await call("status")))).toMatchObject({ status: "ready", entityCount: 1 });
+      await client.connect(transport);
+      expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual([
+        "repository_history_clear", "repository_history_search", "repository_history_status", "repository_history_sync",
+      ]);
+      const synced = await call("sync");
+      expect(synced.isError).not.toBe(true);
+      expect(JSON.parse(text(synced))).toMatchObject({ complete: true, repository: selected });
+      const searched = await call("search", { query: "enterpriseneedlereview" });
+      expect(searched.isError).not.toBe(true);
+      expect(JSON.parse(text(searched)).results[0].documentUrl).toBe(`https://${enterprise}/${name}/pull/1#pullrequestreview-30`);
+      const status = await call("status");
+      expect(status.isError).not.toBe(true);
+      expect(JSON.parse(text(status))).toMatchObject({ status: "ready", entityCount: 1 });
       fixture.state.hosts[enterprise].revoked = true; fixture.save();
       const denial = await call("sync");
       expect(denial.isError).toBe(true); expect(text(denial)).toContain("HISTORY_INACCESSIBLE");
       expect(text(denial)).not.toContain(canary); expect(text(denial)).not.toContain("enterpriseneedle");
       expect(JSON.parse(text(await call("search", { query: "enterpriseneedle" }))).results).toEqual([]);
-      expect(JSON.parse(text(await call("clear"))).cleared).toBe(true);
-    } finally { await client.close(); await server.close(); }
+      const cleared = await call("clear");
+      expect(cleared.isError).not.toBe(true);
+      expect(JSON.parse(text(cleared)).cleared).toBe(true);
+    } finally {
+      await client.close();
+      expect(stderr).not.toContain(canary);
+      expect(protocolErrors).toEqual([]);
+    }
   }, 30_000);
 
   it("cancels real Enterprise gh transport without publishing private bodies and retains the interrupted initial window", async () => {

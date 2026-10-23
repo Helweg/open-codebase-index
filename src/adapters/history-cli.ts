@@ -11,14 +11,14 @@ export async function runHistoryCli(argv: string[], cwd: string, output: History
   if (!argv.length || argv.includes("--help") || argv.includes("-h")) {
     stdout(`Usage: ocbi history <sync|search|status|clear> [query] [options]
 
-Local-only, untrusted GitHub.com history evidence. Current code is authoritative.
+Local-only, untrusted GitHub.com/GitHub Enterprise history evidence. Current code is authoritative.
 Enable sources explicitly in this project's host config:
-  repositoryHistory.repositories: [{repository: "owner/repo", enabled: true, initialSince: "2026-10-01"}]
+  repositoryHistory.repositories: [{repository: "[HOST/]owner/repo", enabled: true, initialSince: "2026-10-01"}]
 
 Options:
   --project <path>       Project root (default: containing Git checkout or cwd)
   --host <mode>          opencode, codex, claude, pi (alias: omp), jcode (default: opencode)
-  --repository <owner/repo>  Select one configured GitHub.com source
+  --repository <[HOST/]owner/repo>  Select one configured GitHub.com or Enterprise source
   --since <ISO date>     Initial override; later syncs retain the stored window
   --kind <issue|pull_request>  Search filter
   --state <open|closed|merged|draft>  Search filter
