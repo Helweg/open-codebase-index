@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **IP-address security floor**: Raise the qualified ip-address override floor to 10.7.4 and resolve 10.7.4, addressing the IPv6 zone-identifier quadratic-time parsing vulnerability in [GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5) (CVE-2026-111997). The SDK and parent dependency ranges, other locked package versions, and published Node.js minimum are unchanged.
 - **History cancellation and private cleanup**: Honor host cancellation through local indexing/snapshot preparation before atomic publication, preserve published bytes and resumable staging on observed precommit cancellation, retire already-committed stage leftovers, and reclaim orphan preparations under the history lease. Known denials override cancellation and purge projected cache data as well as searchable/staged content.
 - **History initial-window provenance**: Preserve explicit initial CLI overrides across later unchanged configuration and staged-only cancelled retries. Changed/removed or ambiguous legacy bounds now receive clear-first feedback rather than silent scope drift or deletion.
 
