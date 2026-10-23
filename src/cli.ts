@@ -36,7 +36,7 @@ Start an MCP server over stdio when no command is given.
 Options:
   --project <path>          Project root (default: containing Git checkout or cwd)
   --config <path>           Explicit JSON configuration file
-  --host <mode>             opencode, codex, claude, pi, or jcode (default: opencode)
+  --host <mode>             opencode, codex, claude, pi (alias: omp), or jcode (default: opencode)
   --mcp-idle-timeout <secs>  Idle engine timeout; 0 disables (default: 900 for codex, 0 otherwise)
   --help, -h                Show this help and exit
   --history-only           History tools without code-index or embedding-provider startup;

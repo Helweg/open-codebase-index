@@ -17,7 +17,7 @@ Enable sources explicitly in this project's host config:
 
 Options:
   --project <path>       Project root (default: containing Git checkout or cwd)
-  --host <mode>          opencode, codex, claude, pi, jcode (default: opencode)
+  --host <mode>          opencode, codex, claude, pi (alias: omp), jcode (default: opencode)
   --repository <owner/repo>  Select one configured GitHub.com source
   --since <ISO date>     Initial override; later syncs retain the stored window
   --kind <issue|pull_request>  Search filter

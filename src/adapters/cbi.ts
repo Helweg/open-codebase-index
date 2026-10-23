@@ -60,7 +60,7 @@ Commands:
 
 Global options:
   --project <path>  Project root, default: containing Git checkout or current directory
-  --host <mode>     opencode, codex, claude, pi, or jcode
+  --host <mode>     opencode, codex, claude, pi (alias: omp), or jcode
   --config <path>   Explicit JSON config path
   --help            Show this message
 `);
