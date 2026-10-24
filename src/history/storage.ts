@@ -6,7 +6,7 @@ import type { HostMode } from "../config/host.js";
 import { getHostProjectIndexRelativePath } from "../config/paths.js";
 import { createLeaseTemporaryPath, isIndexLockContentionError, recoverLeaseArtifacts, removeLeaseTemporaryPath, withIndexLock } from "../indexer/index-lock.js";
 import type { IndexLockLease } from "../indexer/index-lock.js";
-import { HistoryError } from "./config.js";
+import { HistoryError, canonicalRepository } from "./config.js";
 import type { HistoryDocument, HistorySnapshot } from "./types.js";
 import { assertHistoryProjectPath } from "./paths.js";
 import type { OperationControl } from "../utils/operation-control.js";
@@ -15,7 +15,7 @@ import { checkpointHistoryWork } from "./work.js";
 import { historySnapshotSchema } from "./snapshot-schema.js";
 
 export function historyDirectory(projectRoot: string, host: HostMode, repository: string): string {
-  const directory = path.join(projectRoot, path.dirname(getHostProjectIndexRelativePath(host)), "history", createHash("sha256").update(repository).digest("hex"));
+  const directory = path.join(projectRoot, path.dirname(getHostProjectIndexRelativePath(host)), "history", createHash("sha256").update(canonicalRepository(repository)).digest("hex"));
   assertHistoryProjectPath(projectRoot, directory);
   return directory;
 }
@@ -27,7 +27,7 @@ export function readSnapshot(directory: string, repository: string): HistorySnap
   let parsed: ReturnType<typeof historySnapshotSchema.parse>;
   try { parsed = historySnapshotSchema.parse(JSON.parse(readFileSync(target, "utf8"))); }
   catch { throw new HistoryError("HISTORY_STORAGE", "invalid private history snapshot; refusing to serve it"); }
-  if (parsed.repository !== repository) throw new HistoryError("HISTORY_STORAGE", "history snapshot belongs to a different repository");
+  if (parsed.repository !== canonicalRepository(repository)) throw new HistoryError("HISTORY_STORAGE", "history snapshot belongs to a different host or repository");
   if (parsed.version === 1) {
     return { ...parsed, version: 2, lexicalVersion: undefined, httpCache: undefined,
       entities: parsed.entities.map((entity) => ({ ...entity, documents: entity.documents.map((doc): HistoryDocument => ({

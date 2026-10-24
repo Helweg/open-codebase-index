@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Enterprise history and omp CLI alias**: Support private history selectors `[HOST/]OWNER/REPO` for GitHub Enterprise DNS hosts while preserving bare and explicit `github.com` compatibility, isolating source/cache/staging/citation/permission identity by server, and using existing `gh` authentication with selected-server REST/GraphQL access. Accept CLI `--host omp` as an alias for canonical Pi mode with the same existing `.codebase-index` configuration/storage and no new programmatic `HostMode`.
+
 ## [0.38.0] - 2026-10-22
 
 ### Added

@@ -130,7 +130,7 @@ Usage:
 
 Options:
   --project <path>       Project root (default: containing Git checkout or cwd)
-  --host <mode>          opencode, codex, claude, pi, or jcode
+  --host <mode>          opencode, codex, claude, pi (alias: omp), or jcode
   --config <path>        Explicit JSON config path
   --force                Rebuild index even if already up to date
   --estimate-only        Estimate indexing cost only

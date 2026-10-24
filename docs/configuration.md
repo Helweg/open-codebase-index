@@ -8,9 +8,11 @@ Configuration is optional. Defaults are applied when fields are omitted.
 |---|---|---|---|---|
 | OpenCode | `.opencode/codebase-index.json` | `.opencode/index/` | `~/.config/opencode/codebase-index.json` | `~/.opencode/global-index/` |
 | Claude | `.claude/codebase-index.json` | `.claude/index/` | `~/.claude/codebase-index.json` | `~/.claude/global-index/` |
-| Codex, Pi, Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` | `~/.codebase-index/global-index/` |
+| Codex, Pi, omp (CLI alias for Pi), Jcode | `.codebase-index/config.json` | `.codebase-index/index/` | `~/.config/codebase-index/config.json` | `~/.codebase-index/global-index/` |
 
 Non-OpenCode hosts can fall back to existing OpenCode configuration or index state when a host-specific location does not exist.
+
+CLI `--host omp` normalizes to canonical `pi` and uses the same existing `.codebase-index` configuration and storage; it does not introduce a separate storage mode or change the programmatic `HostMode` values.
 
 Linked worktrees without their own host-specific project config inherit both the config and project index from the main checkout. Project-owned paths are stored relative to the project root, while branch catalogs and branch-scoped runtime state keep each checkout's contents separate. Adding a project config inside a worktree creates a local config and index boundary instead.
 
@@ -397,17 +399,26 @@ The MCP server writes redacted per-process runtime state below `<indexRoot>/mcp-
 
 ## Private GitHub history
 
-`repositoryHistory.repositories` is a **project-local only** source list. Each source requires `repository: "owner/repo"` (GitHub.com only) and explicit `enabled: true`; `initialSince` optionally bounds initial **created-at** history. Omit it to include all history. History configuration is independent of embedding/code-index configuration and is not inherited from global settings or another worktree.
+`repositoryHistory.repositories` is a **project-local only** source list. Each source requires `repository: "[HOST/]OWNER/REPO"` and explicit `enabled: true`; `initialSince` optionally bounds initial **created-at** history. Omit it to include all history. Bare `owner/repo` defaults to GitHub.com; explicit `github.com/OWNER/REPO` is an alias for the same lowercase `owner/repo`. Enterprise identities canonicalize to lowercase `hostname/owner/repo`. The optional host must be a DNS hostname: URLs, credentials, ports, and traversal components are not accepted. History configuration is independent of embedding/code-index configuration and is not inherited from global settings or another worktree.
 
 ```json
 {
   "repositoryHistory": {
     "repositories": [
-      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" }
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2026-10-01" },
+      { "repository": "github.example.com/team/service", "enabled": true, "initialSince": "2026-10-01" }
     ]
   }
 }
 ```
+
+For Enterprise authentication, use normal `gh auth login --hostname github.example.com` yourself. History uses existing `gh` authentication without copying credentials or changing authentication; supported sync requires REST and GraphQL access through `gh` on the selected server.
+
+```sh
+ocbi history sync --project /path/to/repo --host omp --repository github.example.com/team/service
+```
+
+The server hostname participates in source, cache, staging, citation, and permission identity, keeping identical owner/repo names on different servers isolated. Existing GitHub.com snapshots remain compatible; valid legacy GitHub.com staging can resume under its lease after fresh repository/principal/window proof, but Enterprise never adopts legacy hostless staging. Citation URLs and `#number` references derive from the selected host. Explicit URL references are validated, not rewritten across hosts or fetched from another host. Access-loss cleanup affects only the selected source.
 
 Use `ocbi history sync` manually, then local `history search`, `status`, and `clear` (pass the appropriate `--project`/`--host`). The matching `repository_history_*` tools are available across hosts. `open-codebase-index-mcp --history-only --project /path --host codex` starts without code-index/embedding-provider initialization; status/clear also work without the native addon, while enabled sync/search uses native BM25. No history embedding/reranker requests occur. Full per-page reconciliation remains explicit/resumable; ETags reduce unchanged response bodies and supported GET primary-quota cost, not HTTP count or secondary limits. Unchanged lexical content reuses its serialized index. An initial `--since` overrides configuration, and the configured baseline is recorded separately so later unchanged configuration keeps that effective window; changed/removed bounds give clear-first feedback. Status reports `initialSinceMismatch` and `lexicalRebuildRequired`; older lexical caches rebuild locally before first search, without network or cursor/freshness advancement. Old raw staging is retired under lease. Disabled sync/search do not access APIs or cached bodies; clear removes published/projected/staged history and orphan preparations even when disabled. See [privacy, permissions, timestamp provenance and lifecycle](tools.md#private-github-repository-history).
 

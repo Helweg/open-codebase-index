@@ -60,6 +60,34 @@ function resultText(result: { content?: unknown }) {
 afterEach(() => { vi.unstubAllEnvs(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("history public surfaces", () => {
+  it("uses the Pi history config and store through the omp CLI alias", async () => {
+    const fixture = setup();
+    writeFileSync(path.join(fixture.root, ".opencode", "codebase-index.json"), JSON.stringify({
+      embeddingProvider: "custom",
+      customProvider: {},
+      indexing: { autoIndex: false },
+      repositoryHistory: { repositories: [{ repository, enabled: false }] },
+    }));
+    const cli = async (...args: string[]) => JSON.parse((await execute(process.execPath, [
+      path.resolve("dist/cbi.js"),
+      "history",
+      ...args,
+      "--project",
+      fixture.root,
+      "--host",
+      "omp",
+    ], { env: process.env })).stdout);
+
+    const sync = await cli("sync");
+    expect(sync).toMatchObject({ complete: true, entityCount: 1, documentCount: 4 });
+    expect(existsSync(path.join(historyDirectory(fixture.root, "pi", repository), "snapshot.json"))).toBe(true);
+    expect(existsSync(historyDirectory(fixture.root, "opencode", repository))).toBe(false);
+    expect((await cli("search", "reviewneedle")).results[0]).toMatchObject({
+      documentUrl: "https://github.com/example/repository/pull/1#pullrequestreview-30",
+      state: "merged",
+    });
+  }, 30_000);
+
   it("executes actual built CLI sync/search/status/clear and resumes API failure without advancing published history", async () => {
     const fixture = setup();
     const cli = async (binary: "cbi" | "cli", ...args: string[]) => JSON.parse((await execute(process.execPath, [path.resolve(`dist/${binary}.js`), "history", ...args, "--project", fixture.root, "--host", "codex"], { env: process.env })).stdout);

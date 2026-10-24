@@ -6,12 +6,12 @@ import { runRepositoryHistoryClear, runRepositoryHistorySearch, runRepositoryHis
 import { TOOL_NAME } from "../../tools/tool-names.js";
 
 export function registerMcpHistoryTools(server: McpServer, projectRoot: string, host: HostMode): void {
-  const repository = z.string().optional().describe("Configured GitHub.com owner/repo; required when multiple sources are configured");
+  const repository = z.string().optional().describe("Configured [HOST/]OWNER/REPO; HOST defaults to github.com; required when multiple sources are configured");
   const respond = async (operation: () => Promise<unknown>) => {
     try { return { content: [{ type: "text" as const, text: JSON.stringify(await operation(), null, 2) }] }; }
     catch (error) { return { isError: true, content: [{ type: "text" as const, text: error instanceof HistoryError ? error.message : "HISTORY_ERROR: local history operation failed" }] }; }
   };
-  server.tool(TOOL_NAME.REPOSITORY_HISTORY_SYNC, "Manually sync an explicitly enabled GitHub.com issue/PR source. Read-only; local private lexical history, no embeddings. Full reconciliation may use many requests; interrupted fetches resume next manual sync.", {
+  server.tool(TOOL_NAME.REPOSITORY_HISTORY_SYNC, "Manually sync an explicitly enabled GitHub.com or GitHub Enterprise issue/PR source. Read-only; local private lexical history, no embeddings. Full reconciliation may use many requests; interrupted fetches resume next manual sync.", {
     repository, since: z.string().optional().describe("Initial created-at window (ISO date); no bound when omitted/config absent"),
   }, (args, extra) => respond(() => runRepositoryHistorySync(args, projectRoot, host, { signal: extra.signal })));
   server.tool(TOOL_NAME.REPOSITORY_HISTORY_SEARCH, "Search LOCAL cached untrusted historical issue/PR evidence, separate from current code. Returns exact source citations/state/timestamps/commit provenance. No network, embeddings, or reranking; current code is authoritative.", {

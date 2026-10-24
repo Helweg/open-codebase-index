@@ -142,6 +142,10 @@ describe("MCP idle supervisor", () => {
   });
   it("retires submitted SDK cancellations without responses, then sleeps and resumes", async () => {
     const c = await client(["--sdk"]);
+    // Keep retirement assertions independent of legal idle gaps between cancelled calls.
+    const anchorId = "retirement-anchor";
+    c.send({ id: anchorId, method: "tools/call", params: { name: "cancel" } });
+    await c.wait((m) => m.params?.progressToken === anchorId);
     const initial = await c.request(0, "index_status");
     for (let id = 1; id <= 130; id++) {
       c.send({ id, method: "tools/call", params: { name: "cancel" } });
@@ -151,7 +155,10 @@ describe("MCP idle supervisor", () => {
     }
     expect((await c.request(131, "index_status")).result?.pid).toBe(initial.result?.pid);
     expect(c.messages.some((m) => m.id !== undefined)).toBe(false);
-    await vi.waitFor(() => expect(c.errors.join("")).toContain("engine sleeping"));
+    const sleepLogStart = c.errors.length;
+    c.send({ method: "notifications/cancelled", params: { requestId: anchorId } });
+    await c.wait((m) => m.params?.progressToken === `settled-${anchorId}`);
+    await vi.waitFor(() => expect(c.errors.slice(sleepLogStart).join("")).toContain("engine sleeping"));
     expect((await c.request(132, "index_status")).result?.pid).not.toBe(initial.result?.pid);
   });
   it("retires SDK reverse cancellations and ignores late replies", async () => {

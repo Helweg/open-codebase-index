@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export interface RepositoryHistorySource {
   repository: string;
   enabled: boolean;
@@ -15,12 +17,28 @@ export class HistoryError extends Error {
   }
 }
 
+export interface RepositoryHistoryIdentity {
+  hostname: string;
+  nameWithOwner: string;
+  canonical: string;
+}
+
+export function parseRepositoryIdentity(value: unknown): RepositoryHistoryIdentity {
+  const invalid = () => new HistoryError("HISTORY_CONFIG", "repository must be [HOST/]OWNER/REPO with a DNS hostname, not a URL, port, or path");
+  if (typeof value !== "string" || value.trim() !== value) throw invalid();
+  const parts = value.split("/");
+  if (parts.length !== 2 && parts.length !== 3) throw invalid();
+  const hostname = parts.length === 3 ? parts.shift()!.toLowerCase() : "github.com";
+  if (hostname.length > 253 || isIP(hostname) !== 0 || !hostname.split(".").every((label) =>
+    /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label))) throw invalid();
+  const nameWithOwner = parts.join("/").toLowerCase();
+  if (!/^[a-z0-9](?:[a-z0-9-]{0,38})\/[a-z0-9_.-]{1,100}$/.test(nameWithOwner)
+    || parts[1] === "." || parts[1] === ".." || nameWithOwner.endsWith(".git")) throw invalid();
+  return { hostname, nameWithOwner, canonical: hostname === "github.com" ? nameWithOwner : `${hostname}/${nameWithOwner}` };
+}
+
 export function canonicalRepository(value: unknown): string {
-  if (typeof value !== "string" || !/^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[A-Za-z0-9_.-]{1,100}$/.test(value)
-    || value.split("/")[1] === "." || value.split("/")[1] === ".." || value.endsWith(".git")) {
-    throw new HistoryError("HISTORY_CONFIG", "repository must be a GitHub.com owner/repo, not a URL or path");
-  }
-  return value.toLowerCase();
+  return parseRepositoryIdentity(value).canonical;
 }
 
 export function historySince(value: unknown): string | undefined {

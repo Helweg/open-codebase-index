@@ -8,9 +8,10 @@ export function isSupportedHostMode(value: string): value is HostMode {
 
 export function parseHostMode(value: string | undefined): HostMode {
   const normalized = (value ?? "").toLowerCase();
+  const canonical = normalized === "omp" ? "pi" : normalized;
 
-  if (isSupportedHostMode(normalized)) {
-    return normalized;
+  if (isSupportedHostMode(canonical)) {
+    return canonical;
   }
 
   throw new Error(`Invalid host mode: ${value ?? "(none)"}. Allowed values: ${HOST_MODES.join(", ")}.`);

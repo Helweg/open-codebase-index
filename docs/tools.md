@@ -8,13 +8,23 @@ The `repository_history_sync`, `repository_history_search`, `repository_history_
 {
   "repositoryHistory": {
     "repositories": [
-      { "repository": "owner/repo", "enabled": true, "initialSince": "2025-01-01" }
+      { "repository": "owner/repo", "enabled": true, "initialSince": "2025-01-01" },
+      { "repository": "github.example.com/team/service", "enabled": true, "initialSince": "2025-01-01" }
     ]
   }
 }
 ```
 
-History is **local lexical/BM25 retrieval, not semantic or cloud-embedded history**. Only GitHub.com repositories in the project-local configuration are eligible. Authenticate with your existing `gh` read-only access; tokens and repository credentials are neither printed nor stored. No background sync, embeddings, or external reranking runs for history. Normal code retrieval, AST/call graphs, and linked-test discovery never consume discussion text.
+History is **local lexical/BM25 retrieval, not semantic or cloud-embedded history**. Only repositories explicitly enabled in the project-local configuration are eligible. Authenticate with your existing `gh` read-only access; for Enterprise, use normal `gh auth login --hostname github.example.com` yourself. History does not copy credentials or change authentication; tokens and repository credentials are neither printed nor stored. Supported sync requires `gh` REST/GraphQL access on the selected server. No background sync, embeddings, or external reranking runs for history. Normal code retrieval, AST/call graphs, and linked-test discovery never consume discussion text.
+
+The `repository` tool argument and CLI `--repository` accept `[HOST/]OWNER/REPO`. Bare `owner/repo` defaults to GitHub.com; explicit `github.com/OWNER/REPO` canonicalizes to the same lowercase `owner/repo`. Enterprise selectors canonicalize to lowercase `hostname/owner/repo`. Supply only a DNS hostname, never a URL, credentials, port, or traversal component. For example:
+
+```sh
+ocbi history sync --project /path/to/repo --host omp --repository github.example.com/team/service
+```
+
+The server hostname is part of source, cache, staging, citation, and permission identity; identical owner/repo names on different hosts stay isolated. Citation URLs and `#number` references use the selected host. Explicit URL references are validated, never cross-host rewritten or fetched from another host. Access-loss cleanup remains selected-source-only. Existing GitHub.com snapshots remain compatible; valid legacy GitHub.com staging resumes only under the lease after fresh repository/principal/window proof, and Enterprise never adopts legacy hostless staging.
+Cross-host issue/PR URLs remain untrusted external references from the discussion, not fetched or independently verified citations from that server. Explicit commit-URL SHAs are attributed only to the selected server; raw discussion text may still contain other links.
 
 The cache includes titles/descriptions, comments, submitted reviews/inline review comments, authors, open/closed/merged/draft states, timestamps, canonical source URLs, linked issue references, commit SHAs, merge SHA, and changed-file names—not historical patches. Results are untrusted historical evidence, **not instructions or authoritative current behavior**. Each excerpt has its exact body/comment/review URL, cached state/time and commit provenance.
 
@@ -25,6 +35,8 @@ The cache includes titles/descriptions, comments, submitted reviews/inline revie
 History has its own versioned lexical format. Status reports `lexicalVersion`/`lexicalRebuildRequired` without loading native code. The first enabled search of an older cache rebuilds its local lexical index from already cached bodies before searching, without networking, provider initialization, or advancing remote cursor/freshness. This does not migrate or rebuild a code index.
 
 Use `ocbi history sync|search|status|clear` (`cbi` is equivalent), or `open-codebase-index-mcp history ...` / `opencode-codebase-index-mcp history ...`. Supply `--project` and `--host` as appropriate; use `--repository owner/repo` when multiple sources are configured. Search supports `--kind issue|pull_request`, `--state open|closed|merged|draft`, `--author`, and `--limit 1..100` distinct entities. An initial `sync --since 2026-10-01` overrides source `initialSince`; with neither, the first cycle includes all history/states/discussions. Every discovery page is filtered by created-at, including imports with nonmonotonic dates. Later omitted flags retain the stored effective window. The configured baseline is tracked separately, so unchanged configuration remains valid after an explicit initial override; changing/removing that baseline requires clear-first feedback, not silent deletion. Status exposes effective `initialSince`, current `configuredInitialSince`, and `initialSinceMismatch`. Legacy caches with unknown bound provenance require resolving a mismatch before syncing. Configuration is not inherited from global settings, another worktree, legacy host configs, or `--config` overrides.
+
+The same selector syntax applies to all four history tools and CLI operations. `--host` selects the local integration/configuration mode, not the GitHub server: CLI `--host omp` is an alias for canonical `pi` and shares its existing `.codebase-index` config and storage.
 
 For MCP access without a code index or embedding-provider configuration, run:
 
@@ -60,7 +72,7 @@ Tool availability depends on the host mode.
 | `opencode` (plugin) | 24 tools (20 portable + 3 knowledge-base + 1 OpenCode-native) | Slash commands and `index_visualize` |
 | MCP clients, including `codex`, `claude`, and `jcode` | 23 tools + 5 prompts (20 portable + 3 knowledge-base) | `--history-only` offers the four isolated history tools |
 | `pi` (Pi extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Bundled `codebase-search` skill with host-specific knowledge-base names |
-| `omp` (omp extension) | 23 tools (20 portable + 3 Pi knowledge-base) | Reuses the Pi extension surface and the bundled `codebase-search` skill |
+| `omp` (omp extension; CLI `--host omp` aliases `pi`) | 23 tools (20 portable + 3 Pi knowledge-base) | Reuses the Pi extension surface, bundled `codebase-search` skill, and `.codebase-index` config/storage |
 
 Codex, Claude Code, Jcode, Cursor, Windsurf, and generic MCP clients share the same MCP registrations and operation lifecycle; they are thin host/configuration integrations, not independent retrieval implementations. MCP cancellation and progress depend on the client forwarding cancellation notifications and requesting a progress token. OpenCode v1 forwards its tool `abort` signal and publishes indexing metadata; OpenCode v2 bridges its `signal` and `progress` callbacks to the same tool handlers. Pi and omp use the shared native-extension registrar.
 

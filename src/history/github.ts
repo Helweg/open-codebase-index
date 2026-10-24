@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { HistoryError, canonicalRepository } from "./config.js";
+import { HistoryError, parseRepositoryIdentity } from "./config.js";
 import { projectHistoryResponse } from "./responses.js";
 import type { HistoryRestResponse } from "./responses.js";
 
@@ -46,6 +46,8 @@ export interface HistoryDiscoveryPage {
   hasNextPage: boolean;
 }
 export interface HistoryAccess {
+  /** Selected authenticated gh transport host; IDs below come from fresh API proof. */
+  hostname: string;
   repositoryId: string;
   repositoryName: string;
   principalId: string;
@@ -86,14 +88,14 @@ function restResponse(stdout: string): HistoryRestResponse {
 }
 
 export function createGitHubApi(repository: string, cwd: string, signal?: AbortSignal): HistoryApi {
-  const canonical = canonicalRepository(repository);
-  const [owner, name] = canonical.split("/");
+  const identity = parseRepositoryIdentity(repository);
+  const [owner, name] = identity.nameWithOwner.split("/");
   const request = async (args: string[], headers = false): Promise<unknown> => {
     try {
-      const { stdout } = await execFileAsync("gh", ["api", "--hostname", "github.com", "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28", ...args], {
+      const { stdout } = await execFileAsync("gh", ["api", "--hostname", identity.hostname, "-H", "Accept: application/vnd.github+json", "-H", "X-GitHub-Api-Version: 2022-11-28", ...args], {
         cwd, shell: false, timeout: 60_000, maxBuffer: 32 * 1024 * 1024, encoding: "utf8",
         signal,
-        env: { ...process.env, GH_HOST: "github.com", GH_PROMPT_DISABLED: "1", GH_DEBUG: undefined },
+        env: { ...process.env, GH_HOST: identity.hostname, GH_PROMPT_DISABLED: "1", GH_DEBUG: undefined },
       });
       return headers ? restResponse(stdout) : JSON.parse(stdout) as unknown;
     } catch (error) {
@@ -129,10 +131,17 @@ export function createGitHubApi(repository: string, cwd: string, signal?: AbortS
       const principalId = response.data?.viewer?.id;
       if (!repo || !principalId || !Array.isArray(repo.issues?.nodes) || !Array.isArray(repo.pullRequests?.nodes)) throw new GitHubApiError(403, false);
       if (!Number.isSafeInteger(repo.databaseId) || !repo.nameWithOwner) throw new HistoryError("HISTORY_API", "invalid repository capability response");
-      return { repositoryId: String(repo.databaseId), repositoryName: repo.nameWithOwner, principalId };
+      return { hostname: identity.hostname, repositoryId: String(repo.databaseId), repositoryName: repo.nameWithOwner, principalId };
     },
     async get(endpoint, etag) {
-      if (!(endpoint === `repos/${canonical}` || endpoint.startsWith(`repos/${canonical}/`)) || !/^repos\/[A-Za-z0-9_./-]+(?:\?[A-Za-z0-9_=&%.-]+)?$/.test(endpoint)) {
+      const base = `repos/${identity.nameWithOwner}`;
+      const [pathname, query, extra] = endpoint.split("?");
+      const suffix = pathname.startsWith(`${base}/`) ? pathname.slice(base.length) : "";
+      const allowedPath = pathname === base
+        || /^\/(?:issues|pulls)\/[1-9]\d*$/.test(suffix)
+        || /^\/issues\/[1-9]\d*\/(?:comments|timeline)$/.test(suffix)
+        || /^\/pulls\/[1-9]\d*\/(?:reviews|comments|files)$/.test(suffix);
+      if (!allowedPath || extra !== undefined || query !== undefined && !/^(?:per_page=[1-9]\d*(?:&page=[1-9]\d*)?|page=[1-9]\d*(?:&per_page=[1-9]\d*)?)$/.test(query)) {
         throw new HistoryError("HISTORY_API", "refusing non-repository API endpoint");
       }
       if (etag && !/^[\x21-\x7e]{1,1024}$/.test(etag)) throw new HistoryError("HISTORY_STORAGE", "invalid cached response validator");

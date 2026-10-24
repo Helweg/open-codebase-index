@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { canonicalRepository } from "./config.js";
+
+const repositoryIdentity = z.string().refine((value) => {
+  try { return canonicalRepository(value) === value; }
+  catch { return false; }
+}, "invalid canonical history repository identity");
 
 const timestampProvenance = z.object({
   createdAt: z.enum(["created_at", "submitted_at", "legacy"]),
@@ -16,7 +22,7 @@ const entity = z.object({
   fileReferencesComplete: z.boolean(), totalChangedFiles: z.number().int().nonnegative(), documents: z.array(document),
 });
 export const historySnapshotSchema = z.object({
-  version: z.union([z.literal(1), z.literal(2)]), repository: z.string(), repositoryId: z.string().optional(), principalId: z.string().optional(),
+  version: z.union([z.literal(1), z.literal(2)]), repository: repositoryIdentity, repositoryId: z.string().optional(), principalId: z.string().optional(),
   status: z.enum(["ready", "inaccessible", "error"]), initialSince: z.string().optional(), configuredInitialSince: z.string().nullable().optional(),
   maxNumber: z.number().int().nonnegative(), cursor: z.string().optional(), lastSyncedAt: z.string().optional(), lastError: z.string().optional(),
   syncGeneration: z.string().optional(),
