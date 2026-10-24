@@ -26,14 +26,15 @@ We will acknowledge receipt within 48 hours and provide a detailed response with
 ## Security Considerations
 
 This plugin:
-- Stores vector indices locally in your project directory
-- Sends code chunks to embedding APIs (OpenAI, Google, Ollama, or a custom OpenAI-compatible endpoint)
-- Does not transmit data to any other third parties
+- Stores code indexes and opted-in history caches locally in your project directory
+- Sends code chunks to configured embedding and reranking providers only when those features are enabled
+- Uses existing `gh` authentication for explicitly opted-in manual history sync against the selected GitHub.com or GitHub Enterprise server
 
 ### Data Privacy
 
-- All index data is stored locally
-- Code is only sent to your configured embedding provider
+- Code indexes and opted-in history caches are stored locally
+- Embedding and optional reranking requests use your configured providers
+- History search runs locally without embedding or reranking requests; cached permissions are offline observations, not real-time access checks
 - No telemetry or analytics are collected
 
 ## Dependency Override Policy
