@@ -1,4 +1,4 @@
-import { existsSync, statSync, type Stats } from "fs";
+import { accessSync, constants, existsSync, lstatSync, statSync, type Stats } from "fs";
 import { stat } from "node:fs/promises";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
@@ -250,25 +250,36 @@ export class FileWatcher {
 
     watcher.on("error", (error: unknown) => {
       const err = error instanceof Error ? (error as NodeJS.ErrnoException) : null;
+      let recoverablePermissionError = false;
       if (err?.code === "EPERM" || err?.code === "EACCES") {
-        // Silently ignore permission errors — common on macOS restricted paths
-        return;
+        if (
+          this.watcher !== watcher
+          || watcher.options.usePolling
+          || this.pollingFallbackAttempted
+          || !this.canRecoverSourceWatchPermissionError(err)
+        ) {
+          // Restricted, unreadable, unselected, and unidentified targets remain ignored.
+          return;
+        }
+        recoverablePermissionError = true;
       }
 
       if (
-        err?.code === "EMFILE"
+        (err?.code === "EMFILE" || recoverablePermissionError)
         && !watcher.options.usePolling
         && !this.pollingFallbackAttempted
         && this.watcher === watcher
       ) {
         this.pollingFallbackAttempted = true;
-        console.warn("[codebase-index] File watcher exhausted open file handles; retrying with polling.");
+        console.warn(recoverablePermissionError
+          ? "[codebase-index] File watcher could not watch a readable selected source; retrying with polling."
+          : "[codebase-index] File watcher exhausted open file handles; retrying with polling.");
         // Capture before close clears Chokidar's inventory, including files deleted during replacement.
         const recoveryPaths = this.nativeWatcher || this.nativeStarting
           ? new Set(this.configPathStates.keys())
           : this.getChokidarRecoveryPaths(watcher);
         this.pendingClose = watcher.close().catch((closeError: unknown) => {
-          console.error("[codebase-index] Failed to close exhausted file watcher:", closeError);
+          console.error("[codebase-index] Failed to close file watcher before polling recovery:", closeError);
         });
         if (this.onChanges) {
           const replacementReportsStartupReady = reportsStartupReady || reportedStartupReady;
@@ -291,6 +302,49 @@ export class FileWatcher {
     watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
     watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
     watcher.add(resolvedWatchTargets);
+  }
+
+  private canRecoverSourceWatchPermissionError(error: NodeJS.ErrnoException): boolean {
+    if (error.syscall !== "watch" || typeof error.path !== "string" || !path.isAbsolute(error.path)) return false;
+
+    const projectRoot = path.resolve(this.projectRoot);
+    const filePath = path.resolve(error.path);
+    const relativePath = path.relative(projectRoot, filePath);
+    if (!relativePath || this.isOutsideProjectPath(relativePath)) return false;
+
+    const ignoreFilter = createIgnoreFilter(projectRoot);
+    const gitIgnoreFilter = createGitIgnoreFilter(projectRoot);
+    const includeIgnored = this.config.indexing?.includeIgnored ?? [];
+    const filterOptions = this.getPathFilterOptions();
+    if (
+      this.isProjectConfigPath(filePath)
+      || this.localModuleConfigTracker.has(filePath)
+      || shouldTrackLocalModuleConfigPath(filePath, projectRoot, ignoreFilter, this.getSnapshotConfig())
+      || (path.basename(filePath).toLowerCase() === "package.json"
+        && this.localModuleConfigTracker.shouldTrackPackagePath(filePath))
+      || !shouldIncludeFile(
+        filePath, projectRoot, [...this.config.include, ...(this.config.additionalInclude ?? [])],
+        this.config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions,
+      )
+    ) return false;
+
+    try {
+      if (!lstatSync(filePath).isFile()) return false;
+      accessSync(filePath, constants.R_OK);
+      let directory = path.dirname(filePath);
+      for (;;) {
+        if (!shouldTraverseDirectory(
+          directory, projectRoot, this.config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions,
+        ) || !lstatSync(directory).isDirectory()) return false;
+        accessSync(directory, constants.R_OK | constants.X_OK);
+        if (path.relative(projectRoot, directory) === "") return true;
+        const parent = path.dirname(directory);
+        if (parent === directory) return false;
+        directory = parent;
+      }
+    } catch {
+      return false;
+    }
   }
 
   private getChokidarRecoveryPathFilter(): (filePath: string) => boolean {

@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Legacy history staging compatibility**: Resume valid GitHub.com projected v2 staging under its lease after fresh repository, principal, and initial-window proof; Enterprise sources never adopt legacy hostless staging.
 - **Cancellation retirement regression setup**: Keep an existing handler active while checking 130 submitted cancellations, preserving the same-generation, capacity, no-response, and sleep/resume assertions and original timeouts. This repairs the test precondition without changing production behavior or attributing the earlier untraced PID failure.
+- **Selected-source watcher registration recovery**: Reuse Chokidar's one-shot polling recovery when Node rejects a `watch` registration with `EPERM` or `EACCES` for an identified, readable, selected source file under traversable project ancestors. Keep default polling off and preserve unreadable, excluded, restricted, configuration-only, and unidentified-target handling. Retain early backend-error/readiness anchors and phase counts in failure-only contributor captures. This repairs a controlled, demonstrated false-ready path; it does not attribute an earlier watcher failure whose registration evidence was unavailable.
 
 ## [0.38.0] - 2026-10-22
 
