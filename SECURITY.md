@@ -55,6 +55,46 @@ Track override decisions in [#379](https://github.com/Helweg/open-codebase-index
 | `ip-address@>=10.0.0 <10.7.4` | `^10.7.4` | [GHSA-j6r3-76f7-8jcv](https://github.com/advisories/GHSA-j6r3-76f7-8jcv), [GHSA-h3mg-xc3c-68pw](https://github.com/advisories/GHSA-h3mg-xc3c-68pw), and [GHSA-rxp7-6hxx-x8q5](https://github.com/advisories/GHSA-rxp7-6hxx-x8q5) |
 | `postcss@>=8.0.0 <8.5.26` | `^8.5.26` | Retain the sourceMappingURL map-file-disclosure floor from commit `5b0cf22`, including earlier PostCSS fixes |
 | `vite@>=8.0.0 <8.0.16` | `^8.0.16` | [GHSA-v6wh-96g9-6wx3](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) and [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) |
+| `@earendil-works/pi-coding-agent@^1.3.0` → `undici@>=8.0.0 <8.12.2` | `^8.12.2` | Development-only [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c); replaces the parent's exact vulnerable edge without changing the published runtime floor |
+| `@opencode-ai/plugin@1.3.13` → `zod@<4.6.6` | `^4.6.7` | Development-only [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5); aligns the build SDK with the safe direct Zod |
+
+### 0.38.1 Consumer Dependency Closure
+
+The OpenCode helper was already bundled into ESM and CommonJS output and used the
+safe direct Zod. Its unnecessary production `@opencode-ai/plugin` dependency
+nevertheless installed an additional vulnerable exact Zod copy. Keep the original
+helper and `tool.schema` contract, declare direct Zod `^4.6.7`, and keep the exact
+plugin `1.3.13` only for building and type interoperability. Bundle its public
+declarations, but retain safe, dependency-free `@opencode-ai/sdk@1.3.13` as a
+declared public type dependency: its protected client members must share upstream
+identity rather than becoming incompatible copies in bundled declarations.
+
+The plugin's pre-existing Zod `4.1.8` **type ABI**, including its version-branded
+schema types, is retained only as original declaration data with its MIT notice.
+The build materializes that graph under `dist/opencode-zod-4.1.8` and redirects
+only the plugin tool declaration's Zod import to a relative private type entry.
+No legacy JavaScript is bundled, installed as a production dependency, or run.
+Runtime/configuration Zod remains `>=4.6.7`; neither private members nor type
+brands are erased or rewritten to make SDK interoperability pass.
+
+Packed acceptance checks both identities without consumer overrides or an
+explicitly installed OpenCode plugin, with complete strict ESM/CommonJS
+declaration checking. The necessary safe SDK is installed automatically from the
+declared dependency. Separate explicit, unmodified plugin/Zod fixtures retain
+actual upstream `Plugin` assignability and the same non-`any` and negative
+callback checks. Those comparison fixtures do not describe our production
+dependency graph.
+
+The existing Express range admits body-parser `2.4.0`, addressing
+[GHSA-27r3-jxmh-p828](https://github.com/advisories/GHSA-27r3-jxmh-p828).
+The existing AJV range admits fast-uri `3.1.9`, addressing
+[GHSA-w74x-v6f9-j3xg](https://github.com/advisories/GHSA-w74x-v6f9-j3xg),
+[GHSA-xhq7-xmqj-769h](https://github.com/advisories/GHSA-xhq7-xmqj-769h),
+[GHSA-wjr9-j795-jxcr](https://github.com/advisories/GHSA-wjr9-j795-jxcr), and
+[GHSA-333x-w4r6-6crp](https://github.com/advisories/GHSA-333x-w4r6-6crp).
+These runtime resolutions do not need new root overrides. The scoped development
+overrides above do not govern downstream installs. Undici's existing development
+Node.js `22.19.0` minimum and the published `22.13.0` minimum remain distinct.
 
 ### Removed Overrides and Resolved Pi Exception
 

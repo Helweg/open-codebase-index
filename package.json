@@ -44,12 +44,12 @@
   },
   "scripts": {
     "build": "npm run build:native && npm run build:ts",
-    "build:ts": "tsup && node scripts/smoke-test-built-cli.mjs",
+    "build:ts": "tsup && node scripts/build-types.mjs && node scripts/smoke-test-built-cli.mjs",
     "smoke:package": "node scripts/smoke-test-packed-cli.mjs",
     "build:native": "cd native && cargo build --release && napi build --release --platform",
     "build:native:all": "cd native && napi build --release --platform --target x86_64-apple-darwin --target aarch64-apple-darwin --target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu --target x86_64-pc-windows-msvc --target aarch64-pc-windows-msvc",
     "visualize": "node dist/cli.js visualize",
-    "dev": "tsup --watch",
+    "dev": "tsup --watch --onSuccess \"node scripts/build-types.mjs\"",
     "eval": "npx tsx src/cli.ts eval run",
     "eval:agent": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/agent-context.json",
     "eval:architecture": "npx tsx src/cli.ts eval run --dataset benchmarks/golden/architecture-context.json",
@@ -104,7 +104,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@opencode-ai/plugin": "1.3.13",
+    "@opencode-ai/sdk": "1.3.13",
     "chokidar": "^5.0.0",
     "ignore": "^7.0.5",
     "p-queue": "^10.0.0",
@@ -112,15 +112,18 @@
     "pdfjs-dist": "6.4.299",
     "tiktoken": "^1.0.15",
     "unicode-case-folding": "1.1.2",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^1.3.0",
     "@eslint/js": "^10.0.1",
     "@napi-rs/cli": "^3.6.0",
+    "@opencode-ai/plugin": "1.3.13",
     "@types/node": "^22.19.19",
     "@vitest/coverage-v8": "^5.0.0",
     "eslint": "^10.11.0",
+    "rollup": "4.64.7",
+    "rollup-plugin-dts": "6.5.1",
     "tsup": "^9.0.0",
     "tsx": "^4.23.1",
     "typescript": "^5.9.3",
@@ -128,6 +131,12 @@
     "vitest": "^5.0.0"
   },
   "overrides": {
+    "@earendil-works/pi-coding-agent@^1.3.0": {
+      "undici@>=8.0.0 <8.12.2": "^8.12.2"
+    },
+    "@opencode-ai/plugin@1.3.13": {
+      "zod@<4.6.6": "^4.6.7"
+    },
     "hono@>=4.0.0 <4.13.11": "^4.13.11",
     "ip-address@>=10.0.0 <10.7.4": "^10.7.4",
     "postcss@>=8.0.0 <8.5.26": "^8.5.26",
