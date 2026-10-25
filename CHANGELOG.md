@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Watcher failure capture visibility**: Preserve failure-only capture expectations independently of snapshot writes and report retained, retention-failed, and expected-missing diagnostics in CI summaries and a separate status artifact without replacing the original test failure or requiring captures for unrelated failures.
+
 ## [0.38.1] - 2026-10-24
 
 ### Added

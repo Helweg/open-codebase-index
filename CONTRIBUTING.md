@@ -81,6 +81,23 @@ Look for `[watcher failure capture]` in stderr. Locally the printed private
 directory is under `<os.tmpdir()>/ocbi-watcher-failures/`; CI uses
 `${RUNNER_TEMP}/ocbi-watcher-failures/` and uploads it on job failure as
 `watcher-failures-node-<version>-<run>-<attempt>` for 14 days.
+Failure stderr also records a bounded status: `retained`,
+`capture-retention-failed`, or `expected-capture-missing`. A failure expectation
+is written separately from the snapshot bundle, so a bundle write failure does
+not erase the obligation. CI runs `node scripts/report-watcher-captures.mjs`
+on job failure and publishes the checked status in the Actions job summary and
+the separate `watcher-capture-status-node-<version>-<run>-<attempt>` artifact
+(14 days). An expectation without a completed `capture.json` is reported as
+missing; metadata coverage gaps inside a completed capture are still retained
+diagnostics. Partial bundles remain available in the ordinary failure artifact.
+An unrelated failed test creates no watcher capture obligation. Absent durable
+records are reported as `no-records-unknown`, not proof that no covered scenario
+failed. Status reporting never replaces the original test error; if status
+storage fails, stderr and an independent Actions summary append are best-effort
+fallbacks. The checker writes the summary before attempting its report file,
+and refuses symlinked status or capture directories; these guards are not an
+adversarial filesystem-race guarantee.
+
 `capture.json` contains monotonic observations, first/last phase anchors,
 suppressed warnings, dropped-event and explicit detail-byte-cut counts,
 bounded numeric index statistics, runtime/backend information, and a snapshot
@@ -100,11 +117,16 @@ directory-FD guards may refuse Windows snapshots as `MISSING`; Windows
 snapshot coverage has not been verified. These checks are not an adversarial
 filesystem-race guarantee.
 
-Diagnostic text redacts absolute private paths, but **raw fixture index files
-can contain temporary paths**. Inspect artifacts privately; do not commit them
-or publish raw contents. A native cache observation and current-disk digest do
-not prove the bytes originally executed. A passing run is a non-reproduction,
-not evidence that a historical watcher failure is fixed.
+Treat all artifact contents as **sensitive, untrusted diagnostic input**.
+Diagnostic text redacts absolute private paths, but **raw fixture source and
+index bytes are not made safe by redaction** and can contain temporary paths.
+Only owned synthetic fixtures belong in these scenarios. Do not commit artifacts
+or republish raw contents. Actions artifacts in a public repository may be
+accessible to people with Actions access; the 14-day retention setting is not a
+confidentiality guarantee and does not revoke downloaded copies. Inspect access
+and retention before relying on an upload. A native cache observation and
+current-disk digest do not prove the bytes originally executed. A passing run is
+a non-reproduction, not evidence that a historical watcher failure is fixed.
 
 ### Linting
 

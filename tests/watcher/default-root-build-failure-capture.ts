@@ -6,6 +6,7 @@ import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { inspect } from "node:util";
+import { FailureCaptureStatus } from "./failure-capture-status.js";
 
 // Only the default-root-build acceptance scenario owns this diagnostic.
 export const CAPTURE_LIMITS = {
@@ -54,8 +55,10 @@ export class DefaultRootBuildFailureCapture {
   private detailByteCuts = 0;
   private failed = false;
   private readonly missing: string[] = [];
+  private readonly status: FailureCaptureStatus;
 
   constructor(projectDir: string, indexRoot: string, private readonly backend: string) {
+    this.status = new FailureCaptureStatus(backend);
     for (const [label, directory, prefix] of [
       ["project", projectDir, "ocbi-include-excluded-project-"],
       ["index", indexRoot, "ocbi-include-excluded-index-"],
@@ -118,6 +121,7 @@ export class DefaultRootBuildFailureCapture {
   fail(error: unknown): void {
     this.failed = true;
     this.record("failure", error);
+    this.status.report("expected-capture-missing");
   }
 
   private assertRoot(root: Root): void {
@@ -173,6 +177,7 @@ export class DefaultRootBuildFailureCapture {
     testFailed: boolean; watchersStopped: boolean; indexClosed: boolean;
   }): { directory?: string; missing?: string } {
     if (!this.failed && !options.testFailed) return {};
+    this.status.report("expected-capture-missing");
     try {
       const requestedBase = process.env.CI && process.env.RUNNER_TEMP ? process.env.RUNNER_TEMP : os.tmpdir();
       checkedDirectory(requestedBase);
@@ -303,8 +308,10 @@ export class DefaultRootBuildFailureCapture {
           watchersStopped: options.watchersStopped, indexClosed: options.indexClosed, anchors: this.anchors });
       }
       fs.writeFileSync(path.join(directory, "capture.json"), metadata, { flag: "wx", mode: 0o600 });
+      this.status.report("retained", directory);
       return { directory };
     } catch (error) {
+      this.status.report("capture-retention-failed");
       return { missing: this.text(error) };
     }
   }
