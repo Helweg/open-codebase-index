@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.1] - 2026-10-24
+
 ### Added
 
 - **Enterprise history and omp CLI alias**: Support private history selectors `[HOST/]OWNER/REPO` for GitHub Enterprise DNS hosts while preserving bare and explicit `github.com` compatibility, isolating source/cache/staging/citation/permission identity by server, and using existing `gh` authentication with selected-server REST/GraphQL access. Accept CLI `--host omp` as an alias for canonical Pi mode with the same existing `.codebase-index` configuration/storage and no new programmatic `HostMode`.
+
+### Fixed
+
+- **Legacy history staging compatibility**: Resume valid GitHub.com projected v2 staging under its lease after fresh repository, principal, and initial-window proof; Enterprise sources never adopt legacy hostless staging.
+- **Cancellation retirement regression setup**: Keep an existing handler active while checking 130 submitted cancellations, preserving the same-generation, capacity, no-response, and sleep/resume assertions and original timeouts. This repairs the test precondition without changing production behavior or attributing the earlier untraced PID failure.
+- **Selected-source watcher registration recovery**: Reuse Chokidar's one-shot polling recovery when Node rejects a `watch` registration with `EPERM` or `EACCES` for an identified, readable, selected source file under traversable project ancestors. Keep default polling off and preserve unreadable, excluded, restricted, configuration-only, and unidentified-target handling. Retain early backend-error/readiness anchors and phase counts in failure-only contributor captures. This repairs a controlled, demonstrated false-ready path; it does not attribute an earlier watcher failure whose registration evidence was unavailable.
 
 ## [0.38.0] - 2026-10-22
 
@@ -1081,7 +1089,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...HEAD
+[0.38.1]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...v0.38.1
 [0.38.0]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...v0.38.0
 [0.37.2]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...v0.37.2
 [0.37.1]: https://github.com/Helweg/open-codebase-index/compare/v0.37.0...v0.37.1

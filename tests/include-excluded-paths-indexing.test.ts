@@ -1,5 +1,6 @@
 import type * as FsPromises from "node:fs/promises";
-import * as fs from "node:fs";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -162,6 +163,7 @@ describe("include-excluded path indexing acceptance", () => {
         capture?.record("capture-error", { missing: "MISSING: retention/reporting failed", error });
       } finally {
         vi.restoreAllMocks();
+        syncBuiltinESMExports();
         fs.rmSync(projectDir, { recursive: true, force: true });
         fs.rmSync(indexRoot, { recursive: true, force: true });
       }
@@ -675,9 +677,10 @@ describe("include-excluded path indexing acceptance", () => {
     config: ParsedCodebaseIndexConfig,
     indexer: Indexer,
     options: FileWatcherOptions = {},
+    projectRoot = projectDir,
   ): { watcher: FileWatcher; observed: FileChange[] } {
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const watcher = new FileWatcher(projectDir, config, "jcode", { backend: "chokidar", ...options });
+    const watcher = new FileWatcher(projectRoot, config, "jcode", { backend: "chokidar", ...options });
     watchers.push(watcher);
     const observed: FileChange[] = [];
     let handlerTail = Promise.resolve();
@@ -689,6 +692,149 @@ describe("include-excluded path indexing acceptance", () => {
     });
     return { watcher, observed };
   }
+
+  it("recovers a readable selected source rejected with EPERM during initial Node watch registration", async () => {
+    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+    const buildPath = path.join(projectDir, "build-helper.ts");
+    const restrictedPath = path.join(projectDir, "Library", "restricted.ts");
+    writeSource(ordinaryPath, "permissionOriginalOrdinaryDefinition");
+    writeSource(buildPath, "permissionOriginalBuildDefinition");
+    writeSource(restrictedPath, "permissionOriginalRestrictedDefinition");
+    const config = structuralConfig();
+    const indexer = createIndexer(config);
+    await indexer.index();
+
+    const actualWatch = fs.watch;
+    let faulted = false;
+    vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
+      if (String(args[0]) === ordinaryPath && !faulted) {
+        faulted = true;
+        throw Object.assign(new Error("CONTROLLED source watch EPERM"), {
+          code: "EPERM", errno: -1, syscall: "watch", path: ordinaryPath, filename: ordinaryPath,
+        });
+      }
+      return Reflect.apply(actualWatch, this, args);
+    });
+    syncBuiltinESMExports();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    await watcher.waitUntilReady();
+    if (!faulted) throw new Error("CONTROLLED Node fs.watch registration boundary was not reached");
+
+    writeSource(buildPath, "permissionUpdatedBuildDefinition");
+    writeSource(restrictedPath, "permissionUpdatedRestrictedDefinition");
+    writeSource(ordinaryPath, "permissionUpdatedOrdinaryDefinition");
+    await vi.waitFor(async () => {
+      expect(observed.some((change) => change.path === ordinaryPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionUpdatedOrdinaryDefinition", ordinaryPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionUpdatedBuildDefinition", buildPath)).toBe(true);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    await Promise.all(handlerTails);
+    const secondObservedStart = observed.length;
+    writeSource(ordinaryPath, "permissionSecondOrdinaryDefinition");
+    await vi.waitFor(async () => {
+      expect(observed.slice(secondObservedStart).some((change) => change.path === ordinaryPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionSecondOrdinaryDefinition", ordinaryPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionUpdatedOrdinaryDefinition", ordinaryPath)).toBe(false);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(observed.some((change) => change.path === buildPath || change.path === restrictedPath)).toBe(false);
+  });
+
+  it("keeps newly added source updates live after post-ready EACCES with a trailing-separator root", async () => {
+    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+    const addedPath = path.join(projectDir, "src", "added.ts");
+    writeSource(ordinaryPath, "permissionExistingDefinition");
+    const config = structuralConfig();
+    const indexer = createIndexer(config);
+    await indexer.index();
+
+    const actualWatch = fs.watch;
+    let faulted = false;
+    let reportFault!: () => void;
+    const fault = new Promise<void>((resolve) => { reportFault = resolve; });
+    vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
+      if (String(args[0]) === addedPath && !faulted) {
+        faulted = true;
+        reportFault();
+        throw Object.assign(new Error("CONTROLLED added source watch EACCES"), {
+          code: "EACCES", errno: -13, syscall: "watch", path: addedPath, filename: addedPath,
+        });
+      }
+      return Reflect.apply(actualWatch, this, args);
+    });
+    syncBuiltinESMExports();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer, {}, `${projectDir}${path.sep}`);
+    await watcher.waitUntilReady();
+    writeSource(addedPath, "permissionAddedOriginalDefinition");
+    await fault;
+    await watcher.waitUntilReady();
+
+    const observedStart = observed.length;
+    writeSource(addedPath, "permissionAddedUpdatedDefinition");
+    await vi.waitFor(async () => {
+      expect(observed.slice(observedStart).some((change) => change.path === addedPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionAddedUpdatedDefinition", addedPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionAddedOriginalDefinition", addedPath)).toBe(false);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    await Promise.all(handlerTails);
+    const secondObservedStart = observed.length;
+    writeSource(addedPath, "permissionAddedSecondDefinition");
+    await vi.waitFor(async () => {
+      expect(observed.slice(secondObservedStart).some((change) => change.path === addedPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionAddedSecondDefinition", addedPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionAddedUpdatedDefinition", addedPath)).toBe(false);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+  });
+
+  it.each([
+    { label: "default root build file", file: "build-helper.ts", exclude: undefined, denyAccess: false, indexed: true },
+    { label: "explicitly excluded file", file: "ignored.ts", exclude: ["ignored.ts"], denyAccess: false, indexed: false },
+    { label: "source denied by the access boundary", file: "blocked.ts", exclude: undefined, denyAccess: true, indexed: true },
+  ])("preserves consumer filtering after a permission error for a $label", async ({ file, exclude, denyAccess, indexed }) => {
+    const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
+    const rejectedPath = path.join(projectDir, file);
+    writeSource(ordinaryPath, "permissionFilteredOriginalOrdinaryDefinition");
+    writeSource(rejectedPath, "permissionFilteredOriginalOtherDefinition");
+    const config = structuralConfig({ exclude });
+    const indexer = createIndexer(config);
+    await indexer.index();
+
+    const actualAccess = fs.accessSync;
+    let denyRecoveryAccess = denyAccess;
+    if (denyAccess) {
+      // Portable classification fault only: the fixture's real reads and file modes are unchanged.
+      vi.spyOn(fs, "accessSync").mockImplementation(function (this: unknown, ...args) {
+        if (String(args[0]) === rejectedPath && denyRecoveryAccess) {
+          denyRecoveryAccess = false;
+          throw Object.assign(new Error("CONTROLLED source access EACCES"), { code: "EACCES" });
+        }
+        return Reflect.apply(actualAccess, this, args);
+      });
+    }
+    const actualWatch = fs.watch;
+    let faulted = false;
+    vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
+      if (String(args[0]) === rejectedPath && !faulted) {
+        faulted = true;
+        throw Object.assign(new Error("CONTROLLED filtered source watch EPERM"), {
+          code: "EPERM", errno: -1, syscall: "watch", path: rejectedPath, filename: rejectedPath,
+        });
+      }
+      return Reflect.apply(actualWatch, this, args);
+    });
+    syncBuiltinESMExports();
+    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    await watcher.waitUntilReady();
+    if (!faulted) throw new Error("CONTROLLED filtered Node fs.watch boundary was not reached");
+
+    writeSource(rejectedPath, "permissionFilteredUpdatedOtherDefinition");
+    writeSource(ordinaryPath, "permissionFilteredUpdatedOrdinaryDefinition");
+    await vi.waitFor(async () => {
+      expect(observed.some((change) => change.path === ordinaryPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionFilteredUpdatedOrdinaryDefinition", ordinaryPath)).toBe(true);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    expect(observed.some((change) => change.path === rejectedPath)).toBe(false);
+    expect(await hasDefinition(indexer, "permissionFilteredUpdatedOtherDefinition", rejectedPath)).toBe(indexed);
+  });
 
   async function prepareReadyWatcherReplacement(watcher: FileWatcher): Promise<() => FSWatcher> {
     // Access only the controlled error boundary; both backends and all consumer work are real.

@@ -21,6 +21,7 @@ const ANCHORED_PHASES: Record<string, true> = {
   "callback-start": true, "callback-end": true, "callback-error": true,
   "index-start": true, "index-end": true, "index-error": true, failure: true,
   cleanup: true, warning: true, backend: true,
+  "backend-ready": true, raw: true, "backend-event": true, "backend-error": true,
 };
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -48,6 +49,8 @@ export class DefaultRootBuildFailureCapture {
   private nextEvent = 0;
   private readonly anchors: Record<string, { first: Event; last: Event }> = {};
   private dropped = 0;
+  private totalEvents = 0;
+  private readonly phaseCounts: Record<string, number> = {};
   private detailByteCuts = 0;
   private failed = false;
   private readonly missing: string[] = [];
@@ -93,6 +96,8 @@ export class DefaultRootBuildFailureCapture {
   record(phase: string, detail?: unknown): void {
     // Diagnostics must not change callback/query error propagation, even for unusual values.
     try {
+      this.totalEvents += 1;
+      this.phaseCounts[phase] = (this.phaseCounts[phase] ?? 0) + 1;
       const event = { ms: performance.now() - this.started, phase: phase.slice(0, 64), detail: this.text(detail) };
       while (Buffer.byteLength(JSON.stringify(event)) > CAPTURE_LIMITS.eventBytes) {
         event.detail = event.detail.slice(0, Math.floor(event.detail.length / 2));
@@ -283,7 +288,7 @@ export class DefaultRootBuildFailureCapture {
         runtime: { node: process.version, versions: process.versions, platform: process.platform,
           arch: process.arch, osRelease: os.release(), pid: process.pid },
         elapsedMs: performance.now() - this.started, droppedEvents: this.dropped, detailByteCuts: this.detailByteCuts,
-        events, anchors: this.anchors,
+        totalEvents: this.totalEvents, phaseCounts: this.phaseCounts, events, anchors: this.anchors,
         missing: [...this.missing, "filtering: MISSING", "queued: MISSING", "flush: MISSING",
           "native notifications: MISSING", "replacement Chokidar emitter coverage: MISSING",
           "snapshot portability: POSIX mode/directory-FD guards; Windows coverage MISSING"],
@@ -294,6 +299,7 @@ export class DefaultRootBuildFailureCapture {
       if (Buffer.byteLength(metadata) + bytes > CAPTURE_LIMITS.totalBytes) {
         metadata = JSON.stringify({ missing: "MISSING: shared metadata byte cap", limits: CAPTURE_LIMITS,
           snapshotBytes: bytes, visited, droppedEvents: this.dropped, detailByteCuts: this.detailByteCuts,
+          totalEvents: this.totalEvents, phaseCounts: this.phaseCounts,
           watchersStopped: options.watchersStopped, indexClosed: options.indexClosed, anchors: this.anchors });
       }
       fs.writeFileSync(path.join(directory, "capture.json"), metadata, { flag: "wx", mode: 0o600 });
