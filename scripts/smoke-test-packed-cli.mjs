@@ -141,6 +141,11 @@ async function smokeIdentity(identity, expectedBinaries) {
   run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarballPath,
     `typescript@${lock.packages["node_modules/typescript"].version}`,
     `@types/node@${lock.packages["node_modules/@types/node"].version}`], installRoot);
+  const consumerManifest = JSON.parse(readFileSync(path.join(installRoot, "package.json"), "utf8"));
+  assert.equal(consumerManifest.overrides, undefined, "Standalone consumer must not rely on root overrides");
+  const consumerLock = JSON.parse(readFileSync(path.join(installRoot, "package-lock.json"), "utf8"));
+  assert.ok(!Object.keys(consumerLock.packages).some((key) => key.endsWith("node_modules/@opencode-ai/plugin")),
+    "Standalone consumer must not install the build-only OpenCode plugin");
   const installedRoot = path.join(installRoot, "node_modules", identity.packageName);
   const installed = JSON.parse(readFileSync(path.join(installedRoot, "package.json"), "utf8"));
   assert.equal(installed.name, packed.name);
@@ -165,6 +170,16 @@ async function smokeIdentity(identity, expectedBinaries) {
         throw new Error("Packed root runtime contract failed");
       }`], installRoot);
   }
+
+  // Keep upstream assignability separate so an installed SDK cannot conceal a standalone declaration leak.
+  const sdkInteropRoot = path.join(scratchRoot, `sdk-interop-${identity.packageName}`);
+  mkdirSync(sdkInteropRoot);
+  writeFileSync(path.join(sdkInteropRoot, "package.json"), "{\"private\":true}\n", { flag: "wx", mode: 0o600 });
+  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarballPath,
+    `typescript@${lock.packages["node_modules/typescript"].version}`,
+    `@types/node@${lock.packages["node_modules/@types/node"].version}`,
+    `@opencode-ai/plugin@${lock.packages["node_modules/@opencode-ai/plugin"].version}`], sdkInteropRoot);
+  const sdkInteropTypes = checkPackedTypes(sdkInteropRoot, identity.packageName, { sdkInterop: true });
 
   writeFileSync(path.join(projectRoot, "notes.txt"), "packed CLI smoke test\n", { flag: "wx" });
   const configPath = path.join(projectRoot, "config.json");
@@ -207,7 +222,7 @@ async function smokeIdentity(identity, expectedBinaries) {
   }
   return {
     name: packed.name, version: packed.version, tarball: tarballPath, integrity,
-    validation: { types, runtime: true, cliAliases: expectedBinaries },
+    validation: { types, sdkInteropTypes, runtime: true, cliAliases: expectedBinaries },
   };
 }
 

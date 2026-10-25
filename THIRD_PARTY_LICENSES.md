@@ -169,3 +169,74 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## @opencode-ai/plugin and @opencode-ai/sdk 1.3.13
+
+- Project: [anomalyco/opencode](https://github.com/anomalyco/opencode)
+- Source: [release v1.3.13](https://github.com/anomalyco/opencode/tree/v1.3.13)
+- License: MIT
+- Notice: [upstream LICENSE](https://github.com/anomalyco/opencode/blob/v1.3.13/LICENSE)
+
+The existing OpenCode tool helper and plugin public type declarations are bundled
+into this package. `@opencode-ai/plugin` is build-time only; the dependency-free
+`@opencode-ai/sdk` remains a declared public type dependency to preserve shared
+client-class identity.
+
+```text
+MIT License
+
+Copyright (c) 2025 opencode
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+## Zod 4.1.8 declaration ABI only
+
+- Project: [colinhacks/zod](https://github.com/colinhacks/zod)
+- Source: [official 4.1.8 archive](https://registry.npmjs.org/zod/-/zod-4.1.8.tgz)
+- License: MIT
+- Provenance and original per-file hashes: `scripts/opencode-zod-4.1.8-declarations.json`
+
+Only the original reachable declarations and this notice are retained for the
+OpenCode 1.3.13 public type ABI. No Zod 4.1.8 implementation JavaScript is shipped
+or executed. Runtime Zod is the separately declared, patched `>=4.6.7` dependency.
+
+```text
+MIT License
+
+Copyright (c) 2025 Colin McDonnell
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```

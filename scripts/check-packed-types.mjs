@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { realpathSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 
-export function checkPackedTypes(installRoot, packageName) {
+export function checkPackedTypes(installRoot, packageName, { sdkInterop = false } = {}) {
   const require = createRequire(path.join(installRoot, "package.json"));
   const ts = require("typescript");
   assert.equal(ts.version, "5.9.3");
@@ -33,7 +33,9 @@ export function checkPackedTypes(installRoot, packageName) {
     const directory: string = context.location.directory;
     const setup: Promise<void | (() => void | Promise<void>)> = plugin.setup(context);
     declare const input: Parameters<typeof plugin.server>[0];
-    const server: import("@opencode-ai/plugin").Plugin = plugin.server;
+    const serverDirectory: string = input.directory;
+    const serverWorktree: string = input.worktree;
+    ${sdkInterop ? 'const server: import("@opencode-ai/plugin").Plugin = plugin.server;' : ""}
     const hooks = plugin.server(input);
     hooks.then((value) => {
       value["tool.execute.before"]?.({ tool: "example", sessionID: "s", callID: "c" }, { args: {} });
@@ -48,7 +50,7 @@ export function checkPackedTypes(installRoot, packageName) {
     plugin.server({ directory: 1 });
     // @ts-expect-error no fabricated root API
     plugin.nonexistent();
-    void [typed, id, directory, setup, server, hooks, numeric];
+    void [typed, id, directory, setup, serverDirectory, serverWorktree, hooks, numeric${sdkInterop ? ", server" : ""}];
   `;
   const results = [];
   for (const [extension, prelude, mode, declaration] of [
@@ -72,8 +74,12 @@ export function checkPackedTypes(installRoot, packageName) {
     for (const file of files) {
       assert.ok(file.startsWith(`${realpathSync(installRoot)}${path.sep}`), `Consumer type closure escaped its install: ${file}`);
     }
+    if (!sdkInterop) {
+      assert.ok(!files.some((file) => file.includes(`${path.sep}node_modules${path.sep}@opencode-ai${path.sep}plugin${path.sep}`)),
+        "Standalone types must not load an undeclared OpenCode plugin");
+    }
     assert.ok(files.includes(expected), `Compiler did not load ${declaration}`);
     results.push({ extension, resolvedDeclaration: expected, files, diagnostics: 0 });
   }
-  return { compiler: ts.version, node: process.version, options, consumers: results };
+  return { compiler: ts.version, node: process.version, options, sdkInterop, consumers: results };
 }
