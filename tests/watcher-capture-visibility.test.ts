@@ -96,9 +96,12 @@ describe("failure-only watcher capture visibility", () => {
     const fallback = summaryRecords(base);
     expect(fallback.map((record) => record.status)).toEqual(["expected-capture-missing", "retained"]);
     expect(fallback.map((record) => record.statusWrite)).toEqual(["failed", "failed"]);
-    expect(reportWatcherCaptures(base, path.join(base, "summary.md"))[0].status).toBe("expected-capture-missing");
-    expect(summaryRecords(base).at(-1).records).toEqual([{ status: "expected-capture-missing" }]);
-    expect(inspectWatcherCaptures(base)[0].status).toBe("expected-capture-missing");
+    const metadata = JSON.parse(fs.readFileSync(path.join(base, "ocbi-watcher-failures", fallback[1].capture, "capture.json"), "utf8"));
+    expect(metadata.phaseCounts.failure).toBe(1);
+    expect(metadata.anchors.failure.first.detail).toContain("controlled-original-test-failure");
+    expect(reportWatcherCaptures(base, path.join(base, "summary.md"))[0].status).toBe("capture-status-unavailable");
+    expect(summaryRecords(base).at(-1).records).toEqual([{ status: "capture-status-unavailable" }]);
+    expect(inspectWatcherCaptures(base)[0].status).toBe("capture-status-unavailable");
   });
 
   it("does not infer a clean capture exemption from absent durable records", () => {
@@ -115,10 +118,10 @@ describe("failure-only watcher capture visibility", () => {
     const sentinel = path.join(outside, "report.json");
     fs.writeFileSync(sentinel, "outside-sentinel");
     fs.symlinkSync(outside, path.join(base, "ocbi-watcher-capture-status"), "dir");
-    expect(reportWatcherCaptures(base, path.join(base, "summary.md"))).toEqual([{ status: "expected-capture-missing" }]);
+    expect(reportWatcherCaptures(base, path.join(base, "summary.md"))).toEqual([{ status: "capture-status-unavailable" }]);
     expect(fs.readFileSync(sentinel, "utf8")).toBe("outside-sentinel");
     expect(fs.readdirSync(outside)).toEqual(["report.json"]);
-    expect(summaryRecords(base).at(-1).records).toEqual([{ status: "expected-capture-missing" }]);
+    expect(summaryRecords(base).at(-1).records).toEqual([{ status: "capture-status-unavailable" }]);
   });
 
   it.each(["parent", "bundle"])("refuses a symlinked capture %s", (boundary) => {
@@ -128,7 +131,7 @@ describe("failure-only watcher capture visibility", () => {
     const statuses = path.join(base, "ocbi-watcher-capture-status");
     fs.mkdirSync(statuses, { mode: 0o700 });
     fs.writeFileSync(path.join(statuses, "failure.json"), JSON.stringify({
-      backend: "chokidar", status: "retained", capture: "chokidar-synthetic",
+      schema: 1, backend: "chokidar", status: "retained", capture: "chokidar-synthetic",
     }));
     const parent = path.join(base, "ocbi-watcher-failures");
     if (boundary === "parent") {
@@ -141,5 +144,18 @@ describe("failure-only watcher capture visibility", () => {
     }
     expect(inspectWatcherCaptures(base)[0].status).toBe("expected-capture-missing");
     expect(fs.readFileSync(path.join(outside, "capture.json"), "utf8")).toBe("outside-sentinel");
+  });
+
+  it.each(["malformed", "invalid", "unreadable"])("reports unavailable for a %s status record", (kind) => {
+    const base = fixture();
+    const statuses = path.join(base, "ocbi-watcher-capture-status");
+    fs.mkdirSync(statuses, { mode: 0o700 });
+    const record = path.join(statuses, "failure.json");
+    if (kind === "unreadable") fs.mkdirSync(record); // Deterministic file-read refusal, even under root.
+    else fs.writeFileSync(record, kind === "malformed" ? "{" : JSON.stringify({
+      schema: 1, backend: "chokidar", status: "retained", capture: "../outside",
+    }));
+    expect(reportWatcherCaptures(base, path.join(base, "summary.md"))).toEqual([{ status: "capture-status-unavailable" }]);
+    expect(summaryRecords(base).at(-1).records).toEqual([{ status: "capture-status-unavailable" }]);
   });
 });

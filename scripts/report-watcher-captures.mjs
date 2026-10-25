@@ -20,7 +20,7 @@ export function inspectWatcherCaptures(base) {
     names = fs.readdirSync(statusDirectory);
   } catch (error) {
     if (error.code === "ENOENT") return [];
-    return [{ status: "expected-capture-missing" }];
+    return [{ status: "capture-status-unavailable" }];
   }
   return names.filter((name) => name.endsWith(".json") && name !== "report.json").slice(0, 32).map((name) => {
     try {
@@ -28,10 +28,16 @@ export function inspectWatcherCaptures(base) {
       const stat = fs.lstatSync(file);
       if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 2048) throw new Error("Invalid status file");
       const record = JSON.parse(fs.readFileSync(file, "utf8"));
-      const backend = ["auto", "native", "chokidar"].includes(record.backend) ? record.backend : "unknown";
-      if (record.status === "capture-retention-failed") return { backend, status: record.status };
-      if (record.status === "retained" && typeof record.capture === "string"
-        && /^[a-zA-Z0-9-]+$/.test(record.capture)) {
+      if (record?.schema !== 1 || !["auto", "native", "chokidar"].includes(record.backend)
+        || !["expected-capture-missing", "capture-retention-failed", "retained"].includes(record.status)) {
+        throw new Error("Invalid status record");
+      }
+      const backend = record.backend;
+      if (record.status !== "retained") return { backend, status: record.status };
+      if (typeof record.capture !== "string" || !/^[a-zA-Z0-9-]+$/.test(record.capture)) {
+        throw new Error("Invalid capture identity");
+      }
+      try {
         const parent = path.join(base, "ocbi-watcher-failures");
         checkedDirectory(parent);
         const directory = path.join(parent, record.capture);
@@ -40,10 +46,12 @@ export function inspectWatcherCaptures(base) {
         if (captureStat.isFile() && !captureStat.isSymbolicLink() && captureStat.size > 0) {
           return { backend, status: "retained", capture: record.capture };
         }
+      } catch {
+        // Only a valid retained record establishes an expected usable bundle.
       }
       return { backend, status: "expected-capture-missing" };
     } catch {
-      return { status: "expected-capture-missing" };
+      return { status: "capture-status-unavailable" };
     }
   });
 }

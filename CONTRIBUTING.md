@@ -92,7 +92,11 @@ missing; metadata coverage gaps inside a completed capture are still retained
 diagnostics. Partial bundles remain available in the ordinary failure artifact.
 An unrelated failed test creates no watcher capture obligation. Absent durable
 records are reported as `no-records-unknown`, not proof that no covered scenario
-failed. Status reporting never replaces the original test error; if status
+failed. Unreadable, malformed, or refused status storage is reported as the
+checker-only `capture-status-unavailable`, not evidence that a capture is
+missing: a bundle may actually have been retained. Only a valid expectation
+or retained record establishes an expected usable capture. Status reporting
+never replaces the original test error; if status
 storage fails, stderr and an independent Actions summary append are best-effort
 fallbacks. The checker writes the summary before attempting its report file,
 and refuses symlinked status or capture directories; these guards are not an
