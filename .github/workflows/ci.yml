@@ -108,6 +108,19 @@ jobs:
       - name: Run tests with coverage
         run: npm run test:coverage
 
+      - name: Report watcher capture status
+        if: failure()
+        run: node scripts/report-watcher-captures.mjs
+
+      - name: Upload watcher capture status
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: watcher-capture-status-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ocbi-watcher-capture-status/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload watcher failure diagnostics
         if: failure()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
