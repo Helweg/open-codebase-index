@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Complete history sync scheduling**: Reconcile up to four entities concurrently through one sync-local request budget of four active calls and eight starts per rolling second, without skipping historical edits, deletions, or conditional page validation. Drain real requests before publication, cancellation settlement, or cleanup; retain resumable checkpoints on transient failures and let late access denials take precedence.
+
 ## [0.38.2] - 2026-10-26
 
 ### Fixed

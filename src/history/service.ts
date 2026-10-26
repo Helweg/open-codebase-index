@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { RepositoryHistorySource, RepositoryHistoryIdentity } from "./config.js";
 import { HistoryError, parseRepositoryIdentity } from "./config.js";
 import { allPages, GitHubApiError, record } from "./github.js";
-import type { GitHubRecord, HistoryApi } from "./github.js";
+import type { GitHubRecord, HistoryApi, HistoryDiscoveryPage } from "./github.js";
 import { readSnapshot, withHistoryLock, writeSnapshot } from "./storage.js";
 import { openHistoryStage, readHistoryStageWindow, retireHistoryStage } from "./staging.js";
 import type { HistoryDocument, HistoryEntity, HistorySnapshot } from "./types.js";
@@ -14,6 +14,8 @@ import { updateHistoryLexical } from "./lexical-index.js";
 import { checkpointHistoryWork } from "./work.js";
 import { effectiveHistoryWindow } from "./window.js";
 import { HISTORY_HTTP_CACHE_VERSION } from "./responses.js";
+import type { HistoryRequestScheduler } from "./request-scheduler.js";
+import { createHistoryRequestScheduler } from "./request-scheduler.js";
 
 function document(item: GitHubRecord, kind: HistoryDocument["documentKind"], url: string): HistoryDocument {
   const createdAt = item.created_at ?? item.submitted_at;
@@ -103,10 +105,43 @@ function repositoryIdentity(repo: GitHubRecord): string {
   return String(id);
 }
 
+async function reconcileHistoryPage(
+  nodes: HistoryDiscoveryPage["nodes"],
+  visit: (node: HistoryDiscoveryPage["nodes"][number]) => Promise<void>,
+  requests: HistoryRequestScheduler,
+  control?: OperationControl,
+): Promise<void> {
+  let next = 0;
+  const claimed = new Set<number>();
+  async function worker(): Promise<void> {
+    try {
+      while (next < nodes.length) {
+        requests.throwIfStopped();
+        await checkpointHistoryWork(control);
+        requests.throwIfStopped();
+        const node = nodes[next++];
+        if (!node) break;
+        if (claimed.has(node.number)) continue;
+        claimed.add(node.number);
+        await visit(node);
+      }
+    } catch (error) {
+      requests.stop(error);
+    }
+  }
+  const results = await Promise.allSettled(Array.from({ length: Math.min(4, nodes.length) }, () => worker()));
+  for (const result of results) {
+    if (result.status === "rejected") requests.stop(result.reason);
+  }
+  await requests.drain();
+  requests.throwIfStopped();
+}
+
 export async function syncHistory(source: RepositoryHistorySource, directory: string, api: HistoryApi, since?: string, control?: OperationControl): Promise<HistorySnapshot & { syncedEntities: number; removedEntities: number; complete: true }> {
   const identity = parseRepositoryIdentity(source.repository);
   if (identity.canonical !== source.repository) throw new HistoryError("HISTORY_CONFIG", "history source repository must be canonical");
   return withHistoryLock(directory, "index", async (lease) => {
+    const requests = createHistoryRequestScheduler(api, control);
     retireHistoryStage(directory);
     const old = readSnapshot(directory, source.repository);
     const initialSince = effectiveHistoryWindow(source, old ?? readHistoryStageWindow(directory, source.repository), since);
@@ -115,14 +150,14 @@ export async function syncHistory(source: RepositoryHistorySource, directory: st
     let committed = false;
     try {
       throwIfOperationAborted(control?.signal);
-      const repo = record((await api.get(`repos/${identity.nameWithOwner}`)).value);
+      const repo = record((await requests.api.get(`repos/${identity.nameWithOwner}`)).value);
       if (String(repo.full_name).toLowerCase() !== identity.nameWithOwner) throw new HistoryError("HISTORY_INACCESSIBLE", "repository renamed/transferred; cached source is blocked until explicitly reconfigured");
       const repositoryId = repositoryIdentity(repo);
       if (old?.repositoryId && old.repositoryId !== repositoryId) throw new HistoryError("HISTORY_INACCESSIBLE", "repository identity changed; old cached evidence was blocked");
-      const access = await api.access();
+      const access = await requests.api.access();
       if (access.hostname !== identity.hostname || access.repositoryId !== repositoryId || access.repositoryName.toLowerCase() !== identity.nameWithOwner) throw new HistoryError("HISTORY_INACCESSIBLE", "fresh host/repository capability identity differs");
       if (old?.principalId && old.principalId !== access.principalId) throw new HistoryError("HISTORY_INACCESSIBLE", "public authentication principal changed; old cached evidence was blocked");
-      const stage = openHistoryStage(directory, api, lease, source.repository, repositoryId, access.principalId, initialSince, configuredInitialSince, old);
+      const stage = openHistoryStage(directory, requests.api, lease, source.repository, repositoryId, access.principalId, initialSince, configuredInitialSince, old);
       const entities = new Map<number, HistoryEntity>();
       let maxNumber = 0;
       // Complete discovery and per-page revalidation reconcile imports/deletions without parent timestamp assumptions.
@@ -132,35 +167,35 @@ export async function syncHistory(source: RepositoryHistorySource, directory: st
         do {
           await checkpointHistoryWork(control);
           const page = await stage.api.discover(kind, after);
-          for (const node of page.nodes) {
-            throwIfOperationAborted(control?.signal);
-            maxNumber = Math.max(maxNumber, node.number);
-            if (initialSince && Date.parse(node.createdAt) < Date.parse(initialSince)) continue;
+          for (const node of page.nodes) maxNumber = Math.max(maxNumber, node.number);
+          await reconcileHistoryPage(page.nodes, async (node) => {
+            if (initialSince && Date.parse(node.createdAt) < Date.parse(initialSince)) return;
             try {
               const issue = record((await stage.api.get(`repos/${identity.nameWithOwner}/issues/${node.number}`)).value);
               entities.set(node.number, await fetchEntity(stage.api, identity, issue, String(repo.full_name)));
             } catch (error) {
-              if (error instanceof GitHubApiError && error.status === 404) continue;
+              if (error instanceof GitHubApiError && error.status === 404) return;
               throw error;
             }
-          }
+          }, requests, control);
           if (!page.hasNextPage) break;
           if (!page.endCursor || cursors.has(page.endCursor)) throw new HistoryError("HISTORY_INCOMPLETE", "GitHub discovery cursor made no progress");
           cursors.add(page.endCursor);
           after = page.endCursor;
         } while (after !== null);
       }
+      await requests.drain();
       const ordered = [...entities.values()].sort((a, b) => a.number - b.number);
       const lexical = await updateHistoryLexical(old, source.repository, ordered, directory, control);
       const next: HistorySnapshot = { version: 2, repository: source.repository, repositoryId, principalId: access.principalId, status: "ready", initialSince, configuredInitialSince, maxNumber,
         cursor: stage.startedAt, syncGeneration: stage.generation, lastSyncedAt: new Date().toISOString(), entities: ordered, lexical, lexicalVersion: HISTORY_LEXICAL_VERSION, httpCacheVersion: HISTORY_HTTP_CACHE_VERSION, httpCache: stage.cache(ordered) };
       await writeSnapshot(directory, next, lease, control, async () => {
         // Capability proofs are fresh AFTER expensive preparation, never replayed from staging/cache.
-        const finalRepo = record((await api.get(`repos/${identity.nameWithOwner}`)).value);
+        const finalRepo = record((await requests.api.get(`repos/${identity.nameWithOwner}`)).value);
         if (repositoryIdentity(finalRepo) !== repositoryId || String(finalRepo.full_name).toLowerCase() !== identity.nameWithOwner) {
           throw new HistoryError("HISTORY_INACCESSIBLE", "repository identity/access changed while fetching history");
         }
-        const finalAccess = await api.access();
+        const finalAccess = await requests.api.access();
         if (finalAccess.hostname !== identity.hostname || finalAccess.repositoryId !== repositoryId || finalAccess.repositoryName.toLowerCase() !== identity.nameWithOwner || finalAccess.principalId !== access.principalId) {
           throw new HistoryError("HISTORY_INACCESSIBLE", "repository capability or public auth principal changed during fetching");
         }
@@ -170,6 +205,8 @@ export async function syncHistory(source: RepositoryHistorySource, directory: st
       catch { throw new HistoryError("HISTORY_STORAGE", "history was committed, but fetch-staging cleanup failed; a later sync will retire that committed stage"); }
       return { ...next, syncedEntities: ordered.length, removedEntities: (old?.entities ?? []).filter((entity) => !entities.has(entity.number)).length, complete: true };
     } catch (error) {
+      requests.stop(error);
+      await requests.drain();
       if (committed) throw error;
       const inaccessible = error instanceof GitHubApiError && !error.rateLimited && [401, 403, 404].includes(error.status)
         || error instanceof HistoryError && error.code === "HISTORY_INACCESSIBLE";
