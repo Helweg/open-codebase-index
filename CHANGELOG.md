@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Complete history sync scheduling**: Reconcile up to four entities concurrently through one sync-local request budget of four active calls and eight starts per rolling second, without skipping historical edits, deletions, or conditional page validation. Drain real requests before publication, cancellation settlement, or cleanup; retain resumable checkpoints on transient failures and let late access denials take precedence.
+- **Compatible dependency updates**: Update ignore to 7.0.13, NAPI CLI to 3.10.9, ESLint to 10.13.0, Rollup to 4.65.0, and typescript-eslint to 8.72.0; retain OpenCode SDK/plugin 1.3.13 together and the published Node.js 22.13.0 minimum.
 
 ## [0.38.2] - 2026-10-26
 
