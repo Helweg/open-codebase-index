@@ -6,10 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-
 ### Changed
 
+- **Node.js runtime floor and Chokidar 6**: Raise both package identities' minimum from Node.js 22.13.0 to 22.22.0 to satisfy Chokidar 6's declared engine requirement. Existing platform, binary, and host contracts remain unchanged.
+
 - **Complete history sync scheduling**: Reconcile up to four entities concurrently through one sync-local request budget of four active calls and eight starts per rolling second, without skipping historical edits, deletions, or conditional page validation. Drain real requests before publication, cancellation settlement, or cleanup; retain resumable checkpoints on transient failures and let late access denials take precedence.
+
+### Fixed
+
+- **Directory watcher permission recovery**: Recover readable, policy-selected directory and project-root registrations rejected with `EPERM` or `EACCES`, including empty directories that later gain source files. Reuse the one-shot polling cutover and catch-up reconciliation without broadening ignored, excluded, restricted, protected-index, unreadable, or external-configuration scope. Exercise actual Chokidar 6 directory resources in the watcher/Indexer acceptance checks.
 
 ## [0.38.2] - 2026-10-26
 

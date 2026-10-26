@@ -45,7 +45,7 @@ Track override decisions in [#379](https://github.com/Helweg/open-codebase-index
 - Preserve existing `os`, `cpu`, and `libc` selectors on unchanged optional packages when refreshing lockfiles. Package-path/version equality alone does not prove platform-selection equivalence.
 - Before calling an override inert, resolve two disposable lock-only trees from the same manifest with no existing lock, with and without that override. Compare every package path and version; report explicit added, removed, and version-changed lists. All three lists must be empty.
 - For active changes, record those resolution deltas and run `npm audit --json` including development dependencies, a fresh `npm ci`, affected real CLI/build paths, and the repository validation gate. Preserve security coverage rather than accepting a newly introduced finding.
-- Root overrides govern repository installs, not the transitive dependencies of a published package installed by a consumer. Check both packed identities with `npm_config_engine_strict=true` on the supported Node.js floor, 22.13.0.
+- Root overrides govern repository installs, not the transitive dependencies of a published package installed by a consumer. Check both packed identities with `npm_config_engine_strict=true` on the supported Node.js floor, 22.22.0.
 
 ### Retained Security Floors
 
@@ -94,7 +94,9 @@ The existing AJV range admits fast-uri `3.1.9`, addressing
 [GHSA-333x-w4r6-6crp](https://github.com/advisories/GHSA-333x-w4r6-6crp).
 These runtime resolutions do not need new root overrides. The scoped development
 overrides above do not govern downstream installs. Undici's existing development
-Node.js `22.19.0` minimum and the published `22.13.0` minimum remain distinct.
+Node.js `22.19.0` was the development minimum and `22.13.0` the published
+minimum at that review. Chokidar 6 now requires Node.js `22.22.0` for both
+source installs and published package use.
 
 ### Removed Overrides and Resolved Pi Exception
 

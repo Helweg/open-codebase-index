@@ -306,32 +306,40 @@ export class FileWatcher {
 
   private canRecoverSourceWatchPermissionError(error: NodeJS.ErrnoException): boolean {
     if (error.syscall !== "watch" || typeof error.path !== "string" || !path.isAbsolute(error.path)) return false;
+    // The auxiliary Chokidar watcher must not take ownership of native source coverage.
+    if (this.nativeWatcher || this.nativeStarting) return false;
 
     const projectRoot = path.resolve(this.projectRoot);
-    const filePath = path.resolve(error.path);
-    const relativePath = path.relative(projectRoot, filePath);
-    if (!relativePath || this.isOutsideProjectPath(relativePath)) return false;
+    const watchPath = path.resolve(error.path);
+    if (this.isOutsideProjectPath(path.relative(projectRoot, watchPath))) return false;
 
     const ignoreFilter = createIgnoreFilter(projectRoot);
     const gitIgnoreFilter = createGitIgnoreFilter(projectRoot);
     const includeIgnored = this.config.indexing?.includeIgnored ?? [];
     const filterOptions = this.getPathFilterOptions();
-    if (
-      this.isProjectConfigPath(filePath)
-      || this.localModuleConfigTracker.has(filePath)
-      || shouldTrackLocalModuleConfigPath(filePath, projectRoot, ignoreFilter, this.getSnapshotConfig())
-      || (path.basename(filePath).toLowerCase() === "package.json"
-        && this.localModuleConfigTracker.shouldTrackPackagePath(filePath))
-      || !shouldIncludeFile(
-        filePath, projectRoot, [...this.config.include, ...(this.config.additionalInclude ?? [])],
-        this.config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions,
-      )
-    ) return false;
-
     try {
-      if (!lstatSync(filePath).isFile()) return false;
-      accessSync(filePath, constants.R_OK);
-      let directory = path.dirname(filePath);
+      const state = lstatSync(watchPath);
+      let directory = watchPath;
+      if (state.isFile()) {
+        if (
+          this.isProjectConfigPath(watchPath)
+          || this.localModuleConfigTracker.has(watchPath)
+          || shouldTrackLocalModuleConfigPath(watchPath, projectRoot, ignoreFilter, this.getSnapshotConfig())
+          || (path.basename(watchPath).toLowerCase() === "package.json"
+            && this.localModuleConfigTracker.shouldTrackPackagePath(watchPath))
+          || !shouldIncludeFile(
+            watchPath, projectRoot, [...this.config.include, ...(this.config.additionalInclude ?? [])],
+            this.config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions,
+          )
+        ) return false;
+        accessSync(watchPath, constants.R_OK);
+        directory = path.dirname(watchPath);
+      } else if (!state.isDirectory()) {
+        return false;
+      }
+
+      // Chokidar 6 registers directories, including empty ones that can gain selected files.
+      // Reuse watch traversal policy rather than requiring an already-present source file.
       for (;;) {
         if (!shouldTraverseDirectory(
           directory, projectRoot, this.config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions,

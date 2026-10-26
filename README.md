@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Downloads](https://img.shields.io/npm/dm/open-codebase-index.svg)](https://www.npmjs.com/package/open-codebase-index)
 [![Build Status](https://img.shields.io/github/actions/workflow/status/Helweg/open-codebase-index/ci.yml?branch=main)](https://github.com/Helweg/open-codebase-index/actions)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D22.13-brightgreen.svg)](https://nodejs.org/)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.22-brightgreen.svg)](https://nodejs.org/)
 
 > Search a codebase by meaning, then follow the result into definitions, callers, and dependency paths.
 
@@ -34,7 +34,7 @@ ocbi search "retry recovery" --project /path/to/repo
 
 ## Quick start with OpenCode
 
-Requires Node.js 22.13 or newer. Node.js 24 LTS is recommended.
+Requires Node.js 22.22 or newer. Node.js 24 LTS is recommended.
 
 1. Install the package:
 
@@ -279,6 +279,8 @@ npm run typecheck
 npm run lint
 npm run test:run
 ```
+
+- Source installs and published consumers require Node.js 22.22 or newer because Chokidar 6 enforces that engine floor. The development toolchain supports `^22.22.0 || ^24.11.0 || >=26.0.0`; building the native module also requires the Rust toolchain.
 
 Pi integration tests use the development host `@earendil-works/pi-coding-agent`
 1.3 or newer and its `emitBeforeAgentStart(trigger, systemPromptOptions)` API.

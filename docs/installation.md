@@ -1,6 +1,6 @@
 # Installation and host setup
 
-`open-codebase-index` requires Node.js 22.13 or newer and is the preferred package identity. Node.js 24 LTS is recommended. `opencode-codebase-index` remains a supported legacy package alias, and `open-codebase-index-mcp` is the preferred binary alias.
+`open-codebase-index` requires Node.js 22.22 or newer and is the preferred package identity. Node.js 24 LTS is recommended. `opencode-codebase-index` remains a supported legacy package alias, and `open-codebase-index-mcp` is the preferred binary alias.
 
 The published package includes the MCP server dependencies and native binaries for supported platforms.
 
@@ -308,7 +308,7 @@ Progress and diagnostics for `index` are written to `stderr`; the final formatte
 
 ## Local source checkout
 
-Development requires Node.js 22.19 or newer within 22.x, 24.11 or newer within 24.x, or 26 or newer. This build-tool requirement does not raise the published Node.js 22.13 runtime floor.
+Development requires Node.js 22.22 or newer within 22.x, 24.11 or newer within 24.x, or 26 or newer. Chokidar 6's engine requirement applies to source installs as well as published packages.
 
 ```bash
 npm ci
