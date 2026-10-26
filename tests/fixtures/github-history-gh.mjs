@@ -44,6 +44,17 @@ if (state.denialWait && key.includes(state.denialWait)) {
   process.exit(1);
 }
 if (state.fail && key.includes(state.fail)) { console.error("gh: API rate limit exceeded (HTTP 403)", state.stderrCanary ?? ""); process.exit(1); }
+if (state.apiError && key.includes(state.apiError.endpoint)) {
+  const { status, codes, headers } = state.apiError;
+  if (headers) process.stdout.write(`HTTP/2.0 ${status} Error\r\n\r\n`);
+  process.stdout.write(JSON.stringify({
+    message: "PRIVATE_ERROR_BODY_CANARY",
+    errors: codes.map((code) => ({ resource: "PullRequest", field: "diff", code })),
+    status: String(status),
+  }) + "\n");
+  console.error("gh: Request failed", state.stderrCanary ?? "");
+  process.exit(1);
+}
 if (state.metadataOnly && (query || endpoint !== `repos/${state.repository}`)) {
   if (query) console.log(JSON.stringify({ data: { repository: null }, errors: [{ type: "FORBIDDEN" }] }));
   console.error("gh: Resource not accessible with current repository permissions");
