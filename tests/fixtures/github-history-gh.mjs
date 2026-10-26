@@ -12,6 +12,16 @@ const query = field("query");
 const capability = query?.includes("viewer{");
 const key = endpoint ?? (capability ? "graphql:access" : `graphql:${query?.includes("pullRequests(") ? "pullRequests" : "issues"}:${field("after") ?? ""}`);
 const requestKey = fixture.hosts ? `${hostname} ${key}` : key;
+if (process.env.HISTORY_FIXTURE_EVENTS) {
+  const event = (phase) => appendFileSync(process.env.HISTORY_FIXTURE_EVENTS, JSON.stringify({
+    pid: process.pid, phase, timeNs: process.hrtime.bigint().toString(), key,
+  }) + "\n", { mode: 0o600 });
+  event("start");
+  process.on("exit", () => event("end"));
+}
+if (process.env.HISTORY_FIXTURE_DELAY_MS) {
+  await new Promise((resolve) => setTimeout(resolve, Number(process.env.HISTORY_FIXTURE_DELAY_MS)));
+}
 appendFileSync(process.env.HISTORY_FIXTURE_REQUESTS, `${requestKey}\n`, { mode: 0o600 });
 // Deliberately allowlist fields: never log argv, headers, queries, environment, or credentials.
 const safeEndpoint = endpoint && /^repos\/[a-z0-9_.-]+\/[a-z0-9_.-]+(?:\/(?:issues|pulls)\/[1-9]\d*(?:\/(?:comments|reviews|timeline|files|commits))?)?(?:\?(?:page|per_page)=[1-9]\d*(?:&(?:page|per_page)=[1-9]\d*)*)?$/i.test(endpoint) ? endpoint : null;

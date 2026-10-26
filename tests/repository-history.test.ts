@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -47,6 +47,7 @@ class FixtureApi implements HistoryApi {
   repositoryId = 42;
   repositoryName = repository;
   mutate?: (endpoint: string) => void;
+  beforeGet?: (endpoint: string) => Promise<void>;
   pageSize = 100;
   principalId = "viewer-1";
   metadataOnly = false;
@@ -72,6 +73,7 @@ class FixtureApi implements HistoryApi {
   }
   async get(endpoint: string, conditional?: string): Promise<HistoryRestResponse> {
     this.calls.push(endpoint);
+    await this.beforeGet?.(endpoint);
     this.mutate?.(endpoint);
     if (this.revoked) throw new GitHubApiError(404, false);
     if (this.fail && endpoint.includes(this.fail)) throw new GitHubApiError(429, true);
@@ -101,6 +103,26 @@ class FixtureApi implements HistoryApi {
 function comment(id: number, body: string) { return { id, body, user: { login: "reviewer" }, created_at: timestamp, updated_at: timestamp }; }
 const source = { repository, enabled: true };
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
+
+function historyBarrier() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+function observeHistorySync<T>(promise: Promise<T>) {
+  let settled = false;
+  const outcome = promise.then(
+    (value) => { settled = true; return { value, error: undefined }; },
+    (error: unknown) => { settled = true; return { value: undefined, error }; },
+  );
+  return { get settled() { return settled; }, outcome };
+}
+
+async function flushHistoryWorkers() {
+  for (let index = 0; index < 20; index++) await Promise.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+}
 
 describe("local GitHub history", () => {
   it("paginates comments, indexes reviews and provenance with exact independent citations, and is idempotent", async () => {
@@ -353,7 +375,7 @@ describe("local GitHub history", () => {
     expect(result.results[0].commits).toEqual([api.headSha, api.baseSha, sha]);
     expect(api.calls.some((endpoint) => endpoint.includes("/commits?"))).toBe(false);
     expect(api.calls.some((endpoint) => endpoint.endsWith("/files?per_page=100&page=31"))).toBe(false);
-  });
+  }, 15_000);
 
   it("freshly proves issue/PR capabilities before replaying a fully staged sync under narrowed credentials", async () => {
     const { root, directory } = project();
@@ -774,4 +796,314 @@ it("reports ambiguous legacy bound provenance before networking and can adopt an
   const resolved = await syncHistory({ ...source, initialSince: initial.initialSince }, directory, api);
   expect(resolved.configuredInitialSince).toBe(initial.initialSince);
   expect(resolved.entities.map((entity) => entity.number)).toEqual([2]);
+});
+
+describe("concurrent complete history reconciliation", () => {
+  it("bounds entity overlap, suppresses duplicate nodes, and publishes numeric order after out-of-order completions", async () => {
+    const { directory } = project();
+    const api = new FixtureApi();
+    for (let number = 1; number <= 6; number++) api.issues.set(number, issue(number, `bodyneedle${number}`));
+    const discover = api.discover.bind(api);
+    api.discover = async (kind, after) => {
+      const page = await discover(kind, after);
+      if (kind === "issues") page.nodes.splice(1, 0, page.nodes[0], page.nodes[2]);
+      return page;
+    };
+    const gates = Array.from({ length: 6 }, () => historyBarrier());
+    const started: number[] = [];
+    const finished: number[] = [];
+    const keys = new Set<string>();
+    let active = 0;
+    let peak = 0;
+    let duplicateActiveKey = false;
+    const get = api.get.bind(api);
+    api.get = async (endpoint, conditional) => {
+      duplicateActiveKey ||= keys.has(endpoint);
+      keys.add(endpoint);
+      peak = Math.max(peak, ++active);
+      try {
+        const match = /\/issues\/(\d+)$/.exec(endpoint);
+        if (match) {
+          const number = Number(match[1]);
+          started.push(number);
+          await gates[number - 1].promise;
+          finished.push(number);
+        }
+        return await get(endpoint, conditional);
+      } finally {
+        active--;
+        keys.delete(endpoint);
+      }
+    };
+    const syncing = observeHistorySync(syncHistory(source, directory, api));
+    try {
+      await vi.waitFor(() => expect(started).toHaveLength(4));
+      expect([...started].sort()).toEqual([1, 2, 3, 4]);
+      expect(started).not.toContain(5);
+      for (const number of [4, 2, 3, 1]) {
+        gates[number - 1].resolve();
+        await vi.waitFor(() => expect(finished).toContain(number));
+      }
+      gates[5].resolve();
+      gates[4].resolve();
+      const result = await syncing.outcome;
+      expect(result.error).toBeUndefined();
+      expect(result.value!.entities.map((entity) => entity.number)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(result.value!.entities.map((entity) => entity.documents[0].body)).toEqual(Array.from({ length: 6 }, (_, index) => `bodyneedle${index + 1}`));
+      expect(finished.slice(0, 4)).toEqual([4, 2, 3, 1]);
+      expect(started).toHaveLength(6);
+      expect(new Set(started).size).toBe(6);
+      expect(duplicateActiveKey).toBe(false);
+      expect(peak).toBe(4);
+      expect(() => statSync(path.join(directory, "fetch-staging"))).toThrow();
+    } finally {
+      for (const gate of gates) gate.resolve();
+      await syncing.outcome;
+    }
+  }, 15_000);
+
+  it("reconciles unchanged-parent page-two edits/deletions and removed/added entities across workers", async () => {
+    const { root, directory } = project();
+    const api = new FixtureApi();
+    for (let number = 1; number <= 4; number++) api.issues.set(number, issue(number, `entityneedle${number}`));
+    api.commentsByIssue.set(1, Array.from({ length: 102 }, (_, index) => comment(1000 + index,
+      index === 100 ? "deletedconcurrenttail" : index === 101 ? "oldconcurrenttail" : "stable discussion")));
+    const first = await syncHistory(source, directory, api);
+    const comments = api.commentsByIssue.get(1)!;
+    comments.splice(100, 1);
+    comments[100] = comment(1101, "newconcurrenttail");
+    api.issues.delete(2);
+    api.issues.set(5, issue(5, "addedconcurrententity"));
+    api.responses = [];
+    const result = await syncHistory(source, directory, api);
+    expect(result.removedEntities).toBe(1);
+    expect(result.entities.map((entity) => entity.number)).toEqual([1, 3, 4, 5]);
+    expect(result.entities[0].updatedAt).toBe(first.entities[0].updatedAt);
+    expect(api.responses).toEqual(expect.arrayContaining([
+      expect.objectContaining({ endpoint: `repos/${repository}/issues/1/comments?per_page=100&page=1`, status: 304 }),
+      expect.objectContaining({ endpoint: `repos/${repository}/issues/1/comments?per_page=100&page=2`, status: 200 }),
+    ]));
+    for (const query of ["deletedconcurrenttail", "oldconcurrenttail", "entityneedle2"]) {
+      expect((await runRepositoryHistorySearch({ query }, root, "codex")).results).toEqual([]);
+    }
+    expect((await runRepositoryHistorySearch({ query: "newconcurrenttail" }, root, "codex")).results[0].documentUrl).toBe(`https://github.com/${repository}/issues/1#issuecomment-1101`);
+    expect((await runRepositoryHistorySearch({ query: "addedconcurrententity" }, root, "codex")).results[0].documentUrl).toBe(`https://github.com/${repository}/issues/5`);
+  }, 20_000);
+
+  it("drains failed workers under the lease, retains resumable checkpoints, then performs another full sweep", async () => {
+    const { root, directory } = project();
+    const api = new FixtureApi();
+    const before = await syncHistory(source, directory, api);
+    for (let number = 2; number <= 6; number++) api.issues.set(number, issue(number));
+    const fail = historyBarrier();
+    const peers = historyBarrier();
+    const failureEndpoint = `repos/${repository}/issues/1/comments?per_page=100&page=1`;
+    const checkpointEndpoint = `repos/${repository}/issues/1`;
+    let reachedFailure = false;
+    let held = 0;
+    api.beforeGet = async (endpoint) => {
+      if (endpoint === failureEndpoint) {
+        reachedFailure = true;
+        await fail.promise;
+        throw new GitHubApiError(429, true);
+      }
+      if (/\/issues\/[234]$/.test(endpoint)) { held++; await peers.promise; }
+    };
+    const syncing = observeHistorySync(syncHistory(source, directory, api));
+    let callsAtStop = 0;
+    try {
+      await vi.waitFor(() => { expect(reachedFailure).toBe(true); expect(held).toBe(3); });
+      fail.resolve();
+      await flushHistoryWorkers();
+      callsAtStop = api.calls.length;
+      expect(syncing.settled).toBe(false);
+      await expect(runRepositoryHistoryClear({}, root, "codex")).rejects.toThrow("HISTORY_BUSY");
+      expect(readSnapshot(directory, repository)!.entities).toEqual(before.entities);
+      expect(statSync(path.join(directory, "fetch-staging")).isDirectory()).toBe(true);
+      peers.resolve();
+      expect((await syncing.outcome).error).toMatchObject({ code: "HISTORY_RATE_LIMIT" });
+      expect(api.calls).toHaveLength(callsAtStop);
+      expect(api.calls).not.toContain(`repos/${repository}/issues/5`);
+      const failed = readSnapshot(directory, repository)!;
+      expect(failed.cursor).toBe(before.cursor);
+      expect(failed.entities).toEqual(before.entities);
+      expect(failed.lexical).toBe(before.lexical);
+      expect(statSync(path.join(directory, "fetch-staging")).isDirectory()).toBe(true);
+    } finally {
+      fail.resolve();
+      peers.resolve();
+      await syncing.outcome;
+      api.beforeGet = undefined;
+    }
+    const checkpointCalls = api.calls.filter((call) => call === checkpointEndpoint).length;
+    const failureCalls = api.calls.filter((call) => call === failureEndpoint).length;
+    expect((await syncHistory(source, directory, api)).entities).toHaveLength(6);
+    expect(api.calls.filter((call) => call === checkpointEndpoint)).toHaveLength(checkpointCalls);
+    expect(api.calls.filter((call) => call === failureEndpoint)).toHaveLength(failureCalls + 1);
+    const freshStart = api.calls.length;
+    await syncHistory(source, directory, api);
+    expect(api.calls.slice(freshStart)).toContain(checkpointEndpoint);
+    expect(api.calls.slice(freshStart)).toContain(failureEndpoint);
+    expect(() => statSync(path.join(directory, "fetch-staging"))).toThrow();
+  }, 25_000);
+
+  it.each(["rate-limit", "server-error", "cancellation"] as const)("lets a late access denial dominate an earlier %s only after all peers settle", async (earlier) => {
+    const { root, directory } = project();
+    const api = new FixtureApi();
+    api.issues.set(1, issue(1, "privateconcurrentcanary"));
+    await syncHistory(source, directory, api);
+    for (let number = 2; number <= 6; number++) api.issues.set(number, issue(number));
+    const first = historyBarrier();
+    const denial = historyBarrier();
+    const last = historyBarrier();
+    const controller = new AbortController();
+    let firstReady = false;
+    let denialReady = false;
+    let otherReady = 0;
+    api.beforeGet = async (endpoint) => {
+      if (endpoint.includes("/issues/1/comments?")) {
+        firstReady = true;
+        await first.promise;
+        if (earlier === "cancellation") {
+          controller.abort();
+          return;
+        }
+        throw new GitHubApiError(earlier === "rate-limit" ? 429 : 500, earlier === "rate-limit");
+      }
+      if (endpoint.endsWith("/issues/2")) {
+        denialReady = true;
+        await denial.promise;
+        throw new GitHubApiError(403, false);
+      }
+      if (/\/issues\/[34]$/.test(endpoint)) { otherReady++; await last.promise; }
+    };
+    const syncing = observeHistorySync(syncHistory(source, directory, api, undefined, { signal: controller.signal }));
+    try {
+      await vi.waitFor(() => { expect(firstReady).toBe(true); expect(denialReady).toBe(true); expect(otherReady).toBe(2); });
+      first.resolve();
+      await flushHistoryWorkers();
+      expect(syncing.settled).toBe(false);
+      denial.resolve();
+      await flushHistoryWorkers();
+      expect(syncing.settled).toBe(false);
+      await expect(runRepositoryHistoryClear({}, root, "codex")).rejects.toThrow("HISTORY_BUSY");
+      expect(readSnapshot(directory, repository)!.entities).toHaveLength(1);
+      expect(statSync(path.join(directory, "fetch-staging")).isDirectory()).toBe(true);
+      last.resolve();
+      expect((await syncing.outcome).error).toMatchObject({ code: "HISTORY_INACCESSIBLE" });
+      const snapshot = readSnapshot(directory, repository)!;
+      expect(snapshot.entities).toEqual([]);
+      expect(snapshot.httpCache).toEqual({});
+      expect(snapshot.lexical).toBe("");
+      expect(readFileSync(path.join(directory, "snapshot.json"), "utf8")).not.toContain("privateconcurrentcanary");
+      expect((await runRepositoryHistorySearch({ query: "privateconcurrentcanary" }, root, "codex")).results).toEqual([]);
+      expect(() => statSync(path.join(directory, "fetch-staging"))).toThrow();
+      await flushHistoryWorkers();
+      expect(() => statSync(path.join(directory, "fetch-staging"))).toThrow();
+      expect(api.calls).not.toContain(`repos/${repository}/issues/5`);
+    } finally {
+      first.resolve();
+      denial.resolve();
+      last.resolve();
+      await syncing.outcome;
+    }
+  }, 15_000);
+
+  it("keeps published bytes unchanged on cancellation, drains running peers, and resumes completed checkpoints", async () => {
+    const { root, directory } = project();
+    const api = new FixtureApi();
+    await syncHistory(source, directory, api);
+    const published = readFileSync(path.join(directory, "snapshot.json"), "utf8");
+    for (let number = 2; number <= 6; number++) api.issues.set(number, issue(number));
+    const held = historyBarrier();
+    const entityGets = historyBarrier();
+    const controller = new AbortController();
+    let heldCount = 0;
+    let entityGetCount = 0;
+    api.beforeGet = async (endpoint) => {
+      if (/\/issues\/[1-4]$/.test(endpoint)) {
+        entityGetCount++;
+        await entityGets.promise;
+      }
+      if (/\/issues\/[1-4]\/comments\?/.test(endpoint)) {
+        heldCount++;
+        await held.promise;
+      }
+    };
+    const syncing = observeHistorySync(syncHistory(source, directory, api, undefined, { signal: controller.signal }));
+    try {
+      await vi.waitFor(() => expect(entityGetCount).toBe(4));
+      entityGets.resolve();
+      await vi.waitFor(() => {
+        expect(heldCount).toBeGreaterThanOrEqual(1);
+        for (let number = 1; number <= 4; number++) expect(api.calls).toContain(`repos/${repository}/issues/${number}`);
+      });
+      await flushHistoryWorkers();
+      // All four entity GETs completed; their workers are now held in comments
+      // or waiting for rate admission. No worker can finish an entity.
+      controller.abort();
+      await flushHistoryWorkers();
+      const calls = api.calls.length;
+      expect(syncing.settled).toBe(false);
+      await expect(runRepositoryHistoryClear({}, root, "codex")).rejects.toThrow("HISTORY_BUSY");
+      held.resolve();
+      expect((await syncing.outcome).error).toMatchObject({ code: "HISTORY_CANCELLED" });
+      expect(api.calls).toHaveLength(calls);
+      expect(readFileSync(path.join(directory, "snapshot.json"), "utf8")).toBe(published);
+      expect(statSync(path.join(directory, "fetch-staging")).isDirectory()).toBe(true);
+    } finally {
+      entityGets.resolve();
+      held.resolve();
+      await syncing.outcome;
+      api.beforeGet = undefined;
+    }
+    const checkpointCalls = api.calls.filter((call) => call === `repos/${repository}/issues/1`).length;
+    expect((await syncHistory(source, directory, api)).entities).toHaveLength(6);
+    expect(api.calls.filter((call) => call === `repos/${repository}/issues/1`)).toHaveLength(checkpointCalls);
+    expect(() => statSync(path.join(directory, "fetch-staging"))).toThrow();
+  }, 20_000);
+
+  it("omits whole entities on initial and collection404 while retaining unavailable-diff PRs and completing peers", async () => {
+    const { directory } = project();
+    const api = new FixtureApi();
+    for (let number = 1; number <= 4; number++) api.issues.set(number, issue(number));
+    api.issues.set(3, { ...issue(3), pull_request: {} });
+    api.beforeGet = async (endpoint) => {
+      if (endpoint.endsWith("/issues/1") || endpoint.includes("/issues/2/comments?")) throw new GitHubApiError(404, false);
+      if (endpoint.includes("/pulls/3/files?")) throw new GitHubApiError(422, false, ["not_available"]);
+    };
+    const result = await syncHistory(source, directory, api);
+    expect(result.complete).toBe(true);
+    expect(result.entities.map((entity) => entity.number)).toEqual([3, 4]);
+    expect(result.entities[0]).toMatchObject({ kind: "pull_request", fileReferencesComplete: false, files: [], totalChangedFiles: 1 });
+    expect(api.calls).toContain(`repos/${repository}/issues/4/timeline?per_page=100&page=1`);
+  }, 15_000);
+
+  it.each([
+    ["files", 422, false, []],
+    ["comments", 422, false, ["not_available"]],
+    ["files", 422, true, ["not_available"]],
+  ] as const)("does not recover %s HTTP%s rateLimited=%s failures outside the exact unavailable-diff branch", async (collection, status, rateLimited, codes) => {
+    const { directory } = project();
+    const api = new FixtureApi();
+    api.issues.set(1, { ...issue(1), pull_request: {} });
+    api.issues.set(2, issue(2));
+    api.beforeGet = async (endpoint) => {
+      const prefix = collection === "files" ? "/pulls/1/files?" : "/issues/1/comments?";
+      if (endpoint.includes(prefix)) throw new GitHubApiError(status, rateLimited, codes);
+    };
+    await expect(syncHistory(source, directory, api)).rejects.toThrow(rateLimited ? "HISTORY_RATE_LIMIT" : "HISTORY_API");
+    expect(readSnapshot(directory, repository)!.entities).toEqual([]);
+  }, 10_000);
+
+  it("does not turn malformed entity responses into successful omissions while peers finish", async () => {
+    const { directory } = project();
+    const api = new FixtureApi();
+    api.issues.set(2, issue(2));
+    const get = api.get.bind(api);
+    api.get = async (endpoint, conditional) => endpoint.endsWith("/issues/1")
+      ? { status: 200, value: { number: 1 } } : get(endpoint, conditional);
+    await expect(syncHistory(source, directory, api)).rejects.toThrow("HISTORY_API");
+    expect(readSnapshot(directory, repository)!.entities).toEqual([]);
+  });
 });
