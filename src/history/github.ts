@@ -59,7 +59,7 @@ export interface HistoryApi {
 }
 
 export class GitHubApiError extends HistoryError {
-  constructor(public readonly status: number, public readonly rateLimited: boolean) {
+  constructor(public readonly status: number, public readonly rateLimited: boolean, public readonly errorCodes: readonly string[] = []) {
     super(rateLimited ? "HISTORY_RATE_LIMIT" : status === 401 || status === 403 || status === 404
       ? "HISTORY_INACCESSIBLE" : "HISTORY_API", rateLimited
       ? "GitHub rate limit reached; sync was not committed"
@@ -76,12 +76,28 @@ function graphQLFailure(value: unknown): GitHubApiError | undefined {
   return new GitHubApiError(denied ? 403 : rateLimited ? 429 : 502, rateLimited);
 }
 
+function restFailure(stdout: string): { status?: number; errorCodes: string[] } {
+  const boundary = /^HTTP\//.test(stdout) ? /\r?\n\r?\n/.exec(stdout) : null;
+  const body = boundary ? stdout.slice(boundary.index + boundary[0].length) : stdout;
+  let value: unknown;
+  try { value = JSON.parse(body); } catch { return { errorCodes: [] }; }
+  if (!value || typeof value !== "object") return { errorCodes: [] };
+  const rawStatus = "status" in value ? value.status : undefined;
+  const status = typeof rawStatus === "string" || typeof rawStatus === "number" ? Number(rawStatus) : NaN;
+  const errors = "errors" in value ? value.errors : undefined;
+  const errorCodes = Array.isArray(errors) ? errors.flatMap((error: unknown) => {
+    if (!error || typeof error !== "object" || !("code" in error)) return [];
+    return typeof error.code === "string" ? [error.code] : [];
+  }) : [];
+  return { status: Number.isInteger(status) && status >= 400 && status <= 599 ? status : undefined, errorCodes };
+}
+
 function restResponse(stdout: string): HistoryRestResponse {
   const boundary = /\r?\n\r?\n/.exec(stdout);
   if (!boundary) throw new HistoryError("HISTORY_API", "missing GitHub response headers");
   const headers = stdout.slice(0, boundary.index);
   const status = Number(/^HTTP\/\S+\s+(\d{3})/.exec(headers)?.[1]);
-  if (status !== 200 && status !== 304) throw new GitHubApiError(status || 502, status === 429);
+  if (status !== 200 && status !== 304) throw new GitHubApiError(status || 502, status === 429, restFailure(stdout).errorCodes);
   const etag = /^etag:\s*(.+)$/im.exec(headers)?.[1].trim();
   if (etag && !/^[\x21-\x7e]{1,1024}$/.test(etag)) throw new HistoryError("HISTORY_API", "invalid GitHub response validator");
   return { status, etag, value: status === 304 ? undefined : JSON.parse(stdout.slice(boundary.index + boundary[0].length)) as unknown };
@@ -109,14 +125,15 @@ export function createGitHubApi(repository: string, cwd: string, signal?: AbortS
         if (classified) throw classified;
       }
       const diagnostic = `${failure.stderr ?? ""} ${failure.stdout ?? ""}`;
-      const status = Number(/^HTTP\/\S+\s+(\d{3})/.exec(failure.stdout ?? "")?.[1] ?? /HTTP (\d{3})/.exec(failure.stderr ?? "")?.[1]);
+      const structured = headers ? restFailure(failure.stdout ?? "") : { status: undefined, errorCodes: [] };
+      const status = Number(/^HTTP\/\S+\s+(\d{3})/.exec(failure.stdout ?? "")?.[1] ?? /HTTP (\d{3})/.exec(failure.stderr ?? "")?.[1] ?? structured.status);
       const rateLimited = /rate limit|secondary rate|abuse detection/i.test(diagnostic);
-      // A received known denial dominates a coincident cancellation; body text alone is not an HTTP status.
-      if ([401, 403, 404].includes(status) && !rateLimited) throw new GitHubApiError(status, false);
+      // A received known denial dominates a coincident cancellation; free-form body text is not an HTTP status.
+      if ([401, 403, 404].includes(status) && !rateLimited) throw new GitHubApiError(status, false, structured.errorCodes);
       if (signal?.aborted) throw new HistoryError("HISTORY_CANCELLED", "manual history sync was cancelled; fetch staging retained");
       // gh exits nonzero for a valid conditional response; hydrate it like the successful GET path.
       if (headers && status === 304 && failure.stdout) return restResponse(failure.stdout);
-      if (status) throw new GitHubApiError(status, rateLimited);
+      if (status) throw new GitHubApiError(status, rateLimited, structured.errorCodes);
       throw new HistoryError("HISTORY_API", "GitHub read request failed; authentication, transport, or invalid response; sync was not committed");
     }
   };

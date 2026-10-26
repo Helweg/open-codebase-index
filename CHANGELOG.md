@@ -7,9 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.38.2] - 2026-10-26
+
 ### Fixed
 
 - **Watcher failure capture visibility**: Preserve failure-only capture expectations independently of snapshot writes and report retained, retention-failed, expected-missing, and unavailable-status diagnostics in CI summaries and a separate status artifact without replacing the original test failure or requiring captures for unrelated failures. Unavailable status storage does not imply a missing capture.
+- **Unavailable PR diffs in history sync**: Preserve structured GitHub REST error codes without exposing private error bodies. Only PR-files HTTP `422`/`not_available` responses retain the PR and discussions with an empty, explicitly incomplete file list and allow sync to continue, including PRs reporting zero changed files and commits. Other API failures, cancellation, and atomic publication behavior are unchanged.
 
 ## [0.38.1] - 2026-10-24
 
@@ -1094,7 +1097,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...HEAD
+[0.38.2]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...v0.38.2
 [0.38.1]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...v0.38.1
 [0.38.0]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...v0.38.0
 [0.37.2]: https://github.com/Helweg/open-codebase-index/compare/v0.37.1...v0.37.2

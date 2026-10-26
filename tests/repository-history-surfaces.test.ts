@@ -48,7 +48,8 @@ function setup() {
     reviewComments: [{ id: 40, body: "inlineneedle", created_at: date, updated_at: date, user: { login: "reviewer" } }],
     files: [{ filename: "src/feature.ts", patch: "MUST NEVER STORE THIS DIFF" }], commits: [{ sha }], timeline: [],
   };
-  const state = { repository, repositoryId: 42, principalId: "viewer-1", metadataOnly: false, failAccessAt: 0, holdAccessAt: 0, denialWait: "", noEtags: false, entities: [entity], revoked: false, fail: "", graphqlExit: 0, graphqlErrors: undefined as { type: string }[] | undefined };
+  const state = { repository, repositoryId: 42, principalId: "viewer-1", metadataOnly: false, failAccessAt: 0, holdAccessAt: 0, denialWait: "", noEtags: false, entities: [entity], revoked: false, fail: "", graphqlExit: 0, graphqlErrors: undefined as { type: string }[] | undefined,
+    apiError: undefined as { endpoint: string; status: number; codes: string[]; headers: boolean } | undefined };
   const save = () => writeFileSync(statePath, JSON.stringify(state), { mode: 0o600 });
   save();
   return { root, state, save, requests };
@@ -60,6 +61,74 @@ function resultText(result: { content?: unknown }) {
 afterEach(() => { vi.unstubAllEnvs(); for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("history public surfaces", () => {
+  it.each([false, true])("preserves structured REST error codes without private bodies (headers: %s)", async (headers) => {
+    const fixture = setup();
+    fixture.state.apiError = { endpoint: "/files?", status: 422, codes: ["not_available", "invalid"], headers };
+    fixture.save();
+    const failure = await createGitHubApi(repository, fixture.root).get(`repos/${repository}/pulls/1/files?per_page=100&page=1`).catch((error: unknown) => error);
+    expect(failure).toMatchObject({ code: "HISTORY_API", status: 422, errorCodes: ["not_available", "invalid"] });
+    expect(String(failure)).not.toContain("PRIVATE_ERROR_BODY_CANARY");
+    expect(JSON.stringify(failure)).not.toContain("PRIVATE_ERROR_BODY_CANARY");
+  });
+
+  it.each([false, true])("retains unavailable-diff PR discussions and continues syncing (headers: %s)", async (headers) => {
+    const fixture = setup();
+    fixture.state.entities[0].files = [];
+    fixture.state.entities[0].commits = [];
+    fixture.state.entities.push({ ...fixture.state.entities[0], id: 2, number: 2, body: "laterprneedle" });
+    fixture.state.apiError = { endpoint: "/pulls/1/files?", status: 422, codes: ["not_available"], headers };
+    fixture.save();
+    const result = await syncHistory({ repository, enabled: true }, historyDirectory(fixture.root, "codex", repository), createGitHubApi(repository, fixture.root));
+    expect(result).toMatchObject({ complete: true, status: "ready", syncedEntities: 2 });
+    expect(result.entities.find((entity) => entity.number === 1)).toMatchObject({
+      kind: "pull_request", files: [], fileReferencesComplete: false, totalChangedFiles: 0,
+      documents: [
+        { documentKind: "body", body: "local rationale needle" },
+        { documentKind: "comment", body: "obsoletecommentneedle" },
+        { documentKind: "review", body: "reviewneedle" },
+        { documentKind: "review_comment", body: "inlineneedle" },
+      ],
+    });
+    expect(result.entities.find((entity) => entity.number === 2)?.documents[0].body).toBe("laterprneedle");
+  }, 30_000);
+
+  it.each([
+    { endpoint: "/files?", status: 422, codes: ["invalid"], headers: false },
+    { endpoint: "/files?", status: 500, codes: ["not_available"], headers: true },
+    { endpoint: "/reviews?", status: 422, codes: ["not_available"], headers: false },
+  ])("does not recover unrelated REST failure $status at $endpoint", async (apiError) => {
+    const fixture = setup();
+    const directory = historyDirectory(fixture.root, "codex", repository);
+    const api = createGitHubApi(repository, fixture.root);
+    await syncHistory({ repository, enabled: true }, directory, api);
+    const before = readSnapshot(directory, repository)!;
+    fixture.state.entities[0].body = "unpublished edit";
+    fixture.state.apiError = apiError;
+    fixture.save();
+    await expect(syncHistory({ repository, enabled: true }, directory, api)).rejects.toMatchObject({ code: "HISTORY_API", status: apiError.status });
+    const after = readSnapshot(directory, repository)!;
+    expect(after).toMatchObject({ status: "error", cursor: before.cursor, entities: before.entities, lexical: before.lexical });
+    expect(JSON.stringify(after)).not.toContain("PRIVATE_ERROR_BODY_CANARY");
+  }, 30_000);
+
+  it("persists incomplete file references through built CLI sync and local search/status", async () => {
+    const fixture = setup();
+    fixture.state.entities[0].files = [];
+    fixture.state.entities[0].commits = [];
+    fixture.state.apiError = { endpoint: "/files?", status: 422, codes: ["not_available"], headers: false };
+    fixture.save();
+    const cli = async (...args: string[]) => JSON.parse((await execute(process.execPath, [path.resolve("dist/cbi.js"), "history", ...args, "--project", fixture.root, "--host", "codex"], { env: process.env })).stdout);
+    expect(await cli("sync")).toMatchObject({ complete: true, entityCount: 1, documentCount: 4 });
+    const persisted = readSnapshot(historyDirectory(fixture.root, "codex", repository), repository)!;
+    expect(persisted.entities[0]).toMatchObject({ files: [], fileReferencesComplete: false, totalChangedFiles: 0 });
+    expect((await cli("search", "reviewneedle")).results[0]).toMatchObject({
+      documentUrl: "https://github.com/example/repository/pull/1#pullrequestreview-30",
+      files: [], fileReferencesComplete: false, totalChangedFiles: 0,
+    });
+    expect(await cli("status")).toMatchObject({ status: "ready", incompleteFileReferenceEntities: 1 });
+    expect(JSON.stringify(persisted)).not.toContain("PRIVATE_ERROR_BODY_CANARY");
+  }, 30_000);
+
   it("uses the Pi history config and store through the omp CLI alias", async () => {
     const fixture = setup();
     writeFileSync(path.join(fixture.root, ".opencode", "codebase-index.json"), JSON.stringify({

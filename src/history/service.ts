@@ -65,11 +65,17 @@ async function fetchEntity(api: HistoryApi, identity: RepositoryHistoryIdentity,
       documents.push(document(item, "review", `${url}#pullrequestreview-${item.id}`));
     }
     for (const item of await allPages(api, `${base}/pulls/${number}/comments`)) documents.push(document(item, "review_comment", `${url}#discussion_r${item.id}`));
-    const changed = await allPages(api, `${base}/pulls/${number}/files`, 3000);
     if (!Number.isSafeInteger(pr.changed_files) || (pr.changed_files ?? -1) < 0) throw new HistoryError("HISTORY_API", "missing changed-file count");
     totalChangedFiles = Number(pr.changed_files);
-    fileReferencesComplete = changed.length === totalChangedFiles;
-    for (const file of changed) files.push(String(file.filename));
+    try {
+      const changed = await allPages(api, `${base}/pulls/${number}/files`, 3000);
+      fileReferencesComplete = changed.length === totalChangedFiles;
+      for (const file of changed) files.push(String(file.filename));
+    } catch (error) {
+      if (!(error instanceof GitHubApiError) || error.status !== 422 || error.rateLimited || !error.errorCodes.includes("not_available")) throw error;
+      // An unavailable diff is not a complete empty list, even when changed_files is zero.
+      fileReferencesComplete = false;
+    }
     // Commit provenance is linked references, not an exhaustive git mirror or REST's capped 250-commit list.
     for (const sha of [pr.head?.sha, pr.base?.sha, pr.merged_at ? pr.merge_commit_sha : undefined]) {
       if (sha && /^[a-f0-9]{40}$/i.test(sha)) commits.add(sha);
