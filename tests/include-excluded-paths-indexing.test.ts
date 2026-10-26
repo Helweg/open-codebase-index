@@ -1,3 +1,4 @@
+import type * as Chokidar from "chokidar";
 import type * as FsPromises from "node:fs/promises";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
@@ -17,6 +18,7 @@ import { DefaultRootBuildFailureCapture } from "./watcher/default-root-build-fai
 const snapshotFaults = vi.hoisted(() => ({
   beforeRead: undefined as ((directory: string) => Promise<void>) | undefined,
   afterStat: undefined as ((filePath: string) => Promise<void>) | undefined,
+  perDirectoryBackend: false,
 }));
 vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof FsPromises>("node:fs/promises");
@@ -30,6 +32,19 @@ vi.mock("node:fs/promises", async () => {
       const result = await actual.stat(...args);
       await snapshotFaults.afterStat?.(String(args[0]));
       return result;
+    },
+  };
+});
+
+// Exercise Linux's real per-directory resource strategy on every host, only for controlled faults.
+vi.mock("chokidar", async () => {
+  const actual = await vi.importActual<typeof Chokidar>("chokidar");
+  return {
+    ...actual,
+    FSWatcher: class extends actual.FSWatcher {
+      constructor(options: ConstructorParameters<typeof actual.FSWatcher>[0] = {}) {
+        super({ ...options, ...(snapshotFaults.perDirectoryBackend ? { backend: "native" as const } : {}) });
+      }
     },
   };
 });
@@ -138,6 +153,7 @@ describe("include-excluded path indexing acceptance", () => {
     try {
       snapshotFaults.beforeRead = undefined;
       snapshotFaults.afterStat = undefined;
+      snapshotFaults.perDirectoryBackend = false;
       const stopResults = await Promise.allSettled(watchers.map((watcher) => watcher.stop()));
       watchersStopped = stopResults.every((result) => result.status === "fulfilled");
       const handlerResults = await Promise.allSettled(handlerTails);
@@ -693,40 +709,71 @@ describe("include-excluded path indexing acceptance", () => {
     return { watcher, observed };
   }
 
-  it("recovers a readable selected source rejected with EPERM during initial Node watch registration", async () => {
+  it.each(["directory", "root"] as const)("recovers a readable selected %s rejected with EPERM during initial Node watch registration", async (resource) => {
     const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
     const buildPath = path.join(projectDir, "build-helper.ts");
     const restrictedPath = path.join(projectDir, "Library", "restricted.ts");
+    const negativePaths = [
+      path.join(projectDir, "excluded", "blocked.ts"),
+      path.join(projectDir, "vendor", "ignored.ts"),
+      path.join(projectDir, ".git", "protected.ts"),
+      path.join(projectDir, "private-index", "protected.ts"),
+    ];
+    fs.writeFileSync(path.join(projectDir, ".gitignore"), "vendor/\n");
+    for (const filePath of negativePaths) writeSource(filePath, "permissionOriginalNegativeDefinition");
     writeSource(ordinaryPath, "permissionOriginalOrdinaryDefinition");
     writeSource(buildPath, "permissionOriginalBuildDefinition");
     writeSource(restrictedPath, "permissionOriginalRestrictedDefinition");
-    const config = structuralConfig();
-    const indexer = createIndexer(config);
+    const config = structuralConfig({ exclude: ["excluded/**"] });
+    const indexPath = path.join(projectDir, "private-index");
+    const indexer = createIndexer(config, { indexPath });
     await indexer.index();
+    snapshotFaults.perDirectoryBackend = true;
+    const watchPath = resource === "root" ? projectDir : path.dirname(ordinaryPath);
 
     const actualWatch = fs.watch;
     let faulted = false;
     vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
-      if (String(args[0]) === ordinaryPath && !faulted) {
+      if (path.resolve(String(args[0])) === watchPath && !faulted) {
         faulted = true;
-        throw Object.assign(new Error("CONTROLLED source watch EPERM"), {
-          code: "EPERM", errno: -1, syscall: "watch", path: ordinaryPath, filename: ordinaryPath,
+        throw Object.assign(new Error("CONTROLLED directory watch EPERM"), {
+          code: "EPERM", errno: -1, syscall: "watch", path: watchPath, filename: watchPath,
         });
       }
       return Reflect.apply(actualWatch, this, args);
     });
     syncBuiltinESMExports();
-    const { watcher, observed } = startRecoveryConsumer(config, indexer);
+    const { watcher, observed } = startRecoveryConsumer(config, indexer, { indexPath });
+    // Access the real emitters only to verify that stale/secondary errors cannot restart recovery.
+    const internals = watcher as unknown as { watcher: FSWatcher };
+    const first = internals.watcher;
+    // Retain the callback to model an already-queued error; close removes emitter listeners.
+    const firstErrorHandler = first.listeners("error")[0];
+    if (!firstErrorHandler) throw new Error("Initial watcher error handler was not registered");
     await watcher.waitUntilReady();
     if (!faulted) throw new Error("CONTROLLED Node fs.watch registration boundary was not reached");
+    const replacement = internals.watcher;
+    expect(replacement).not.toBe(first);
+    expect(replacement.options.usePolling).toBe(true);
+    const repeatedError = Object.assign(new Error("CONTROLLED repeated directory EPERM"), {
+      code: "EPERM", syscall: "watch", path: watchPath,
+    });
+    Reflect.apply(firstErrorHandler, first, [repeatedError]);
+    replacement.emit("error", repeatedError);
+    expect(internals.watcher).toBe(replacement);
+    const addedPath = path.join(path.dirname(ordinaryPath), "new-after-ready.ts");
+    writeSource(addedPath, "permissionNewAfterReadyDefinition");
 
     writeSource(buildPath, "permissionUpdatedBuildDefinition");
     writeSource(restrictedPath, "permissionUpdatedRestrictedDefinition");
+    for (const filePath of negativePaths) writeSource(filePath, "permissionUpdatedNegativeDefinition");
     writeSource(ordinaryPath, "permissionUpdatedOrdinaryDefinition");
     await vi.waitFor(async () => {
       expect(observed.some((change) => change.path === ordinaryPath)).toBe(true);
       expect(await hasDefinition(indexer, "permissionUpdatedOrdinaryDefinition", ordinaryPath)).toBe(true);
       expect(await hasDefinition(indexer, "permissionUpdatedBuildDefinition", buildPath)).toBe(true);
+      expect(await hasDefinition(indexer, "permissionNewAfterReadyDefinition", addedPath)).toBe(true);
+      expect(observed.some((change) => change.path === addedPath && change.type === "add")).toBe(true);
     }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
     await Promise.all(handlerTails);
     const secondObservedStart = observed.length;
@@ -737,26 +784,27 @@ describe("include-excluded path indexing acceptance", () => {
       expect(await hasDefinition(indexer, "permissionUpdatedOrdinaryDefinition", ordinaryPath)).toBe(false);
     }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
     expect(observed.some((change) => change.path === buildPath || change.path === restrictedPath)).toBe(false);
+    for (const filePath of negativePaths) expect(observed.some((change) => change.path === filePath)).toBe(false);
   });
 
   it("keeps newly added source updates live after post-ready EACCES with a trailing-separator root", async () => {
     const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
-    const addedPath = path.join(projectDir, "src", "added.ts");
+    const addedPath = path.join(projectDir, "src", "new-directory", "added.ts");
     writeSource(ordinaryPath, "permissionExistingDefinition");
     const config = structuralConfig();
     const indexer = createIndexer(config);
     await indexer.index();
+    snapshotFaults.perDirectoryBackend = true;
+    const watchPath = path.dirname(addedPath);
 
     const actualWatch = fs.watch;
     let faulted = false;
-    let reportFault!: () => void;
-    const fault = new Promise<void>((resolve) => { reportFault = resolve; });
+    // Bounded observation below fails explicitly if the real directory resource is never reached.
     vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
-      if (String(args[0]) === addedPath && !faulted) {
+      if (path.resolve(String(args[0])) === watchPath && !faulted) {
         faulted = true;
-        reportFault();
-        throw Object.assign(new Error("CONTROLLED added source watch EACCES"), {
-          code: "EACCES", errno: -13, syscall: "watch", path: addedPath, filename: addedPath,
+        throw Object.assign(new Error("CONTROLLED added directory watch EACCES"), {
+          code: "EACCES", errno: -13, syscall: "watch", path: watchPath, filename: watchPath,
         });
       }
       return Reflect.apply(actualWatch, this, args);
@@ -764,9 +812,10 @@ describe("include-excluded path indexing acceptance", () => {
     syncBuiltinESMExports();
     const { watcher, observed } = startRecoveryConsumer(config, indexer, {}, `${projectDir}${path.sep}`);
     await watcher.waitUntilReady();
-    writeSource(addedPath, "permissionAddedOriginalDefinition");
-    await fault;
+    fs.mkdirSync(watchPath, { recursive: true });
+    await vi.waitFor(() => expect(faulted).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
     await watcher.waitUntilReady();
+    writeSource(addedPath, "permissionAddedOriginalDefinition");
 
     const observedStart = observed.length;
     writeSource(addedPath, "permissionAddedUpdatedDefinition");
@@ -788,7 +837,7 @@ describe("include-excluded path indexing acceptance", () => {
   it.each([
     { label: "default root build file", file: "build-helper.ts", exclude: undefined, denyAccess: false, indexed: true },
     { label: "explicitly excluded file", file: "ignored.ts", exclude: ["ignored.ts"], denyAccess: false, indexed: false },
-    { label: "source denied by the access boundary", file: "blocked.ts", exclude: undefined, denyAccess: true, indexed: true },
+    { label: "source denied by the access boundary", file: "blocked/blocked.ts", exclude: undefined, denyAccess: true, indexed: true },
   ])("preserves consumer filtering after a permission error for a $label", async ({ file, exclude, denyAccess, indexed }) => {
     const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
     const rejectedPath = path.join(projectDir, file);
@@ -797,13 +846,15 @@ describe("include-excluded path indexing acceptance", () => {
     const config = structuralConfig({ exclude });
     const indexer = createIndexer(config);
     await indexer.index();
+    snapshotFaults.perDirectoryBackend = true;
+    const watchPath = denyAccess ? path.dirname(rejectedPath) : projectDir;
 
     const actualAccess = fs.accessSync;
     let denyRecoveryAccess = denyAccess;
     if (denyAccess) {
       // Portable classification fault only: the fixture's real reads and file modes are unchanged.
       vi.spyOn(fs, "accessSync").mockImplementation(function (this: unknown, ...args) {
-        if (String(args[0]) === rejectedPath && denyRecoveryAccess) {
+        if (String(args[0]) === watchPath && denyRecoveryAccess) {
           denyRecoveryAccess = false;
           throw Object.assign(new Error("CONTROLLED source access EACCES"), { code: "EACCES" });
         }
@@ -813,10 +864,10 @@ describe("include-excluded path indexing acceptance", () => {
     const actualWatch = fs.watch;
     let faulted = false;
     vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
-      if (String(args[0]) === rejectedPath && !faulted) {
+      if (path.resolve(String(args[0])) === watchPath && !faulted) {
         faulted = true;
-        throw Object.assign(new Error("CONTROLLED filtered source watch EPERM"), {
-          code: "EPERM", errno: -1, syscall: "watch", path: rejectedPath, filename: rejectedPath,
+        throw Object.assign(new Error("CONTROLLED filtered directory watch EPERM"), {
+          code: "EPERM", errno: -1, syscall: "watch", path: watchPath, filename: watchPath,
         });
       }
       return Reflect.apply(actualWatch, this, args);

@@ -33,7 +33,7 @@ updates:
       - dependency-name: typescript
         update-types:
           - version-update:semver-major
-      # Types must track the minimum supported runtime major (engines >=22.13.0,
+      # Types must track the minimum supported runtime major (engines >=22.22.0,
       # CI matrix 22 + 24), never the newest release. Revisit with the Node 22
       # end-of-life (2027-04-30), adopting @types/node@24 at that point.
       - dependency-name: "@types/node"
@@ -41,7 +41,7 @@ updates:
           - version-update:semver-major
       # 1.18.x pulls effect@4.0.0-beta.83 → ini@7.0.0, whose engines are
       # "^22.22.2 || ^24.15.0 || >=26.0.0". That silently raises our declared
-      # runtime floor (engines >=22.13.0, enforced by the CI packed-install
+      # runtime floor (engines >=22.22.0, enforced by the CI packed-install
       # smoke test) and ships a beta dependency, so adoption is a deliberate
       # floor-raising release. See #392.
       - dependency-name: "@opencode-ai/plugin"
