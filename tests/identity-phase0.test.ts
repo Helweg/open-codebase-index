@@ -13,6 +13,7 @@ interface PackageMetadata {
   bin: Record<string, string>;
   repository: { url: string };
   napi: { binaryName: string };
+  engines: { node: string };
 }
 
 interface CodexManifestMetadata {
@@ -40,7 +41,7 @@ interface ClaudeMarketplaceMetadata {
 
 interface PackageLockMetadata {
   name: string;
-  packages: Record<string, { name?: string; bin?: Record<string, string> }>;
+  packages: Record<string, { name?: string; bin?: Record<string, string>; engines?: { node: string } }>;
 }
 
 function readJson<T>(filePath: string): T {
@@ -154,6 +155,8 @@ describe("Phase 1 product identity compatibility", () => {
     expect(packageJson.bin).toEqual(expectedBin);
     expect(packageJson.repository.url).toBe(current.repository);
     expect(packageLock.name).toBe(current.packageName);
+    expect(packageJson.engines.node).toBe(">=22.22.0");
+    expect(packageLock.packages[""]?.engines?.node).toBe(">=22.22.0");
     expect(packageLock.packages[""]?.name).toBe(current.packageName);
     expect(packageLock.packages[""]?.bin).toEqual(expectedBin);
     expect(packageJson.napi.binaryName).toBe(IDENTITY_CATALOG.native.binaryName);
@@ -188,6 +191,8 @@ describe("Phase 1 product identity compatibility", () => {
       const expectedBin = { [IDENTITY_CATALOG.product.current.mcpBinary]: "dist/cli.js", ocbi: "dist/cbi.js", cbi: "dist/cbi.js" };
 
       expect(packageJson.name).toBe(IDENTITY_CATALOG.product.current.packageName);
+      expect(packageJson.engines.node).toBe(">=22.22.0");
+      expect(packageLock.packages[""]?.engines?.node).toBe(">=22.22.0");
       expect(packageJson.bin).toEqual(expectedBin);
       expect(packageLock.name).toBe(IDENTITY_CATALOG.product.current.packageName);
       expect(packageLock.packages[""]?.bin).toEqual(expectedBin);
@@ -229,6 +234,8 @@ describe("Phase 1 product identity compatibility", () => {
         ocbi: "dist/cbi.js",
         cbi: "dist/cbi.js",
       };
+      expect(packageJson.engines.node).toBe(">=22.22.0");
+      expect(packageLock.packages[""]?.engines?.node).toBe(">=22.22.0");
       const expectedMcpArgs = [
         "-y",
         "--package",

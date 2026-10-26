@@ -42,7 +42,7 @@ Use this when you just want the shortest path to a good PR:
 
 ### Prerequisites
 
-- Development Node.js range: `^22.19.0 || ^24.11.0 || >=26.0.0` (Pi and tsup development dependencies). Node.js 24.11+ LTS is recommended. The published package still supports Node.js 22.13 or newer.
+- Development Node.js range: `^22.22.0 || ^24.11.0 || >=26.0.0` (Chokidar 6, Pi, and tsup dependencies). Node.js 24.11+ LTS is recommended. Published consumers require Node.js 22.22 or newer.
 - Rust toolchain (for native module)
 - npm
 
@@ -71,6 +71,15 @@ npm run test
 # Run Rust tests
 cd native && cargo test
 ```
+
+Watcher permission-recovery tests use real Chokidar 6 directory registrations,
+not per-file native handles. Controlled fault cases explicitly select Chokidar's
+per-directory native backend on every platform, matching Linux's default strategy.
+Readable project roots and traversable directories (including empty directories)
+can trigger the existing one-shot polling fallback; ignored, excluded, restricted,
+protected-index, unreadable, and auxiliary external-config targets cannot broaden
+source coverage. Keep readiness/fault synchronization bounded and retain real
+event-delivery, index-definition replacement, and filtering assertions.
 
 The default-root-build watcher rejection scenarios in
 `tests/include-excluded-paths-indexing.test.ts` retain diagnostics **only on
