@@ -437,8 +437,7 @@ export const code_communities: ToolDefinition = tool({
 
 export const index_visualize: ToolDefinition = tool({
   description:
-    "Generate an interactive HTML visualization of recent code movement and the call graph. " +
-    "Starts with temporal onboarding context from Git history, then supports module, symbol, hotspot, and cycle drill-down.",
+    "Generate a self-contained interactive HTML codebase explorer. Browse categorized modules, files, symbols and directed callsites; analyze snapshot activity, hotspots, and cycles.",
   args: {
     directory: z.string().optional().describe("Filter to symbols in this directory (e.g., 'src/services')"),
     maxNodes: z.number().optional().default(5000).describe("Maximum nodes to include (default 5000)"),
@@ -472,9 +471,9 @@ export const index_visualize: ToolDefinition = tool({
     const outputPath = path.join(os.tmpdir(), `call-graph-${Date.now()}.html`);
     writeFileSync(outputPath, html, "utf-8");
 
-    let result = `Temporal call graph visualization generated: ${outputPath}\n\n`;
+    let result = `Codebase visualization generated: ${outputPath}\n\n`;
     result += `Nodes: ${vizData.nodes.length} | Edges: ${vizData.edges.length}\n`;
-    result += `Recent change lenses: ${vizData.changes?.length ?? 0}\n`;
+    result += `Activity entries: ${vizData.changes?.length ?? 0}\n`;
     result += `Files: ${new Set(vizData.nodes.map(n => n.filePath)).size}\n`;
     result += `Directories: ${new Set(vizData.nodes.map(n => n.directory)).size}`;
     if (vizData.metadata.truncated) {

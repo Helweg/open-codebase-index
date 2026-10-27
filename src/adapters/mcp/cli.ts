@@ -198,9 +198,9 @@ async function handleVisualizeCommand(argv: string[], cwd: string): Promise<numb
 
     const outputPath = path.join(os.tmpdir(), `call-graph-${Date.now()}.html`);
     writeFileSync(outputPath, generateVisualizationHtml(vizData), "utf-8");
-    console.log(`Temporal call graph visualization generated: ${outputPath}`);
+    console.log(`Codebase visualization generated: ${outputPath}`);
     console.log(`Nodes: ${vizData.nodes.length} | Edges: ${vizData.edges.length}`);
-    console.log(`Recent change lenses: ${vizData.changes?.length ?? 0}`);
+    console.log(`Activity entries: ${vizData.changes?.length ?? 0}`);
     if (vizData.metadata.truncated) {
       console.log(`Graph truncated to ${args.maxNodes} most-connected nodes.`);
     }

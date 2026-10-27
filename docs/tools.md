@@ -137,7 +137,7 @@ OpenCode adds one extra tool beyond the shared MCP and OpenCode set:
 
 - `index_visualize`
 
-`index_visualize` generates an interactive HTML view of recent code movement and the call graph.
+`index_visualize` generates a self-contained offline HTML codebase explorer. Browse categorized path-based modules, drill into exact files and symbols, and inspect directed call relationships and original callsites. Analyze offers whole-snapshot Changes, Hotspots, and Cycles without losing the underlying exploration scope.
 
 OpenCode also exposes slash commands (see [OpenCode slash commands](#opencode-slash-commands)).
 
@@ -325,7 +325,19 @@ OpenCode registers the portable tools, the three shared knowledge-base tools, an
 
 - `index_visualize`
 
-`index_visualize` generates an interactive HTML view of recent code movement and the call graph.
+`index_visualize` generates a self-contained offline HTML codebase explorer. Open the returned file in a browser; no server, CDN, or external assets are required. The CLI equivalent is `npm run visualize -- --project /path/to/project`.
+
+Overview is the initial module directory, grouped into **Code**, **Tests & fixtures**, and **Supporting files**. Category checkboxes affect only this directory, not global search or snapshot totals. Cards show exported-symbol, represented-file, and distinct neighboring-module counts. These are path-based groups, not authoritative architecture.
+
+Open a module for **Incoming modules → selected module → Outgoing modules**, followed by **Files and symbols**. The independent module-local filter matches full file paths, symbol names, and kinds. File disclosures create symbol rows only when opened. File and symbol lists use 50-item pages; focused neighbor lanes use 12-item pages, replacing rather than accumulating rows. Open a symbol for **Caller → focus → callee**, exact definition location, Module navigation, and Copy location. Self-calls appear once on the center card. Module edges represent cross-module calls only.
+
+Each neighbor has separate navigation and **Inspect N calls** buttons. Inspect keeps the focus and shows navigable endpoint definitions, original caller file/callsite lines, call types, and confidence in Details. Horizontal connectors offer the same action by pointer; the native Inspect buttons remain keyboard-accessible. Narrow focus containers stack center, incoming, and outgoing sections, with sticky **Focus / Callers / Callees** jump controls (or **Incoming / Outgoing / Files** for modules). Use normal scrolling and browser zoom; there is no draggable global network.
+
+Global search matches names, full paths, and kinds with 50-item pages; `/` focuses it. Typing highlights visible matches without rebuilding the focused scene. Back/Forward and parent breadcrumbs navigate within the artifact. **Analyze** replaces the main surface with whole-snapshot Changes, Hotspots, or Cycles; **Back to exploration** restores the same scope. Search, category choices, filters, disclosure state, pagination, and scoped scroll positions remain document-local; reload restores only the hash-selected scope and evidence. Smaller screens expose Search and Details as keyboard-accessible dialogs; Escape restores their opener.
+
+Cards display shorter paths anchored to their exported module prefix where possible; full original locations remain in path tooltips, the symbol inspector's **Original definition path** disclosure, and **Copy location**. File-group symbol rows show definition lines without repeating the containing path. The header shows exported totals; **Export details** exposes pre-filter input counts and scope. Single-page lists omit inactive pagination controls; larger lists retain all pages.
+
+The view describes an exported resolved-call snapshot, not all dependencies or live state. Input counts precede filtering; **Partial graph** means the node limit omitted symbols/relationships. Modules retain path-based grouping. Recent Git activity retains the 90-day/indexed-file scope; call-graph fallback records appear separately as **Structural context**. Attention is heuristic and provided file paths are sampled. Hotspots rank incoming plus outgoing edge records. Cycles show mutually reachable groups (including self-recursion), not ordered paths or a complete-program guarantee.
 
 Pi also provides native integration for knowledge bases using `knowledge_base_list`, `knowledge_base_add`, and `knowledge_base_remove` tool names.
 

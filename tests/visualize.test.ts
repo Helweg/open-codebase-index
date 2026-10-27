@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { attachRecentActivity } from "../src/tools/visualize/activity.js";
 import { transformForVisualization } from "../src/tools/visualize/transform.js";
 import { generateVisualizationHtml } from "../src/tools/visualize/template.js";
+import { analyzeVisualizationGraph } from "../src/tools/visualize/graph.js";
+import type { VisualizationData } from "../src/tools/visualize/types.js";
 import type { SymbolData, CallEdgeData } from "../src/native/index.js";
 
 function makeSymbol(id: string, name: string, filePath: string, kind = "function"): SymbolData {
@@ -192,136 +194,79 @@ describe("visualize - transform", () => {
   });
 });
 
-describe("visualize - HTML template", () => {
-  it("generates valid HTML", () => {
+describe("visualize - safe HTML data", () => {
+  it("keeps hostile names, paths and activity inert in the JSON data block", () => {
+    const hostile = '</script><script>globalThis.injected=true</script><img src=x onerror="alert(1)"> & \'"';
     const data = transformForVisualization(
-      [
-        makeSymbol("s1", "foo", "src/a.ts"),
-        makeSymbol("s2", "bar", "src/b.ts"),
-      ],
-      [makeEdge("e1", "s1", "bar", "s2")],
-      { includeOrphans: true },
+      [makeSymbol("s1", hostile, `src/${hostile}/a.ts`)],
+      [], { includeOrphans: true },
     );
-
+    data.changes = [{
+      id: "change", title: hostile, kind: "hot", when: "today", source: "git",
+      intent: hostile, summary: hostile, why: hostile, calls: 0, churn: 0,
+      risk: "low", moduleId: data.modules[0].id, filePaths: [hostile],
+    }];
     const html = generateVisualizationHtml(data);
-    expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("Call Graph Visualization");
-    expect(html).toContain("Moving lately");
-    expect(html).toContain("change lenses");
-    expect(html).toContain('"name":"foo"');
-    expect(html).toContain('"name":"bar"');
-    expect(html).toContain('"modules"');
-    expect(html).toContain('"moduleEdges"');
+    const embedded = html.match(/<script type="application\/json" id="visualization-data">([^]*?)<\/script>/)![1];
+    expect(embedded).not.toContain("<");
+    expect(embedded).not.toContain(">");
+    expect(JSON.parse(embedded).data).toEqual(data);
+    expect(html).not.toContain(hostile);
+  });
+});
+
+describe("visualize - graph analysis", () => {
+  function graph(ids: string[], links: Array<[string, string]>): VisualizationData {
+    const data = transformForVisualization(ids.map((id) => makeSymbol(id, id, `src/${id}/file.ts`)),
+      links.map(([from, to], index) => makeEdge(String(index), from, to, to)),
+      { includeOrphans: true, maxNodes: Math.max(1, ids.length) });
+    return data;
+  }
+
+  it("finds one mutually reachable module group instead of duplicate reciprocal pairs", () => {
+    const data = graph(["A", "B", "C"], [["A", "B"], ["B", "C"], ["C", "A"], ["B", "A"]]);
+    const result = analyzeVisualizationGraph(data);
+    expect(result.moduleCycles).toEqual([data.modules.map((module) => module.id).sort()]);
+    expect(result.symbolCycles).toEqual([["A", "B", "C"]]);
   });
 
-  it("handles empty data", () => {
-    const data = {
-      nodes: [],
-      edges: [],
-      modules: [],
-      moduleEdges: [],
-      metadata: { totalSymbols: 0, totalEdges: 0, truncated: false, moduleCount: 0 },
-    };
-    const html = generateVisualizationHtml(data);
-    expect(html).toContain("<!DOCTYPE html>");
-    // Data is embedded as JSON, stats are computed at runtime from nodes.length
-    expect(html).toContain('"nodes":[]');
-    expect(html).toContain('"modules"');
+  it("includes self recursion and long loops, but no groups for a DAG", () => {
+    const ids = ["a", "b", "c", "d", "e", "f", "self"];
+    const data = graph(ids, [["a", "b"], ["b", "c"], ["c", "d"], ["d", "e"], ["e", "f"], ["f", "a"], ["self", "self"]]);
+    expect(analyzeVisualizationGraph(data).symbolCycles).toEqual([["a", "b", "c", "d", "e", "f"], ["self"]]);
+    const dag = analyzeVisualizationGraph(graph(["a", "b", "c"], [["a", "b"], ["b", "c"]]));
+    expect(dag.moduleCycles).toEqual([]);
+    expect(dag.symbolCycles).toEqual([]);
   });
 
-  it("escapes special characters in symbol names", () => {
-    const data = transformForVisualization(
-      [
-        makeSymbol("s1", '<script>alert("xss")</script>', "src/a.ts"),
-        makeSymbol("s2", "normalFn", "src/b.ts"),
-      ],
-      [makeEdge("e1", "s1", "normalFn", "s2")],
-    );
-
-    const html = generateVisualizationHtml(data);
-    // JSON.stringify should escape the angle brackets
-    expect(html).not.toContain("<script>alert");
-    expect(html).toContain("\\u003c"); // JSON-escaped <
+  it("is permutation-stable, ignores absent endpoints, and never mutates the snapshot", () => {
+    const data = graph(["a", "b", "c", "d"], [["a", "b"], ["b", "a"], ["b", "c"]]);
+    data.edges.push({ source: "missing", target: "a", line: 1, callType: "Call", confidence: "Direct" });
+    data.moduleEdges.push({ source: "missing", target: data.modules[0].id, weight: 2, callTypes: {} });
+    const original = structuredClone(data);
+    const result = analyzeVisualizationGraph(data);
+    const reversed = { ...data, nodes: [...data.nodes].reverse(), edges: [...data.edges].reverse(),
+      modules: [...data.modules].reverse(), moduleEdges: [...data.moduleEdges].reverse() };
+    expect(analyzeVisualizationGraph(reversed)).toEqual(result);
+    expect(data).toEqual(original);
   });
 
-  it("includes truncation warning data when truncated", () => {
-    const data = {
-      nodes: [{ id: "s1", name: "fn1", filePath: "a.ts", kind: "function", line: 1, directory: "." }],
-      edges: [],
-      metadata: { totalSymbols: 10000, totalEdges: 5000, truncated: true },
-    };
-    const html = generateVisualizationHtml(data);
-    expect(html).toContain('"truncated":true');
+  it("has no cyclic groups for disconnected or empty snapshots", () => {
+    expect(analyzeVisualizationGraph(graph(["a", "b", "c"], []))).toEqual({ moduleCycles: [], symbolCycles: [] });
+    expect(analyzeVisualizationGraph(graph([], []))).toEqual({ moduleCycles: [], symbolCycles: [] });
   });
 
-  it("generates visualization with multiple edge types", () => {
-    const symbols: SymbolData[] = [
-      makeSymbol("s1", "ClassA", "src/a.ts", "class"),
-      makeSymbol("s2", "ClassB", "src/b.ts", "class"),
-      makeSymbol("s3", "helper", "src/c.ts", "function"),
-    ];
-    const edges: CallEdgeData[] = [
-      makeEdge("e1", "s1", "ClassB", "s2", "Constructor"),
-      makeEdge("e2", "s1", "helper", "s3", "Call"),
-      makeEdge("e3", "s2", "helper", "s3", "MethodCall"),
-    ];
-    const data = transformForVisualization(symbols, edges);
-    const html = generateVisualizationHtml(data);
-
-    expect(html).toContain('"callType":"Constructor"');
-    expect(html).toContain('"callType":"Call"');
-    expect(html).toContain('"callType":"MethodCall"');
+  it("keeps equal-name definitions separate by ID when only one is cyclic", () => {
+    const data = graph(["duplicate-a", "duplicate-b", "helper"], [["duplicate-a", "helper"], ["helper", "duplicate-a"]]);
+    data.nodes[0].name = data.nodes[1].name = "duplicate";
+    const result = analyzeVisualizationGraph(data);
+    expect(result.symbolCycles).toEqual([["duplicate-a", "helper"]]);
+    expect(analyzeVisualizationGraph({ ...data, nodes: [...data.nodes].reverse() })).toEqual(result);
   });
 
-  it("includes focus navigation hint", () => {
-    const data = transformForVisualization(
-      [
-        makeSymbol("s1", "foo", "src/a.ts"),
-        makeSymbol("s2", "bar", "src/b.ts"),
-      ],
-      [makeEdge("e1", "s1", "bar", "s2")],
-      { includeOrphans: true },
-    );
-
-    const html = generateVisualizationHtml(data);
-
-    expect(html).toContain("Scroll to pan vertically inside focus mode");
-  });
-
-  it("includes clustered exploration controls", () => {
-    const data = transformForVisualization(
-      [
-        makeSymbol("s1", "foo", "src/a.ts"),
-        makeSymbol("s2", "bar", "src/b.ts"),
-      ],
-      [makeEdge("e1", "s1", "bar", "s2")],
-      { includeOrphans: true },
-    );
-
-    const html = generateVisualizationHtml(data);
-
-    expect(html).toContain("Explore Symbols");
-    expect(html).toContain("Explore mode: clustered symbol relationships");
-    expect(html).toContain("Module Overview");
-  });
-
-  it("includes zero-edge overview guidance and focus detail behavior", () => {
-    const data = transformForVisualization(
-      [
-        makeSymbol("s1", "soloA", "src/a.ts"),
-        makeSymbol("s2", "soloB", "src/b.ts"),
-      ],
-      [makeEdge("e1", "s1", "soloB", "s2")],
-      { includeOrphans: true },
-    );
-
-    const html = generateVisualizationHtml({
-      ...data,
-      moduleEdges: [],
-    });
-
-    expect(html).toContain("This slice only has intra-module calls.");
-    expect(html).toContain("Focused module view");
-    expect(html).toContain("Selected from module list");
+  it("handles a 5,000-symbol SCC without recursive-stack failure", () => {
+    const ids = Array.from({ length: 5000 }, (_, i) => `symbol-${String(i).padStart(4, "0")}`);
+    const data = graph(ids, ids.map((id, i) => [id, ids[(i + 1) % ids.length]]));
+    expect(analyzeVisualizationGraph(data).symbolCycles).toEqual([ids]);
   });
 });
