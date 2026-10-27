@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Directory watcher permission recovery**: Recover readable, policy-selected directory and project-root registrations rejected with `EPERM` or `EACCES`, including empty directories that later gain source files. Reuse the one-shot polling cutover and catch-up reconciliation without broadening ignored, excluded, restricted, protected-index, unreadable, or external-configuration scope. Exercise actual Chokidar 6 directory resources in the watcher/Indexer acceptance checks.
+- **Concurrent branch materialization**: Use invocation-unique worktree registration names and a common-Git-directory lease around registration/deregistration, preventing overlapping calls from reading or recycling partially initialized peer metadata. Keep fetches and indexing callbacks concurrent, preserve cancellation cleanup and fail-closed retention, and cover peer preservation plus real multiprocess overlap.
 
 ## [0.38.2] - 2026-10-26
 

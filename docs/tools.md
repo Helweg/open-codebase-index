@@ -317,6 +317,8 @@ Output includes community summaries, hub node rows, and `Community couplings` en
 
 Analyzes changed files, affected symbols, transitive dependencies, graph communities, hub nodes, conflicts, and merge risk for a branch or pull request.
 
+Branch materialization uses invocation-unique temporary worktrees. A cross-process lease scoped to the common Git directory protects registration and deregistration, including linked-worktree callers; fetches and indexing callbacks remain concurrent. Cancellation while waiting for registration removes the unused temporary checkout, and unverified cleanup preserves its path rather than deleting potentially registered data.
+
 ## OpenCode-native tools
 
 OpenCode registers the portable tools, the three shared knowledge-base tools, and one OpenCode-only tool:

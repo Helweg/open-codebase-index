@@ -77,14 +77,14 @@ function runWorker(
   return { child, result };
 }
 
-async function waitForReadyFiles(barrierDir: string, expected: number): Promise<void> {
+async function waitForReadyFiles(barrierDir: string, expected: number, prefix = "ready."): Promise<void> {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
-    const ready = fs.readdirSync(barrierDir).filter((entry) => entry.startsWith("ready."));
+    const ready = fs.readdirSync(barrierDir).filter((entry) => entry.startsWith(prefix));
     if (ready.length >= expected) return;
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  throw new Error(`Timed out waiting for ${expected} concurrent fetches.`);
+  throw new Error(`Timed out waiting for ${expected} workers at ${prefix}.`);
 }
 
 const describeMultiprocess = process.platform === "win32" ? describe.skip : describe;
@@ -159,6 +159,7 @@ exec "$REAL_GIT" "$@"
     const childEnv = {
       PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
       BARRIER_DIR: barrierDir,
+      MATERIALIZATION_BARRIER_DIR: barrierDir,
     };
     const alpha = runWorker(workerPath, {
       projectRoot: repo,
@@ -174,6 +175,8 @@ exec "$REAL_GIT" "$@"
     try {
       await waitForReadyFiles(barrierDir, 2);
       fs.writeFileSync(path.join(barrierDir, "release"), "release\n");
+      await waitForReadyFiles(barrierDir, 2, "materialized.");
+      fs.writeFileSync(path.join(barrierDir, "release-materialization"), "release\n");
       const [alphaResult, betaResult] = await Promise.all([alpha.result, beta.result]);
 
       expect(alphaResult).toMatchObject({
@@ -192,6 +195,7 @@ exec "$REAL_GIT" "$@"
       });
     } finally {
       fs.writeFileSync(path.join(barrierDir, "release"), "release\n");
+      fs.writeFileSync(path.join(barrierDir, "release-materialization"), "release\n");
       for (const child of [alpha.child, beta.child]) {
         if (child.exitCode === null) child.kill("SIGTERM");
       }
