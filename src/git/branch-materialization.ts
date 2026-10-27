@@ -1,7 +1,9 @@
 import { promises as fsPromises } from "fs";
 import * as os from "os";
 import * as path from "path";
+import { setTimeout as delay } from "node:timers/promises";
 
+import { isIndexLockContentionError, withIndexLock } from "../indexer/index-lock.js";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 import { throwIfOperationAborted } from "../utils/operation-control.js";
 
@@ -43,6 +45,39 @@ export {
   resolveLocalPullRequestRefs,
   resolveGitCommit,
 };
+
+async function withWorktreeRegistrationLease<T>(
+  lockDirectory: string,
+  callback: () => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    throwIfOperationAborted(signal);
+    // Do not recreate a Git directory removed or renamed while the callback was running.
+    try {
+      await fsPromises.mkdir(lockDirectory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    }
+    let acquired = false;
+    try {
+      return await withIndexLock(lockDirectory, "worktree", async () => {
+        acquired = true;
+        throwIfOperationAborted(signal);
+        return callback();
+      });
+    } catch (error) {
+      if (acquired || !isIndexLockContentionError(error) || error.reason === "legacy-lock") throw error;
+      // Release/republication can hide the owner briefly. Wait, but never reclaim an unknown owner.
+      if (Date.now() >= deadline) {
+        throw new Error("Timed out waiting for the Git worktree registration lease.", { cause: error });
+      }
+    }
+    await delay(25);
+  }
+}
+
 async function pathExists(targetPath: string): Promise<boolean> {
   return fsPromises.stat(targetPath).then(() => true, () => false);
 }
@@ -213,8 +248,12 @@ export async function withMaterializedBranch<T>(
     );
   }
 
+  const commonDir = await fsPromises.realpath(await runGit(request.projectRoot,
+    ["rev-parse", "--path-format=absolute", "--git-common-dir"], { signal: request.signal }));
+  const registrationLockDirectory = path.join(commonDir, "codebase-index-worktrees");
   const temporaryRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), "codebase-index-branch-"));
-  const worktreePath = path.join(temporaryRoot, "worktree");
+  // Git derives registration IDs from this basename and can recycle an incomplete same-name peer.
+  const worktreePath = path.join(temporaryRoot, path.basename(temporaryRoot));
   const hooksPath = path.join(temporaryRoot, "hooks");
   const info: BranchMaterializationInfo = {
     branch: request.branch,
@@ -225,27 +264,31 @@ export async function withMaterializedBranch<T>(
 
   let result: { value: T; info: BranchMaterializationInfo } | undefined;
   let operationError: unknown;
+  let registrationAttempted = false;
   try {
     throwIfOperationAborted(request.signal);
     await fsPromises.mkdir(hooksPath);
     throwIfOperationAborted(request.signal);
-    await runGit(request.projectRoot, [
-      "-c",
-      `core.hooksPath=${hooksPath}`,
-      "worktree",
-      "add",
-      "--detach",
-      "--",
-      worktreePath,
-      resolved.commit,
-    ], { signal: request.signal });
+    await withWorktreeRegistrationLease(registrationLockDirectory, async () => {
+      registrationAttempted = true;
+      await runGit(request.projectRoot, [
+        "-c",
+        `core.hooksPath=${hooksPath}`,
+        "worktree",
+        "add",
+        "--detach",
+        "--",
+        worktreePath,
+        resolved.commit,
+      ], { signal: request.signal });
 
-    const materializedHead = await tryResolveCommit(worktreePath, "HEAD", request.signal);
-    if (materializedHead !== resolved.commit) {
-      throw new Error(
-        `Materialized worktree HEAD ${materializedHead ?? "did not resolve"}; expected ${resolved.commit}.`,
-      );
-    }
+      const materializedHead = await tryResolveCommit(worktreePath, "HEAD", request.signal);
+      if (materializedHead !== resolved.commit) {
+        throw new Error(
+          `Materialized worktree HEAD ${materializedHead ?? "did not resolve"}; expected ${resolved.commit}.`,
+        );
+      }
+    }, request.signal);
 
     throwIfOperationAborted(request.signal);
     const value = await callback(worktreePath, info);
@@ -257,9 +300,18 @@ export async function withMaterializedBranch<T>(
 
   let cleanupError: unknown;
   try {
-    await cleanupTemporaryWorktree(request.projectRoot, worktreePath, temporaryRoot);
+    if (registrationAttempted) {
+      await withWorktreeRegistrationLease(registrationLockDirectory,
+        () => cleanupTemporaryWorktree(request.projectRoot, worktreePath, temporaryRoot));
+    } else {
+      await fsPromises.rm(temporaryRoot, { recursive: true, force: true });
+    }
   } catch (error) {
-    cleanupError = error;
+    cleanupError = error instanceof AggregateError ? error : new AggregateError(
+      [asError(error)],
+      `Could not safely clean up temporary worktree; preserved ${temporaryRoot}`,
+      { cause: error },
+    );
   }
 
   if (operationError !== undefined && cleanupError !== undefined) {

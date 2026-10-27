@@ -9,6 +9,7 @@ import {
   isValidGitRemoteName,
   withMaterializedBranch,
 } from "../src/git/branch-materialization.js";
+import { acquireIndexLock, releaseIndexLock } from "../src/indexer/index-lock.js";
 import { OperationCancelledError } from "../src/utils/operation-control.js";
 
 function git(cwd: string, args: string[]): string {
@@ -260,6 +261,66 @@ describe("branch materialization", () => {
     expect(fs.existsSync(path.dirname(materializedPath))).toBe(false);
     expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(mainCommit);
+  });
+
+  it("preserves an initializing peer registration while materializing and cleaning its own worktree", async () => {
+    const peerRegistration = path.join(repo, ".git", "worktrees", "worktree");
+    fs.mkdirSync(peerRegistration, { recursive: true });
+    let materializedPath = "";
+
+    const result = await withMaterializedBranch(
+      { projectRoot: repo, branch: "feature" },
+      async (worktreePath) => {
+        materializedPath = worktreePath;
+        expect(fs.existsSync(peerRegistration)).toBe(true);
+        return git(worktreePath, ["rev-parse", "HEAD"]);
+      },
+    );
+
+    expect(result.value).toBe(featureCommit);
+    expect(fs.existsSync(peerRegistration)).toBe(true);
+    expect(fs.existsSync(path.dirname(materializedPath))).toBe(false);
+  });
+
+  it.each(["active", "unreadable"] as const)("cancels while the registration lease is %s without leaving a temporary checkout", async (state) => {
+    const temporaryParent = path.join(tempDir, "materializations");
+    fs.mkdirSync(temporaryParent);
+    vi.stubEnv("TMPDIR", temporaryParent);
+    const beforeWorktrees = git(repo, ["worktree", "list", "--porcelain"]);
+    const lease = acquireIndexLock(path.join(repo, ".git", "codebase-index-worktrees"), "worktree");
+    const ownerFile = path.join(lease.lockPath, "owner.json");
+    const heldOwnerFile = path.join(lease.lockPath, "held-owner.json");
+    if (state === "unreadable") fs.renameSync(ownerFile, heldOwnerFile);
+    const controller = new AbortController();
+    let callbackInvoked = false;
+    let settled = false;
+    let failure: unknown;
+    const materialization = withMaterializedBranch(
+      { projectRoot: repo, branch: "feature", signal: controller.signal },
+      async () => { callbackInvoked = true; },
+    ).then(
+      () => { settled = true; },
+      (error: unknown) => { settled = true; failure = error; },
+    );
+
+    try {
+      await vi.waitFor(() => {
+        const prepared = fs.readdirSync(temporaryParent).find((name) => name.startsWith("codebase-index-branch-"));
+        expect(prepared && fs.existsSync(path.join(temporaryParent, prepared, "hooks"))).toBe(true);
+      });
+      controller.abort();
+      await vi.waitFor(() => expect(settled).toBe(true));
+      expect(failure).toBeInstanceOf(OperationCancelledError);
+      expect(callbackInvoked).toBe(false);
+      expect(fs.readdirSync(temporaryParent)).toEqual([]);
+      expect(git(repo, ["worktree", "list", "--porcelain"])).toBe(beforeWorktrees);
+      if (state === "unreadable") expect(fs.existsSync(heldOwnerFile)).toBe(true);
+    } finally {
+      controller.abort();
+      if (state === "unreadable") fs.renameSync(heldOwnerFile, ownerFile);
+      releaseIndexLock(lease);
+      await materialization;
+    }
   });
 
   it("removes only the exact stale registration when the materialized directory disappears", async () => {

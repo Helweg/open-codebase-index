@@ -1,6 +1,7 @@
 import { execFileSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { withMaterializedBranch } from "../../src/git/branch-materialization.js";
 
@@ -27,16 +28,27 @@ async function main(): Promise<void> {
       branch: request.branch,
       expectedCommit: request.expectedCommit,
     },
-    async (worktreePath, info) => ({
-      branch: request.branch,
-      commit: info.commit,
-      materializedHead: execFileSync("git", ["rev-parse", "HEAD"], {
-        cwd: worktreePath,
-        encoding: "utf8",
-      }).trim(),
-      content: fs.readFileSync(path.join(worktreePath, "branch.txt"), "utf8").trim(),
-      source: info.source,
-    }),
+    async (worktreePath, info) => {
+      const barrierDir = process.env.MATERIALIZATION_BARRIER_DIR;
+      if (barrierDir) {
+        fs.writeFileSync(path.join(barrierDir, `materialized.${process.pid}`), "ready\n");
+        const deadline = Date.now() + 15000;
+        while (!fs.existsSync(path.join(barrierDir, "release-materialization"))) {
+          if (Date.now() >= deadline) throw new Error("Concurrent materialization callback barrier timed out");
+          await delay(20);
+        }
+      }
+      return {
+        branch: request.branch,
+        commit: info.commit,
+        materializedHead: execFileSync("git", ["rev-parse", "HEAD"], {
+          cwd: worktreePath,
+          encoding: "utf8",
+        }).trim(),
+        content: fs.readFileSync(path.join(worktreePath, "branch.txt"), "utf8").trim(),
+        source: info.source,
+      };
+    },
   );
 
   process.send?.({ ok: true, ...result.value } satisfies WorkerResult);

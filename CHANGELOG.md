@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Changed
 
+- **Unified codebase explorer**: Replace separate architecture/network/symbol views with a categorized module directory and one module → exact file → symbol drill-down. Stable caller → focus → callee layouts use paged neighbors, direct navigation, and inspectable original callsites, including self-calls. Refine typography, category cards, snapshot totals, metadata density, and evidence panels; show module-anchored display paths while preserving original locations and add sticky narrow-layout section jumps. Keep whole-snapshot Changes, Hotspots, and Cycles in Analyze without losing exploration state. Preserve offline HTML, public export/tool arguments, safe snapshot data, search/history, responsive dialogs, and dark/light themes; remove draggable-network layout code.
 - **Node.js runtime floor and Chokidar 6**: Raise both package identities' minimum from Node.js 22.13.0 to 22.22.0 to satisfy Chokidar 6's declared engine requirement. Existing platform, binary, and host contracts remain unchanged.
 
 - **Complete history sync scheduling**: Reconcile up to four entities concurrently through one sync-local request budget of four active calls and eight starts per rolling second, without skipping historical edits, deletions, or conditional page validation. Drain real requests before publication, cancellation settlement, or cleanup; retain resumable checkpoints on transient failures and let late access denials take precedence.
@@ -15,7 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Concurrent branch materialization**: Use invocation-unique worktree registration names and a common-Git-directory lease around registration/deregistration, preventing overlapping calls from reading or recycling partially initialized peer metadata. Keep fetches and indexing callbacks concurrent, preserve cancellation cleanup and fail-closed retention, and cover peer preservation plus real multiprocess overlap.
 - **Directory watcher permission recovery**: Recover readable, policy-selected directory and project-root registrations rejected with `EPERM` or `EACCES`, including empty directories that later gain source files. Reuse the one-shot polling cutover and catch-up reconciliation without broadening ignored, excluded, restricted, protected-index, unreadable, or external-configuration scope. Exercise actual Chokidar 6 directory resources in the watcher/Indexer acceptance checks.
+- **Visualizer cyclic groups and graph scale**: Detect module and symbol strongly connected components iteratively, including direct recursion and loops longer than five symbols. Preserve distinct symbol IDs and page search, hotspot, relationship, and cyclic-group lists instead of silently capping results.
 
 ## [0.38.2] - 2026-10-26
 
