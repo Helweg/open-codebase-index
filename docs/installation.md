@@ -207,17 +207,27 @@ The concise `ocbi` command is for terminal use. `cbi` remains available as a com
 ```bash
 # Inspect readiness, then create or refresh the index
 ocbi status --project /path/to/repo --host jcode
+# Optional read-only source/HEAD freshness check with machine-readable status
+ocbi status --check-freshness --json --project /path/to/repo --host jcode
 ocbi index --project /path/to/repo --host jcode
 
 # Search and inspect code from the terminal
 ocbi search "retry recovery" --project /path/to/repo --limit 5
 ocbi definition Indexer --project /path/to/repo
 ocbi graph callers Indexer --project /path/to/repo
+
+# Refresh edited source, then inspect the current indexed dirty tree without committing
+ocbi index --project /path/to/repo --host omp
+ocbi impact --working-tree --json --project /path/to/repo --host omp
 ```
 
 Use `ocbi index --dry-run` for a parse-only embedding-token total, `--estimate-only` for an estimate, and `ocbi --help` for command usage.
 
+Ordinary status reports stored catalog facts with freshness explicitly not checked. `--check-freshness` compares current selected source/configuration and HEAD with the index; it does not refresh the index or request embeddings. A successfully inspected missing/stale index still exits successfully; operational failures exit nonzero. The `--check-freshness` and status `--json` flags apply only to status (workspace status retains its separate JSON contract).
+
 Without `--project`, the CLI discovers the nearest containing Git checkout and reuses its project configuration and branch catalog, even from a nested package directory. MCP startup uses the same rule. Nested repositories, submodules, and linked worktrees retain their own checkout roots. Non-Git directories keep the current directory as their scope. An explicit `--project` is never widened, so use `--project .` to deliberately index only a child directory.
+
+`ocbi impact` requires `--working-tree` and accepts optional `--json` plus project/host/config selection. It reports the union of staged, unstaged, and untracked changes against the current indexed files, not staged source or deleted historical declarations. Refresh stale source with ordinary `ocbi index` first; impact inspection itself does not index or contact GitHub. Missing graph coverage or the 200-path cap produces UNKNOWN risk. See [Impact evidence](tools.md#pr_impact) for provenance and consistency limits.
 
 ### Private history on GitHub.com and Enterprise
 

@@ -17,6 +17,13 @@ import { getRecentGitActivityAbortable } from "./visualize/activity.js";
 import { transformForVisualization } from "./visualize/transform.js";
 import { buildApiImpactEvidence, type ApiImpactEvidence, type ApiImpactTarget } from "./api-impact.js";
 import {
+  discoverSymbolTests,
+  TEST_DISCOVERY_MAX_DEFINITIONS,
+  TEST_DISCOVERY_MAX_FILES,
+  type TestDiscoveryResult,
+  type TestDiscoveryScope,
+} from "./test-discovery.js";
+import {
   CODE_COMMUNITIES_DEFAULT_COUPLING_LIMIT,
   CODE_COMMUNITIES_DEFAULT_HUB_THRESHOLD,
   CODE_COMMUNITIES_DEFAULT_LIMIT,
@@ -25,13 +32,13 @@ import {
   CODE_COMMUNITIES_MIN_COUPLING,
   CODE_COMMUNITIES_MIN_SIZE,
 } from "./contracts.js";
-import type { SharedArchitectureContextArgs, SharedCodeCommunitiesArgs } from "./contracts.js";
+import type { SharedArchitectureContextArgs, SharedCodeCommunitiesArgs, SharedIndexStatusArgs, SharedPrImpactArgs } from "./contracts.js";
 import { calculatePercentage, formatProgressTitle, formatStatus } from "./utils.js";
 import type { LogLevel } from "../config/schema.js";
 import type { LogEntry } from "../utils/logger.js";
 import type { CostEstimate, DryRunEstimate } from "../utils/cost.js";
 import type { AutoIndexStatusSnapshot } from "../utils/auto-index.js";
-import type { SearchTrace } from "../indexer/index.js";
+import type { IndexFreshnessResult, SearchTrace } from "../indexer/index.js";
 import {
   formatEffectivenessMetrics,
   getProcessEffectivenessMetrics,
@@ -72,7 +79,10 @@ import {
 type SearchResult = Awaited<ReturnType<Indexer["search"]>>[number];
 type IndexStats = Awaited<ReturnType<Indexer["index"]>>;
 type StatusResult = Awaited<ReturnType<Indexer["getStatus"]>>;
-export type IndexStatusResult = StatusResult & { autoIndex: AutoIndexStatusSnapshot };
+export type IndexStatusResult = StatusResult & {
+  autoIndex: AutoIndexStatusSnapshot;
+  freshness: IndexFreshnessResult | null;
+};
 type HealthCheckResult = Awaited<ReturnType<Indexer["healthCheck"]>>;
 type PrImpactResult = Awaited<ReturnType<Indexer["getPrImpact"]>>;
 type IndexMessageResult = { kind: "message"; text: string };
@@ -200,7 +210,7 @@ function exactSymbolSearchResults(
   throwIfOperationAborted(signal);
   const matching = symbols.filter((symbol) => {
     throwIfOperationAborted(signal);
-    return symbolNameMatches(symbol, name) && exactSymbolMatchesScope(symbol, projectRoot, options);
+    return (symbol.id === name || symbolNameMatches(symbol, name)) && exactSymbolMatchesScope(symbol, projectRoot, options);
   });
   throwIfOperationAborted(signal);
   return matching
@@ -208,14 +218,14 @@ function exactSymbolSearchResults(
     .slice(0, limit)
     .map((symbol) => {
       throwIfOperationAborted(signal);
-      let content = "[File not accessible]";
+      let content = "";
       try {
         content = readFileSync(symbol.filePath, "utf-8")
           .split("\n")
           .slice(symbol.startLine - 1, symbol.endLine)
           .join("\n");
       } catch {
-        // Preserve the normal search contract when a stale indexed file is unavailable.
+        // Keep canonical coordinates, but never substitute a marker for source bytes.
       }
       return {
         filePath: symbol.filePath,
@@ -445,9 +455,19 @@ export async function implementationLookup(
 ): Promise<SearchResult[]> {
   await runOperationPhase(control, "waiting_for_index");
   await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
-  await runOperationPhase(control, options.exactSymbol ? "resolving_symbol" : "embedding_query");
   const root = getProjectRoot(projectRoot, host);
   const indexer = getIndexerForProject(root, host);
+  return implementationLookupForIndexer(indexer, root, query, options, control);
+}
+
+export async function implementationLookupForIndexer(
+  indexer: Indexer,
+  projectRoot: string,
+  query: string,
+  options: NonNullable<Parameters<typeof implementationLookup>[3]> = {},
+  control?: OperationControl,
+): Promise<SearchResult[]> {
+  await runOperationPhase(control, options.exactSymbol ? "resolving_symbol" : "embedding_query");
   if (options.exactSymbol) {
     const results = exactSymbolSearchResults(
       await indexer.getCallGraphSymbols({
@@ -455,7 +475,7 @@ export async function implementationLookup(
         setPhase: control?.setPhase,
         heartbeat: control?.heartbeat,
       }),
-      root,
+      projectRoot,
       query,
       options,
       control?.signal,
@@ -494,6 +514,33 @@ export async function getCallGraphData(
   const result = await getCallGraphDataForIndexer(indexer, root, params, control);
   throwIfOperationAborted(control?.signal);
   return result;
+}
+
+export async function getSymbolTestEvidence(
+  projectRoot: string | undefined,
+  host: HostMode,
+  symbol: string,
+  scope: TestDiscoveryScope,
+  control?: OperationControl,
+): Promise<TestDiscoveryResult> {
+  const root = getProjectRoot(projectRoot, host);
+  return discoverSymbolTests(root, symbol, scope, {
+    lookup: (name) => implementationLookup(root, host, name, {
+      exactSymbol: true, limit: TEST_DISCOVERY_MAX_DEFINITIONS,
+    }, control),
+    graph: (name, filePath) => getCallGraphData(root, host, { name, filePath, direction: "callers" }, control),
+    indexedFiles: async () => {
+      throwIfOperationAborted(control?.signal);
+      const files = await getIndexerForProject(root, host).getIndexedFilePathsForActiveBranch();
+      throwIfOperationAborted(control?.signal);
+      return files;
+    },
+    lexicalFiles: (identifiers, allowedFiles) => getIndexerForProject(root, host).getKeywordFileCandidates(
+      identifiers, allowedFiles.map((filePath) => path.resolve(root, filePath)), TEST_DISCOVERY_MAX_FILES, {
+        signal: control?.signal, heartbeat: control?.heartbeat, setPhase: control?.setPhase,
+      },
+    ),
+  }, control);
 }
 
 export async function getApiImpactEvidence(
@@ -719,6 +766,7 @@ export async function runIndexCodebase(
 export async function getIndexStatus(
   projectRoot: string | undefined,
   host: HostMode,
+  args: SharedIndexStatusArgs = {},
   control?: OperationControl,
 ): Promise<IndexStatusResult> {
   await runOperationPhase(control, "reading_status");
@@ -726,8 +774,17 @@ export async function getIndexStatus(
   const indexer = getIndexerForProject(root, host);
   const status = await indexer.getStatus();
   throwIfOperationAborted(control?.signal);
+  const freshness = args.checkFreshness
+    ? await indexer.getIndexFreshness({
+      signal: control?.signal,
+      setPhase: control?.setPhase,
+      heartbeat: control?.heartbeat,
+    })
+    : null;
+  throwIfOperationAborted(control?.signal);
   return {
     ...status,
+    freshness,
     autoIndex: getAutoIndexStatus(root, host),
   };
 }
@@ -765,29 +822,20 @@ export async function runIndexHealthCheck(
 export async function getPrImpact(
   projectRoot: string | undefined,
   host: HostMode,
-  params: {
-    pr?: number;
-    branch?: string;
-    maxDepth?: number;
-    hubThreshold?: number;
-    checkConflicts?: boolean;
-    direction?: "callers" | "callees" | "both";
-  },
+  params: SharedPrImpactArgs,
   control?: OperationControl,
 ): Promise<PrImpactResult> {
-  await runOperationPhase(control, "waiting_for_index");
-  await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  if (params.workingTree && (params.pr !== undefined || params.branch !== undefined || params.checkConflicts === true)) {
+    throw new Error("workingTree cannot be combined with pr, branch, or checkConflicts");
+  }
+  if (!params.workingTree) {
+    await runOperationPhase(control, "waiting_for_index");
+    await ensureAutoIndexReadyForRetrieval(projectRoot, host, control);
+  }
   await runOperationPhase(control, "analyzing_impact");
   const indexer = getIndexerForProject(projectRoot, host);
   const result = await indexer.getPrImpact(
-    {
-      pr: params.pr,
-      branch: params.branch,
-      maxDepth: params.maxDepth,
-      hubThreshold: params.hubThreshold,
-      checkConflicts: params.checkConflicts,
-      direction: params.direction,
-    },
+    params,
     (progress) => {
       const percentage = calculatePercentage(progress);
       void control?.reportProgress?.(percentage, progress.phase);

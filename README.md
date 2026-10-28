@@ -20,7 +20,7 @@ ocbi status --project /path/to/repo --host jcode
 ocbi search "retry recovery" --project /path/to/repo
 ```
 
-`cbi` remains available as a compatibility alias. `ocbi` provides status, indexing, search, definition lookup, and direct caller or callee inspection. See [Installation and host setup](docs/installation.md#human-cli) for the full command reference.
+`cbi` remains available as a compatibility alias. `ocbi` provides status, indexing, search, definition lookup, direct caller/callee inspection, and current indexed working-tree impact. See [Installation and host setup](docs/installation.md#human-cli) for the full command reference.
 
 ## Highlights
 
@@ -105,10 +105,10 @@ See [Installation and host setup](docs/installation.md) for complete instruction
 
 ## Recommended workflow
 
-1. **Check readiness when unknown** with `index_status` or `/status`; index only when needed.
+1. **Check stored readiness when unknown** with `index_status` or `/status`; use `index_status({checkFreshness:true})` when source/HEAD freshness matters. Ordinary status does not scan source; index only when needed.
 2. **Orient in unfamiliar code** with one compact `codebase_context` first pass (`tokenBudget: 600`, `limit: 5`), then inspect the evidence. Skip this step when the task is already scoped.
 3. **Go directly to known definitions or relationships** with `implementation_lookup`, `call_graph`, or `call_graph_path`.
-4. **Optionally prepare a known edit target** with `codebase_edit_context` for bounded source and direct graph evidence.
+4. **Optionally prepare a known edit target** with `codebase_edit_context` for bounded source and direct graph evidence; `includeTests:true` adds source-linked JS/TS test references, not runtime coverage.
 5. **Choose metadata or matching source** with `codebase_peek` or `codebase_search`; do not repeat context calls unnecessarily.
 6. **Read known paths or match literals directly** with targeted reads or `grep`.
 
@@ -123,7 +123,7 @@ See [Installation and host setup](docs/installation.md) for complete instruction
 | Find analogous implementations or duplicates | `find_similar` |
 | Find direct callers or callees | `call_graph` |
 | Find a path between two symbols | `call_graph_path` |
-| Analyze a branch or pull request blast radius | `pr_impact` |
+| Analyze branch/PR impact, or current indexed work with `workingTree:true` | `pr_impact` |
 
 See [Tools and commands](docs/tools.md) for host availability, tool details, MCP prompts, and slash commands.
 

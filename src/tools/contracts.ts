@@ -58,6 +58,7 @@ export interface SharedCodebaseEditContextArgs {
   calleeLimit?: number | null;
   tokenBudget?: number | null;
   includeApiImpact?: boolean;
+  includeTests?: boolean;
 }
 
 export const MIN_CODEBASE_EDIT_CONTEXT_EDGE_LIMIT = 1 as const;
@@ -69,6 +70,10 @@ export interface SharedIndexCodebaseArgs {
   estimateOnly?: boolean;
   dryRun?: boolean;
   verbose?: boolean;
+}
+
+export interface SharedIndexStatusArgs {
+  checkFreshness?: boolean;
 }
 
 export interface SharedIndexMetricsArgs {
@@ -103,6 +108,16 @@ export interface SharedCallGraphPathArgs {
   fromFilePath?: string;
   toFilePath?: string;
   maxDepth?: number;
+}
+
+export interface SharedPrImpactArgs {
+  pr?: number;
+  branch?: string;
+  maxDepth?: number;
+  hubThreshold?: number;
+  checkConflicts?: boolean;
+  direction?: "callers" | "callees" | "both";
+  workingTree?: boolean;
 }
 
 export interface SharedArchitectureContextArgs {

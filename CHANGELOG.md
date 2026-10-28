@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Added
+
+- **Explicit source freshness**: Add opt-in `index_status({ checkFreshness: true })` and `ocbi status --check-freshness --json` across supported hosts. Keep stored catalog readiness, source freshness, and coordinator state distinct; expose shared structured status without refreshing indexes.
+- **Source-linked pre-edit tests**: Add opt-in `includeTests` to `codebase_edit_context`, reusing current-source JS/TS discovery for direct target and one-hop caller references. Return complete budgeted citations and selected-only structured evidence across hosts, distinguish discovery caps from response omissions, and preserve explicit non-coverage labels.
+- **Working-tree impact**: Add `pr_impact({ workingTree: true })` and `ocbi impact --working-tree [--json]` for current indexed staged, unstaged, and untracked file-level graph evidence. Require explicit incremental refresh for stale bytes, preserve local Git/index state, disclose path/provenance/consistency limits, and report UNKNOWN for deleted, unindexed, symbol-free, or capped coverage.
+
 ### Changed
 
 - **Unified codebase explorer**: Replace separate architecture/network/symbol views with a categorized module directory and one module → exact file → symbol drill-down. Stable caller → focus → callee layouts use paged neighbors, direct navigation, and inspectable original callsites, including self-calls. Refine typography, category cards, snapshot totals, metadata density, and evidence panels; show module-anchored display paths while preserving original locations and add sticky narrow-layout section jumps. Keep whole-snapshot Changes, Hotspots, and Cycles in Analyze without losing exploration state. Preserve offline HTML, public export/tool arguments, safe snapshot data, search/history, responsive dialogs, and dark/light themes; remove draggable-network layout code.
@@ -15,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Compatible dependency updates**: Update ignore to 7.0.13, NAPI CLI to 3.10.9, ESLint to 10.13.0, Rollup to 4.65.0, and typescript-eslint to 8.72.0; retain OpenCode SDK/plugin 1.3.13 together and the published Node.js 22.22.0 minimum.
 
 ### Fixed
+
+- **Consumer-visible evidence correctness**: Count only retained source and graph rows in pre-edit details, close truncated source fences at whole lines, and allow structural-mode architecture maps to read branch files from SQLite without a vector store. Add native-backed citation, Unicode/CRLF, scope, and token-budget acceptance.
+- **Pre-edit source identity and cancellation**: Resolve canonical native symbol IDs before fitting target source, including large fragmented declarations, instead of accepting ranked body slices, suffix paths, or enclosing declarations. Cap source blocks at 512 tokens, withhold missing source, preserve default host roots, and share the exact lookup with evaluation. Keep selection-hook test references metadata-only and honor cancellation after empty lookups.
+- **Working-tree snapshot integrity**: Detect concurrent database publication even when source hashes and catalog counts are unchanged. Reject lossy UTF-8 Git paths and retain only project-local endpoints for cross-boundary renames.
 
 - **Concurrent branch materialization**: Use invocation-unique worktree registration names and a common-Git-directory lease around registration/deregistration, preventing overlapping calls from reading or recycling partially initialized peer metadata. Keep fetches and indexing callbacks concurrent, preserve cancellation cleanup and fail-closed retention, and cover peer preservation plus real multiprocess overlap.
 - **Directory watcher permission recovery**: Recover readable, policy-selected directory and project-root registrations rejected with `EPERM` or `EACCES`, including empty directories that later gain source files. Reuse the one-shot polling cutover and catch-up reconciliation without broadening ignored, excluded, restricted, protected-index, unreadable, or external-configuration scope. Exercise actual Chokidar 6 directory resources in the watcher/Indexer acceptance checks.

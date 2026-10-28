@@ -521,6 +521,7 @@ describe("MCP server tools and prompts", () => {
     expect(properties).toBeDefined();
     expect(properties).toHaveProperty("includeApiImpact");
     expect(properties?.includeApiImpact).toEqual(expect.objectContaining({ type: "boolean", default: false }));
+    expect(properties?.includeTests).toEqual(expect.objectContaining({ type: "boolean", default: false }));
   });
 
   it("should register all 5 prompts", async () => {

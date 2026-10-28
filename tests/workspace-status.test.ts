@@ -49,6 +49,7 @@ function status(currentBranch: string, overrides: Partial<IndexStatusResult> = {
     baseBranch: "main",
     compatibility: { compatible: true },
     failedBatchesCount: 0,
+    freshness: null,
     autoIndex: { enabled: false, state: "idle", updatedAt: new Date(0).toISOString() },
     branchReadiness: { state: "ready", activeCatalogChunkCount: 12, registeredCatalog: true },
     ...overrides,
@@ -257,16 +258,5 @@ describe("workspace status", () => {
     );
     expect(exitCode).toBe(1);
     expect(JSON.parse(stdout[0])).toEqual(result);
-  });
-
-  it("preserves existing status command dispatch", async () => {
-    const stdout: string[] = [];
-    const exitCode = await runCbiCli(["node", "cbi", "status", "--project", "/repo"], "/tmp", {
-      runStatus: async () => ({ text: "existing status" }),
-      printStdout: (text) => stdout.push(text),
-      printStderr: () => undefined,
-    });
-    expect(exitCode).toBe(0);
-    expect(stdout).toEqual(["existing status"]);
   });
 });

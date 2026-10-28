@@ -240,7 +240,7 @@ describe("codebase edit context", () => {
     expect(result.text).toContain("Risk: graph data is unavailable");
     expect(result.text).toContain("src/auth.ts");
     expect(result.details.resolution).toBe("graph_unavailable");
-    expect(result.details.sourceIncluded).toBe(true);
+    expect(result.details.sourceIncluded).toBe(false);
   });
 
   it("returns a risk note and conceptual evidence when the symbol is unresolved", async () => {

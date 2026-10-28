@@ -103,6 +103,18 @@ export function formatIndexStats(stats: IndexStats, verbose: boolean = false): s
 export function formatStatus(status: StatusResult | IndexStatusResult): string {
   const autoIndex = "autoIndex" in status ? status.autoIndex : undefined;
   const autoIndexLines = autoIndex ? formatAutoIndexStatus(autoIndex) : [];
+  const freshness = "freshness" in status ? status.freshness : null;
+  const freshnessLines = ["Source freshness: not checked"];
+  if (freshness === null) {
+    freshnessLines.push("If source freshness is needed, run index_status({checkFreshness:true}).");
+  } else {
+    freshnessLines[0] = `Source freshness: ${freshness.current ? "current" : "not current"} (reason: ${freshness.reason})`;
+    if (!freshness.current) {
+      freshnessLines.push(freshness.reason === "unreadable"
+        ? "Resolve source/index access and readability before running index_codebase."
+        : "Run index_codebase normally to create or refresh the index, then check freshness again.");
+    }
+  }
   const countLine = status.mode === "structural"
     ? `Stored chunks (structural, all branches): ${(status.indexedChunkCount ?? 0).toLocaleString()}`
     : `${status.branchReadiness ? "Indexed chunks (all branches)" : "Indexed chunks"}: ${status.vectorCount.toLocaleString()}`;
@@ -120,7 +132,7 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
   const unindexedDetails = status.branchReadiness ? [countLine, `Location: ${status.indexPath}`, ...branchLines, ...migrationLines] : [];
   if (!status.indexed) {
     if (status.warning) {
-      return [...autoIndexLines, ...unindexedDetails, status.warning].join("\n");
+      return [...autoIndexLines, ...freshnessLines, ...unindexedDetails, status.warning].join("\n");
     }
 
     if (status.failedBatchesCount > 0) {
@@ -133,14 +145,15 @@ export function formatStatus(status: StatusResult | IndexStatusResult): string {
         lines.push(`Failed batches: ${status.failedBatchesPath}`);
       }
 
-      return [...autoIndexLines, ...unindexedDetails, ...lines].join("\n");
+      return [...autoIndexLines, ...freshnessLines, ...unindexedDetails, ...lines].join("\n");
     }
 
-    return [...autoIndexLines, ...unindexedDetails, "Codebase is not indexed. Run index_codebase to create an index."].join("\n");
+    return [...autoIndexLines, ...freshnessLines, ...unindexedDetails, "Codebase is not indexed. Run index_codebase to create an index."].join("\n");
   }
 
   const lines = [
     ...autoIndexLines,
+    ...freshnessLines,
     ...("mode" in status && status.mode ? [`Indexing mode: ${status.mode}`] : []),
     countLine,
     `Provider: ${status.provider}`,

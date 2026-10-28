@@ -21,6 +21,7 @@ const operationMocks = vi.hoisted(() => ({
   searchCodebase: vi.fn(),
   searchCodebaseWithEffectiveness: vi.fn(),
   implementationLookup: vi.fn(),
+  getSymbolTestEvidence: vi.fn(),
   recordToolEffectiveness: vi.fn(),
   getIndexMetrics: vi.fn(() => ({ text: "" })),
   isToolEffectivenessEnabled: vi.fn(() => true),
@@ -60,6 +61,7 @@ vi.mock("../src/tools/operations.js", () => ({
   getCodeCommunities: operationMocks.getCodeCommunities,
   getArchitectureContext: operationMocks.getArchitectureContext,
   implementationLookup: operationMocks.implementationLookup,
+  getSymbolTestEvidence: operationMocks.getSymbolTestEvidence,
   listKnowledgeBases: vi.fn(() => "No knowledge bases configured."),
   removeKnowledgeBase: vi.fn(() => "Removed knowledge base"),
   runIndexHealthCheck: operationMocks.runIndexHealthCheck,
@@ -189,6 +191,7 @@ describe("Pi adapter conformance", () => {
       },
     );
     operationMocks.implementationLookup.mockReset();
+    operationMocks.getSymbolTestEvidence.mockReset();
     operationMocks.recordToolEffectiveness.mockReset();
     operationMocks.isToolEffectivenessEnabled.mockReset();
     operationMocks.isToolEffectivenessEnabled.mockReturnValue(true);
@@ -366,6 +369,60 @@ describe("Pi adapter conformance", () => {
     expect(tools.get("codebase_edit_context")?.parameters?.properties?.includeApiImpact).toEqual(
       expect.objectContaining({ default: false, type: "boolean" }),
     );
+    expect(tools.get("codebase_edit_context")?.parameters?.properties?.includeTests).toEqual(
+      expect.objectContaining({ default: false, type: "boolean" }),
+    );
+  });
+
+  it.each(["pi", "omp"] as const)("returns only fully rendered static test references in %s details", async (host) => {
+    const source = {
+      filePath: "src/gate.ts", startLine: 1, endLine: 3,
+      chunkType: "function", name: "signalGate", score: 1,
+      content: "export function signalGate(value: boolean) {\n  return value;\n}",
+    };
+    operationMocks.implementationLookup.mockResolvedValue([source]);
+    operationMocks.getCallGraphData.mockImplementation(async (_root, _host, params) => ({
+      direction: params.direction,
+      resolution: {
+        status: "resolved", name: "signalGate", symbolId: "gate",
+        filePath: "src/gate.ts", startLine: 1, kind: "function", matchedBy: "name",
+      },
+      callers: [], callees: [],
+    }));
+    const references = Array.from({ length: 20 }, (_, index) => ({
+      filePath: `tests/gate-${index}.test.ts`, startLine: 2, endLine: 4,
+      chunkType: "expression_statement", score: 1, name: "signalGate",
+      content: "it('gate', () => {\n  expect(signalGate(false)).toBe(false);\n});",
+      evidenceKind: "direct_target_test_reference", referencedSymbol: "signalGate", referenceLine: 3,
+    }));
+    operationMocks.getSymbolTestEvidence.mockResolvedValue({
+      resolution: "resolved", results: references, scannedFileCount: 20,
+      candidateFileCount: 20, verifiedCallerCount: 0, capped: true,
+    });
+    const { tools } = await registerPiTools(host);
+    const tool = tools.get("codebase_edit_context")!;
+    const disabled = await tool.execute("without-tests", {
+      query: "change signalGate", symbol: "signalGate", includeTests: false, tokenBudget: 600,
+    }, new AbortController().signal, () => {}, { cwd: "/repo" });
+    expect(disabled.content[0].text).not.toContain("direct_target_test_reference");
+    expect(operationMocks.getSymbolTestEvidence).not.toHaveBeenCalled();
+    const response = await tool.execute("with-tests", {
+      query: "change signalGate", symbol: "signalGate", includeTests: true, tokenBudget: 600,
+    }, new AbortController().signal, () => {}, { cwd: "/repo" });
+    const details = response.details as {
+      sourceIncluded: boolean;
+      testDiscovery: { results: typeof references; capped: boolean; omittedReferenceCount: number };
+    };
+    const text = response.content[0].text;
+    const rendered = [...text.matchAll(/^- (.+):2-4 \[direct_target_test_reference\] referencedSymbol=signalGate referenceLine=3$/gmu)];
+    expect(details.sourceIncluded).toBe(true);
+    expect(rendered.map((row) => row[1])).toEqual(details.testDiscovery.results.map((row) => row.filePath));
+    for (const reference of details.testDiscovery.results) expect(reference).not.toHaveProperty("content");
+    expect(details.testDiscovery.omittedReferenceCount).toBe(20 - rendered.length);
+    expect(details.testDiscovery.omittedReferenceCount).toBeGreaterThan(0);
+    expect(details.testDiscovery.capped).toBe(true);
+    expect(text).toContain("Static source references; not runtime coverage.");
+    expect(countContextTokens(text)).toBeLessThanOrEqual(600);
   });
 
   it("keeps Pi normal output unchanged when diagnostic is false", async () => {

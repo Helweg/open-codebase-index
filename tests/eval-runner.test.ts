@@ -392,7 +392,10 @@ describe("eval runner", () => {
 
   it("grades only graph neighbors retained after the final source and graph budget", async () => {
     writeFileSync(path.join(tempDir, "src", "indexer", "index.ts"), [
-      `export function rankHybridResults(query: string) { /* ${"ranking ".repeat(250)} */ return query.length; }`,
+      "export function rankHybridResults(query: string) {",
+      `  /* ${"ranking ".repeat(250)} */`,
+      "  return query.length;",
+      "}",
       "export function evaluateRanking() { return rankHybridResults('query'); }",
     ].join("\n"));
     writeFileSync(path.join(tempDir, "benchmarks", "golden", "edit-graph-budget.json"), JSON.stringify({

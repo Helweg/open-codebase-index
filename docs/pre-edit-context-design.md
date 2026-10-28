@@ -14,15 +14,19 @@ The tool accepts:
 - `symbol` and optional `filePath`: an authoritative target when known
 - `tokenBudget`: total returned context budget
 - `callerLimit` and `calleeLimit`: direct graph-edge limits
+- `includeTests` (default false): current-source JS/TS test-reference evidence
+- `includeApiImpact` (default false): bounded Express/fetch associations
 
 It returns a single token-bounded evidence pack containing:
 
-1. The authoritative target implementation source, when a symbol resolves.
+1. A bounded excerpt of the authoritative target implementation source, when a symbol resolves.
 2. Direct callers and callees for that resolved symbol, with locations and edge types.
 3. A short risk note when the target is ambiguous, unresolved, or graph data is unavailable.
 4. Conceptual retrieval evidence when no target can be resolved.
 
-The first release must not claim test coverage or related-test certainty. The current index has test-path-aware ranking, but no durable test-to-symbol relationship. Test discovery is a separate, measurable follow-up.
+The initial release did not claim test coverage. The opt-in test section now reuses native AST-backed `discoverSymbolTests`: direct target references precede graph neighbors, and one-hop caller-test references follow them. Target `filePath` disambiguation leaves test-directory scope independent. Returned callback citations, evidence labels, selected-only structured details, discovery caps, and response omissions remain inspectable; no static link claims runtime coverage or passing tests. See [Tools and commands](tools.md#codebase_edit_context) for the current contract.
+
+Resolved targets use canonical native symbol IDs and declaration coordinates rather than ranked body fragments. The shared per-indexer lookup serves both production and evaluation. Source blocks are capped at 512 tokens, preserve declaration starts and whole-line fences, and leave response space for relationships and test references. Unreadable source retains canonical metadata but receives no source-included credit.
 
 ## Integration boundaries
 
