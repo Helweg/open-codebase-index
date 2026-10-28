@@ -2,14 +2,11 @@ import type { HostMode } from "../config/host.js";
 import type { OperationControl } from "../utils/operation-control.js";
 import * as path from "node:path";
 import { canonicalizePathForComparison } from "../utils/canonical-path.js";
-import { throwIfOperationAborted } from "../utils/operation-control.js";
-import { getProjectRoot } from "./operation-runtime.js";
-import { discoverSymbolTests, TEST_DISCOVERY_MAX_DEFINITIONS, TEST_DISCOVERY_MAX_FILES } from "./test-discovery.js";
 import { loadRuntimeConfig } from "./config-state.js";
 import {
   getCallGraphData,
+  getSymbolTestEvidence,
   getCallGraphPath,
-  getIndexerForProject,
   implementationLookup,
   isToolEffectivenessEnabled,
   recordToolEffectiveness,
@@ -168,24 +165,7 @@ async function resolveCodebaseContextUnmeasured(
         ? searchCodebase(projectRoot, host, queryText, options, control)
         : searchCodebase(projectRoot, host, queryText, options);
     },
-    discoverTests: (testSymbol, scope) => {
-      const root = getProjectRoot(projectRoot, host);
-      return discoverSymbolTests(root, testSymbol, scope, {
-        lookup: (name) => implementationLookup(root, host, name, { exactSymbol: true, limit: TEST_DISCOVERY_MAX_DEFINITIONS }, control),
-        graph: (name, filePath) => getCallGraphData(root, host, { name, filePath, direction: "callers" }, control),
-        indexedFiles: async () => {
-          throwIfOperationAborted(control?.signal);
-          const files = await getIndexerForProject(root, host).getIndexedFilePathsForActiveBranch();
-          throwIfOperationAborted(control?.signal);
-          return files;
-        },
-        lexicalFiles: (identifiers, allowedFiles) => getIndexerForProject(root, host).getKeywordFileCandidates(
-          identifiers, allowedFiles.map((filePath) => path.resolve(root, filePath)), TEST_DISCOVERY_MAX_FILES, {
-            signal: control?.signal, heartbeat: control?.heartbeat, setPhase: control?.setPhase,
-          },
-        ),
-      }, control);
-    },
+    discoverTests: (testSymbol, scope) => getSymbolTestEvidence(projectRoot, host, testSymbol, scope, control),
   }, projectRoot ? configuredOrigins(projectRoot, host) : undefined);
 }
 

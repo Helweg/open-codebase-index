@@ -10,6 +10,7 @@ import { resolveCodebaseEditContextWithDependencies, type CodebaseEditContextEvi
 import {
   getCallGraphDataForIndexer,
   getArchitectureContextForIndexer,
+  implementationLookupForIndexer,
   type CallGraphDataResult,
 } from "../tools/operations.js";
 import { DEFAULT_CONTEXT_PACK_TOKEN_BUDGET } from "../tools/utils.js";
@@ -220,7 +221,7 @@ async function runEditContextQuery(
     omittedCount: number;
   };
 }> {
-  let selectedEvidence: CodebaseEditContextEvidence = { sources: [], callers: [], callees: [] };
+  let selectedEvidence: CodebaseEditContextEvidence = { sources: [], callers: [], callees: [], testReferences: [] };
   let callers: CallGraphDataResult | undefined;
 
   const editContext = await resolveCodebaseEditContextWithDependencies({
@@ -236,10 +237,8 @@ async function runEditContextQuery(
     searchCodebase: (searchQuery, options) => indexer.search(searchQuery, options?.limit, {
       filterByBranch: !!query.expected.branch,
     }),
-    implementationLookup: (symbol, options) => indexer.search(symbol, options?.limit, {
-      filterByBranch: !!query.expected.branch,
-      definitionIntent: true,
-    }),
+    implementationLookup: (symbol, options, control) =>
+      implementationLookupForIndexer(indexer, projectRoot, symbol, options, control),
     getCallGraphData: async (params) => {
       const result = await getCallGraphDataForIndexer(indexer, projectRoot, params);
       if (params.direction === "callers") callers = result;

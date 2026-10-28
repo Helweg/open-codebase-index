@@ -7,6 +7,7 @@ import {
   assertValidGitRefName,
   isFullGitCommit,
   resolveGitCommit,
+  resolveLocalGitCommit,
   resolveLocalPullRequestRefs,
 } from "../git/branch-materialization.js";
 import { throwIfOperationAborted } from "../utils/operation-control.js";
@@ -26,6 +27,96 @@ const GH_PR_VIEW_FIELDS = [
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+export interface WorkingTreeChanges {
+  headCommit: string | null;
+  entries: Array<{
+    path: string;
+    previousPath?: string;
+    indexStatus: string;
+    worktreeStatus: string;
+  }>;
+  omittedFileCount: number;
+}
+
+/** Local path changes only; this does not read staged blobs or refresh the index. */
+export async function getWorkingTreeChanges(
+  projectRoot: string,
+  signal?: AbortSignal,
+): Promise<WorkingTreeChanges> {
+  throwIfOperationAborted(signal);
+  const decodePaths = (output: Buffer): string => {
+    try {
+      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(output);
+    } catch (error) {
+      throw new Error("Working-tree paths must be valid UTF-8; impact analysis cannot represent these filenames safely.", { cause: error });
+    }
+  };
+  const { stdout: rootBytes } = await execFileAsync("git", [
+    "--no-optional-locks", "-c", "core.fsmonitor=false", "rev-parse", "--show-toplevel",
+  ], { cwd: projectRoot, timeout: 30000, maxBuffer: 1024 * 1024, encoding: "buffer", signal });
+  throwIfOperationAborted(signal);
+  // Remove Git's terminating newline only; directory names may contain whitespace.
+  const rootOutput = decodePaths(rootBytes);
+  const gitRoot = rootOutput.endsWith("\n") ? rootOutput.slice(0, -1) : rootOutput;
+  if (!path.isAbsolute(gitRoot)) throw new Error("Could not resolve the working-tree root.");
+  const canonicalProjectRoot = realpathSync.native(projectRoot);
+  const { stdout: statusBytes } = await execFileAsync("git", [
+    "--no-optional-locks", "-c", "core.fsmonitor=false", "status",
+    "--porcelain=v1", "-z", "--untracked-files=all", "--", ".",
+  ], { cwd: projectRoot, timeout: 30000, maxBuffer: 1024 * 1024, encoding: "buffer", signal });
+  throwIfOperationAborted(signal);
+  const records = decodePaths(statusBytes).split("\0");
+  if (records.pop() !== "") throw new Error("Malformed working-tree status output.");
+  const entries: WorkingTreeChanges["entries"] = [];
+  const unmerged: Record<string, true> = { DD: true, AU: true, UD: true, UA: true, DU: true, AA: true, UU: true };
+  const validStatus = /^[ MTADRCU?!]{2}$/u;
+  const normalized = (filePath: string): string | undefined => {
+    if (!filePath || path.isAbsolute(filePath)) throw new Error("Malformed working-tree status path.");
+    const repositoryPath = normalizeFiles([filePath], gitRoot)[0];
+    const relative = path.relative(canonicalProjectRoot, path.resolve(gitRoot, repositoryPath));
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return undefined;
+    return relative.split(path.sep).join("/");
+  };
+  for (let index = 0; index < records.length; index++) {
+    throwIfOperationAborted(signal);
+    const record = records[index];
+    const status = record.slice(0, 2);
+    if (record[2] !== " " || !validStatus.test(status)) {
+      throw new Error("Malformed working-tree status record.");
+    }
+    const destination = normalized(record.slice(3));
+    let previousPath: string | undefined;
+    if (status.includes("R") || status.includes("C")) {
+      const previousRecord = records[++index];
+      if (previousRecord === undefined) throw new Error("Malformed working-tree rename record.");
+      previousPath = normalized(previousRecord);
+    }
+    if (destination === undefined) {
+      if (previousPath !== undefined && status.includes("R")) {
+        // Only the deletion belongs to this project; do not expose the sibling destination.
+        entries.push({
+          path: previousPath,
+          indexStatus: status[0] === "R" ? "D" : " ",
+          worktreeStatus: status[1] === "R" ? "D" : " ",
+        });
+      }
+      continue;
+    }
+    if (unmerged[status]) throw new Error("Resolve unmerged files before analyzing working-tree impact.");
+    const crossesBoundary = previousPath === undefined && (status.includes("R") || status.includes("C"));
+    entries.push({
+      path: destination,
+      ...(previousPath === undefined ? {} : { previousPath }),
+      indexStatus: crossesBoundary && (status[0] === "R" || status[0] === "C") ? "A" : status[0],
+      worktreeStatus: crossesBoundary && (status[1] === "R" || status[1] === "C") ? "A" : status[1],
+    });
+  }
+  entries.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  const headCommit = await resolveLocalGitCommit(projectRoot, "HEAD", signal);
+  throwIfOperationAborted(signal);
+  return { headCommit, entries: entries.slice(0, 200), omittedFileCount: Math.max(0, entries.length - 200) };
 }
 
 export interface ChangedFilesResult {

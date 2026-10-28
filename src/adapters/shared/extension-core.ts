@@ -229,10 +229,14 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
         default: false,
         description: "Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only.",
       })),
+      includeTests: schema.Optional(schema.Boolean({
+        default: false,
+        description: "Include bounded JS/TS static source-linked test references, not test execution or runtime coverage.",
+      })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const result = await resolveCodebaseEditContext(projectRoot(ctx), HOST, params, { signal });
-      return text(result.text);
+      return text(result.text, result.details);
     },
   });
 
@@ -338,7 +342,7 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.INDEX_CODEBASE,
     label: "Index Codebase",
-    description: "Build or refresh the semantic codebase index. Run index_status when freshness is unknown.",
+    description: "Build or refresh the semantic codebase index. Use index_status with checkFreshness=true when source freshness is needed.",
     parameters: schema.Object({
       force: schema.Optional(schema.Boolean({ default: false })),
       estimateOnly: schema.Optional(schema.Boolean({ default: false })),
@@ -371,10 +375,12 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.INDEX_STATUS,
     label: "Index Status",
-    description: "Check index health and current status.",
-    parameters: schema.Object({}),
-    async execute(_toolCallId, _params, signal, _onUpdate, ctx) {
-      const status = await getIndexStatus(projectRoot(ctx), HOST, { signal });
+    description: "Inspect stored catalog readiness and compatibility. Source freshness is not checked unless checkFreshness=true; that read-only check does not refresh the index.",
+    parameters: schema.Object({
+      checkFreshness: schema.Optional(schema.Boolean({ default: false, description: "Check selected source against the index at this point in time without indexing" })),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const status = await getIndexStatus(projectRoot(ctx), HOST, params, { signal });
       return text(formatStatus(status), status);
     },
   });
@@ -436,10 +442,11 @@ export function registerCodebaseIndexTools(pi: CodebaseIndexExtensionAPI, schema
   pi.registerTool({
     name: TOOL_NAME.PR_IMPACT,
     label: "PR Impact",
-    description: "Analyze PR or branch impact through changed symbols and call graph neighborhoods.",
+    description: "Analyze PR, branch, or working-tree impact through current indexed files and call graph neighborhoods. Working-tree mode includes staged, unstaged, and untracked paths without refreshing the index.",
     parameters: schema.Object({
       pr: schema.Optional(schema.Number()),
       branch: schema.Optional(schema.String()),
+      workingTree: schema.Optional(schema.Boolean({ default: false })),
       maxDepth: schema.Optional(schema.Number({ default: 5 })),
       hubThreshold: schema.Optional(schema.Number({ default: 10 })),
       checkConflicts: schema.Optional(schema.Boolean({ default: false })),

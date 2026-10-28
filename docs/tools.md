@@ -170,6 +170,20 @@ Do not repeat context calls or broad reads when existing evidence already answer
 
 ## Core retrieval tools
 
+### `codebase_edit_context`
+
+Use for a known or suspected edit target. `query`, optional `symbol`/`filePath`, caller/callee limits, and a 128–4000-token budget produce target source and direct graph evidence, or a risk-marked conceptual fallback. `filePath` disambiguates the target; it does not restrict related test locations to the implementation directory. Details count only source and graph evidence retained in the response.
+
+Target source comes from the resolved native symbol ID, not ranked body chunks. Selection checks the exact project path, name, kind, and declaration start; a same-named suffix path or enclosing declaration is not target evidence. Large declarations start at their canonical signature. Source blocks are capped at 512 tokens to reserve space for relationships and test references, while the complete response still honors the requested budget. Missing or nonunique implementation source is explicitly withheld rather than replaced with another body or an inaccessible-file marker.
+
+Source fitting reserves the outer heading and final truncation notice before graph/API sections are appended. Source receives credit only when the complete fitted block, including its closing fence, survives final composition; tight budgets do not authorize a clipped line or dangling source fence.
+
+Set `includeTests: true` to add current-source, AST-verified JS/TS test references using the same bounded discovery engine as `codebase_context`. `direct_target_test_reference` identifies a call/construction of the target inside a supported test callback; `related_caller_test_reference` identifies a verified one-hop caller reference. Both are static source links, **not runtime coverage or proof that a test passes**. Test rows contain exact callback citations, the canonical referenced symbol, and the reference line; drill into those locations for assertions.
+
+Direct test rows precede graph neighbors; related caller-test rows follow them. Every complete row, source excerpt, label, and notice shares the existing token budget. MCP `structuredContent.testDiscovery` and Pi/omp details contain only rendered `results`, discovery resolution/counters/`capped`, and `omittedReferenceCount` for proved references lost to response fitting. Empty, ambiguous, unsupported, capped, or unavailable discovery is not proof that no tests exist. Omitted/false `includeTests` does not run discovery.
+
+The existing `includeApiImpact: true` option remains separate: Express/fetch `candidate_test_file` matches are candidates, not verified test-reference labels. See [API impact](api-impact.md). MCP and Pi/omp expose structured pre-edit details; OpenCode retains its text response.
+
 ### `architecture_context`
 
 Use `architecture_context` when an agent needs a concise repository map before focused retrieval or edits. Each module includes a responsibility excerpt derived from readable source and exact symbol/file/line citations. Cross-module boundaries include representative source and target symbols, while missing or sparse graph coverage is reported explicitly instead of inferred. Coverage includes branch-aware resolved and unresolved edge totals plus a deterministic per-language breakdown.
@@ -242,9 +256,11 @@ Finds code analogous to a supplied snippet. Useful for duplicate detection, patt
 
 ### `index_status`
 
-Reports readiness, chunk counts, compatibility, current provider/model, and index health information.
+Reports stored catalog state, chunk counts, compatibility, current provider/model, and auto-index coordination separately from source freshness. Ordinary calls return `freshness: null` and `Source freshness: not checked`; a populated catalog is not proof that current source bytes or HEAD were indexed.
 
-Catalog presence and provider/model compatibility are separate from pending storage migrations. An active catalog can be `ready` and compatible while its parser, symbol, or call-graph migration markers are outdated. Shared status results expose `migrationRequired`; public status reports pending migrations and recommends ordinary `index_codebase` with `force: false`. This refresh upgrades affected cached declarations without deleting the index. With automatic indexing disabled, existing declarations can remain available while newly supported declarations are absent; with readiness-gated retrieval, pending migrations can block search. Status only checks stored migration markers, not source-file or HEAD freshness, and never starts a refresh.
+Pass `checkFreshness: true` to compare the selected source/configuration hashes and HEAD with the index using the existing freshness engine. Structured status returns `{ readable, current, reason }` under `freshness`, with the same facts shown in text. The check does not index, retry failed batches, request embeddings, or start watchers; explicitly enabled SCIP validation may use its configured bounded decoder. This is a point-in-time check, not an atomic snapshot. Cancelled or failed checks do not become current results.
+
+Catalog presence and provider/model compatibility remain separate from pending storage migrations. An active catalog can be `ready` and compatible while parser, symbol, or call-graph migration markers are outdated. `migrationRequired` and a noncurrent freshness reason recommend ordinary `index_codebase` with `force: false`, not index deletion. Resolve unreadable source/index access before indexing. The CLI equivalents are `ocbi status --check-freshness` and `ocbi status --check-freshness --json` (`cbi` is equivalent). JSON contains the shared status object; MCP adds the diagnostics below, while Pi/omp return the same facts as details. Workspace status remains a bounded catalog inspection with freshness explicitly not checked.
 
 MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
 
@@ -318,6 +334,14 @@ Output includes community summaries, hub node rows, and `Community couplings` en
 Analyzes changed files, affected symbols, transitive dependencies, graph communities, hub nodes, conflicts, and merge risk for a branch or pull request.
 
 Branch materialization uses invocation-unique temporary worktrees. A cross-process lease scoped to the common Git directory protects registration and deregistration, including linked-worktree callers; fetches and indexing callbacks remain concurrent. Cancellation while waiting for registration removes the unused temporary checkout, and unverified cleanup preserves its path rather than deleting potentially registered data.
+
+Set `workingTree: true` to inspect the union of staged, unstaged, and untracked path changes. First run ordinary incremental `index_codebase` after editing: this mode uses the **current indexed dirty tree**, not the old committed graph. A stale, mismatched, missing, or migration-pending index is rejected with a refresh instruction; inspection does not refresh it automatically.
+
+Working-tree analysis is file-level static graph reachability, not changed-line analysis, a staged-blob comparison, or a historical deletion graph. It reads local Git status with no optional locks/fsmonitor hook, preserves literal XY states and rename origins, and never fetches, invokes `gh`, creates a worktree, or stages/resets files. It is mutually exclusive with explicit `pr`, `branch`, and `checkConflicts: true`. The existing branch/PR preparation path is unchanged when the flag is false.
+
+MCP structured content and Pi/omp details include `workingTree.headCommit`, `scope: "current_indexed_files"`, selected `entries`, `omittedFileCount`, and `unassessed` paths/reasons. Deleted files, rename source paths, unindexed or symbol-free files, non-regular/outside-project targets, and changes beyond the 200-path cap yield `riskLevel: "UNKNOWN"` rather than a false LOW. Known graph counts remain available but are partial. A clean tree reports no working-tree changes; an empty list never implies runtime safety.
+
+Before/after status, HEAD, indexed changed-file hashes, freshness, and database publication fingerprints reject concurrent changes without automatic retries. These are bounded observations, not an atomic filesystem snapshot. Nested-project analysis retains only local rename endpoints. Unmerged status, invalid UTF-8 paths, malformed/overflowing Git output (1 MiB bound), and operational failures are explicit errors. The CLI equivalent is `ocbi impact --working-tree --json` (`cbi` is equivalent); see [Human CLI](installation.md#human-cli).
 
 ## OpenCode-native tools
 

@@ -1,3 +1,4 @@
+import type { Stats } from "fs";
 import { existsSync, readFileSync, statSync, writeFileSync, renameSync, unlinkSync, mkdirSync, promises as fsPromises } from "fs";
 import * as path from "path";
 import { performance } from "perf_hooks";
@@ -38,7 +39,8 @@ import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
 import { isProjectIndexPathOwnedByProject, resolveProjectIndexPath } from "../config/paths.js";
-import { getChangedFiles } from "../tools/changed-files.js";
+import { getChangedFiles, getWorkingTreeChanges } from "../tools/changed-files.js";
+import type { SharedPrImpactArgs } from "../tools/contracts.js";
 import type { PrImpactResult } from "./pr-impact-types.js";
 import { UnsupportedIndexOperationError } from "./errors.js";
 export { UnsupportedIndexOperationError } from "./errors.js";
@@ -8184,134 +8186,210 @@ export class Indexer {
     return result;
   }
 
-  async getPrImpact(opts: {
-    pr?: number;
-    branch?: string;
-    maxDepth?: number;
-    hubThreshold?: number;
-    checkConflicts?: boolean;
-    direction?: "callers" | "callees" | "both";
-  }, onPreparationProgress?: ProgressCallback, options: IndexOperationOptions = {}): Promise<PrImpactResult> {
+  async getPrImpact(opts: SharedPrImpactArgs, onPreparationProgress?: ProgressCallback, options: IndexOperationOptions = {}): Promise<PrImpactResult> {
+    if (opts.workingTree && (opts.pr !== undefined || opts.branch !== undefined || opts.checkConflicts === true)) {
+      throw new Error("workingTree cannot be combined with pr, branch, or checkConflicts");
+    }
     throwIfOperationAborted(options.signal);
     const initialState = await this.ensureInitialized();
     throwIfOperationAborted(options.signal);
     let database = initialState.database;
     const { readIssues } = initialState;
-    this.requireReadableComponents(readIssues, "database");
+    if (!opts.workingTree) this.requireReadableComponents(readIssues, "database");
     const execFileAsync = promisify(execFile);
 
-    const changedFilesResult = await getChangedFiles({
-      pr: opts.pr,
-      branch: opts.branch,
-      projectRoot: this.projectRoot,
-      baseBranch: this.baseBranch,
-      signal: options.signal,
-    });
-    const changedFiles = changedFilesResult.files;
-    const headRefName = changedFilesResult.headRefName;
-    const expectedCommit = changedFilesResult.headRef;
-    throwIfOperationAborted(options.signal);
+    let changedFiles: string[];
+    let analysisFiles: string[];
+    let branchKey: string;
+    let indexPreparation: PrImpactResult["indexPreparation"];
+    let workingTree: PrImpactResult["workingTree"];
+    let checkWorkingTreeConsistency: (() => Promise<void>) | undefined;
 
-    if (opts.pr !== undefined && headRefName === undefined) {
-      throw new Error(
-        `Could not resolve head branch for PR #${opts.pr}. Run index_codebase on the PR branch first.`,
-      );
-    }
-    if (!expectedCommit || !isFullGitCommit(expectedCommit)) {
-      throw new Error("Could not resolve an authoritative full commit OID for impact analysis.");
-    }
+    if (opts.workingTree) {
+      const currentIndexError = "Working-tree impact requires a current index. Run index_codebase, then retry.";
+      const changedDuringAnalysis = "Working tree changed during impact analysis; retry on a stable tree.";
+      const graphFingerprint = this.captureReaderArtifactFingerprint().database;
+      const status = await this.getStatus();
+      if (!status.indexed || status.checkoutBranch === undefined
+        || status.checkoutBranch !== status.currentBranch
+        || status.branchReadiness?.state !== "ready" || status.migrationRequired !== false) {
+        throw new Error(currentIndexError);
+      }
+      const changes = await getWorkingTreeChanges(this.projectRoot, options.signal);
+      if (!(await this.getIndexFreshness(options)).current) throw new Error(currentIndexError);
+      const canonicalRoot = await fsPromises.realpath(this.projectRoot);
+      const captureFiles = async () => {
+        const indexedFiles = new Set((await this.getIndexedFilePathsForActiveBranch()).map((file) => path.resolve(file)));
+        const files: string[] = [];
+        const hashes: Array<[string, string]> = [];
+        const unassessed: NonNullable<PrImpactResult["workingTree"]>["unassessed"] = [];
+        for (const entry of changes.entries) {
+          throwIfOperationAborted(options.signal);
+          if (entry.previousPath && (entry.indexStatus === "R" || entry.worktreeStatus === "R")) {
+            unassessed.push({ path: entry.previousPath, reason: "renamed_from" });
+          }
+          const file = path.resolve(this.projectRoot, entry.path);
+          if (!isPathWithinRoot(file, this.projectRoot)) {
+            unassessed.push({ path: entry.path, reason: "outside_project" });
+            continue;
+          }
+          let stats: Stats;
+          let realFile: string;
+          try {
+            // Resolve containment before hashing, including symlinked parent directories.
+            stats = await fsPromises.lstat(file);
+            realFile = await fsPromises.realpath(file);
+          } catch (error) {
+            if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+              unassessed.push({ path: entry.path, reason: entry.indexStatus === "D" || entry.worktreeStatus === "D" ? "deleted" : "not_regular" });
+              continue;
+            }
+            throw error;
+          }
+          if (!isPathWithinRoot(realFile, canonicalRoot)) {
+            unassessed.push({ path: entry.path, reason: "outside_project" });
+          } else if (!stats.isFile()) {
+            unassessed.push({ path: entry.path, reason: "not_regular" });
+          } else if (!indexedFiles.has(file)) {
+            unassessed.push({ path: entry.path, reason: "not_indexed" });
+          } else {
+            files.push(entry.path);
+            hashes.push([entry.path, hashFile(file)]);
+          }
+          await options.heartbeat?.();
+        }
+        throwIfOperationAborted(options.signal);
+        return { files, hashes, unassessed };
+      };
+      const before = await captureFiles();
+      changedFiles = changes.entries.map((entry) => entry.path);
+      analysisFiles = before.files;
+      branchKey = this.getBranchCatalogKey();
+      workingTree = { ...changes, scope: "current_indexed_files", unassessed: [...before.unassessed] };
+      checkWorkingTreeConsistency = async () => {
+        // Bounded before/after observations, not an atomic filesystem snapshot.
+        try {
+          const afterChanges = await getWorkingTreeChanges(this.projectRoot, options.signal);
+          const afterStatus = await this.getStatus();
+          const freshness = await this.getIndexFreshness(options);
+          const afterFiles = await captureFiles();
+          if (!freshness.current
+            || graphFingerprint !== this.captureReaderArtifactFingerprint().database
+            || JSON.stringify(status) !== JSON.stringify(afterStatus)
+            || JSON.stringify(changes) !== JSON.stringify(afterChanges)
+            || JSON.stringify(before) !== JSON.stringify(afterFiles)) {
+            throw new Error(changedDuringAnalysis);
+          }
+        } catch (error) {
+          if (isOperationInterruption(error)) throw error;
+          throwIfOperationAborted(options.signal);
+          throw new Error(changedDuringAnalysis, { cause: error });
+        }
+      };
+    } else {
+      const changedFilesResult = await getChangedFiles({
+        pr: opts.pr,
+        branch: opts.branch,
+        projectRoot: this.projectRoot,
+        baseBranch: this.baseBranch,
+        signal: options.signal,
+      });
+      changedFiles = changedFilesResult.files;
+      analysisFiles = changedFiles;
+      const headRefName = changedFilesResult.headRefName;
+      const expectedCommit = changedFilesResult.headRef;
+      throwIfOperationAborted(options.signal);
 
-    const resolvedBranch = opts.pr !== undefined
-      ? headRefName
-      : opts.branch || this.currentBranch;
-    const catalogIdentity = changedFilesResult.catalogIdentity;
-    const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
-
-    let branchSymbols = database.getSymbolsForBranch(branchKey);
-    let indexPreparation: NonNullable<PrImpactResult["indexPreparation"]> = {
-      prepared: false,
-      branch: resolvedBranch || "default",
-    };
-    const requestedRef = opts.pr !== undefined
-      ? expectedCommit
-      : headRefName ?? resolvedBranch;
-    const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
-    const catalogIdentityMatches = storedCommit === expectedCommit;
-
-    const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database, catalogIdentity);
-
-    if (branchSymbols.length === 0 || !catalogIdentityMatches || !migrationsCurrent) {
-      if (!resolvedBranch || resolvedBranch === "default") {
-        throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
+      if (opts.pr !== undefined && headRefName === undefined) {
+        throw new Error(
+          `Could not resolve head branch for PR #${opts.pr}. Run index_codebase on the PR branch first.`,
+        );
+      }
+      if (!expectedCommit || !isFullGitCommit(expectedCommit)) {
+        throw new Error("Could not resolve an authoritative full commit OID for impact analysis.");
       }
 
-      onPreparationProgress?.({
-        phase: "scanning",
-        filesProcessed: 0,
-        totalFiles: 0,
-        chunksProcessed: 0,
-        totalChunks: 0,
-      });
-      this.resetLoadedIndexState();
-      throwIfOperationAborted(options.signal);
-      const materialized = await withMaterializedBranch(
-        {
-          projectRoot: this.projectRoot,
-          branch: resolvedBranch,
-          ref: requestedRef,
-          expectedCommit,
-          pr: opts.pr,
-          repository: changedFilesResult.baseRepository,
-          signal: options.signal,
-        },
-        async (worktreePath, info) => {
-          const branchIndexer = new Indexer(this.projectRoot, this.config, this.host, {
-            materializedProjectRoot: worktreePath,
-            branchName: resolvedBranch,
-            catalogIdentity,
+      const resolvedBranch = opts.pr !== undefined
+        ? headRefName
+        : opts.branch || this.currentBranch;
+      const catalogIdentity = changedFilesResult.catalogIdentity;
+      branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
+      let branchSymbols = database.getSymbolsForBranch(branchKey);
+      indexPreparation = { prepared: false, branch: resolvedBranch || "default" };
+      const requestedRef = opts.pr !== undefined ? expectedCommit : headRefName ?? resolvedBranch;
+      const storedCommit = this.getStoredBranchCommit(database, catalogIdentity);
+      const catalogIdentityMatches = storedCommit === expectedCommit;
+      const migrationsCurrent = this.areBranchMigrationVersionsCurrent(database, catalogIdentity);
+
+      if (branchSymbols.length === 0 || !catalogIdentityMatches || !migrationsCurrent) {
+        if (!resolvedBranch || resolvedBranch === "default") {
+          throw new Error("Run index_codebase first to build the call graph and symbol index for this project.");
+        }
+        onPreparationProgress?.({
+          phase: "scanning", filesProcessed: 0, totalFiles: 0, chunksProcessed: 0, totalChunks: 0,
+        });
+        this.resetLoadedIndexState();
+        throwIfOperationAborted(options.signal);
+        const materialized = await withMaterializedBranch(
+          {
+            projectRoot: this.projectRoot,
+            branch: resolvedBranch,
+            ref: requestedRef,
             expectedCommit,
-            indexPath: this.indexPath,
-          });
-          try {
-            return await branchIndexer.indexBranchIfMissing(
-              resolvedBranch,
-              info.commit,
-              onPreparationProgress,
-              options,
-            );
-          } finally {
-            await branchIndexer.close();
-          }
-        },
-      );
-
-      indexPreparation = {
-        prepared: materialized.value.prepared,
-        branch: resolvedBranch,
-        commit: materialized.info.commit,
-        source: materialized.info.source,
-      };
-
-      const refreshedState = await this.ensureInitialized();
-      throwIfOperationAborted(options.signal);
-      this.requireReadableComponents(refreshedState.readIssues, "database");
-      database = refreshedState.database;
-      branchSymbols = database.getSymbolsForBranch(branchKey);
-      if (branchSymbols.length === 0) {
-        throw new Error(
-          `Branch ${JSON.stringify(resolvedBranch)} (catalog ${JSON.stringify(catalogIdentity)}) was indexed but produced no call-graph symbols. `
-          + `Available branch catalogs: ${database.getAllBranches().join(", ") || "none"}; `
-          + `${database.getBranchChunkIds(branchKey).length} chunks, ${database.getBranchSymbolIds(branchKey).length} symbol IDs. `
-          + "Ensure the branch contains a supported source language and is included by the index configuration.",
+            pr: opts.pr,
+            repository: changedFilesResult.baseRepository,
+            signal: options.signal,
+          },
+          async (worktreePath, info) => {
+            const branchIndexer = new Indexer(this.projectRoot, this.config, this.host, {
+              materializedProjectRoot: worktreePath,
+              branchName: resolvedBranch,
+              catalogIdentity,
+              expectedCommit,
+              indexPath: this.indexPath,
+            });
+            try {
+              return await branchIndexer.indexBranchIfMissing(resolvedBranch, info.commit, onPreparationProgress, options);
+            } finally {
+              await branchIndexer.close();
+            }
+          },
         );
+        indexPreparation = {
+          prepared: materialized.value.prepared,
+          branch: resolvedBranch,
+          commit: materialized.info.commit,
+          source: materialized.info.source,
+        };
+        const refreshedState = await this.ensureInitialized();
+        throwIfOperationAborted(options.signal);
+        this.requireReadableComponents(refreshedState.readIssues, "database");
+        database = refreshedState.database;
+        branchSymbols = database.getSymbolsForBranch(branchKey);
+        if (branchSymbols.length === 0) {
+          throw new Error(
+            `Branch ${JSON.stringify(resolvedBranch)} (catalog ${JSON.stringify(catalogIdentity)}) was indexed but produced no call-graph symbols. `
+            + `Available branch catalogs: ${database.getAllBranches().join(", ") || "none"}; `
+            + `${database.getBranchChunkIds(branchKey).length} chunks, ${database.getBranchSymbolIds(branchKey).length} symbol IDs. `
+            + "Ensure the branch contains a supported source language and is included by the index configuration.",
+          );
+        }
       }
     }
 
     const toStoredChangedFiles = (filePaths: readonly string[]): string[] =>
       filePaths.map((filePath) => this.toStoredFilePath(path.resolve(this.projectRoot, filePath)));
-    const storedChangedFiles = toStoredChangedFiles(changedFiles);
+    const storedChangedFiles = toStoredChangedFiles(analysisFiles);
     throwIfOperationAborted(options.signal);
     const directSymbols = database.getSymbolsForFiles(storedChangedFiles, branchKey);
+    if (workingTree) {
+      const symbolFiles = new Set(directSymbols.map((symbol) => symbol.filePath));
+      for (const file of analysisFiles) {
+        if (!symbolFiles.has(this.toStoredFilePath(path.resolve(this.projectRoot, file)))) {
+          workingTree.unassessed.push({ path: file, reason: "no_symbols" });
+        }
+      }
+    }
     throwIfOperationAborted(options.signal);
     const directIds = directSymbols.map((s) => s.id);
 
@@ -8382,7 +8460,7 @@ export class Indexer {
     }
 
     const totalAffected = allAffectedIds.length;
-    let riskLevel: "LOW" | "MEDIUM" | "HIGH";
+    let riskLevel: PrImpactResult["riskLevel"];
     let riskReason: string;
 
     if (totalAffected < 5 && hubNodes.length === 0) {
@@ -8394,6 +8472,15 @@ export class Indexer {
     } else {
       riskLevel = "MEDIUM";
       riskReason = `Moderate impact: ${totalAffected} affected symbols${hubNodes.length === 1 ? ", 1 hub node touched" : ""}.`;
+    }
+    if (workingTree) {
+      if (workingTree.unassessed.length > 0 || workingTree.omittedFileCount > 0) {
+        riskLevel = "UNKNOWN";
+        riskReason = `Partial current-graph impact: ${totalAffected} known affected symbols; unassessed or omitted files remain.`;
+      } else if (changedFiles.length === 0) {
+        riskReason = "No working-tree changes.";
+      }
+      riskReason += " Static file-level analysis of current indexed contents, not staged blobs or historical deletions.";
     }
 
     let conflictingPRs: PrImpactResult["conflictingPRs"];
@@ -8476,8 +8563,11 @@ export class Indexer {
     }
 
     throwIfOperationAborted(options.signal);
+    await checkWorkingTreeConsistency?.();
+    throwIfOperationAborted(options.signal);
     return {
       indexPreparation,
+      ...(workingTree ? { workingTree } : {}),
       changedFiles,
       directSymbols: directSymbols.map((s) => ({
         id: s.id,
@@ -8511,9 +8601,9 @@ export class Indexer {
     edges: CallEdgeData[];
   }> {
     throwIfOperationAborted(options.signal);
-    const { database, store, readIssues } = await this.ensureInitialized();
+    const { database, readIssues } = await this.ensureInitialized();
     throwIfOperationAborted(options.signal);
-    this.requireReadableComponents(readIssues, "vectors", "database");
+    this.requireReadableComponents(readIssues, "database");
     const seenSymbols = new Map<string, SymbolData>();
     const seenEdges = new Map<string, CallEdgeData>();
 
@@ -8523,14 +8613,7 @@ export class Indexer {
       const symbolIds = database.getBranchSymbolIds(branchKey);
       const symbolIdSet = new Set(symbolIds);
 
-      // Get unique file paths from branch chunks' metadata
-      const chunkIds = database.getBranchChunkIds(branchKey);
-      const metadataMap = chunkIds.length > 0 ? requireLoadedCapability(store, "vector store").getMetadataBatch(chunkIds) : new Map<string, import("../native/index.js").ChunkMetadata>();
-      const filePaths = new Set<string>();
-      for (const [, meta] of metadataMap) {
-        throwIfOperationAborted(options.signal);
-        if (meta.filePath) filePaths.add(meta.filePath);
-      }
+      const filePaths = database.getBranchFilePaths(branchKey);
 
       const directory = options?.directory?.replace(/\/$/, "");
       const absoluteDirectoryFilter = directory

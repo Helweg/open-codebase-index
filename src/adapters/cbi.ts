@@ -3,6 +3,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { HostMode } from "../config/host.js";
+import type { executeIndexStatus } from "../tools/execute-common.js";
 
 import { parseHostMode } from "../config/host.js";
 import { loadConfigFile } from "../config/merger.js";
@@ -19,7 +20,7 @@ type GraphDirection = "callers" | "callees";
 
 export interface CbiDeps {
   runIndex?: typeof handleIndexCommand;
-  runStatus?: (projectRoot: string | undefined, host: HostMode) => Promise<Result>;
+  runStatus?: typeof executeIndexStatus;
   runDefinition?: (projectRoot: string | undefined, host: HostMode, query: string) => Promise<Result>;
   runSearch?: (projectRoot: string | undefined, host: HostMode, query: string, limit: number) => Promise<Result>;
   runCallGraph?: (
@@ -43,13 +44,17 @@ export interface CbiCommandArgs {
   limit: number;
   filePath?: string;
   positionals: string[];
+  checkFreshness: boolean;
+  workingTree: boolean;
+  json: boolean;
 }
 
 function printUsage(output: TextSink): void {
   output(`Usage: ocbi <command> [options]
 
 Commands:
-  status                          Show index status
+  status [--check-freshness] [--json] Show stored status; optionally check source freshness
+  impact --working-tree [--json]  Inspect current indexed working-tree file impact
   index [options]                 Create or refresh the index
   search <query> [--limit <n>]    Full-content semantic search
   definition <symbol>             Find authoritative definitions
@@ -68,7 +73,8 @@ Global options:
 
 function printCommandUsage(output: TextSink, command: string): void {
   const usage: Record<string, string> = {
-    status: "Usage: ocbi status [--project <path>] [--host <mode>] [--config <path>]",
+    status: "Usage: ocbi status [--check-freshness] [--json] [--project <path>] [--host <mode>] [--config <path>]",
+    impact: "Usage: ocbi impact --working-tree [--json] [--project <path>] [--host <mode>] [--config <path>]",
     index: "Usage: ocbi index [--project <path>] [--host <mode>] [--config <path>] [--force] [--estimate-only] [--dry-run] [--verbose]",
     search: "Usage: ocbi search <query> [--limit <n>] [--project <path>] [--host <mode>] [--config <path>]",
     definition: "Usage: ocbi definition <symbol> [--project <path>] [--host <mode>] [--config <path>]",
@@ -93,11 +99,26 @@ export function parseCbiCommandArgs(command: string, args: string[], cwd: string
   let config: string | undefined;
   let limit = 5;
   let filePath: string | undefined;
+  let checkFreshness = false;
+  let workingTree = false;
+  let json = false;
   const positionals: string[] = [];
 
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === "--help" || arg === "-h") throw new Error("help-requested");
+    if (command === "status" && arg === "--check-freshness") {
+      checkFreshness = true;
+      continue;
+    }
+    if ((command === "status" || command === "impact") && arg === "--json") {
+      json = true;
+      continue;
+    }
+    if (command === "impact" && arg === "--working-tree") {
+      workingTree = true;
+      continue;
+    }
 
     if (arg === "--project" || arg.startsWith("--project=")) {
       const parsed = optionValue(args, index, "project");
@@ -134,7 +155,7 @@ export function parseCbiCommandArgs(command: string, args: string[], cwd: string
     positionals.push(arg);
   }
 
-  return { project: project ?? resolveDefaultProjectRoot(cwd), host, config, limit, filePath, positionals };
+  return { project: project ?? resolveDefaultProjectRoot(cwd), host, config, limit, filePath, positionals, checkFreshness, workingTree, json };
 }
 
 async function initializeFromConfig(args: CbiCommandArgs, deps: CbiDeps): Promise<void> {
@@ -158,7 +179,10 @@ const defaultSearch = async (projectRoot: string | undefined, host: HostMode, qu
 
 function requirePositionals(args: CbiCommandArgs, command: string, count: number): string[] {
   if (args.positionals.length !== count) {
-    throw new Error(`${command} requires ${count === 1 ? "exactly one argument" : "a direction and a symbol"}.`);
+    let expected = "a direction and a symbol";
+    if (count === 0) expected = "no positional arguments";
+    else if (count === 1) expected = "exactly one argument";
+    throw new Error(`${command} requires ${expected}.`);
   }
   return args.positionals;
 }
@@ -174,7 +198,7 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
     return 0;
   }
 
-  if (!["status", "index", "search", "definition", "graph", "workspace"].includes(command)) {
+  if (!["status", "impact", "index", "search", "definition", "graph", "workspace"].includes(command)) {
     stderr(`Unknown command: ${command}`);
     printUsage(stderr);
     return 1;
@@ -230,13 +254,26 @@ export async function runCbiCli(argv: string[], cwd: string, deps: CbiDeps = {})
     }
 
     const args = parseCbiCommandArgs(command, argv.slice(3), cwd);
+    if (command === "impact") {
+      requirePositionals(args, command, 0);
+      if (!args.workingTree) throw new Error("impact requires --working-tree.");
+    }
     await initializeFromConfig(args, deps);
 
     if (command === "status") {
       requirePositionals(args, command, 0);
-      const result = await (deps.runStatus ?? executeIndexStatus)(args.project, args.host);
+      const result = await (deps.runStatus ?? executeIndexStatus)(args.project, args.host, { checkFreshness: args.checkFreshness });
       if (result.isError) { stderr(result.text); return 1; }
-      stdout(result.text);
+      if (args.json && result.details === undefined) throw new Error("Status did not return structured details.");
+      stdout(args.json ? JSON.stringify(result.details, null, 2) : result.text);
+      return 0;
+    }
+    if (command === "impact") {
+      // Static imports would load the native code runtime for help/history-only CLI use.
+      const { getPrImpact } = await import("../tools/operations.js");
+      const { formatPrImpact } = await import("../tools/format-pr-impact.js");
+      const result = await getPrImpact(args.project, args.host, { workingTree: true });
+      stdout(args.json ? JSON.stringify(result, null, 2) : formatPrImpact(result));
       return 0;
     }
     if (command === "search") {

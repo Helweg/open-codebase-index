@@ -2,6 +2,7 @@ import type { PrImpactResult } from "../../indexer/pr-impact-types.js";
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import { getIndexerForProject } from "./tools.js";
 import { formatPrImpact } from "../../tools/format-pr-impact.js";
+import { getPrImpact } from "../../tools/operations.js";
 import { calculatePercentage, formatProgressTitle } from "../../tools/utils.js";
 import { isOperationInterruption, throwIfOperationAborted } from "../../utils/operation-control.js";
 
@@ -12,12 +13,13 @@ const AUTOMATIC_PREPARATION_POLICY =
 
 export const pr_impact: ToolDefinition = tool({
   description:
-    "Analyze the impact of a pull request or branch by examining changed files, " +
-    "affected symbols, transitive callers, communities touched, hub nodes, and risk level. " +
-    "Use to understand blast radius before merging.",
+    "Analyze a pull request, branch, or working tree through changed files, " +
+    "current indexed symbols, transitive callers, communities, hubs, and risk. " +
+    "Working-tree mode inspects staged, unstaged, and untracked paths without refreshing the index.",
   args: {
     pr: z.number().optional().describe("Pull request number to analyze"),
     branch: z.string().optional().describe("Branch name to analyze (defaults to current branch)"),
+    workingTree: z.boolean().optional().default(false).describe("Inspect current indexed file contents for staged, unstaged, and untracked paths; cannot combine with pr, branch, or checkConflicts"),
     maxDepth: z.number().optional().default(5).describe("Maximum traversal depth for transitive callers (default: 5)"),
     hubThreshold: z.number().optional().default(10).describe("Minimum caller count to flag a symbol as a hub node (default: 10)"),
     checkConflicts: z.boolean().optional().default(false).describe("Check for conflicting open PRs touching the same communities (default: false)"),
@@ -25,8 +27,20 @@ export const pr_impact: ToolDefinition = tool({
   },
   async execute(args, context) {
     throwIfOperationAborted(context?.abort);
-    const indexer = getIndexerForProject(context?.worktree);
     try {
+      if (args.workingTree) {
+        const result = await getPrImpact(context?.worktree, "opencode", args, {
+          signal: context?.abort,
+          setPhase: (phase) => {
+            context.metadata?.({
+              title: "Inspecting current indexed working-tree files",
+              metadata: { phase },
+            });
+          },
+        });
+        return formatPrImpact(result);
+      }
+      const indexer = getIndexerForProject(context?.worktree);
       context.metadata?.({
         title: "Preparing impact analysis: resolving authoritative branch head",
         metadata: {

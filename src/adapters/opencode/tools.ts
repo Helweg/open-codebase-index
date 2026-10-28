@@ -155,6 +155,8 @@ export const codebase_edit_context: ToolDefinition = tool({
       .nullable().optional().default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET),
     includeApiImpact: z.boolean().optional().default(false)
       .describe("Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only."),
+    includeTests: z.boolean().optional().default(false)
+      .describe("Include bounded JS/TS static source-linked test references, not test execution or runtime coverage."),
   },
   async execute(args, context) {
     return (await executeCodebaseEditContext(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
@@ -211,10 +213,12 @@ export const index_codebase: ToolDefinition = tool({
 
 export const index_status: ToolDefinition = tool({
   description:
-    "Check index readiness or freshness when unknown. Reports indexed chunks, compatibility, and embedding configuration. A ready index does not require another indexing call before retrieval.",
-  args: {},
-  async execute(_args, context) {
-    return (await executeIndexStatus(context?.worktree, DEFAULT_HOST, { signal: context?.abort })).text;
+    "Inspect stored catalog readiness, compatibility, and embedding configuration. Source freshness is not checked unless checkFreshness=true; that read-only check does not refresh the index.",
+  args: {
+    checkFreshness: z.boolean().optional().default(false).describe("Check whether selected source matches the index at this point in time without indexing"),
+  },
+  async execute(args, context) {
+    return (await executeIndexStatus(context?.worktree, DEFAULT_HOST, args, { signal: context?.abort })).text;
   },
 });
 

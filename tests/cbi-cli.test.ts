@@ -4,7 +4,7 @@ import { parseCbiCommandArgs, runCbiCli } from "../src/adapters/cbi.js";
 
 describe("ocbi CLI (with cbi compatibility alias)", () => {
   it.each(["ocbi", "cbi"])("prints primary help through the %s alias", async (binary) => {
-    for (const command of [undefined, "status", "index", "search", "definition", "graph", "workspace"]) {
+    for (const command of [undefined, "status", "impact", "index", "search", "definition", "graph", "workspace"]) {
       const output: string[] = [];
       const args = command === "workspace" ? ["workspace", "status"] : command ? [command] : [];
       const exitCode = await runCbiCli(["node", binary, ...args, "--help"], "/tmp", {
@@ -22,16 +22,46 @@ describe("ocbi CLI (with cbi compatibility alias)", () => {
       .toMatchObject({ positionals: ["retry logic"], limit: 3, project: "/tmp/repo", host: "jcode" });
   });
 
-  it.each(["ocbi", "cbi"])("prints status through the shared status operation via %s", async (binary) => {
+  it.each([
+    ["search", "signalGate", "--check-freshness"],
+    ["search", "signalGate", "--json"],
+    ["definition", "signalGate", "--check-freshness"],
+    ["definition", "signalGate", "--json"],
+    ["graph", "callers", "signalGate", "--check-freshness"],
+    ["graph", "callers", "signalGate", "--json"],
+    ["index", "--check-freshness"],
+    ["index", "--json"],
+    ["workspace", "status", "--repo", "fixture=/tmp", "--check-freshness"],
+  ])("rejects status-only flags on %s", async (...args) => {
     const stdout: string[] = [];
-    const exitCode = await runCbiCli(["node", binary, "status", "--project", "/repo", "--host", "jcode"], "/tmp", {
-      runStatus: async () => ({ text: "Indexed chunks: 10" }),
+    const stderr: string[] = [];
+    expect(await runCbiCli(["node", "ocbi", ...args], "/tmp", {
       printStdout: (text) => stdout.push(text),
-      printStderr: () => undefined,
-    });
+      printStderr: (text) => stderr.push(text),
+    })).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toMatch(/Unknown (?:index )?option/);
+  });
 
-    expect(exitCode).toBe(0);
-    expect(stdout).toEqual(["Indexed chunks: 10"]);
+  it.each([
+    ["impact"],
+    ["impact", "--json"],
+    ["impact", "--working-tree", "extra"],
+    ["impact", "--working-tree", "--pr", "1"],
+    ["impact", "--working-tree", "--branch", "main"],
+    ["impact", "--working-tree", "--check-conflicts"],
+    ["impact", "--working-tree", "--check-freshness"],
+    ["status", "--working-tree"],
+    ["search", "signalGate", "--working-tree"],
+  ])("rejects unsupported impact CLI invocations: %s", async (...args) => {
+    const stdout: string[] = [];
+    const stderr: string[] = [];
+    expect(await runCbiCli(["node", "ocbi", ...args], "/tmp", {
+      printStdout: (text) => stdout.push(text),
+      printStderr: (text) => stderr.push(text),
+    })).toBe(1);
+    expect(stdout).toEqual([]);
+    expect(stderr.join("\n")).toMatch(/requires --working-tree|requires no positional arguments|Unknown option/);
   });
 
   it("dispatches search, definition, and graph commands with parsed inputs", async () => {
@@ -120,7 +150,7 @@ describe("ocbi CLI (with cbi compatibility alias)", () => {
     });
 
     const exitCode = await runCbiCli(["node", "cbi", "status", "--project", "/repo", "--host", "jcode"], "/tmp", {
-      runStatus: async () => ({ text: "apiKey=top-secret-value", isError: true }),
+      runStatus: async () => { throw new Error("apiKey=top-secret-value"); },
       printStdout: () => undefined,
       printStderr: undefined,
     });

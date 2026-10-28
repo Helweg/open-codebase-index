@@ -9,6 +9,7 @@ import type {
   SharedIndexCodebaseArgs,
   SharedIndexLogsArgs,
   SharedIndexMetricsArgs,
+  SharedIndexStatusArgs,
   SharedImplementationLookupArgs,
 } from "./contracts.js";
 import {
@@ -64,7 +65,8 @@ export async function executeCodebaseEditContext(
   args: SharedCodebaseEditContextArgs,
   control?: OperationControl,
 ): Promise<ExecutionResult> {
-  return { text: (await resolveCodebaseEditContext(projectRoot, host, args, control)).text };
+  const result = await resolveCodebaseEditContext(projectRoot, host, args, control);
+  return { text: result.text, details: result.details };
 }
 
 export async function executeIndexCodebase(
@@ -88,9 +90,11 @@ export async function executeIndexCodebase(
 export async function executeIndexStatus(
   projectRoot: string | undefined,
   host: HostMode,
+  args: SharedIndexStatusArgs = {},
   control?: OperationControl,
 ): Promise<ExecutionResult> {
-  return { text: formatStatus(await getIndexStatus(projectRoot, host, control)) };
+  const status = await getIndexStatus(projectRoot, host, args, control);
+  return { text: formatStatus(status), details: { ...status } };
 }
 
 export async function executeIndexHealthCheck(

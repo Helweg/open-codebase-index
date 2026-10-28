@@ -148,10 +148,12 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
         .default(DEFAULT_CONTEXT_PACK_TOKEN_BUDGET)),
       includeApiImpact: z.boolean().optional().default(false)
         .describe("Include bounded syntactic Express route to exact relative fetch evidence. Matches are not call edges; tests are candidates only."),
+      includeTests: z.boolean().optional().default(false)
+        .describe("Include bounded JS/TS static source-linked test references, not test execution or runtime coverage."),
     },
     async (args, control) => {
       const result = await executeCodebaseEditContext(runtime.projectRoot, runtime.host, args, control);
-      return { content: [{ type: "text", text: result.text }] };
+      return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
@@ -243,11 +245,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
 
   registerMcpTool(server, runtime,
     TOOL_NAME.INDEX_STATUS,
-    "Check index readiness or freshness when unknown. Reports indexed chunks, compatibility, and embedding configuration. If ready, use the tool appropriate to the task; otherwise run index_codebase.",
-    {},
-    async (_args, control) => {
-      const result = await executeIndexStatus(runtime.projectRoot, runtime.host, control);
-      return { content: [{ type: "text", text: result.text }] };
+    "Inspect stored catalog readiness, compatibility, and embedding configuration. Source freshness is not checked unless checkFreshness=true; that read-only check does not refresh the index.",
+    {
+      checkFreshness: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Check whether selected source matches the index at this point in time without indexing"),
+    },
+    async (args, control) => {
+      const result = await executeIndexStatus(runtime.projectRoot, runtime.host, args, control);
+      return { content: [{ type: "text", text: result.text }], structuredContent: result.details };
     },
   );
 
@@ -378,10 +382,11 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
   );
   registerMcpTool(server, runtime,
     TOOL_NAME.PR_IMPACT,
-    "FIRST TOOL for pull-request or branch blast-radius questions. Analyzes changed files, affected symbols, transitive dependencies, communities, hub nodes, conflicts, and risk before merging.",
+    "FIRST TOOL for pull-request, branch, or working-tree blast-radius questions. Working-tree mode inspects current indexed files across staged, unstaged, and untracked changes without refreshing the index.",
     {
       pr: allowNullAsUndefined(z.number().optional()).describe("Pull request number to analyze"),
       branch: allowNullAsUndefined(z.string().optional()).describe("Branch name to analyze (defaults to current branch)"),
+      workingTree: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Inspect staged, unstaged, and untracked paths using current indexed file contents; requires a current index and cannot combine with pr, branch, or checkConflicts"),
       maxDepth: allowNullAsUndefined(z.number().optional().default(5)).describe("Maximum traversal depth for transitive callers (default: 5)"),
       hubThreshold: allowNullAsUndefined(z.number().optional().default(10)).describe("Minimum caller count to flag a symbol as a hub node (default: 10)"),
       checkConflicts: allowNullAsUndefined(z.boolean().optional().default(false)).describe("Check for conflicting open PRs touching the same communities (default: false)"),
@@ -393,12 +398,13 @@ export function registerMcpTools(server: McpServer, runtime: McpServerRuntime): 
       const result = await getPrImpact(runtime.projectRoot, runtime.host, {
         pr: args.pr,
         branch: args.branch,
+        workingTree: args.workingTree,
         maxDepth: args.maxDepth,
         hubThreshold: args.hubThreshold,
         checkConflicts: args.checkConflicts,
         direction: args.direction,
       }, control);
-      return { content: [{ type: "text", text: formatPrImpact(result) }] };
+      return { content: [{ type: "text", text: formatPrImpact(result) }], structuredContent: { ...result } };
     },
   );
 

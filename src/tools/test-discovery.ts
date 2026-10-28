@@ -48,6 +48,8 @@ export interface TestDiscoveryOperations {
 export interface TestDiscoveryScope {
   fileType?: string;
   directory?: string;
+  /** Selects the implementation only; returned tests retain their own scope. */
+  targetFilePath?: string;
 }
 
 function relativePath(root: string, filePath: string): string | undefined {
@@ -242,6 +244,18 @@ export async function discoverSymbolTests(
   };
   const markCapped = (): void => { result.capped = true; };
   throwIfOperationAborted(control?.signal);
+  let targetFilePath: string | undefined;
+  if (scope.targetFilePath !== undefined) {
+    const canonicalRoot = await fs.realpath(root);
+    throwIfOperationAborted(control?.signal);
+    const requestedPath = path.resolve(root, scope.targetFilePath);
+    const requestedRelative = relativePath(root, requestedPath);
+    const canonicalTarget = await fs.realpath(requestedPath).catch(() =>
+      requestedRelative ? path.resolve(canonicalRoot, requestedRelative) : requestedPath);
+    throwIfOperationAborted(control?.signal);
+    targetFilePath = relativePath(canonicalRoot, canonicalTarget);
+    if (!targetFilePath) throw new Error("Test discovery targetFilePath must remain inside the project root.");
+  }
   const sources = new Map<string, Promise<SourceEvidence | undefined>>();
   const currentSource = (filePath: string): Promise<SourceEvidence | undefined> => {
     let pending = sources.get(filePath);
@@ -254,6 +268,7 @@ export async function discoverSymbolTests(
   };
   const runtimeDefinitions = async (name: string, expectedPath?: string): Promise<{ candidates: RuntimeDefinition[]; complete: boolean }> => {
     const definitions = await operations.lookup(name);
+    throwIfOperationAborted(control?.signal);
     const executable: RuntimeDefinition[] = [];
     let complete = definitions.length < TEST_DISCOVERY_MAX_DEFINITIONS;
     if (!complete) {
@@ -291,7 +306,7 @@ export async function discoverSymbolTests(
       `${candidate.filePath}:${candidate.declaration.startLine}:${candidate.declaration.startCol}`, candidate,
     ])).values()], complete };
   };
-  const targetLookup = await runtimeDefinitions(symbol);
+  const targetLookup = await runtimeDefinitions(symbol, targetFilePath);
   const unique = targetLookup.candidates;
   if (!targetLookup.complete || unique.length !== 1) {
     result.resolution = !targetLookup.complete || unique.length > 1 ? "ambiguous" : "not_found";
