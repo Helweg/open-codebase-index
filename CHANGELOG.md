@@ -22,7 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Consumer-visible evidence correctness**: Count only retained source and graph rows in pre-edit details, close truncated source fences at whole lines, and allow structural-mode architecture maps to read branch files from SQLite without a vector store. Add native-backed citation, Unicode/CRLF, scope, and token-budget acceptance.
+- **Consumer-visible evidence correctness**: Count only retained source and graph rows in pre-edit details, close truncated source fences at whole lines, and reserve outer-heading/final-truncation overhead before source fitting. Credit source only when its complete fitted block survives final composition. Allow structural-mode architecture maps to read branch files from SQLite without a vector store. Add native-backed citation, Unicode/CRLF, scope, and token-budget acceptance.
 - **Pre-edit source identity and cancellation**: Resolve canonical native symbol IDs before fitting target source, including large fragmented declarations, instead of accepting ranked body slices, suffix paths, or enclosing declarations. Cap source blocks at 512 tokens, withhold missing source, preserve default host roots, and share the exact lookup with evaluation. Keep selection-hook test references metadata-only and honor cancellation after empty lookups.
 - **Working-tree snapshot integrity**: Detect concurrent database publication even when source hashes and catalog counts are unchanged. Reject lossy UTF-8 Git paths and retain only project-local endpoints for cross-boundary renames.
 

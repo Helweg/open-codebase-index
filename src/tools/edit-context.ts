@@ -477,9 +477,13 @@ export async function resolveCodebaseEditContextWithDependencies(
   const source = targetSource(definitionsResult.value, resolution, dependencies.projectRoot, control?.signal);
   const callers = callersResult.callers.slice(0, edgeLimit(input.callerLimit));
   const sourceBudget = targetSourceTokenBudget(input.tokenBudget ?? DEFAULT_CONTEXT_PACK_TOKEN_BUDGET);
+  const header = [`# Pre-edit context for ${resolution.name}`, graphRisk]
+    .filter((section) => section !== undefined).join("\n\n");
+  const responseBudget = fitTextToContextBudget("", input.tokenBudget ?? undefined).tokenBudget;
   let sourceHeaderEnd = Infinity;
   const sourceFit = source && !input.includeTests
-    ? fitSource(source, sourceBudget, (endOffset) => { sourceHeaderEnd = endOffset; })
+    ? fitSource(source, sourceBudget, (endOffset) => { sourceHeaderEnd = endOffset; },
+      (text) => countContextTokens(`${header}\n\n${text}\n\n...[truncated to context token budget]`) <= responseBudget)
     : undefined;
   const sourceText = sourceFit?.text
     ?? `## Target implementation\nRisk: no implementation source matched the resolved target at ${resolution.filePath}:${resolution.startLine}.`;
@@ -523,8 +527,6 @@ export async function resolveCodebaseEditContextWithDependencies(
     }
   }
   throwIfOperationAborted(control?.signal);
-  const header = [`# Pre-edit context for ${resolution.name}`, graphRisk]
-    .filter((section) => section !== undefined).join("\n\n");
   if (testDiscovery) {
     return packTestContext(input, dependencies, header, source, callers, callees, resolution.filePath, testDiscovery, apiImpact);
   }
@@ -538,8 +540,8 @@ export async function resolveCodebaseEditContextWithDependencies(
   const precedingText = [header, sourceText, callerText, calleeText].join("\n\n");
   const completeText = apiImpact ? `${precedingText}\n\n${apiImpact.text}` : precedingText;
   const fitted = fitTextToContextBudget(completeText, input.tokenBudget ?? undefined);
-  const selectedSources = source && sourceHeaderEnd <= (sourceFit?.retainedLength ?? 0)
-    && sourceOffset + sourceHeaderEnd <= fitted.retainedLength ? [source] : [];
+  const selectedSources = source && sourceFit && sourceHeaderEnd <= sourceFit.retainedLength
+    && sourceOffset + sourceFit.text.length <= fitted.retainedLength ? [source] : [];
   const selectedCallers = callers.filter((_edge, index) => callerEnds[index] <= fitted.retainedLength);
   const selectedCallees = callees.filter((_edge, index) => calleeEnds[index] <= fitted.retainedLength);
   dependencies.onSelectedEvidence?.({

@@ -266,6 +266,40 @@ describe("codebase edit context", () => {
     expect(result.details.resolution).toBe("not_found");
   });
 
+  it.each([16, 64, 96])("keeps a closed, whole-line source block after final fitting with a %i-character identity", async (length) => {
+    const name = `gate${"x".repeat(length)}`;
+    const content = [
+      `function ${name}(envelope: string) {`,
+      ...Array.from({ length: 20 }, (_, index) => `  const value${index} = "é雪🙂-${index}";`),
+      "  return envelope;",
+      "}",
+    ].join("\r\n");
+    operationMocks.getCallGraphData.mockImplementation(async (_root, _host, args) => ({
+      direction: args.direction, resolution: { ...resolved, name },
+      callers: [{
+        id: "caller", fromSymbolId: "sym_caller", fromSymbolName: "handleRequest",
+        fromSymbolFilePath: "src/handler.ts", targetName: name,
+        callType: "Call", confidence: "Direct", line: 42, col: 2, isResolved: true,
+      }],
+      callees: [{
+        id: "callee", fromSymbolId: resolved.symbolId, targetName: "parseToken", toSymbolId: "sym_parse",
+        callType: "Call", confidence: "Direct", line: 14, col: 2, isResolved: true,
+      }],
+    }));
+    operationMocks.implementationLookup.mockResolvedValue([{ ...source, name, content }]);
+    const response = await resolveCodebaseEditContext("/repo", "jcode", {
+      query: `change ${name}`, symbol: name, tokenBudget: 128,
+    });
+    const block = /\n```\n([\s\S]*?)\n```/u.exec(response.text);
+    expect(response.text.match(/```/gu)?.length ?? 0).toBe(response.details.sourceIncluded ? 2 : 0);
+    expect(response.details.sourceIncluded).toBe(Boolean(block?.[1]));
+    if (block) {
+      const lines = block[1].split("\n");
+      expect(lines).toEqual(content.split("\r\n").slice(0, lines.length));
+    }
+    expect(countContextTokens(response.text)).toBeLessThanOrEqual(128);
+  });
+
   it("does not format resolved evidence after the operation is cancelled", async () => {
     const controller = new AbortController();
     operationMocks.getCallGraphData.mockImplementation(async (_root, _host, args) => ({

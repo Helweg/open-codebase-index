@@ -391,12 +391,14 @@ describe("eval runner", () => {
   });
 
   it("grades only graph neighbors retained after the final source and graph budget", async () => {
+    // This identity alone exceeds 128 tokens, independent of the temporary root's length.
+    const callerName = `evaluateRanking${"Linked".repeat(128)}`;
     writeFileSync(path.join(tempDir, "src", "indexer", "index.ts"), [
       "export function rankHybridResults(query: string) {",
       `  /* ${"ranking ".repeat(250)} */`,
       "  return query.length;",
       "}",
-      "export function evaluateRanking() { return rankHybridResults('query'); }",
+      `export function ${callerName}() { return rankHybridResults('query'); }`,
     ].join("\n"));
     writeFileSync(path.join(tempDir, "benchmarks", "golden", "edit-graph-budget.json"), JSON.stringify({
       version: "1.0.0", name: "edit-graph-budget",
@@ -407,7 +409,7 @@ describe("eval runner", () => {
         args: { symbol: "rankHybridResults", tokenBudget },
         expected: {
           filePath: "src/indexer/index.ts", symbol: "rankHybridResults",
-          graphNeighbor: { direction: "caller", filePath: "src/indexer/index.ts", symbol: "evaluateRanking" },
+          graphNeighbor: { direction: "caller", filePath: "src/indexer/index.ts", symbol: callerName },
         },
       })),
     }));
@@ -420,7 +422,7 @@ describe("eval runner", () => {
     expect(result.perQuery[0].responseTokens).toBeLessThanOrEqual(128);
     expect(result.perQuery[1]).toMatchObject({ hitAt1: true, graphNeighborMatched: true });
     expect(result.perQuery[1].results).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: "evaluateRanking", graphDirection: "caller" }),
+      expect.objectContaining({ name: callerName, graphDirection: "caller" }),
     ]));
   });
 
