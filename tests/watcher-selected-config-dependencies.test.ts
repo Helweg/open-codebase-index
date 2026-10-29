@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as fs from "node:fs";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import * as os from "node:os";
 import * as path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -115,16 +116,20 @@ describe("selected local module config dependencies", () => {
     }
     cleanupPaths.clear();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    syncBuiltinESMExports();
   });
 
   it.each([
-    ["chokidar", "vendor/app/src/*.ts"],
-    ["chokidar", "vendor/app/src/main.ts"],
-    ["native", "vendor/app/src/*.ts"],
-    ["native", "vendor/app/src/main.ts"],
+    ["chokidar", "vendor/app/src/*.ts", false],
+    ["chokidar", "vendor/app/src/main.ts", false],
+    ["native", "vendor/app/src/*.ts", false],
+    ["native", "vendor/app/src/main.ts", false],
+    ["chokidar", "vendor/app/src/*.ts", true],
+    ["native", "vendor/app/src/*.ts", true],
   ] as const)(
-    "refreshes the structural alias graph for %s with includeExcluded %s",
-    async (backend, includeExcluded) => {
+    "refreshes the structural alias graph for %s with includeExcluded %s and explicit config %s",
+    async (backend, includeExcluded, explicitConfig) => {
       const fixtureRoot = fs.mkdtempSync(path.join(os.tmpdir(), "watcher-selected-config-"));
       cleanupPaths.add(fixtureRoot);
       const projectRoot = path.join(fixtureRoot, "project");
@@ -147,6 +152,8 @@ describe("selected local module config dependencies", () => {
       fs.writeFileSync(unrelatedSourcePath, "export function excludedSibling() { return 3; }\n");
       fs.writeFileSync(appConfigPath, JSON.stringify({ extends: "../shared/base" }));
       writeAliasConfig(baseConfigPath, "one");
+      const configPath = explicitConfig ? path.join(projectRoot, "custom-config.json") : undefined;
+      if (configPath) fs.writeFileSync(configPath, "{}");
 
       const config = parseConfig({
         include: ["**/*.ts"],
@@ -158,11 +165,14 @@ describe("selected local module config dependencies", () => {
         },
       });
       const indexer = new Indexer(projectRoot, config, "jcode", { indexPath });
-      const watcher = new FileWatcher(projectRoot, config, "jcode", { backend, indexPath });
+      const watcher = new FileWatcher(projectRoot, config, "jcode", { backend, indexPath, configPath });
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
       const observedChanges: FileChange[] = [];
       let handlerFailure: unknown;
       let indexingTail: Promise<void> = Promise.resolve();
+      const omitRecursiveChange = backend === "chokidar" && process.platform === "darwin";
+      let mutationStarted = false;
+      let recursiveRootRegistered = false;
 
       try {
         await indexer.index();
@@ -172,6 +182,34 @@ describe("selected local module config dependencies", () => {
         expect(initialSymbols.some((symbol) => (
           symbol.filePath === appConfigPath || symbol.filePath === baseConfigPath
         ))).toBe(false);
+
+        if (omitRecursiveChange) {
+          vi.stubEnv("CHOKIDAR_USEPOLLING", "false");
+          const actualWatch = fs.watch;
+          vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
+            const options = args[1];
+            const listener = args[2];
+            if (
+              path.resolve(String(args[0])) === projectRoot
+              && typeof options === "object" && options?.recursive
+              && typeof listener === "function"
+            ) {
+              recursiveRootRegistered = true;
+              return Reflect.apply(actualWatch, this, [args[0], options,
+                (event: fs.WatchEventType, filename: string | Buffer | null) => {
+                  // Model the documented first recursive callback omission; real explicit callbacks still run.
+                  if (
+                    mutationStarted && filename !== null
+                    && path.resolve(projectRoot, String(filename)) === baseConfigPath
+                  ) return;
+                  Reflect.apply(listener, undefined, [event, filename]);
+                },
+              ]);
+            }
+            return Reflect.apply(actualWatch, this, args);
+          });
+          syncBuiltinESMExports();
+        }
 
         watcher.start(async (changes) => {
           observedChanges.push(...changes);
@@ -184,6 +222,7 @@ describe("selected local module config dependencies", () => {
         await watcher.waitUntilReady();
         expectRequestedBackend(watcher, backend);
 
+        mutationStarted = true;
         writeAliasConfig(baseConfigPath, "two", 1);
         await waitForAssertion(async () => {
           if (handlerFailure) throw handlerFailure;
@@ -198,6 +237,13 @@ describe("selected local module config dependencies", () => {
           });
         });
 
+        if (omitRecursiveChange) expect(recursiveRootRegistered).toBe(true);
+        const finalSymbols = await indexer.getSymbolsForBranch();
+        expect(finalSymbols.some((symbol) => symbol.name === "excludedSibling")).toBe(false);
+        expect(finalSymbols.some((symbol) => (
+          symbol.filePath === appConfigPath || symbol.filePath === baseConfigPath
+        ))).toBe(false);
+        expect(observedChanges.some((change) => change.path === unrelatedSourcePath)).toBe(false);
         expect(hasNativeFallbackWarning(warnSpy)).toBe(false);
       } finally {
         await watcher.stop();

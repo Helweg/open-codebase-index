@@ -10,11 +10,11 @@ import {
   isImplementationChunkType,
   normalizeIdentifierVariants,
   pathMatchesHint,
-  splitPathTokens,
   tokenizeTextForRanking,
 } from "../src/indexer/definition-ranking.js";
-import { Indexer } from "../src/indexer/index.js";
+import { buildSymbolDefinitionLane, Indexer } from "../src/indexer/index.js";
 import { parseConfig } from "../src/config/schema.js";
+import { Database } from "../src/native/index.js";
 import { resolveSearchContext } from "../src/tools/context-search.js";
 import type { RankedCandidate } from "../src/indexer/search-ranking.js";
 
@@ -73,18 +73,31 @@ describe("definition ranking helpers", () => {
     ]);
   });
 
-  it("tokenizes ranking text and paths without generic stopwords", () => {
-    expect(Array.from(tokenizeTextForRanking("Find the PaymentValidator implementation"))).toEqual([
-      "paymentvalidator",
-    ]);
-    expect(Array.from(splitPathTokens("src/services/payment-validator.ts"))).toEqual([
-      "src",
-      "services",
-      "payment",
-      "validator",
-      "ts",
-    ]);
-  });
+  it.each(["persistFailedBatches", "persist_failed_batches"])(
+    "ranks identifier word evidence above a partial-name match (%s)",
+    (name) => {
+      const database = Database.createEmptyReadOnly();
+      const candidates = [
+        candidate("partial", "src/entry.ts", "persistFailednessBatchwork", "function_declaration", 0.2),
+        candidate("target", "src/state.ts", name, "function_declaration", 0.2),
+      ];
+      try {
+        tokenizeTextForRanking(name.toLowerCase());
+        const ranked = buildSymbolDefinitionLane(
+          "persist failed batches", database, null, null, 5, candidates, true,
+        );
+        expect(ranked.map((entry) => entry.id)).toEqual(["target", "partial"]);
+        expect(ranked[0].score).toBeGreaterThan(ranked[1].score);
+
+        const exact = buildSymbolDefinitionLane(
+          name.toLowerCase(), database, null, null, 5, candidates, true,
+        );
+        expect(exact.map((entry) => entry.id)).toEqual(["target"]);
+      } finally {
+        database.close();
+      }
+    },
+  );
 
   it("shares implementation chunk classification with call-graph symbol types", () => {
     expect(isImplementationChunkType("trigger_declaration")).toBe(true);

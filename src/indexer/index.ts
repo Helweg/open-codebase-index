@@ -578,7 +578,8 @@ export type IndexFreshnessReason =
   | "files-changed"
   | "metadata-changed"
   | "branch-changed"
-  | "migration-required";
+  | "migration-required"
+  | "keyword-index-outdated";
 
 export interface IndexFreshnessResult {
   readable: boolean;
@@ -1121,7 +1122,7 @@ export function buildSymbolDefinitionLane(
       const pathLower = candidate.metadata.filePath.toLowerCase();
 
       const exactHintMatch = normalizedHints.some((hint) => nameLower === hint || nameLower.replace(/_/g, "") === hint.replace(/_/g, ""));
-      const tokenizedName = tokenizeTextForRanking(nameLower);
+      const tokenizedName = tokenizeTextForRanking(candidate.metadata.name ?? "");
       const tokenHits = codeTermHints.filter((term) => tokenizedName.has(term) || pathLower.includes(term)).length;
 
       if (!exactHintMatch && tokenHits === 0) {
@@ -1312,6 +1313,11 @@ function unionCandidates(
     }
   }
   return Array.from(byId.values());
+}
+
+function isUnsupportedKeywordIndexVersion(error: unknown): boolean {
+  // The native keyword loader reserves InvalidArg for incompatible tokenizer versions.
+  return error instanceof Error && "code" in error && error.code === "InvalidArg";
 }
 
 export class Indexer {
@@ -1756,6 +1762,13 @@ export class Indexer {
       }
       invertedIndex.addChunk(chunkId, chunk.sourceText);
     }
+  }
+
+  private needsKeywordTokenizerUpgrade(invertedIndex: InvertedIndex, database: Database): boolean {
+    if (invertedIndex.hasCurrentTokenizer()) return false;
+    return this.getBranchCatalogKeys().some((branchKey) =>
+      !invertedIndex.hasCurrentTokenizer(database.getBranchChunkIds(branchKey))
+    );
   }
 
   private getScopedRoots(projectRoot = this.projectRoot): string[] {
@@ -3887,7 +3900,8 @@ export class Indexer {
       this.invertedIndex = new InvertedIndex(invertedIndexPath);
       try {
         this.invertedIndex.load();
-      } catch {
+      } catch (error) {
+        if (isUnsupportedKeywordIndexVersion(error)) throw error;
         if (existsSync(invertedIndexPath)) {
           await fsPromises.unlink(invertedIndexPath);
         }
@@ -4031,6 +4045,7 @@ export class Indexer {
         }
         this.invertedIndex.load();
       } catch (error) {
+        if (isUnsupportedKeywordIndexVersion(error)) throw error;
         this.structuralKeywordRebuildRequired = existsSync(invertedIndexPath);
         this.logger.warn("Structural keyword index is unreadable; rebuilding it from source files", {
           error: getErrorMessage(error),
@@ -4048,6 +4063,9 @@ export class Indexer {
         this.structuralKeywordRebuildRequired = true;
       }
       if (storedGeneration !== publishedGeneration && (this.database.getStats()?.chunkCount ?? 0) > 0) {
+        this.structuralKeywordRebuildRequired = true;
+      }
+      if (!this.invertedIndex.hasCurrentTokenizer()) {
         this.structuralKeywordRebuildRequired = true;
       }
       if (this.structuralKeywordRebuildRequired) {
@@ -4980,6 +4998,14 @@ export class Indexer {
 
     this.loadFileHashCache();
     const rebuildStructuralKeyword = isStructural && this.structuralKeywordRebuildRequired;
+    let keywordTokenizerUpgradeChunks: Set<string> | undefined;
+    if (!invertedIndex.hasCurrentTokenizer()) {
+      const activeChunkIds = this.getBranchCatalogKeys().flatMap((key) => database.getBranchChunkIds(key));
+      const outdated = invertedIndex.outdatedTokenizerChunkIds(activeChunkIds);
+      if (outdated.length > 0) keywordTokenizerUpgradeChunks = new Set(outdated);
+    }
+    const upgradeKeywordTokenizer = keywordTokenizerUpgradeChunks !== undefined;
+    let keywordTokenizerUpdated = false;
 
     const javaScriptParserMetadataKey = this.getJavaScriptParserVersionMetadataKey();
     const reparseCachedJavaScriptFiles = database.getMetadata(javaScriptParserMetadataKey) !== JAVASCRIPT_PARSER_VERSION;
@@ -5186,6 +5212,7 @@ export class Indexer {
         && !requiresKotlinParserUpgrade
         && !requiresRubyParserUpgrade
         && !refreshCachedSymbols
+        && !upgradeKeywordTokenizer
       ) {
         unchangedFilePaths.add(storedPath);
       } else {
@@ -5671,6 +5698,11 @@ export class Indexer {
             });
 
             if (existingContentHash === contentHash && !rebuildStructuralKeyword) {
+              if (keywordTokenizerUpgradeChunks?.has(id)) {
+                invertedIndex.removeChunk(id);
+                invertedIndex.addChunk(id, chunk.content);
+                keywordTokenizerUpdated = true;
+              }
               continue;
             }
 
@@ -6048,7 +6080,7 @@ export class Indexer {
         if (backfilledBlameMetadata || shouldFingerprintLegacyPair || removedStoredChunks) {
           if (!isStructural) requireLoadedCapability(store, "vector store").save();
         }
-        if (removedStoredChunks && !isStructural) {
+        if ((removedStoredChunks || keywordTokenizerUpdated) && !isStructural) {
           this.saveInvertedIndex(invertedIndex);
         }
         database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
@@ -7096,6 +7128,9 @@ export class Indexer {
       if (this.getStoredBranchCommit(database) !== currentCommit) {
         return { readable: true, current: false, reason: "branch-changed" };
       }
+    }
+    if (this.needsKeywordTokenizerUpgrade(requireLoadedCapability(this.invertedIndex, "keyword index"), database)) {
+      return { readable: true, current: false, reason: "keyword-index-outdated" };
     }
 
     return { readable: true, current: true, reason: "current" };

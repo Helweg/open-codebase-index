@@ -96,6 +96,75 @@ describe("InvertedIndex", () => {
         }
       }
     });
+
+    it("matches identifier words and preserves complete identifiers across reloads", () => {
+      index.addChunk("fusion", "function blendOrderedScores(semanticResults, keywordResults) { const semanticRank = 1; }");
+      index.addChunk("transport", "class HTTPClient { readResponsePayload() {} }");
+      index.addChunk("unicode", "function processÉtat() {}");
+      index.save();
+      const loaded = new InvertedIndex(indexPath);
+      loaded.load();
+      for (const candidate of [index, loaded]) {
+        for (const [query, expected] of [
+          ["semantic", "fusion"], ["keyword", "fusion"], ["rank", "fusion"],
+          ["BLENDORDEREDSCORES", "fusion"], ["http", "transport"],
+          ["response", "transport"], ["payload", "transport"], ["état", "unicode"],
+        ]) {
+          expect([...candidate.search(query).keys()]).toEqual([expected]);
+        }
+      }
+    });
+
+    it("keeps whole identifier queries distinct from identifier-word queries", () => {
+      index.addChunk("retained", "const durableNeedle = true;");
+      index.save();
+      const loaded = new InvertedIndex(indexPath);
+      loaded.load();
+      for (const candidate of [index, loaded]) {
+        expect([...candidate.search("replacementNeedle").keys()]).toEqual([]);
+        expect([...candidate.search("durableNeedle").keys()]).toEqual(["retained"]);
+        expect([...candidate.search("DURABLENEEDLE").keys()]).toEqual(["retained"]);
+        expect([...candidate.search("needle").keys()]).toEqual(["retained"]);
+      }
+    });
+
+    it("tracks legacy tokenizer coverage per chunk through partial upgrades and persistence", () => {
+      index.deserialize(JSON.stringify({
+        term_to_chunks: { persistfailedbatches: ["old-a"], loadstoredrecords: ["old-b"] },
+        chunk_tokens: { "old-a": { persistfailedbatches: 1 }, "old-b": { loadstoredrecords: 1 } },
+        avg_doc_length: 1,
+      }));
+      expect([...index.search("PERSISTFAILEDBATCHES").keys()]).toEqual(["old-a"]);
+      expect([...index.search("failed").keys()]).toEqual([]);
+      expect(index.hasCurrentTokenizer(["old-a"])).toBe(false);
+      index.addChunk("current", "currentImplementation");
+      expect(index.hasCurrentTokenizer(["current"])).toBe(true);
+      expect(index.outdatedTokenizerChunkIds(["current", "old-b", "old-a", "old-a"])).toEqual(["old-a", "old-b"]);
+
+      index.removeChunk("old-a");
+      index.addChunk("old-a", "persistFailedBatches");
+      index.save();
+      const loaded = new InvertedIndex(indexPath);
+      loaded.load();
+      expect([...loaded.search("failed").keys()]).toEqual(["old-a"]);
+      expect(loaded.hasCurrentTokenizer(["old-a", "current"])).toBe(true);
+      expect(loaded.hasCurrentTokenizer(["old-b"])).toBe(false);
+      expect(loaded.hasCurrentTokenizer()).toBe(false);
+
+      const restored = new InvertedIndex(path.join(tempDir, "restored.json"));
+      restored.deserialize(loaded.serialize());
+      expect(restored.hasCurrentTokenizer(["old-b"])).toBe(false);
+      restored.removeChunk("old-b");
+      expect(restored.hasCurrentTokenizer()).toBe(true);
+      expect([...restored.search("loadstoredrecords").keys()]).toEqual([]);
+    });
+
+    it("rejects a future tokenizer version without discarding readable state", () => {
+      index.addChunk("retained", "retainedEvidence");
+      const future = { ...JSON.parse(index.serialize()), tokenizer_version: 999 };
+      expect(() => index.deserialize(JSON.stringify(future))).toThrow();
+      expect([...index.search("retained").keys()]).toEqual(["retained"]);
+    });
   });
 
   describe("removeChunk", () => {

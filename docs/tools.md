@@ -170,6 +170,12 @@ Do not repeat context calls or broad reads when existing evidence already answer
 
 ## Core retrieval tools
 
+Keyword retrieval recognizes identifier word boundaries: for example, `response` and `payload` can match `readResponsePayload`, while the complete identifier remains searchable. Lexical definition fallback also recognizes camelCase and snake_case name components. Older keyword snapshots need the ordinary refresh described under `index_status` before they gain these matches.
+
+Identifier-word expansion applies to indexed code, not query terms: a whole camelCase query does not match an unrelated identifier merely because they share one component.
+
+Searches that explicitly ask for code prefer implementation paths. Explicit requests for tests, documentation, or configuration still take precedence.
+
 ### `codebase_edit_context`
 
 Use for a known or suspected edit target. `query`, optional `symbol`/`filePath`, caller/callee limits, and a 128–4000-token budget produce target source and direct graph evidence, or a risk-marked conceptual fallback. `filePath` disambiguates the target; it does not restrict related test locations to the implementation directory. Details count only source and graph evidence retained in the response.
@@ -261,6 +267,10 @@ Reports stored catalog state, chunk counts, compatibility, current provider/mode
 Pass `checkFreshness: true` to compare the selected source/configuration hashes and HEAD with the index using the existing freshness engine. Structured status returns `{ readable, current, reason }` under `freshness`, with the same facts shown in text. The check does not index, retry failed batches, request embeddings, or start watchers; explicitly enabled SCIP validation may use its configured bounded decoder. This is a point-in-time check, not an atomic snapshot. Cancelled or failed checks do not become current results.
 
 Catalog presence and provider/model compatibility remain separate from pending storage migrations. An active catalog can be `ready` and compatible while parser, symbol, or call-graph migration markers are outdated. `migrationRequired` and a noncurrent freshness reason recommend ordinary `index_codebase` with `force: false`, not index deletion. Resolve unreadable source/index access before indexing. The CLI equivalents are `ocbi status --check-freshness` and `ocbi status --check-freshness --json` (`cbi` is equivalent). JSON contains the shared status object; MCP adds the diagnostics below, while Pi/omp return the same facts as details. Workspace status remains a bounded catalog inspection with freshness explicitly not checked.
+
+An older keyword snapshot remains readable. With freshness checking, `keyword-index-outdated` means the active branch needs the current identifier-word tokenizer. Run ordinary `index_codebase` or `ocbi index`; unchanged embeddings are reused, without deleting the index or forcing re-embedding. Read-only status checks never rewrite the cache. Other hybrid branches' pending tokenizer state is not counted against the refreshed active branch.
+
+A cache written with a newer, unsupported tokenizer version is not a corrupt cache to reset. Ordinary indexing rejects it without deleting or rewriting its keyword snapshot, catalog, or vectors. Use a compatible package version.
 
 MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
 

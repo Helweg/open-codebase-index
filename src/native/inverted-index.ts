@@ -44,6 +44,14 @@ export class InvertedIndex {
     return this.inner.hasChunk(chunkId);
   }
 
+  hasCurrentTokenizer(chunkIds?: string[]): boolean {
+    return this.inner.hasCurrentTokenizer(chunkIds);
+  }
+
+  outdatedTokenizerChunkIds(chunkIds?: string[]): string[] {
+    return this.inner.outdatedTokenizerChunkIds(chunkIds);
+  }
+
   clear(): void {
     this.inner.clear();
   }

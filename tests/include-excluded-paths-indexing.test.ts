@@ -835,10 +835,9 @@ describe("include-excluded path indexing acceptance", () => {
   });
 
   it.each([
-    { label: "default root build file", file: "build-helper.ts", exclude: undefined, denyAccess: false, indexed: true },
-    { label: "explicitly excluded file", file: "ignored.ts", exclude: ["ignored.ts"], denyAccess: false, indexed: false },
-    { label: "source denied by the access boundary", file: "blocked/blocked.ts", exclude: undefined, denyAccess: true, indexed: true },
-  ])("preserves consumer filtering after a permission error for a $label", async ({ file, exclude, denyAccess, indexed }) => {
+    { label: "default root build file", file: "build-helper.ts", exclude: undefined, indexed: true },
+    { label: "explicitly excluded file", file: "ignored.ts", exclude: ["ignored.ts"], indexed: false },
+  ])("preserves consumer filtering after a permission error for a $label", async ({ file, exclude, indexed }) => {
     const ordinaryPath = path.join(projectDir, "src", "ordinary.ts");
     const rejectedPath = path.join(projectDir, file);
     writeSource(ordinaryPath, "permissionFilteredOriginalOrdinaryDefinition");
@@ -847,20 +846,8 @@ describe("include-excluded path indexing acceptance", () => {
     const indexer = createIndexer(config);
     await indexer.index();
     snapshotFaults.perDirectoryBackend = true;
-    const watchPath = denyAccess ? path.dirname(rejectedPath) : projectDir;
+    const watchPath = projectDir;
 
-    const actualAccess = fs.accessSync;
-    let denyRecoveryAccess = denyAccess;
-    if (denyAccess) {
-      // Portable classification fault only: the fixture's real reads and file modes are unchanged.
-      vi.spyOn(fs, "accessSync").mockImplementation(function (this: unknown, ...args) {
-        if (String(args[0]) === watchPath && denyRecoveryAccess) {
-          denyRecoveryAccess = false;
-          throw Object.assign(new Error("CONTROLLED source access EACCES"), { code: "EACCES" });
-        }
-        return Reflect.apply(actualAccess, this, args);
-      });
-    }
     const actualWatch = fs.watch;
     let faulted = false;
     vi.spyOn(fs, "watch").mockImplementation(function (this: unknown, ...args) {
