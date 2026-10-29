@@ -300,7 +300,9 @@ impl InvertedIndexInner {
                         previous.is_lowercase()
                             || previous.is_numeric()
                             || (previous.is_uppercase()
-                                && characters.peek().is_some_and(|(_, next)| next.is_lowercase()))
+                                && characters
+                                    .peek()
+                                    .is_some_and(|(_, next)| next.is_lowercase()))
                     });
                 if boundary {
                     let part = &word[start..offset];

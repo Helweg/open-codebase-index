@@ -537,7 +537,8 @@ impl InvertedIndex {
 
     #[napi]
     pub fn outdated_tokenizer_chunk_ids(&self, chunk_ids: Option<Vec<String>>) -> Vec<String> {
-        self.inner.outdated_tokenizer_chunk_ids(chunk_ids.as_deref())
+        self.inner
+            .outdated_tokenizer_chunk_ids(chunk_ids.as_deref())
     }
 
     #[napi]
