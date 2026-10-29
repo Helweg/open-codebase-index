@@ -274,6 +274,8 @@ A cache written with a newer, unsupported tokenizer version is not a corrupt cac
 
 MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
 
+Once ordered shutdown marks an operation interrupted, its late completion does not write diagnostics again or recreate removed runtime storage. The interruption remains available to a subsequent connected session.
+
 ### `index_codebase`
 
 Creates or updates the index. Incremental indexing is the default. Use `force: true` only for a required full rebuild. `estimateOnly` reports estimated embedding work without indexing. `dryRun` parses the real file set and reports the exact embedding token total (files, source chunks, tokens) without requesting embeddings or writing to the index — a read-only preflight.
