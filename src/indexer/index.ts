@@ -579,7 +579,8 @@ export type IndexFreshnessReason =
   | "metadata-changed"
   | "branch-changed"
   | "migration-required"
-  | "keyword-index-outdated";
+  | "keyword-index-outdated"
+  | "keyword-index-unreadable";
 
 export interface IndexFreshnessResult {
   readable: boolean;
@@ -7128,6 +7129,10 @@ export class Indexer {
       if (this.getStoredBranchCommit(database) !== currentCommit) {
         return { readable: true, current: false, reason: "branch-changed" };
       }
+    }
+    // Current source and valid vectors remain searchable when only keyword reads degrade.
+    if (readIssues.length > 0) {
+      return { readable: true, current: false, reason: "keyword-index-unreadable" };
     }
     if (this.needsKeywordTokenizerUpgrade(requireLoadedCapability(this.invertedIndex, "keyword index"), database)) {
       return { readable: true, current: false, reason: "keyword-index-outdated" };

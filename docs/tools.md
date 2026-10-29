@@ -272,6 +272,8 @@ An older keyword snapshot remains readable. With freshness checking, `keyword-in
 
 A cache written with a newer, unsupported tokenizer version is not a corrupt cache to reset. Ordinary indexing rejects it without deleting or rewriting its keyword snapshot, catalog, or vectors. Use a compatible package version.
 
+If only a hybrid keyword artifact is unreadable, `keyword-index-unreadable` distinguishes degraded retrieval from a healthy, fully current index. With valid vectors and current source/configuration/HEAD, freshness is `{ readable: true, current: false, reason: "keyword-index-unreadable" }` and semantic retrieval remains available. Source changes, incompatible providers, missing vectors, and blocking read failures keep their existing freshness checks and priority. Ordinary coordinated indexing does not skip this degraded state as healthy/current: it repairs recoverable keyword damage or rejects an unsupported newer format without resetting stored data.
+
 MCP responses add `structuredContent.mcpDiagnostics` with schema version `1`. `activeOperations` reports each operation, its current phase, start and last-activity timestamps, and `active` or `suspected_stall` status. The current `index_status` call is excluded. `latestInterruptedOperation` is included only after an ordered shutdown marks an active call or a later local process confirms that the recorded PID is absent. A stale heartbeat alone is never classified as an interruption.
 
 Once ordered shutdown marks an operation interrupted, its late completion does not write diagnostics again or recreate removed runtime storage. The interruption remains available to a subsequent connected session.

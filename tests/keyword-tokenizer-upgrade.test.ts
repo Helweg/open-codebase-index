@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database, InvertedIndex } from "../src/native/index.js";
+import { configureAutoIndex, runCoordinatedIndex, stopAutoIndex, waitForAutoIndexForRetrieval } from "../src/utils/auto-index.js";
 
 describe("keyword tokenizer upgrades", () => {
   it.each(["hybrid", "structural"] as const)(
@@ -96,7 +97,7 @@ describe("keyword tokenizer upgrades", () => {
   );
 
   it.each(["hybrid", "structural"] as const)(
-    "rejects a future %s keyword snapshot without deleting catalog or vector data",
+    "rejects coordinated indexing of a future %s keyword snapshot without deleting catalog or vector data",
     async (mode) => {
       const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "keyword-future-version-")));
       fs.mkdirSync(path.join(root, "src"));
@@ -114,7 +115,7 @@ describe("keyword tokenizer upgrades", () => {
       const config = parseConfig({
         embeddingProvider: "custom",
         customProvider: { baseUrl: "http://localhost:11434/v1", model: "keyword-upgrade", dimensions: 8 },
-        indexing: { mode, autoIndex: false, watchFiles: false, requireProjectMarker: false },
+        indexing: { mode, autoIndex: true, watchFiles: false, requireProjectMarker: false },
         include: ["src/**/*.ts"],
       });
       const first = new Indexer(root, config, "pi");
@@ -134,7 +135,32 @@ describe("keyword tokenizer upgrades", () => {
         );
         embeddingCalls = 0;
         reader = new Indexer(root, config, "pi");
-        await expect(reader.index()).rejects.toThrow();
+        const currentReader = reader;
+        configureAutoIndex(root, "pi", config, () => currentReader);
+        if (mode === "hybrid") {
+          await expect(waitForAutoIndexForRetrieval(root, "pi")).resolves.toEqual({ ready: true });
+          expect((await reader.search("future format marker", 1))[0]).toMatchObject({
+            name: "futureFormatMarker",
+            filePath: path.join(root, "src", "marker.ts"),
+          });
+          const sourcePath = path.join(root, "src", "marker.ts");
+          const sourceBytes = fs.readFileSync(sourcePath);
+          fs.writeFileSync(sourcePath, "export function futureFormatMarker() { return 8; }\n");
+          expect(await reader.getIndexFreshness()).toEqual({
+            readable: true, current: false, reason: "files-changed",
+          });
+          fs.writeFileSync(sourcePath, sourceBytes);
+          embeddingCalls = 0;
+        }
+        expect(await reader.getIndexFreshness()).toEqual({
+          readable: mode === "hybrid",
+          current: false,
+          reason: mode === "hybrid" ? "keyword-index-unreadable" : "unreadable",
+        });
+        expect(await runCoordinatedIndex(root, "pi", false)).toMatchObject({
+          outcome: "failed",
+          error: expect.objectContaining({ code: "InvalidArg" }),
+        });
         await reader.close();
         expect(embeddingCalls).toBe(0);
         for (const [file, bytes] of artifacts) {
@@ -142,6 +168,7 @@ describe("keyword tokenizer upgrades", () => {
           expect(fs.readFileSync(file)).toEqual(bytes);
         }
       } finally {
+        await stopAutoIndex(root, "pi", true);
         await reader?.close();
         await first.close();
         fetch.mockRestore();
