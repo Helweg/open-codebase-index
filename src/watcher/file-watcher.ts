@@ -85,7 +85,7 @@ export class FileWatcher {
     this.config = config;
     this.backend = options.backend ?? "auto";
     this.configPath = options.configPath;
-    this.indexPath = path.resolve(options.indexPath ?? resolveProjectIndexPath(projectRoot, config.scope, host));
+    this.indexPath = path.resolve(options.indexPath ?? resolveProjectIndexPath(projectRoot, config.scope, host, config.indexPath));
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
       : getProjectConfigCandidatePaths(projectRoot, host);

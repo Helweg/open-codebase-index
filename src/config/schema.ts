@@ -1,3 +1,6 @@
+import * as os from "os";
+import * as path from "path";
+
 // Config schema without zod dependency to avoid version conflicts with OpenCode SDK
 
 import { parseEmbeddingFallback } from "./embedding-fallback.js";
@@ -230,6 +233,8 @@ export interface CodebaseIndexConfig {
    * embedding endpoints is Ollama, primary or fallback replica; ignored otherwise. */
   embedding?: EmbeddingConfig;
   scope: IndexScope;
+  /** Absolute directory for the index, replacing the scope's default location. */
+  indexPath?: string;
   indexing?: Partial<IndexingConfig>;
   search?: Partial<SearchConfig>;
   debug?: Partial<DebugConfig>;
@@ -262,6 +267,18 @@ export type ParsedCodebaseIndexConfig = CodebaseIndexConfig & {
   additionalInclude: string[];
   embedding: EmbeddingConfig;
 };
+
+function parseIndexPath(value: unknown): { indexPath?: string } {
+  const raw = getResolvedString(value, "$root.indexPath")?.trim();
+  if (!raw) {
+    return {};
+  }
+  const expanded = raw === "~" || raw.startsWith("~/") ? path.join(os.homedir(), raw.slice(1)) : raw;
+  if (!path.isAbsolute(expanded)) {
+    throw new Error("indexPath must be an absolute path or start with ~/.");
+  }
+  return { indexPath: path.normalize(expanded) };
+}
 
 export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
   const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -551,6 +568,7 @@ export function parseConfig(raw: unknown): ParsedCodebaseIndexConfig {
     embeddingFallback: parseEmbeddingFallback(input.embeddingFallback, embeddingProvider, embeddingModel, customProvider),
     embedding,
     scope: isValidScope(scopeValue) ? scopeValue : "project",
+    ...parseIndexPath(input.indexPath),
     include: includeValue ?? DEFAULT_INCLUDE,
     exclude: excludeValue === undefined || hasDerivedDefaultExclude
       ? createDefaultExcludePatterns()

@@ -159,7 +159,7 @@ function coordinatorKey(
   host: HostMode,
 ): string {
   const canonicalProjectRoot = canonicalizePath(projectRoot);
-  const indexPath = resolveProjectIndexPath(projectRoot, config.scope, host);
+  const indexPath = resolveProjectIndexPath(projectRoot, config.scope, host, config.indexPath);
   return `${canonicalizePath(indexPath)}::${canonicalProjectRoot}`;
 }
 
