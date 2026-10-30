@@ -73,6 +73,20 @@ describe("MCP runtime diagnostics", () => {
     }
   });
 
+  it("does not recreate removed runtime storage when an interrupted operation completes late", async () => {
+    const diagnostics = new McpRuntimeDiagnostics(indexRoot);
+    const operation = await diagnostics.begin("index_codebase");
+    await diagnostics.markOrderedShutdown();
+    await expect(new McpRuntimeDiagnostics(indexRoot).snapshot(undefined, 1000)).resolves.toMatchObject({
+      activeOperations: [],
+      latestInterruptedOperation: { operation: "index_codebase", cause: "ordered_shutdown" },
+    });
+
+    fs.rmSync(indexRoot, { recursive: true, force: true });
+    await operation.complete();
+    expect(fs.existsSync(indexRoot)).toBe(false);
+  });
+
   it("corrects permissions on an existing runtime directory", async () => {
     const runtimeDir = path.join(indexRoot, "mcp-runtime");
     fs.mkdirSync(runtimeDir, { recursive: true, mode: 0o755 });

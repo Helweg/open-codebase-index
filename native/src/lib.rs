@@ -468,6 +468,15 @@ pub struct KeywordSearchResult {
     pub score: f64,
 }
 
+fn keyword_index_error(error: anyhow::Error) -> Error {
+    let status = if error.is::<inverted_index::UnsupportedTokenizerVersionError>() {
+        napi::Status::InvalidArg
+    } else {
+        napi::Status::GenericFailure
+    };
+    Error::new(status, error.to_string())
+}
+
 #[napi]
 pub struct InvertedIndex {
     inner: inverted_index::InvertedIndexInner,
@@ -483,9 +492,14 @@ impl InvertedIndex {
 
     #[napi]
     pub fn load(&mut self) -> Result<()> {
+        self.inner.load().map_err(keyword_index_error)
+    }
+
+    #[napi]
+    pub fn validate_snapshot_version(&self) -> Result<()> {
         self.inner
-            .load()
-            .map_err(|e| Error::from_reason(e.to_string()))
+            .validate_snapshot_version()
+            .map_err(keyword_index_error)
     }
 
     #[napi]
@@ -524,6 +538,17 @@ impl InvertedIndex {
     }
 
     #[napi]
+    pub fn has_current_tokenizer(&self, chunk_ids: Option<Vec<String>>) -> bool {
+        self.inner.has_current_tokenizer(chunk_ids.as_deref())
+    }
+
+    #[napi]
+    pub fn outdated_tokenizer_chunk_ids(&self, chunk_ids: Option<Vec<String>>) -> Vec<String> {
+        self.inner
+            .outdated_tokenizer_chunk_ids(chunk_ids.as_deref())
+    }
+
+    #[napi]
     pub fn clear(&mut self) {
         self.inner.clear();
     }
@@ -542,8 +567,6 @@ impl InvertedIndex {
 
     #[napi]
     pub fn deserialize(&mut self, json: String) -> Result<()> {
-        self.inner
-            .deserialize(&json)
-            .map_err(|e| Error::from_reason(e.to_string()))
+        self.inner.deserialize(&json).map_err(keyword_index_error)
     }
 }

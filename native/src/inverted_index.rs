@@ -2,14 +2,48 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
+
+const TOKENIZER_VERSION: u32 = 1;
+
+#[derive(Debug)]
+pub struct UnsupportedTokenizerVersionError(u32);
+
+impl std::fmt::Display for UnsupportedTokenizerVersionError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "Keyword index uses an unsupported tokenizer version ({}, supported: {})",
+            self.0, TOKENIZER_VERSION
+        )
+    }
+}
+
+impl std::error::Error for UnsupportedTokenizerVersionError {}
+
+fn validate_tokenizer_version(version: u32) -> Result<()> {
+    if version > TOKENIZER_VERSION {
+        return Err(UnsupportedTokenizerVersionError(version).into());
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct InvertedIndexVersion {
+    #[serde(default)]
+    tokenizer_version: u32,
+}
 
 #[derive(Serialize, Deserialize, Default)]
 struct InvertedIndexData {
     term_to_chunks: HashMap<String, Vec<String>>,
     chunk_tokens: HashMap<String, HashMap<String, u32>>,
     avg_doc_length: f64,
+    #[serde(default)]
+    tokenizer_version: u32,
+    #[serde(default)]
+    legacy_chunks: HashSet<String>,
 }
 
 #[derive(Serialize)]
@@ -17,6 +51,8 @@ struct InvertedIndexSnapshot<'a> {
     term_to_chunks: &'a HashMap<String, HashSet<String>>,
     chunk_tokens: &'a HashMap<String, HashMap<String, u32>>,
     avg_doc_length: f64,
+    tokenizer_version: u32,
+    legacy_chunks: &'a HashSet<String>,
 }
 
 pub struct InvertedIndexInner {
@@ -24,6 +60,7 @@ pub struct InvertedIndexInner {
     term_to_chunks: HashMap<String, HashSet<String>>,
     chunk_tokens: HashMap<String, HashMap<String, u32>>,
     total_token_count: u64,
+    legacy_chunks: HashSet<String>,
 }
 
 impl InvertedIndexInner {
@@ -33,6 +70,7 @@ impl InvertedIndexInner {
             term_to_chunks: HashMap::new(),
             chunk_tokens: HashMap::new(),
             total_token_count: 0,
+            legacy_chunks: HashSet::new(),
         }
     }
 
@@ -42,24 +80,16 @@ impl InvertedIndexInner {
         }
 
         let content = fs::read_to_string(&self.index_path)?;
-        let data: InvertedIndexData = serde_json::from_str(&content)?;
+        self.restore(serde_json::from_str(&content)?)
+    }
 
-        self.term_to_chunks.clear();
-        for (term, chunk_ids) in data.term_to_chunks {
-            self.term_to_chunks
-                .insert(term, chunk_ids.into_iter().collect());
+    pub fn validate_snapshot_version(&self) -> Result<()> {
+        if !self.index_path.exists() {
+            return Ok(());
         }
-
-        self.chunk_tokens.clear();
-        self.total_token_count = 0;
-        for (chunk_id, tokens) in data.chunk_tokens {
-            for count in tokens.values() {
-                self.total_token_count += *count as u64;
-            }
-            self.chunk_tokens.insert(chunk_id, tokens);
-        }
-
-        Ok(())
+        let reader = BufReader::new(fs::File::open(&self.index_path)?);
+        let version: InvertedIndexVersion = serde_json::from_reader(reader)?;
+        validate_tokenizer_version(version.tokenizer_version)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -87,42 +117,80 @@ impl InvertedIndexInner {
             term_to_chunks: &self.term_to_chunks,
             chunk_tokens: &self.chunk_tokens,
             avg_doc_length: self.get_avg_doc_length(),
+            tokenizer_version: TOKENIZER_VERSION,
+            legacy_chunks: &self.legacy_chunks,
         }
     }
 
     pub fn deserialize(&mut self, json: &str) -> Result<()> {
-        let data: InvertedIndexData = serde_json::from_str(json)?;
+        self.restore(serde_json::from_str(json)?)
+    }
+
+    fn restore(&mut self, data: InvertedIndexData) -> Result<()> {
+        validate_tokenizer_version(data.tokenizer_version)?;
+        let legacy_chunks = if data.tokenizer_version < TOKENIZER_VERSION {
+            data.chunk_tokens.keys().cloned().collect()
+        } else {
+            data.legacy_chunks
+        };
         self.term_to_chunks.clear();
         for (term, chunk_ids) in data.term_to_chunks {
             self.term_to_chunks
                 .insert(term, chunk_ids.into_iter().collect());
         }
-        self.chunk_tokens.clear();
-        self.total_token_count = 0;
-        for (chunk_id, tokens) in data.chunk_tokens {
-            for count in tokens.values() {
-                self.total_token_count += *count as u64;
-            }
-            self.chunk_tokens.insert(chunk_id, tokens);
-        }
+        self.total_token_count = data
+            .chunk_tokens
+            .values()
+            .flat_map(|tokens| tokens.values())
+            .map(|count| *count as u64)
+            .sum();
+        self.chunk_tokens = data.chunk_tokens;
+        self.legacy_chunks = legacy_chunks;
         Ok(())
+    }
+
+    pub fn has_current_tokenizer(&self, chunk_ids: Option<&[String]>) -> bool {
+        if self.legacy_chunks.is_empty() {
+            return true;
+        }
+        match chunk_ids {
+            Some(ids) => ids.iter().all(|id| !self.legacy_chunks.contains(id)),
+            None => false,
+        }
+    }
+
+    pub fn outdated_tokenizer_chunk_ids(&self, chunk_ids: Option<&[String]>) -> Vec<String> {
+        let mut ids: Vec<String> = match chunk_ids {
+            Some(ids) => ids
+                .iter()
+                .filter(|id| self.legacy_chunks.contains(*id))
+                .cloned()
+                .collect(),
+            None => self.legacy_chunks.iter().cloned().collect(),
+        };
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     pub fn add_chunk(&mut self, chunk_id: &str, content: &str) {
         let tokens = self.tokenize(content);
+        let token_count = tokens.len() as u64;
         let mut term_freq: HashMap<String, u32> = HashMap::new();
-
-        for token in &tokens {
-            *term_freq.entry(token.clone()).or_insert(0) += 1;
-
-            self.term_to_chunks
-                .entry(token.clone())
-                .or_default()
-                .insert(chunk_id.to_string());
+        for token in tokens {
+            *term_freq.entry(token).or_insert(0) += 1;
         }
-
+        for token in term_freq.keys() {
+            if let Some(chunks) = self.term_to_chunks.get_mut(token) {
+                chunks.insert(chunk_id.to_string());
+            } else {
+                self.term_to_chunks
+                    .insert(token.clone(), HashSet::from([chunk_id.to_string()]));
+            }
+        }
+        self.legacy_chunks.remove(chunk_id);
         self.chunk_tokens.insert(chunk_id.to_string(), term_freq);
-        self.total_token_count += tokens.len() as u64;
+        self.total_token_count += token_count;
     }
 
     pub fn remove_chunk(&mut self, chunk_id: &str) -> bool {
@@ -130,6 +198,7 @@ impl InvertedIndexInner {
             Some(t) => t,
             None => return false,
         };
+        self.legacy_chunks.remove(chunk_id);
 
         for (token, count) in &tokens {
             self.total_token_count = self.total_token_count.saturating_sub(*count as u64);
@@ -146,7 +215,7 @@ impl InvertedIndexInner {
     }
 
     pub fn search(&self, query: &str) -> Vec<(String, f64)> {
-        let query_tokens = self.tokenize(query);
+        let query_tokens: Vec<String> = Self::words(query).map(str::to_lowercase).collect();
         if query_tokens.is_empty() {
             return Vec::new();
         }
@@ -216,6 +285,7 @@ impl InvertedIndexInner {
         self.term_to_chunks.clear();
         self.chunk_tokens.clear();
         self.total_token_count = 0;
+        self.legacy_chunks.clear();
     }
 
     pub fn document_count(&self) -> usize {
@@ -231,15 +301,46 @@ impl InvertedIndexInner {
         }
     }
 
+    fn words(text: &str) -> impl Iterator<Item = &str> {
+        text.split(|character: char| !character.is_alphanumeric())
+            .filter(|word| word.len() > 2)
+    }
+
     fn tokenize(&self, text: &str) -> Vec<String> {
-        text.to_lowercase()
-            .chars()
-            .map(|c| if c.is_alphanumeric() { c } else { ' ' })
-            .collect::<String>()
-            .split_whitespace()
-            .filter(|t| t.len() > 2)
-            .map(|s| s.to_string())
-            .collect()
+        let mut tokens = Vec::new();
+        for word in Self::words(text) {
+            tokens.push(word.to_lowercase());
+            let mut start = 0;
+            let mut previous: Option<char> = None;
+            let mut characters = word.char_indices().peekable();
+            while let Some((offset, character)) = characters.next() {
+                let boundary = offset > 0
+                    && character.is_uppercase()
+                    && previous.is_some_and(|previous| {
+                        previous.is_lowercase()
+                            || previous.is_numeric()
+                            || (previous.is_uppercase()
+                                && characters
+                                    .peek()
+                                    .is_some_and(|(_, next)| next.is_lowercase()))
+                    });
+                if boundary {
+                    let part = &word[start..offset];
+                    if part.len() > 2 {
+                        tokens.push(part.to_lowercase());
+                    }
+                    start = offset;
+                }
+                previous = Some(character);
+            }
+            if start > 0 {
+                let part = &word[start..];
+                if part.len() > 2 {
+                    tokens.push(part.to_lowercase());
+                }
+            }
+        }
+        tokens
     }
 }
 
