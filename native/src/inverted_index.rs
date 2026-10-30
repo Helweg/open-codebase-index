@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::{BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 const TOKENIZER_VERSION: u32 = 1;
@@ -21,6 +21,19 @@ impl std::fmt::Display for UnsupportedTokenizerVersionError {
 }
 
 impl std::error::Error for UnsupportedTokenizerVersionError {}
+
+fn validate_tokenizer_version(version: u32) -> Result<()> {
+    if version > TOKENIZER_VERSION {
+        return Err(UnsupportedTokenizerVersionError(version).into());
+    }
+    Ok(())
+}
+
+#[derive(Deserialize)]
+struct InvertedIndexVersion {
+    #[serde(default)]
+    tokenizer_version: u32,
+}
 
 #[derive(Serialize, Deserialize, Default)]
 struct InvertedIndexData {
@@ -70,6 +83,15 @@ impl InvertedIndexInner {
         self.restore(serde_json::from_str(&content)?)
     }
 
+    pub fn validate_snapshot_version(&self) -> Result<()> {
+        if !self.index_path.exists() {
+            return Ok(());
+        }
+        let reader = BufReader::new(fs::File::open(&self.index_path)?);
+        let version: InvertedIndexVersion = serde_json::from_reader(reader)?;
+        validate_tokenizer_version(version.tokenizer_version)
+    }
+
     pub fn save(&self) -> Result<()> {
         self.save_to(&self.index_path)
     }
@@ -105,9 +127,7 @@ impl InvertedIndexInner {
     }
 
     fn restore(&mut self, data: InvertedIndexData) -> Result<()> {
-        if data.tokenizer_version > TOKENIZER_VERSION {
-            return Err(UnsupportedTokenizerVersionError(data.tokenizer_version).into());
-        }
+        validate_tokenizer_version(data.tokenizer_version)?;
         let legacy_chunks = if data.tokenizer_version < TOKENIZER_VERSION {
             data.chunk_tokens.keys().cloned().collect()
         } else {

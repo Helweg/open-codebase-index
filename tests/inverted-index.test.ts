@@ -165,6 +165,29 @@ describe("InvertedIndex", () => {
       expect(() => index.deserialize(JSON.stringify(future))).toThrow();
       expect([...index.search("retained").keys()]).toEqual(["retained"]);
     });
+
+    it("validates persisted versions without replacing unsaved keyword state", () => {
+      index.addChunk("saved", "originalNeedle");
+      index.save();
+      const persisted = fs.readFileSync(indexPath);
+      index.clear();
+      index.addChunk("pending", "replacementNeedle");
+
+      index.validateSnapshotVersion();
+      expect([...index.search("replacementNeedle").keys()]).toEqual(["pending"]);
+      expect([...index.search("originalNeedle").keys()]).toEqual([]);
+      expect(fs.readFileSync(indexPath)).toEqual(persisted);
+
+      const future = Buffer.from(JSON.stringify({
+        ...JSON.parse(persisted.toString("utf8")),
+        tokenizer_version: 2,
+      }));
+      fs.writeFileSync(indexPath, future);
+      expect(() => index.validateSnapshotVersion()).toThrow("unsupported tokenizer version");
+      expect([...index.search("replacementNeedle").keys()]).toEqual(["pending"]);
+      expect([...index.search("originalNeedle").keys()]).toEqual([]);
+      expect(fs.readFileSync(indexPath)).toEqual(future);
+    });
   });
 
   describe("removeChunk", () => {

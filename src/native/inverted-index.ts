@@ -11,6 +11,10 @@ export class InvertedIndex {
     this.inner.load();
   }
 
+  validateSnapshotVersion(): void {
+    this.inner.validateSnapshotVersion();
+  }
+
   save(destination?: string): void {
     this.inner.save(destination);
   }

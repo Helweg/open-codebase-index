@@ -96,9 +96,14 @@ describe("keyword tokenizer upgrades", () => {
     },
   );
 
-  it.each(["hybrid", "structural"] as const)(
-    "rejects coordinated indexing of a future %s keyword snapshot without deleting catalog or vector data",
-    async (mode) => {
+  it.each([
+    { mode: "hybrid", reuseWriter: false },
+    { mode: "structural", reuseWriter: false },
+    { mode: "hybrid", reuseWriter: true },
+    { mode: "structural", reuseWriter: true },
+  ] as const)(
+    "rejects coordinated future-cache indexing ($mode, reused writer: $reuseWriter) without changing stored data",
+    async ({ mode, reuseWriter }) => {
       const root = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), "keyword-future-version-")));
       fs.mkdirSync(path.join(root, "src"));
       fs.writeFileSync(path.join(root, "src", "marker.ts"), "export function futureFormatMarker() { return 7; }\n");
@@ -123,18 +128,18 @@ describe("keyword tokenizer upgrades", () => {
       try {
         await first.index();
         const initial = await first.getStatus();
-        await first.close();
+        if (!reuseWriter) await first.close();
         const keywordPath = path.join(initial.indexPath, "inverted-index.json");
         const snapshot = JSON.parse(fs.readFileSync(keywordPath, "utf8")) as Record<string, unknown>;
         fs.writeFileSync(keywordPath, JSON.stringify({ ...snapshot, tokenizer_version: 2 }));
         const artifacts = new Map(
-          ["inverted-index.json", "codebase.db", "vectors", "vectors.meta.json"]
+          ["inverted-index.json", "codebase.db", "codebase.db-wal", "structural-generation", "vectors", "vectors.meta.json"]
             .map((name) => path.join(initial.indexPath, name))
             .filter((file) => fs.existsSync(file))
             .map((file) => [file, fs.readFileSync(file)]),
         );
         embeddingCalls = 0;
-        reader = new Indexer(root, config, "pi");
+        reader = reuseWriter ? first : new Indexer(root, config, "pi");
         const currentReader = reader;
         configureAutoIndex(root, "pi", config, () => currentReader);
         if (mode === "hybrid") {
@@ -159,14 +164,18 @@ describe("keyword tokenizer upgrades", () => {
         });
         expect(await runCoordinatedIndex(root, "pi", false)).toMatchObject({
           outcome: "failed",
-          error: expect.objectContaining({ code: "InvalidArg" }),
+          error: expect.objectContaining({
+            code: "InvalidArg",
+            message: expect.stringContaining("unsupported tokenizer version"),
+          }),
         });
-        await reader.close();
         expect(embeddingCalls).toBe(0);
         for (const [file, bytes] of artifacts) {
           expect(fs.existsSync(file)).toBe(true);
           expect(fs.readFileSync(file)).toEqual(bytes);
         }
+        await reader.close();
+        expect(fs.readFileSync(keywordPath)).toEqual(artifacts.get(keywordPath));
       } finally {
         await stopAutoIndex(root, "pi", true);
         await reader?.close();

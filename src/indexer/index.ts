@@ -4635,7 +4635,17 @@ export class Indexer {
       await this.initializationPromise;
     }
 
-    if (recoveredOwners.length > 0 || !this.isInitializedFor("writer")) {
+    let needsWriterInitialization = recoveredOwners.length > 0 || !this.isInitializedFor("writer");
+    if (!needsWriterInitialization && this.config.indexing.mode === "structural") {
+      try {
+        this.requireLoadedIndexState().invertedIndex.validateSnapshotVersion();
+        needsWriterInitialization = this.readIssues.some((issue) => issue.component === "keyword");
+      } catch (error) {
+        if (isUnsupportedKeywordIndexVersion(error)) throw error;
+        needsWriterInitialization = true;
+      }
+    }
+    if (needsWriterInitialization) {
       const retireReaderDatabase = this.initializationMode === "reader";
       this.resetLoadedIndexState(retireReaderDatabase);
       await this.initializeOnce("writer", recoveredOwners, { skipAutoGc: true });

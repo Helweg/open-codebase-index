@@ -496,6 +496,13 @@ impl InvertedIndex {
     }
 
     #[napi]
+    pub fn validate_snapshot_version(&self) -> Result<()> {
+        self.inner
+            .validate_snapshot_version()
+            .map_err(keyword_index_error)
+    }
+
+    #[napi]
     pub fn save(&self, destination: Option<String>) -> Result<()> {
         let result = match destination {
             Some(destination) => self.inner.save_to(std::path::Path::new(&destination)),
