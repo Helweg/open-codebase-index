@@ -1390,7 +1390,7 @@ export class Indexer {
   }
 
   private getIndexPath(): string {
-    const resolvedPath = this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host);
+    const resolvedPath = this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath);
     return this.config.indexing.mode === "structural"
       ? path.join(resolvedPath, "structural")
       : resolvedPath;
@@ -1567,7 +1567,7 @@ export class Indexer {
     const ownershipPath = this.config.indexing.mode === "structural"
       ? path.dirname(this.indexPath)
       : this.indexPath;
-    return isProjectIndexPathOwnedByProject(this.projectRoot, ownershipPath, this.host);
+    return isProjectIndexPathOwnedByProject(this.projectRoot, ownershipPath, this.host, this.config.indexPath);
   }
 
   private resetLoadedIndexState(retireDatabase = false): void {
@@ -4684,7 +4684,7 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
         includeExcluded: this.config.indexing.includeExcluded,
         protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
           this.indexPath,
         ],
         signal: options.signal,
@@ -4720,7 +4720,7 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
         includeExcluded: this.config.indexing.includeExcluded,
         protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
           this.indexPath,
         ],
         signal: options.signal,
@@ -5027,7 +5027,7 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
         includeExcluded: this.config.indexing.includeExcluded,
         protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
           this.indexPath,
         ],
         signal,
@@ -7007,7 +7007,7 @@ export class Indexer {
         maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
         includeExcluded: this.config.indexing.includeExcluded,
         protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host),
+          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
           this.indexPath,
         ],
         signal: options.signal,
