@@ -152,7 +152,9 @@ export function fitTextToContextBudget(text: string, tokenBudget?: number): Budg
   };
 }
 
-function normalizedLineRange(result: SearchResult): { start: number; end: number } {
+type LineRange = { start: number; end: number };
+
+function normalizedLineRange(result: SearchResult): LineRange {
   return result.startLine <= result.endLine
     ? { start: result.startLine, end: result.endLine }
     : { start: result.endLine, end: result.startLine };
@@ -181,8 +183,55 @@ function rankContextCandidates(
     });
 }
 
-function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchResult[] {
-  const acceptedByFile = new Map<string, Array<{ start: number; end: number }>>();
+function longestUncoveredRange(range: LineRange, accepted: LineRange[]): LineRange | undefined {
+  let cursor = range.start;
+  let bestStart = cursor;
+  let bestEnd = cursor - 1;
+  // Accepted intervals are sorted. Keep one contiguous fragment per candidate;
+  // equal-length gaps retain the earliest source lines.
+  for (const item of accepted) {
+    if (item.end < cursor) continue;
+    if (item.start > range.end) break;
+    const end = Math.min(range.end, item.start - 1);
+    if (end - cursor > bestEnd - bestStart) {
+      bestStart = cursor;
+      bestEnd = end;
+    }
+    cursor = Math.max(cursor, item.end + 1);
+    if (cursor > range.end) break;
+  }
+  if (range.end - cursor > bestEnd - bestStart) {
+    bestStart = cursor;
+    bestEnd = range.end;
+  }
+  if (bestEnd < bestStart) return undefined;
+  return bestStart === range.start && bestEnd === range.end
+    ? range
+    : { start: bestStart, end: bestEnd };
+}
+
+function fragmentContent(content: string, original: LineRange, selected: LineRange): string {
+  if (!content) return "";
+  let line = original.start;
+  let offset = 0;
+  let startOffset = 0;
+  let endOffset = content.length;
+  for (;;) {
+    const newline = content.indexOf("\n", offset);
+    if (line === selected.start) startOffset = offset;
+    if (line === selected.end) endOffset = newline < 0 ? content.length : newline;
+    if (newline < 0) break;
+    line += 1;
+    offset = newline + 1;
+  }
+  // Search results may carry unavailable-source markers or transformed markup.
+  // Do not attribute an unaligned body to a narrower source range.
+  const alignedLineCount = line === original.end || (line === original.end + 1 && content.endsWith("\n"));
+  return alignedLineCount ? content.slice(startOffset, endOffset) : "";
+}
+
+function deduplicateContextCandidates(candidates: RankedSearchResult[], preserveWholeRanges: boolean): SearchResult[] {
+  const acceptedByFile = new Map<string, LineRange[]>();
   const deduplicated: SearchResult[] = [];
 
   for (const { result } of candidates) {
@@ -191,12 +240,30 @@ function deduplicateContextCandidates(candidates: RankedSearchResult[]): SearchR
       ? `${result.filePath}#pdf-page-${result.documentLocation.pageStart}-${result.documentLocation.pageEnd}`
       : result.filePath;
     const accepted = acceptedByFile.get(locationKey) ?? [];
-    if (accepted.some((item) => item.start <= range.end && range.start <= item.end)) {
-      continue;
+    let selected = range;
+    if (preserveWholeRanges || result.documentLocation?.kind === "pdf") {
+      if (accepted.some((item) => item.start <= range.end && range.start <= item.end)) continue;
+    } else {
+      const uncovered = longestUncoveredRange(range, accepted);
+      if (!uncovered) continue;
+      selected = uncovered;
     }
-    accepted.push(range);
+    let emitted = result;
+    if (selected.start !== range.start || selected.end !== range.end) {
+      emitted = {
+        ...result,
+        startLine: selected.start,
+        endLine: selected.end,
+        content: fragmentContent(result.content, range, selected),
+      };
+      delete emitted.startCol;
+      delete emitted.endCol;
+    }
+    let insertionIndex = 0;
+    while (insertionIndex < accepted.length && accepted[insertionIndex].start < selected.start) insertionIndex += 1;
+    accepted.splice(insertionIndex, 0, selected);
     acceptedByFile.set(locationKey, accepted);
-    deduplicated.push(result);
+    deduplicated.push(emitted);
   }
 
   return deduplicated;
@@ -406,7 +473,7 @@ export function buildContextPack(results: SearchResult[], options: ContextPackOp
     ? results.map((result, originalIndex) => ({ result, originalIndex }))
     : rankContextCandidates(results, options.preferImplementationPaths ?? false, options.projectRoot);
   const rankedCandidates = ranked.map((entry) => toContextPackTraceCandidate(entry.result));
-  const deduplicated = deduplicateContextCandidates(ranked);
+  const deduplicated = deduplicateContextCandidates(ranked, preserveInputOrder);
   const deduplicatedCandidates = deduplicated.map((result) => toContextPackTraceCandidate(result));
   const configuredOrigins = options.origins ? canonicalOrigins(options.origins) : [];
   const observedOrigins = new Set(deduplicated.map((result) => resultOrigin(result, configuredOrigins)));

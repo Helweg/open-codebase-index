@@ -11,7 +11,7 @@ import { resolveCodebaseContext } from "../src/tools/context.js";
 import { resolveCodebaseEditContext } from "../src/tools/edit-context.js";
 import { getArchitectureContext } from "../src/tools/operations.js";
 import { configCache, getIndexerCacheKey, indexerCache } from "../src/tools/operation-runtime.js";
-import { countContextTokens } from "../src/tools/context-pack.js";
+import { buildContextPack, countContextTokens } from "../src/tools/context-pack.js";
 import { estimateTokens } from "../src/utils/cost.js";
 
 const TARGET = "signalGateForUnicodeEnvelopeValidationWithPreservedSourceCoordinatesAndExplicitEvidenceIdentity";
@@ -244,6 +244,39 @@ afterEach(async () => {
 });
 
 describe("native-backed consumer evidence acceptance", () => {
+  it("maps fragments of context-expanded search bodies to the expanded source coordinates", async () => {
+    const relative = "src/expanded-fragment.ts";
+    const symbol = "expandedFragmentCoordinateProof";
+    const content = [
+      "export const first = 0;",
+      "export const second = 1;",
+      "export const beforeExpanded = 'é雪🙂';",
+      "",
+      `export function ${symbol}(value: string): string {`,
+      "  const normalized = value.trim();",
+      "  if (!normalized) return 'empty';",
+      "  return normalized;",
+      "}",
+      "",
+      "export const afterExpanded = 3;",
+      "export const last = 4;",
+    ].join("\r\n");
+    await writeSource(relative, content);
+    await indexer!.index();
+    const narrow = (await indexer!.search(symbol, 10, { contextLines: 0 }))
+      .find((result) => result.filePath === path.join(root, relative) && result.name === symbol);
+    const expanded = (await indexer!.search(symbol, 10, { contextLines: 2 }))
+      .find((result) => result.filePath === path.join(root, relative) && result.name === symbol);
+    expect(narrow).toMatchObject({ startLine: 5, endLine: 9 });
+    expect(expanded).toMatchObject({ startLine: 3, endLine: 11 });
+    expect(expanded!.content).toBe(content.split("\n").slice(2, 11).join("\n"));
+
+    const packed = buildContextPack([{ ...narrow!, score: 1 }, { ...expanded!, score: 0.9 }], { tokenBudget: 1200 });
+    expect(packed.results.map(({ startLine, endLine }) => [startLine, endLine])).toEqual([[5, 9], [3, 4]]);
+    expect(packed.results[1].content).toBe(content.split("\n").slice(2, 4).join("\n"));
+    expect(packed.text).toContain(`${path.join(root, relative)}:3-4`);
+  });
+
   it.each(BUDGETS)("retains only fixture citations in %i-token metadata context", async (tokenBudget) => {
     const response = await resolveCodebaseContext(root, "opencode", {
       query: TARGET, symbol: TARGET, directory: TARGET_DIRECTORY, tokenBudget,
