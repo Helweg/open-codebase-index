@@ -276,6 +276,42 @@ describe("native-backed consumer evidence acceptance", () => {
     expect(packed.results[1].filePath).toBe(path.join(root, relative));
     expect(packed.text).toContain(`${path.basename(relative)}:3-4`);
   });
+  it("keeps terminal LF delimiters outside expanded source coordinates", async () => {
+    const relative = "src/terminal-delimiter.ts";
+    const firstSymbol = "terminalDelimiterFirst";
+    const lastSymbol = "terminalDelimiterLast";
+    const content = [
+      `export function ${firstSymbol}() {`,
+      "  return 1;",
+      "}",
+      "// gap line 4",
+      "// gap line 5",
+      "// gap line 6",
+      "// gap line 7",
+      "// gap line 8",
+      "// gap line 9",
+      `export function ${lastSymbol}() {`,
+      "  return 2;",
+      "}",
+      "",
+    ].join("\n");
+    await writeSource(relative, content);
+    await indexer!.index();
+
+    const firstResults = await indexer!.search(firstSymbol, 10, { contextLines: 6 });
+    const lastResults = await indexer!.search(lastSymbol, 10, { contextLines: 6 });
+    const first = firstResults.find((result) => result.filePath === path.join(root, relative) && result.name === firstSymbol);
+    const last = lastResults.find((result) => result.filePath === path.join(root, relative) && result.name === lastSymbol);
+    expect(first).toMatchObject({ startLine: 1, endLine: 9 });
+    expect(last).toMatchObject({ startLine: 1, endLine: 12 });
+    expect(first!.content).toBe(content.split("\n").slice(0, 9).join("\n"));
+    expect(last!.content).toBe(content);
+
+    const packed = buildContextPack([{ ...first!, score: 1 }, { ...last!, score: 0.9 }], { tokenBudget: 1200 });
+    expect(packed.results.map(({ startLine, endLine }) => [startLine, endLine])).toEqual([[1, 9], [10, 12]]);
+    expect(packed.results[1]!.content).toBe("export function terminalDelimiterLast() {\n  return 2;\n}");
+    expect(packed.text).toContain(`${path.basename(relative)}:10-12`);
+  });
 
   it.each(BUDGETS)("retains only fixture citations in %i-token metadata context", async (tokenBudget) => {
     const response = await resolveCodebaseContext(root, "opencode", {

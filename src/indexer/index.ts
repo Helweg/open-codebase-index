@@ -3422,10 +3422,18 @@ export class Indexer {
       return { content, startLine: metadata.startLine, endLine: metadata.endLine };
     }
 
-    const lines = (await fsPromises.readFile(filePath, "utf-8")).split("\n");
+    const source = await fsPromises.readFile(filePath, "utf-8");
+    const hasTerminalNewline = source.endsWith("\n");
+    const lines = source.split("\n");
+    if (hasTerminalNewline) lines.pop();
     const startLine = Math.max(1, metadata.startLine - contextLines);
     const endLine = Math.min(lines.length, metadata.endLine + contextLines);
-    return { content: lines.slice(startLine - 1, endLine).join("\n"), startLine, endLine };
+    const content = lines.slice(startLine - 1, endLine).join("\n");
+    return {
+      content: hasTerminalNewline && endLine === lines.length ? `${content}\n` : content,
+      startLine,
+      endLine,
+    };
   }
 
   private async createRerankerDocumentText(
