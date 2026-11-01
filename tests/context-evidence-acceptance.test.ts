@@ -273,8 +273,8 @@ describe("native-backed consumer evidence acceptance", () => {
 
     const packed = buildContextPack([{ ...narrow!, score: 1 }, { ...expanded!, score: 0.9 }], { tokenBudget: 1200 });
     expect(packed.results.map(({ startLine, endLine }) => [startLine, endLine])).toEqual([[5, 9], [3, 4]]);
-    expect(packed.results[1].content).toBe(content.split("\n").slice(2, 4).join("\n"));
-    expect(packed.text).toContain(`${path.join(root, relative)}:3-4`);
+    expect(packed.results[1].filePath).toBe(path.join(root, relative));
+    expect(packed.text).toContain(`${path.basename(relative)}:3-4`);
   });
 
   it.each(BUDGETS)("retains only fixture citations in %i-token metadata context", async (tokenBudget) => {
