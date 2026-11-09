@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
 import { getDefaultModelForProvider } from "../config/index.js";
-import { getGlobalIndexPath, resolveProjectConfigPath, resolveProjectIndexPath } from "../config/paths.js";
+import { resolveProjectConfigPath } from "../config/paths.js";
 import { rebasePathEntries, resolveInheritedKnowledgeBaseEntries } from "../config/rebase.js";
 import { parseConfig, type SearchConfig as ConfigSearchConfig } from "../config/schema.js";
 
@@ -125,27 +125,8 @@ function loadRawConfig(projectRoot: string, configPath?: string): unknown {
   return {};
 }
 
-function getIndexRootPath(projectRoot: string, scope: "project" | "global"): string {
-  return scope === "global"
-    ? getGlobalIndexPath("opencode")
-    : resolveProjectIndexPath(projectRoot, scope, "opencode");
-}
-
-function getLocalProjectIndexRoot(projectRoot: string): string {
-  return path.join(projectRoot, ".opencode", "index");
-}
-
 function getLocalProjectConfigPath(projectRoot: string): string {
   return path.join(projectRoot, ".opencode", "codebase-index.json");
-}
-
-export function clearIndexRoot(projectRoot: string, scope: "project" | "global"): void {
-  const indexRoot = scope === "global"
-    ? getIndexRootPath(projectRoot, scope)
-    : getLocalProjectIndexRoot(projectRoot);
-  if (existsSync(indexRoot)) {
-    rmSync(indexRoot, { recursive: true, force: true });
-  }
 }
 
 export function ensureLocalEvalProjectConfig(projectRoot: string, configPath?: string): string | undefined {

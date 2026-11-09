@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 
+- **Configured index location**: Add absolute, home-relative, and environment-substituted `indexPath` configuration across hosts, indexers, watchers, workers, and status reporting, preserving project-relative storage and inherited-worktree ownership safeguards.
 - **Explicit source freshness**: Add opt-in `index_status({ checkFreshness: true })` and `ocbi status --check-freshness --json` across supported hosts. Keep stored catalog readiness, source freshness, and coordinator state distinct; expose shared structured status without refreshing indexes.
 - **Source-linked pre-edit tests**: Add opt-in `includeTests` to `codebase_edit_context`, reusing current-source JS/TS discovery for direct target and one-hop caller references. Return complete budgeted citations and selected-only structured evidence across hosts, distinguish discovery caps from response omissions, and preserve explicit non-coverage labels.
 - **Working-tree impact**: Add `pr_impact({ workingTree: true })` and `ocbi impact --working-tree [--json]` for current indexed staged, unstaged, and untracked file-level graph evidence. Require explicit incremental refresh for stale bytes, preserve local Git/index state, disclose path/provenance/consistency limits, and report UNKNOWN for deleted, unindexed, symbol-free, or capped coverage.
@@ -22,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Safe evaluation rebuilds**: Honor the configured index location for `eval run --reindex` through the indexer's leased force-rebuild lifecycle, including embedding-model changes. Preserve unused default indexes, unrelated directory contents, structural-mode siblings, and other projects in shared global indexes; refuse inherited configured project rebuilds from linked worktrees.
 - **Consumer-visible evidence correctness**: Count only retained source and graph rows in pre-edit details, close truncated source fences at whole lines, and reserve outer-heading/final-truncation overhead before source fitting. Credit source only when its complete fitted block survives final composition. Allow structural-mode architecture maps to read branch files from SQLite without a vector store. Add native-backed citation, Unicode/CRLF, scope, and token-budget acceptance.
 - **Pre-edit source identity and cancellation**: Resolve canonical native symbol IDs before fitting target source, including large fragmented declarations, instead of accepting ranked body slices, suffix paths, or enclosing declarations. Cap source blocks at 512 tokens, withhold missing source, preserve default host roots, and share the exact lookup with evaluation. Keep selection-hook test references metadata-only and honor cancellation after empty lookups.
 - **Working-tree snapshot integrity**: Detect concurrent database publication even when source hashes and catalog counts are unchanged. Reject lossy UTF-8 Git paths and retain only project-local endpoints for cross-boundary renames.

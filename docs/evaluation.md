@@ -205,6 +205,8 @@ Relative path handling during eval config materialization is also important when
 
 This means explicit eval config files outside the project root can safely use relative `knowledgeBases` and `additionalInclude` entries; the generated local eval config preserves the correct paths for the eval project root.
 
+`--reindex` uses the indexer's force-rebuild lifecycle under its writer lease, honoring `indexPath` without deleting that directory or an unused default index. Structural mode rebuilds only the `structural/` store; global scope preserves other projects' indexed data. A linked worktree cannot force-rebuild an inherited configured project index, even after eval materializes a local config: run that rebuild from the owning main checkout.
+
 ### Compare against baseline
 
 ```bash
