@@ -134,11 +134,10 @@ export function createMcpServer(
   });
 
   initializeTools(projectRoot, config, host, { preserveManagedWorker: true });
-  const diagnostics = new McpRuntimeDiagnostics(() => resolveProjectIndexPath(
-    projectRoot,
-    getRuntimeConfigForProject(projectRoot, host).scope,
-    host,
-  ));
+  const diagnostics = new McpRuntimeDiagnostics(() => {
+    const runtimeConfig = getRuntimeConfigForProject(projectRoot, host);
+    return resolveProjectIndexPath(projectRoot, runtimeConfig.scope, host, runtimeConfig.indexPath);
+  });
   const backgroundWorker = configureMcpBackgroundWorker(projectRoot, config, host);
   if (backgroundWorker.managesWorker) {
     retainMcpBackgroundWorker(projectRoot, host);

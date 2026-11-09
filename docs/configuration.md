@@ -282,6 +282,16 @@ Ollama server is stopped. The standard suite uses deterministic HTTP replicas wi
 - `project`: store the index with the repository.
 - `global`: use the host-specific global index path.
 
+### Index location
+
+```json
+{
+  "indexPath": "~/.local/share/my-indexes/my-repo"
+}
+```
+
+`indexPath` replaces the scope's default index directory, for example to keep a project index out of the repository. It must be absolute or start with `~/`, and supports `{env:NAME}` substitution. With `scope: "project"`, stored paths stay root-relative, so linked worktrees that use the same configuration (for example the same `--config` file) share the index exactly as they share `.claude/index/`. The main checkout owns the index; force rebuilds and recovery from a linked worktree are refused as for any inherited index. Give each project its own `indexPath`.
+
 ## Indexing defaults
 
 | Option | Default | Purpose |
