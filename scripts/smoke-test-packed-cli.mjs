@@ -150,6 +150,12 @@ async function smokeIdentity(identity, expectedBinaries) {
   const installed = JSON.parse(readFileSync(path.join(installedRoot, "package.json"), "utf8"));
   assert.equal(installed.name, packed.name);
   assert.equal(installed.version, packed.version);
+  const v1Sdk = JSON.parse(readFileSync(path.join(installRoot, "node_modules", "@opencode-ai", "sdk-v1", "package.json"), "utf8"));
+  assert.equal(v1Sdk.name, "@opencode-ai/sdk", "The v1 alias must preserve upstream package identity");
+  assert.equal(`npm:${v1Sdk.name}@${v1Sdk.version}`, manifest.dependencies["@opencode-ai/sdk-v1"]);
+  assert.ok(!Object.entries(consumerLock.packages).some(([key, value]) =>
+    key.endsWith("node_modules/zod") && value.version === "4.1.8"),
+  "Standalone consumer must not install the legacy Zod runtime");
   for (const mode of ["import", "require"]) {
     for (const target of Object.values(installed.exports["."][mode])) {
       assert.ok(typeof target === "string" && target.startsWith("./"));
@@ -172,14 +178,28 @@ async function smokeIdentity(identity, expectedBinaries) {
   }
 
   // Keep upstream assignability separate so an installed SDK cannot conceal a standalone declaration leak.
-  const sdkInteropRoot = path.join(scratchRoot, `sdk-interop-${identity.packageName}`);
-  mkdirSync(sdkInteropRoot);
-  writeFileSync(path.join(sdkInteropRoot, "package.json"), "{\"private\":true}\n", { flag: "wx", mode: 0o600 });
-  run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarballPath,
-    `typescript@${lock.packages["node_modules/typescript"].version}`,
-    `@types/node@${lock.packages["node_modules/@types/node"].version}`,
-    `@opencode-ai/plugin@${lock.packages["node_modules/@opencode-ai/plugin"].version}`], sdkInteropRoot);
-  const sdkInteropTypes = checkPackedTypes(sdkInteropRoot, identity.packageName, { sdkInterop: true });
+  const sdkInteropTypes = [];
+  const pluginVersion = lock.packages["node_modules/@opencode-ai/plugin"].version;
+  const sdkVersions = new Set([
+    lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"],
+    lock.packages["node_modules/@opencode-ai/sdk"].version,
+  ]);
+  for (const sdkVersion of sdkVersions) {
+    const sdkInteropRoot = path.join(scratchRoot, `sdk-interop-${identity.packageName}-${sdkVersion}`);
+    mkdirSync(sdkInteropRoot);
+    writeFileSync(path.join(sdkInteropRoot, "package.json"), "{\"private\":true}\n", { flag: "wx", mode: 0o600 });
+    run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarballPath,
+      `typescript@${lock.packages["node_modules/typescript"].version}`,
+      `@types/node@${lock.packages["node_modules/@types/node"].version}`,
+      `@opencode-ai/plugin@${pluginVersion}`, `@opencode-ai/sdk@${sdkVersion}`], sdkInteropRoot);
+    const nestedSdk = path.join(sdkInteropRoot, "node_modules", "@opencode-ai", "plugin", "node_modules", "@opencode-ai", "sdk", "package.json");
+    const hostSdkVersion = lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"];
+    assert.equal(existsSync(nestedSdk), sdkVersion !== hostSdkVersion, "Expected deduplicated and nested host SDK layouts");
+    sdkInteropTypes.push({
+      pluginVersion, sdkVersion, hostSdkLayout: sdkVersion === hostSdkVersion ? "deduplicated" : "nested",
+      ...checkPackedTypes(sdkInteropRoot, identity.packageName, { sdkInterop: true }),
+    });
+  }
 
   writeFileSync(path.join(projectRoot, "notes.txt"), "packed CLI smoke test\n", { flag: "wx" });
   const configPath = path.join(projectRoot, "config.json");

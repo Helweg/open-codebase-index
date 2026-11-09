@@ -25,9 +25,10 @@ export function checkPackedTypes(installRoot, packageName, { sdkInterop = false 
       NotAny<IsAny<typeof plugin.setup>>,
       NotAny<IsAny<Parameters<typeof plugin.setup>[0]>>,
       NotAny<IsAny<typeof plugin.server>>,
-      NotAny<IsAny<Parameters<typeof plugin.server>[0]>>
+      NotAny<IsAny<Parameters<typeof plugin.server>[0]>>,
+      NotAny<IsAny<Parameters<typeof plugin.server>[0]["client"]>>
     ];
-    const typed: Typed = [false, false, false, false, false, false];
+    const typed: Typed = [false, false, false, false, false, false, false];
     const id: string = plugin.id;
     declare const context: Parameters<typeof plugin.setup>[0];
     const directory: string = context.location.directory;
@@ -35,6 +36,8 @@ export function checkPackedTypes(installRoot, packageName, { sdkInterop = false 
     declare const input: Parameters<typeof plugin.server>[0];
     const serverDirectory: string = input.directory;
     const serverWorktree: string = input.worktree;
+    // @ts-expect-error the host client retains its SDK methods
+    const invalidClient: typeof input.client = {};
     ${sdkInterop ? 'const server: import("@opencode-ai/plugin").Plugin = plugin.server;' : ""}
     const hooks = plugin.server(input);
     hooks.then((value) => {
@@ -50,7 +53,7 @@ export function checkPackedTypes(installRoot, packageName, { sdkInterop = false 
     plugin.server({ directory: 1 });
     // @ts-expect-error no fabricated root API
     plugin.nonexistent();
-    void [typed, id, directory, setup, serverDirectory, serverWorktree, hooks, numeric${sdkInterop ? ", server" : ""}];
+    void [typed, id, directory, setup, serverDirectory, serverWorktree, invalidClient, hooks, numeric${sdkInterop ? ", server" : ""}];
   `;
   const results = [];
   for (const [extension, prelude, mode, declaration] of [
