@@ -81,7 +81,14 @@ export function isProjectIndexPathOwnedByProject(
   projectRoot: string,
   indexPath: string,
   host: HostMode,
+  configuredIndexPath?: string,
 ): boolean {
+  if (configuredIndexPath) {
+    // A configured index belongs to the main checkout; linked worktrees inherit it.
+    return canonicalizePathForComparison(indexPath) === canonicalizePathForComparison(configuredIndexPath)
+      && resolveWorktreeMainRepoRoot(projectRoot) === null;
+  }
+
   const projectRoots = [projectRoot];
   const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
   if (mainRepoRoot) {
@@ -184,7 +191,12 @@ export function resolveProjectIndexPath(
   projectRoot: string,
   scope: "project" | "global",
   host: HostMode,
+  configuredIndexPath?: string,
 ): string {
+  if (configuredIndexPath) {
+    return configuredIndexPath;
+  }
+
   if (scope === "global") {
     return resolveGlobalIndexPath(host);
   }

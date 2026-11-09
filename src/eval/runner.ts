@@ -19,7 +19,6 @@ import { evaluateBudgetGate } from "./budget.js";
 import { compareSummaries } from "./compare.js";
 import { buildPerQueryResult, computeEvalMetrics } from "./metrics.js";
 import {
-  clearIndexRoot,
   ensureLocalEvalProjectConfig,
   getEmbeddingCostPer1MTokens,
   loadParsedConfig,
@@ -293,14 +292,14 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
   const parsedConfig = loadParsedConfig(options.projectRoot, resolvedEvalConfigPath);
   const effectiveConfig = resolveSearchConfig(parsedConfig, options.searchOverrides);
 
-  if (options.reindex) {
-    clearIndexRoot(options.projectRoot, effectiveConfig.scope);
-  }
-
   const indexer = new Indexer(options.projectRoot, effectiveConfig, "opencode");
 
   try {
-    await indexer.index();
+    if (options.reindex) {
+      await indexer.forceIndex();
+    } else {
+      await indexer.index();
+    }
 
     if (options.ciMode) {
       const indexStatus = await indexer.getStatus();
