@@ -2,6 +2,7 @@ import {
   analyzeQueryIntent,
   extractFilePathHint,
   extractIntentIdentifierHints,
+  identifierTokens,
   isConfigPath,
   isDocumentationPath as isIntentDocumentationPath,
   isFixturePath,
@@ -16,7 +17,6 @@ export type ExternalRerankBand = "implementation" | "documentation" | "test" | "
 
 const RANKING_TOKEN_CACHE_LIMIT = 4096;
 
-const rankingQueryTokenCache = new Map<string, Set<string>>();
 const rankingPathTokenCache = new Map<string, Set<string>>();
 const rankingTextTokenCache = new Map<string, Set<string>>();
 
@@ -47,21 +47,24 @@ export function tokenizeTextForRanking(text: string): Set<string> {
     return new Set<string>();
   }
 
-  const lowered = normalizeRankingText(text);
-  const cache = rankingQueryTokenCache.get(lowered) ?? rankingTextTokenCache.get(lowered);
+  const normalized = text.normalize("NFKC");
+  const cache = rankingTextTokenCache.get(normalized);
   if (cache) {
     return cache;
   }
 
   const tokens = new Set(
-    lowered
+    normalized.toLowerCase()
       .replace(/[^\p{L}\p{N}_$\s]/gu, " ")
       .split(/\s+/)
       .filter((token) => token.length > 1 && !STOPWORDS.has(token))
   );
 
-  setBoundedCache(rankingQueryTokenCache, lowered, tokens);
-  setBoundedCache(rankingTextTokenCache, lowered, tokens);
+  for (const token of identifierTokens(normalized)) {
+    if (!STOPWORDS.has(token)) tokens.add(token);
+  }
+
+  setBoundedCache(rankingTextTokenCache, normalized, tokens);
   return tokens;
 }
 

@@ -1656,9 +1656,15 @@ describe("multiprocess indexing", () => {
     await embeddingServer.waitForIdle();
     embeddingServer.reset();
 
+    const watcherReadyPath = path.join(tempDir, "busy-watcher-ready.log");
+    const environment = {
+      TEST_PROJECT_ROOT: projectRoot,
+      TEST_WATCHER_READY_PATH: watcherReadyPath,
+    };
+    const preloads = [new URL("./fixtures/watcher-probe.mjs", import.meta.url).href];
     const [first, second] = await Promise.all([
-      createMcpClient(configPath, "codex"),
-      createMcpClient(configPath, "codex"),
+      createMcpClient(configPath, "codex", { environment, preloads }),
+      createMcpClient(configPath, "codex", { environment, preloads }),
     ]);
     const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
     await waitForCondition(() => fs.existsSync(leasePath), "busy-shutdown background worker lease");
@@ -1667,6 +1673,9 @@ describe("multiprocess indexing", () => {
     const follower = leader === first ? second : first;
     const leaderPid = leader.transport.pid;
     if (leaderPid === null) throw new Error("Expected an MCP leader process");
+    await waitForCondition(() => fs.existsSync(watcherReadyPath)
+      && fs.readFileSync(watcherReadyPath, "utf-8").split("\n").includes(String(leaderPid)),
+    "busy leader watcher readiness");
 
     embeddingServer.block();
     fs.writeFileSync(sourcePath, "export function busyhandoff() { return 'before-bounded-shutdown'; }\n");
@@ -1697,6 +1706,9 @@ describe("multiprocess indexing", () => {
       const text = (status.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n");
       expect(text).toContain("state: ready");
     }, { timeout: 10_000 });
+    await waitForCondition(() => fs.existsSync(watcherReadyPath)
+      && fs.readFileSync(watcherReadyPath, "utf-8").split("\n").includes(String(follower.transport.pid)),
+    "promoted busy follower watcher readiness");
 
     embeddingServer.reset();
     fs.writeFileSync(sourcePath, "export function recoveredbusyhandoff() { return 'after-bounded-shutdown'; }\n");
@@ -1709,6 +1721,90 @@ describe("multiprocess indexing", () => {
     await follower.client.close();
     mcpClients = mcpClients.filter((client) => client !== follower.client);
   });
+
+  it("indexes edits made before the initial and promoted Codex watchers become ready", async () => {
+    const configPath = path.join(tempDir, "codex-startup-gap.json");
+    const parsedConfig = writeBackgroundMcpConfig(configPath);
+    const seededIndexer = new Indexer(projectRoot, parsedConfig, "codex");
+    localIndexers.push(seededIndexer);
+    await seededIndexer.index();
+    await embeddingServer.waitForIdle();
+    embeddingServer.reset();
+
+    const releaseDirectory = path.join(tempDir, "watcher-start-releases");
+    fs.mkdirSync(releaseDirectory);
+    const heldPath = path.join(tempDir, "watcher-start-held.log");
+    const readyPath = path.join(tempDir, "watcher-start-ready.log");
+    const environment = {
+      TEST_PROJECT_ROOT: projectRoot,
+      TEST_WATCHER_START_RELEASE_DIRECTORY: releaseDirectory,
+      TEST_WATCHER_HELD_PATH: heldPath,
+      TEST_WATCHER_READY_PATH: readyPath,
+    };
+    const preloads = [new URL("./fixtures/watcher-probe.mjs", import.meta.url).href];
+    const [first, second] = await Promise.all([
+      createMcpClient(configPath, "codex", { environment, preloads }),
+      createMcpClient(configPath, "codex", { environment, preloads }),
+    ]);
+    try {
+      const leasePath = getBackgroundWorkerLeasePath(projectRoot, parsedConfig, "codex");
+      await waitForCondition(() => fs.existsSync(leasePath), "startup-gap leader lease");
+      const owner = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+      const leader = first.transport.pid === owner.pid ? first : second;
+      const follower = leader === first ? second : first;
+      const phases = [
+        { process: leader, name: "startupgap", marker: "before-initial-watcher-ready" },
+        { process: follower, name: "promotiongap", marker: "before-promoted-watcher-ready" },
+      ];
+      for (const phase of phases) {
+        const pid = phase.process.transport.pid;
+        if (pid === null) throw new Error("Expected a live startup-gap MCP process");
+        await waitForCondition(() => fs.existsSync(heldPath)
+          && fs.readFileSync(heldPath, "utf-8").split("\n").includes(String(pid)),
+        "controlled watcher startup hold", 12_000);
+        await vi.waitFor(async () => {
+          const status = await phase.process.client.callTool({ name: "index_status", arguments: {} });
+          expect((status.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n"))
+            .toContain("state: ready");
+        }, { timeout: 10_000 });
+        await embeddingServer.waitForIdle();
+        embeddingServer.reset();
+
+        fs.writeFileSync(sourcePath, `export function ${phase.name}() { return '${phase.marker}'; }\n`);
+        fs.writeFileSync(path.join(releaseDirectory, String(pid)), "release");
+        await embeddingServer.waitForRequestCount(1);
+        await embeddingServer.waitForIdle();
+        expect(embeddingServer.inputs).toEqual(expect.arrayContaining([expect.stringContaining(phase.marker)]));
+        await vi.waitFor(async () => {
+          const definition = await phase.process.client.callTool({
+            name: "implementation_lookup", arguments: { query: phase.name, limit: 1 },
+          });
+          expect((definition.content as Array<{ text?: string }>).map(({ text }) => text ?? "").join("\n"))
+            .toContain(phase.name);
+        }, { timeout: 5000 });
+
+        if (phase.process === leader) {
+          await leader.client.close();
+          mcpClients = mcpClients.filter((client) => client !== leader.client);
+          await waitForCondition(() => {
+            try {
+              const replacement = JSON.parse(fs.readFileSync(path.join(leasePath, "owner.json"), "utf-8")) as { pid: number };
+              return replacement.pid === follower.transport.pid;
+            } catch {
+              return false;
+            }
+          }, "startup-gap follower promotion", 12_000);
+        }
+      }
+    } finally {
+      for (const process of [first, second]) {
+        if (process.transport.pid !== null) {
+          fs.writeFileSync(path.join(releaseDirectory, String(process.transport.pid)), "release");
+        }
+      }
+    }
+  });
+
 
   it("keeps watcher-driven indexing when auto-index startup is disabled", async () => {
     const configPath = path.join(tempDir, "codex-watcher-only.json");

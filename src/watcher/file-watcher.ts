@@ -484,17 +484,10 @@ export class FileWatcher {
     return true;
   }
 
-  private getFullChokidarWatchTargets(): string | string[] {
-    if (this.configPath) {
-      return [this.projectRoot, this.configPath];
-    }
-
-    const externalConfigTargets = this.getExternalConfigWatchTargets();
-    if (externalConfigTargets.length === 0) {
-      return this.projectRoot;
-    }
-
-    return [this.projectRoot, ...externalConfigTargets];
+  private getFullChokidarWatchTargets(): string[] {
+    const configTargets = this.configPath ? [this.configPath] : this.getExternalConfigWatchTargets();
+    // Explicit config roots retain Chokidar's first-event coverage when recursive callbacks are omitted.
+    return [this.projectRoot, ...configTargets, ...this.localModuleConfigTracker.getPaths()];
   }
 
   private getExternalConfigWatchTargets(): string[] {

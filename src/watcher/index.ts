@@ -84,6 +84,7 @@ export function createWatcherWithIndexer(
       requestReindex();
     });
   }
+  let startupCatchupRequested = false;
 
   return {
     fileWatcher,
@@ -95,7 +96,12 @@ export function createWatcherWithIndexer(
       return Promise.all([
         fileWatcher.waitUntilReady(),
         gitWatcher?.waitUntilReady(),
-      ]).then(() => undefined);
+      ]).then(() => {
+        if (startupCatchupRequested) return;
+        startupCatchupRequested = true;
+        // Reconcile edits made after the startup scan but before subscriptions became ready.
+        if (config.indexing?.autoIndex !== false) requestReindex();
+      });
     },
     async stop() {
       stopped = true;

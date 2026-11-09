@@ -36,4 +36,21 @@ describe("intent-aware source path preference", () => {
     expect(rankIntentAwareCandidates(query, candidates, candidates.length, { prioritizeSourcePaths: true }).map(({ id }) => id))
       .toEqual(["source", "test"]);
   });
+
+  it.each([
+    ["find code that batches outbound notifications", "source"],
+    ["find tests for code that batches outbound notifications", "test"],
+    ["documentation for code that batches outbound notifications", "documentation"],
+    ["configuration for code that batches outbound notifications", "configuration"],
+  ])("preserves the requested artifact preference for %s", (query, expected) => {
+    const candidates = [
+      candidate("test", 0.82, "tests/notifications.test.ts", "function"),
+      candidate("source", 0.55, "src/notifications/batch.ts", "function"),
+      candidate("documentation", 0.62, "docs/notifications.md", "section"),
+      candidate("configuration", 0.60, "config/notifications.json", "object"),
+    ];
+
+    expect(rankIntentAwareCandidates(query, candidates, candidates.length)[0]?.id)
+      .toBe(expected);
+  });
 });

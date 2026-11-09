@@ -145,9 +145,11 @@ summary. Use the agent-context budget rather than the default search baseline wh
 `agent-context.json`.
 
 Context-mode evaluation applies the production evidence packer with its default
-1200-token response budget. The pack contains location evidence only and removes
-overlapping same-file candidates. File diversity breaks ties in the leading
-relevance score; a distinct file cannot displace a higher-scored declaration.
+1200-token response budget. The pack contains location evidence only and narrows
+overlapping same-file hits to their longest contiguous uncovered source lines
+rather than dropping them, so a fully covered hit contributes nothing while a
+partially covered one keeps its novel lines. File diversity breaks ties in the
+leading relevance score; a distinct file cannot displace a higher-scored declaration.
 Configured-origin promotion retains its separate 80% relevance floor, and
 explicit definition packs preserve lookup order.
 Agents should drill into chosen locations with `implementation_lookup`,

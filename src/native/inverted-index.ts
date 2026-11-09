@@ -11,6 +11,10 @@ export class InvertedIndex {
     this.inner.load();
   }
 
+  validateSnapshotVersion(): void {
+    this.inner.validateSnapshotVersion();
+  }
+
   save(destination?: string): void {
     this.inner.save(destination);
   }
@@ -42,6 +46,14 @@ export class InvertedIndex {
 
   hasChunk(chunkId: string): boolean {
     return this.inner.hasChunk(chunkId);
+  }
+
+  hasCurrentTokenizer(chunkIds?: string[]): boolean {
+    return this.inner.hasCurrentTokenizer(chunkIds);
+  }
+
+  outdatedTokenizerChunkIds(chunkIds?: string[]): string[] {
+    return this.inner.outdatedTokenizerChunkIds(chunkIds);
   }
 
   clear(): void {

@@ -1248,7 +1248,10 @@ async function getSearchReadiness(
       heartbeat: control?.heartbeat,
     });
     throwIfOperationAborted(control?.signal);
-    const searchable = freshness.readable && freshness.current && freshness.reason === "current";
+    const searchable = freshness.readable && (
+      (freshness.current && freshness.reason === "current")
+      || freshness.reason === "keyword-index-unreadable"
+    );
     return {
       blocked: freshness.reason === "unreadable"
         || freshness.reason === "incompatible"

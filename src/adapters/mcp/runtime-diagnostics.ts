@@ -268,7 +268,9 @@ class ProcessRuntimeStore {
       complete: async (): Promise<void> => {
         if (completed) return;
         completed = true;
-        this.state.activeOperations = this.state.activeOperations.filter((entry) => entry.id !== tracked.id);
+        const activeIndex = this.state.activeOperations.findIndex((entry) => entry.id === tracked.id);
+        if (activeIndex === -1) return;
+        this.state.activeOperations.splice(activeIndex, 1);
         await this.persist();
       },
     };

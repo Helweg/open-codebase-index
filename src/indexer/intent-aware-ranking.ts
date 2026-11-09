@@ -143,7 +143,7 @@ function compactIdentifier(value: string): string {
   return normalizeRankingText(value).replace(/[^\p{L}\p{N}$]+/gu, "");
 }
 
-function identifierTokens(value: string): string[] {
+export function identifierTokens(value: string): string[] {
   const normalized = value
     .normalize("NFKC")
     .replace(/([\p{Ll}\p{N}])([\p{Lu}])/gu, "$1 $2")
@@ -233,7 +233,8 @@ export function analyzeQueryIntent(query: string): QueryIntentProfile {
 
   const explicitArtifactIntent = primary === "test" || primary === "docs" || primary === "config" || primary === "call-flow";
   const preferSourcePaths = primary === "definition" || primary === "implementation" || primary === "call-flow" ||
-    (primary === "neutral" && identifierHints.length > 0);
+    (primary === "neutral" && identifierHints.length > 0) ||
+    (!explicitArtifactIntent && /\bcode\b/u.test(normalized));
 
   return {
     primary,

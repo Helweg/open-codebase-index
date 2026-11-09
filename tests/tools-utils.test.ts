@@ -717,55 +717,108 @@ describe("tools utils", () => {
       expect(tooSmall.tokenEstimate).toBeLessThanOrEqual(MIN_CONTEXT_PACK_TOKEN_BUDGET);
     });
 
-    it("deduplicates exact and overlapping same-file hits", () => {
-      const results: SearchResult[] = [
-        {
-          filePath: "src/foo.ts",
-          startLine: 10,
-          endLine: 30,
-          content: "a",
-          score: 0.90,
-          chunkType: "function",
-          name: "outer",
-        },
-        {
-          filePath: "src/foo.ts",
-          startLine: 12,
-          endLine: 18,
-          content: "b",
-          score: 0.95,
-          chunkType: "function",
-          name: "inner",
-        },
-        {
-          filePath: "src/foo.ts",
-          startLine: 40,
-          endLine: 45,
-          content: "c",
-          score: 0.85,
-          chunkType: "function",
-          name: "later",
-        },
-        {
-          filePath: "src/foo.ts",
-          startLine: 10,
-          endLine: 30,
-          content: "d",
-          score: 0.40,
-          chunkType: "function",
-          name: "exactDup",
-        },
-      ];
+    function rangeHit(startLine: number, endLine: number, score: number): SearchResult {
+      return {
+        filePath: "src/flow.ts",
+        startLine,
+        endLine,
+        content: Array.from({ length: endLine - startLine + 1 }, (_, index) => `line ${startLine + index}`).join("\n"),
+        score,
+        chunkType: "function",
+        name: "flow",
+      };
+    }
 
-      const packed = buildContextPack(results, { tokenBudget: 2048 });
-      expect(packed.results).toHaveLength(2);
-      expect(packed.candidateCount).toBe(4);
-      expect(packed.deduplicatedCount).toBe(2);
-      expect(packed.duplicateCount).toBe(2);
-      expect(packed.omittedCount).toBe(2);
-      const names = packed.results.map((r) => r.name);
-      expect(names).toEqual(["inner", "later"]);
-      expect(names).not.toContain("overlap");
+    it("retains novel source lines from a partially overlapping hit without claiming a full declaration", () => {
+      const first = rangeHit(2, 5, 1);
+      const overlapping = {
+        ...rangeHit(4, 9, 0.9),
+        startCol: 2,
+        endCol: 7,
+        content: "line 4\r\nline 5\r\né雪🙂\r\nline 7\r\nline 8\r\nline 9",
+      };
+      const packed = buildContextPack([first, overlapping, rangeHit(3, 4, 0.8)], { tokenBudget: 2048 });
+
+      expect(packed.results.map(({ startLine, endLine, content }) => ({ startLine, endLine, content }))).toEqual([
+        { startLine: 2, endLine: 5, content: first.content },
+        { startLine: 6, endLine: 9, content: "é雪🙂\r\nline 7\r\nline 8\r\nline 9" },
+      ]);
+      expect(packed.results[1].startCol).toBeUndefined();
+      expect(packed.results[1].endCol).toBeUndefined();
+      expect(packed.text).toContain("src/flow.ts:6-9");
+      expect(packed.duplicateCount).toBe(1);
+      expect(packed.tokenEstimate).toBe(countContextTokens(packed.text));
+      expect(packed.tokenEstimate).toBeLessThanOrEqual(packed.tokenBudget);
+      expect(overlapping).toMatchObject({ startLine: 4, endLine: 9, startCol: 2, endCol: 7 });
+      expect(overlapping.content).toBe("line 4\r\nline 5\r\né雪🙂\r\nline 7\r\nline 8\r\nline 9");
+    });
+    it("keeps aligned fragments when the source body ends with a newline", () => {
+      const packed = buildContextPack([
+        { ...rangeHit(1, 2, 1), content: "line 1\nline 2\n" },
+        { ...rangeHit(2, 3, 0.9), content: "line 2\nline 3\n" },
+      ], { tokenBudget: 2048 });
+
+      expect(packed.results.map(({ startLine, endLine, content }) => [startLine, endLine, content]))
+        .toEqual([[1, 2, "line 1\nline 2\n"], [3, 3, "line 3"]]);
+    });
+
+
+    it("keeps the longest uncovered segment and resolves equal-length gaps by earliest source line", () => {
+      const packed = buildContextPack([
+        rangeHit(5, 7, 1),
+        rangeHit(11, 13, 0.9),
+        rangeHit(2, 16, 0.8),
+        rangeHit(5, 13, 0.7),
+        rangeHit(2, 13, 0.6),
+      ], { tokenBudget: 2048 });
+
+      expect(packed.results.map(({ startLine, endLine, content }) => [startLine, endLine, content])).toEqual([
+        [5, 7, "line 5\nline 6\nline 7"],
+        [11, 13, "line 11\nline 12\nline 13"],
+        [2, 4, "line 2\nline 3\nline 4"],
+        [8, 10, "line 8\nline 9\nline 10"],
+      ]);
+      expect(packed.duplicateCount).toBe(1);
+    });
+
+    it("retains a longer suffix rather than a shorter uncovered prefix", () => {
+      const packed = buildContextPack([rangeHit(5, 7, 1), rangeHit(2, 12, 0.9)], { tokenBudget: 2048 });
+      expect(packed.results.map(({ startLine, endLine }) => [startLine, endLine])).toEqual([[5, 7], [8, 12]]);
+      expect(packed.results[1].content).toBe("line 8\nline 9\nline 10\nline 11\nline 12");
+    });
+
+    it("keeps metadata-only fragments and withholds content that cannot be mapped to the narrowed range", () => {
+      for (const content of ["", "unavailable source"]) {
+        const packed = buildContextPack([
+          rangeHit(10, 15, 1),
+          { ...rangeHit(13, 20, 0.9), content },
+        ], { tokenBudget: 2048 });
+        expect(packed.results[1]).toMatchObject({ startLine: 16, endLine: 20, content: "" });
+      }
+    });
+
+    it("preserves exact definition ranges, columns and lookup order when input order is authoritative", () => {
+      const exact = { ...rangeHit(5, 7, 0.1), startCol: 3, endCol: 8 };
+      const packed = buildContextPack([exact, rangeHit(2, 12, 1)], {
+        tokenBudget: 2048,
+        preserveInputOrder: true,
+      });
+      expect(packed.results).toEqual([exact]);
+      expect(packed.results[0]).toMatchObject({ startLine: 5, endLine: 7, startCol: 3, endCol: 8 });
+    });
+
+    it("does not narrow page-local PDF ranges or deduplicate evidence from different pages", () => {
+      const page = (startLine: number, endLine: number, score: number, pageNumber: number): SearchResult => ({
+        ...rangeHit(startLine, endLine, score),
+        filePath: "knowledge/guide.pdf",
+        documentLocation: { kind: "pdf", pageStart: pageNumber, pageEnd: pageNumber },
+      });
+      const packed = buildContextPack([page(1, 5, 1, 1), page(3, 8, 0.9, 1), page(1, 5, 0.8, 2)], {
+        tokenBudget: 2048,
+      });
+      expect(packed.results.map(({ startLine, endLine, documentLocation }) => [documentLocation?.pageStart, startLine, endLine]))
+        .toEqual([[1, 1, 5], [2, 1, 5]]);
+      expect(packed.results[0].content).toBe("line 1\nline 2\nline 3\nline 4\nline 5");
     });
 
     it("keeps identical local ranges on different PDF pages", () => {
