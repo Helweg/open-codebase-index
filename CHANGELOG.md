@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Development glob safety**: Resolve vulnerable `minimatch` versions `>=7.0.0 <11.0.1` to 11.0.5 through a version-scoped override, bounding aggressive glob preprocessing for GHSA-g3hv-75wg-m249. Preserve the Node.js 22.22.0 runtime floor and existing host SDK versions.
 - **OpenCode SDK declaration identity**: Preserve the v1 plugin's exact SDK 1.3.13 through a separate npm alias instead of rebinding its generated client and hook types to the independently updated SDK. Keep strict packed ESM/CommonJS host assignment checks for both package identities with deduplicated and nested host SDK layouts, without installing the build-only plugin or legacy Zod runtime in standalone consumers.
 - **Safe evaluation rebuilds**: Honor the configured index location for `eval run --reindex` through the indexer's leased force-rebuild lifecycle, including embedding-model changes. Preserve unused default indexes, unrelated directory contents, structural-mode siblings, and other projects in shared global indexes; refuse inherited configured project rebuilds from linked worktrees.
 - **Identifier-word retrieval**: Match natural-language terms inside camelCase, PascalCase, and acronym-bearing identifiers in BM25, and preserve word boundaries in lexical definition fallback without colliding with lowercased cache entries. Keep whole-identifier queries distinct from searches for shared identifier words.
