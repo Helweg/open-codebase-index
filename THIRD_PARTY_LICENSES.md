@@ -178,9 +178,10 @@ SOFTWARE.
 - Notice: [upstream LICENSE](https://github.com/anomalyco/opencode/blob/v1.3.13/LICENSE)
 
 The existing OpenCode tool helper and plugin public type declarations are bundled
-into this package. `@opencode-ai/plugin` is build-time only; the dependency-free
-`@opencode-ai/sdk` remains a declared public type dependency to preserve shared
-client-class identity.
+into this package. `@opencode-ai/plugin` is build-time only. The dependency-free
+`@opencode-ai/sdk-v1` npm alias retains the original `@opencode-ai/sdk@1.3.13`
+package identity for public v1 client declarations, independently of the updated
+`@opencode-ai/sdk` dependency.
 
 ```text
 MIT License
