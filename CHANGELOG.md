@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.39.0] - 2026-11-16
+
+### Upgrade notes
+
+- **Node.js minimum**: Requires Node.js 22.22.0 or newer, up from 22.13.0, for both package identities.
+- **Configuration inheritance**: Ordinary project settings now inherit omitted nested global fields. Set fields explicitly to reset inherited values. Explicit arrays in those sections replace inherited arrays, and provider-related objects still replace as a whole. See [global and project merge rules](docs/configuration.md#global-and-project-merge-rules).
+
 ### Added
 
 - **Packed runtime compatibility CI**: Exercise native-backed context and packed MCP/omp entrypoints on macOS, and check that both package identities can read and update fixture indexes created by the pinned published `0.38.2` artifacts after candidate-tarball replacement. Record artifact identities separately when published and candidate versions match.
@@ -20,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Node.js runtime floor and Chokidar 6**: Raise both package identities' minimum from Node.js 22.13.0 to 22.22.0 to satisfy Chokidar 6's declared engine requirement. Existing platform, binary, and host contracts remain unchanged.
 
 - **Complete history sync scheduling**: Reconcile up to four entities concurrently through one sync-local request budget of four active calls and eight starts per rolling second, without skipping historical edits, deletions, or conditional page validation. Drain real requests before publication, cancellation settlement, or cleanup; retain resumable checkpoints on transient failures and let late access denials take precedence.
-- **Compatible dependency updates**: Update the OpenCode SDK to 1.19.5, PDF.js to 6.5.438, MCP SDK to 1.32.2, ignore to 7.0.14, NAPI CLI to 3.10.12, ESLint to 10.14.0, Rollup to 4.67.5, and typescript-eslint to 8.72.1; preserve the published Node.js 22.22.0 minimum.
+- **Compatible dependency updates**: Update the OpenCode SDK to 1.19.5, PDF.js to 6.5.438, MCP SDK to 1.32.2, ignore to 7.0.14, Hono to 4.13.18, `@hono/node-server` to 2.1.6, p-retry to 9.0.0, NAPI CLI to 3.10.12, ESLint to 10.14.0, Rollup to 4.68.2, and typescript-eslint to 8.72.2; preserve the published Node.js 22.22.0 minimum.
 
 ### Fixed
 
@@ -1136,7 +1144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...v0.39.0
 [0.38.2]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...v0.38.2
 [0.38.1]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...v0.38.1
 [0.38.0]: https://github.com/Helweg/open-codebase-index/compare/v0.37.2...v0.38.0

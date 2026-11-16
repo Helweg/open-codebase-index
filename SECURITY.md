@@ -4,9 +4,11 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.39.x  | :white_check_mark: |
 | 0.38.x  | :white_check_mark: |
-| 0.37.x  | :white_check_mark: |
-| < 0.37.0 | :x:               |
+| < 0.38.0 | :x:               |
+
+The 0.39.x line requires Node.js 22.22.0 or newer. The 0.38.x line retains its published Node.js 22.13.0 minimum.
 
 ## Reporting a Vulnerability
 
