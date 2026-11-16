@@ -110,7 +110,7 @@
     "chokidar": "^6.0.0",
     "ignore": "^7.0.5",
     "p-queue": "^10.0.0",
-    "p-retry": "^8.0.1",
+    "p-retry": "^9.0.0",
     "pdfjs-dist": "6.5.438",
     "tiktoken": "^1.0.15",
     "unicode-case-folding": "1.1.2",
