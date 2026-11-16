@@ -146,52 +146,83 @@ describe("worktree fallback (issue #60)", () => {
     }
   });
 
-  it("keeps project object overrides as wholesale replacements instead of deep-merging", () => {
+  it("inherits ordinary global settings beneath project and nested indexing overrides", () => {
     vi.stubEnv("HOME", tempDir);
     vi.stubEnv("USERPROFILE", tempDir);
     const globalConfigPath = path.join(tempDir, ".config", "opencode", "codebase-index.json");
-
     fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
-    fs.writeFileSync(
-      globalConfigPath,
-      JSON.stringify(
-        {
-          indexing: {
-            autoIndex: true,
-            maxFileSize: 12345,
-          },
-        },
-        null,
-        2,
-      ),
-      "utf-8",
-    );
+    fs.writeFileSync(globalConfigPath, JSON.stringify({
+      indexing: {
+        autoIndex: false,
+        maxFileSize: 200000,
+        maxFilesPerDirectory: 500,
+        gitBlame: { enabled: true },
+        scipTypeScript: { enabled: true, indexFile: "global.scip", timeoutMs: 60000 },
+        includeIgnored: ["global/**"],
+        includeExcluded: ["global-build/**"],
+      },
+      search: { maxResults: 17, minScore: 0.4 },
+      debug: { enabled: true, logSearch: true },
+      effectivenessMetrics: { enabled: true },
+      mcp: { stallTimeoutMs: 5000 },
+    }));
+    fs.writeFileSync(path.join(mainRepoDir, ".opencode", "codebase-index.json"), JSON.stringify({
+      embeddingProvider: "custom",
+      customProvider: { baseUrl: "http://localhost:11434/v1", model: "mock-model", dimensions: 8 },
+      indexing: {
+        linesPerChunk: 15,
+        maxDepth: 0,
+        autoGc: false,
+        gitBlame: {},
+        scipTypeScript: { timeoutMs: 2000 },
+        includeIgnored: [],
+        includeExcluded: ["project-build/**"],
+      },
+      search: { maxResults: 3 },
+      debug: { enabled: false },
+      effectivenessMetrics: {},
+      mcp: {},
+    }));
 
-    fs.writeFileSync(
-      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
-      JSON.stringify(
-        {
-          embeddingProvider: "custom",
-          customProvider: {
-            baseUrl: "http://localhost:11434/v1",
-            model: "mock-model",
-            dimensions: 8,
-          },
-          indexing: {
-            watchFiles: false,
-          },
-        },
-        null,
-        2,
-      ),
-      "utf-8"
-    );
+    const config = parseConfig(loadMergedConfig(worktreeDir, "opencode"));
+    expect(config.indexing).toMatchObject({
+      autoIndex: false,
+      maxFileSize: 200000,
+      maxFilesPerDirectory: 500,
+      linesPerChunk: 15,
+      maxDepth: 0,
+      autoGc: false,
+      gitBlame: { enabled: true },
+      scipTypeScript: { enabled: true, indexFile: "global.scip", timeoutMs: 2000 },
+    });
+    expect(config.indexing.includeIgnored).toEqual([]);
+    expect(config.indexing.includeExcluded).toEqual(["project-build/**"]);
+    expect(config.search).toMatchObject({ maxResults: 3, minScore: 0.4 });
+    expect(config.debug).toMatchObject({ enabled: false, logSearch: true });
+    expect(config.effectivenessMetrics).toEqual({ enabled: true });
+    expect(config.mcp).toEqual({ stallTimeoutMs: 5000 });
+  });
 
-    const loaded = loadMergedConfig(worktreeDir, "opencode") as {
-      indexing?: Record<string, unknown>;
-    };
+  it("replaces provider and reranker objects without inheriting global credentials", () => {
+    vi.stubEnv("HOME", tempDir);
+    vi.stubEnv("USERPROFILE", tempDir);
+    const globalConfigPath = path.join(tempDir, ".config", "opencode", "codebase-index.json");
+    fs.mkdirSync(path.dirname(globalConfigPath), { recursive: true });
+    fs.writeFileSync(globalConfigPath, JSON.stringify({
+      customProvider: {
+        baseUrl: "https://global.test/v1", model: "global-model", dimensions: 8, apiKey: "global-key",
+      },
+      reranker: { enabled: true, baseUrl: "https://global.test/rerank", apiKey: "global-reranker-key" },
+    }));
+    const customProvider = { baseUrl: "http://localhost:11434/v1", model: "mock-model", dimensions: 8 };
+    const reranker = { enabled: false, baseUrl: "http://localhost:8080/rerank" };
+    fs.writeFileSync(path.join(mainRepoDir, ".opencode", "codebase-index.json"), JSON.stringify({
+      embeddingProvider: "custom", customProvider, reranker,
+    }));
 
-    expect(loaded.indexing).toEqual({ watchFiles: false });
+    const config = loadMergedConfig(worktreeDir, "opencode") as Record<string, unknown>;
+    expect(config.customProvider).toEqual(customProvider);
+    expect(config.reranker).toEqual(reranker);
   });
 
   it("rebases inherited absolute repo-local knowledge bases onto the worktree", () => {
