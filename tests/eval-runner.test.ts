@@ -5,6 +5,7 @@ import * as path from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { runEvaluation, runSweep } from "../src/eval/runner.js";
+import { loadParsedConfig } from "../src/eval/runner-config.js";
 import { Indexer } from "../src/indexer/index.js";
 import * as operationRuntime from "../src/tools/operation-runtime.js";
 
@@ -149,6 +150,185 @@ describe("eval runner", () => {
     });
 
     expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
+  });
+
+  describe("configured index reindexing", () => {
+    let projectRoot: string;
+    let indexPath: string;
+
+    beforeEach(() => {
+      projectRoot = path.join(tempDir, "project");
+      indexPath = path.join(tempDir, "outside", "index");
+      mkdirSync(projectRoot, { recursive: true });
+      for (const directory of ["src", ".opencode", "benchmarks"]) {
+        cpSync(path.join(tempDir, directory), path.join(projectRoot, directory), { recursive: true });
+      }
+      const config = loadParsedConfig(projectRoot);
+      writeFileSync(
+        path.join(projectRoot, ".opencode", "codebase-index.json"),
+        JSON.stringify({ ...config, indexPath }),
+      );
+      writeFileSync(
+        path.join(projectRoot, "benchmarks", "budgets", "configured-index.json"),
+        JSON.stringify({ name: "configured-index", failOnMissingBaseline: false, thresholds: { minHitAt5: 1 } }),
+      );
+    });
+
+    it("rebuilds an existing external index without touching the existing default index", async () => {
+      const config = loadParsedConfig(projectRoot);
+      const defaultIndexer = new Indexer(projectRoot, { ...config, indexPath: undefined }, "opencode");
+      const configuredIndexer = new Indexer(projectRoot, config, "opencode");
+      try {
+        await defaultIndexer.index();
+        await configuredIndexer.index();
+      } finally {
+        await Promise.all([defaultIndexer.close(), configuredIndexer.close()]);
+      }
+      const defaultDatabase = path.join(projectRoot, ".opencode", "index", "codebase.db");
+      const defaultBytes = readFileSync(defaultDatabase);
+      const defaultSentinel = path.join(projectRoot, ".opencode", "index", "sentinel.txt");
+      writeFileSync(defaultSentinel, "keep-default");
+      const configuredSentinel = path.join(indexPath, "sentinel.txt");
+      writeFileSync(configuredSentinel, "keep-external");
+      fetchSpy.mockClear();
+      writeFileSync(
+        path.join(projectRoot, ".opencode", "codebase-index.json"),
+        JSON.stringify({
+          ...config,
+          embeddingModel: "rebuilt-embedding-model",
+          customProvider: { ...config.customProvider, model: "rebuilt-embedding-model" },
+        }),
+      );
+
+      const result = await runEvaluation({
+        projectRoot,
+        datasetPath: "benchmarks/golden/small.json",
+        outputRoot: "benchmarks/results",
+        reindex: true,
+        ciMode: true,
+        budgetPath: "benchmarks/budgets/configured-index.json",
+      });
+
+      expect(result.perQuery[0]?.hitAt1).toBe(true);
+      // Unchanged source must be embedded again, not reused from the old index.
+      expect(fetchSpy).toHaveBeenCalled();
+      expect(readFileSync(defaultDatabase)).toEqual(defaultBytes);
+      expect(readFileSync(configuredSentinel, "utf-8")).toBe("keep-external");
+      expect(readFileSync(defaultSentinel, "utf-8")).toBe("keep-default");
+    });
+
+    it("rebuilds the configured structural store without resetting its semantic sibling", async () => {
+      const config = loadParsedConfig(projectRoot);
+      const semanticIndexer = new Indexer(projectRoot, config, "opencode");
+      const structuralConfig = { ...config, indexing: { ...config.indexing, mode: "structural" as const } };
+      const structuralIndexer = new Indexer(projectRoot, structuralConfig, "opencode");
+      try {
+        await semanticIndexer.index();
+        await structuralIndexer.index();
+      } finally {
+        await Promise.all([semanticIndexer.close(), structuralIndexer.close()]);
+      }
+      const semanticDatabase = path.join(indexPath, "codebase.db");
+      const semanticBytes = readFileSync(semanticDatabase);
+      writeFileSync(
+        path.join(projectRoot, ".opencode", "codebase-index.json"),
+        JSON.stringify(structuralConfig),
+      );
+      fetchSpy.mockClear();
+
+      const result = await runEvaluation({
+        projectRoot,
+        datasetPath: "benchmarks/golden/small.json",
+        outputRoot: "benchmarks/results",
+        reindex: true,
+      });
+
+      expect(result.perQuery[0]?.hitAt1).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(readFileSync(semanticDatabase)).toEqual(semanticBytes);
+    });
+
+    it("refuses to rebuild an inherited configured index from a linked worktree", async () => {
+      const worktreeRoot = path.join(tempDir, "worktree");
+      const worktreeGitDir = path.join(projectRoot, ".git", "worktrees", "feature");
+      mkdirSync(path.join(projectRoot, ".git", "refs", "heads"), { recursive: true });
+      mkdirSync(worktreeGitDir, { recursive: true });
+      mkdirSync(worktreeRoot, { recursive: true });
+      writeFileSync(path.join(projectRoot, ".git", "HEAD"), "ref: refs/heads/main\n");
+      writeFileSync(path.join(projectRoot, ".git", "refs", "heads", "main"), `${"1".repeat(40)}\n`);
+      writeFileSync(path.join(worktreeRoot, ".git"), `gitdir: ${worktreeGitDir}\n`);
+      writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
+      writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
+      cpSync(path.join(projectRoot, "src"), path.join(worktreeRoot, "src"), { recursive: true });
+      const config = loadParsedConfig(projectRoot);
+      const owner = new Indexer(projectRoot, config, "opencode");
+      try {
+        await owner.index();
+      } finally {
+        await owner.close();
+      }
+      const sentinel = path.join(indexPath, "sentinel.txt");
+      writeFileSync(sentinel, "keep-shared");
+
+      await expect(runEvaluation({
+        projectRoot: worktreeRoot,
+        datasetPath: path.join(projectRoot, "benchmarks", "golden", "small.json"),
+        outputRoot: "benchmarks/results",
+        reindex: true,
+      })).rejects.toThrow(/force rebuild is unsafe.*inherited worktree index/);
+
+      expect(readFileSync(sentinel, "utf-8")).toBe("keep-shared");
+      const reader = new Indexer(projectRoot, config, "opencode");
+      try {
+        const results = await reader.search("rankHybridResults", 5, { metadataOnly: true });
+        expect(results.some((result) => result.name === "rankHybridResults")).toBe(true);
+      } finally {
+        await reader.close();
+      }
+    });
+
+    it("rebuilds only the current project in a configured shared global index", async () => {
+      const config = { ...loadParsedConfig(projectRoot), scope: "global" as const };
+      writeFileSync(
+        path.join(projectRoot, ".opencode", "codebase-index.json"),
+        JSON.stringify(config),
+      );
+      const otherRoot = path.join(tempDir, "other-project");
+      mkdirSync(path.join(otherRoot, "src"), { recursive: true });
+      writeFileSync(
+        path.join(otherRoot, "src", "foreign.ts"),
+        "export function foreignProjectMarker() { return 'preserve'; }\n",
+      );
+      const otherIndexer = new Indexer(otherRoot, config, "opencode");
+      const projectIndexer = new Indexer(projectRoot, config, "opencode");
+      try {
+        await otherIndexer.index();
+        await projectIndexer.index();
+      } finally {
+        await Promise.all([otherIndexer.close(), projectIndexer.close()]);
+      }
+      fetchSpy.mockClear();
+
+      const result = await runEvaluation({
+        projectRoot,
+        datasetPath: "benchmarks/golden/small.json",
+        outputRoot: "benchmarks/results",
+        reindex: true,
+        ciMode: true,
+        budgetPath: "benchmarks/budgets/configured-index.json",
+      });
+
+      expect(result.perQuery[0]?.hitAt1).toBe(true);
+      expect(fetchSpy).toHaveBeenCalled();
+      const reader = new Indexer(otherRoot, config, "opencode");
+      try {
+        const results = await reader.search("foreignProjectMarker", 5, { metadataOnly: true });
+        expect(results.find((entry) => entry.name === "foreignProjectMarker")?.filePath)
+          .toBe(path.join(otherRoot, "src", "foreign.ts"));
+      } finally {
+        await reader.close();
+      }
+    });
   });
 
   it("executes architecture_context queries and measures cited evidence relevance and response tokens", async () => {

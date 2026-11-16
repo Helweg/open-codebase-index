@@ -25,12 +25,18 @@ for (const file of data.files) {
 }
 const legacyEntry = path.join(assetRoot, data.entry);
 const pluginToolTypes = path.join(root, "node_modules", "@opencode-ai", "plugin", "dist", "tool.d.ts");
+const pluginManifest = JSON.parse(readFileSync(path.join(root, "node_modules", "@opencode-ai", "plugin", "package.json"), "utf8"));
+if (manifest.dependencies["@opencode-ai/sdk-v1"] !== `npm:@opencode-ai/sdk@${pluginManifest.dependencies["@opencode-ai/sdk"]}`) {
+  throw new Error("The v1 declaration SDK alias must match the OpenCode plugin's exact SDK dependency");
+}
 function isPluginToolDeclaration(importer) {
   return !!importer && path.resolve(importer) === pluginToolTypes;
 }
 const bundle = await rollup({
   input: path.join(root, "src/index.ts"),
   external(name, importer) {
+    // Let resolveId preserve the v1 host's SDK identity instead of rebinding to the runtime SDK.
+    if (name === "@opencode-ai/sdk") return false;
     if (name === "zod" && isPluginToolDeclaration(importer)) return false;
     return name.startsWith("node:") || builtins.has(name)
       || externalPackages.some((dependency) => name === dependency || name.startsWith(`${dependency}/`));
@@ -38,6 +44,7 @@ const bundle = await rollup({
   plugins: [{
     name: "opencode-declaration-abi",
     resolveId(name, importer) {
+      if (name === "@opencode-ai/sdk") return { id: "@opencode-ai/sdk-v1", external: true };
       if (name !== "zod" || !isPluginToolDeclaration(importer)) return null;
       return { id: legacyEntry, external: true };
     },

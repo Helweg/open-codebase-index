@@ -5,10 +5,9 @@ import type { HostMode } from "../config/host.js";
 import type { StatusResult } from "../indexer/index.js";
 
 import { resolveProjectIndexPath } from "../config/paths.js";
-import { parseConfig } from "../config/schema.js";
 import { getCurrentBranch, getCurrentCommit, isGitRepo } from "../git/index.js";
 import { Indexer } from "../indexer/index.js";
-import { loadRuntimeConfig } from "./config-state.js";
+import { getRuntimeConfigForProject } from "./operation-runtime.js";
 import { createWorkspaceDatabaseSnapshot } from "./workspace-status-snapshot.js";
 
 export const MAX_WORKSPACE_REPOS = 20;
@@ -106,8 +105,8 @@ function isReady(status: StatusResult, branchMismatch: boolean): boolean {
 }
 
 async function readWorkspaceIndexStatus(root: string, host: HostMode): Promise<StatusResult> {
-  const config = parseConfig(loadRuntimeConfig(root, host));
-  const baseIndexPath = resolveProjectIndexPath(root, config.scope, host);
+  const config = getRuntimeConfigForProject(root, host);
+  const baseIndexPath = resolveProjectIndexPath(root, config.scope, host, config.indexPath);
   const indexPath = config.indexing.mode === "structural" ? path.join(baseIndexPath, "structural") : baseIndexPath;
   const sourceDatabasePath = path.join(indexPath, "codebase.db");
   const snapshot = existsSync(sourceDatabasePath)

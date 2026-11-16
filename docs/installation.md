@@ -6,6 +6,8 @@ The published package includes the MCP server dependencies and native binaries f
 
 Both identities expose the same root plugin object (`id`, `setup`, and the v1 `server` callback). Root declarations are generated from the implementation: ESM imports resolve `dist/index.d.ts`, while CommonJS consumers resolve `dist/index.d.cts` and access the object's `default` export. Packed consumer checks use TypeScript 5.9.3 with strict NodeNext resolution and `skipLibCheck: false`; this is the tested compiler version, not a claimed minimum TypeScript version.
 
+The v1 `server` declaration retains the exact SDK used by `@opencode-ai/plugin@1.3.13` through the dependency-free `@opencode-ai/sdk-v1` npm alias (`@opencode-ai/sdk@1.3.13`). This preserves upstream client-class identity without binding the host callback to the separately updated `@opencode-ai/sdk@1.19.5`. Packed checks exercise real host `Plugin` assignment with SDK 1.3.13 deduplicated at the consumer root and nested below the host plugin when the root uses SDK 1.19.5. Standalone installs require neither the build-only OpenCode plugin nor its legacy Zod runtime.
+
 ## OpenCode
 
 Install the package:
@@ -318,7 +320,7 @@ Progress and diagnostics for `index` are written to `stderr`; the final formatte
 
 ## Local source checkout
 
-Development requires Node.js 22.22 or newer within 22.x, 24.11 or newer within 24.x, or 26 or newer. Chokidar 6's engine requirement applies to source installs as well as published packages.
+Development requires Node.js 22.22 or newer within 22.x, 24.12 or newer within 24.x, or 26 or newer. Source installs must satisfy both Chokidar 6 and the NAPI CLI's development-only LZMA dependency; the published runtime minimum remains Node.js 22.22.
 
 ```bash
 npm ci

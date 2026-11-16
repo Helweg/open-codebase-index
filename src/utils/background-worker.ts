@@ -147,7 +147,7 @@ function resolveIdentity(
   host: HostMode,
 ): BackgroundWorkerIdentity {
   const canonicalProjectRoot = canonicalizePath(projectRoot);
-  const canonicalIndexPath = canonicalizePath(resolveProjectIndexPath(projectRoot, config.scope, host));
+  const canonicalIndexPath = canonicalizePath(resolveProjectIndexPath(projectRoot, config.scope, host, config.indexPath));
   return {
     canonicalIndexPath,
     canonicalProjectRoot,
