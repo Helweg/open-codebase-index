@@ -90,9 +90,6 @@ jobs:
       - name: Build TypeScript
         run: npm run build:ts
 
-      - name: Smoke-test packed CLI and TypeScript consumer identities
-        run: npm run smoke:package
-
       - name: Run typecheck
         run: npm run typecheck
 
@@ -107,6 +104,29 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+
+      - name: Smoke-test packed CLI and TypeScript consumer identities
+        run: npm run smoke:package -- --output-dir "${RUNNER_TEMP}/packed-cli-node-${{ matrix.node }}"
+
+      - name: Check published-to-candidate index compatibility
+        if: matrix.node == '24'
+        run: |
+          npm run smoke:compatibility -- \
+            --packages "${RUNNER_TEMP}/packed-cli-node-${{ matrix.node }}/validated-packages.json" \
+            --output-dir "${RUNNER_TEMP}/package-compat-node-${{ matrix.node }}"
+
+      - name: Upload package compatibility evidence
+        if: always() && matrix.node == '24'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-compat-linux-node-${{ matrix.node }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/packed-cli-node-${{ matrix.node }}/validated-packages.json
+            ${{ runner.temp }}/packed-cli-node-${{ matrix.node }}/command-*.json
+            ${{ runner.temp }}/packed-cli-node-${{ matrix.node }}/stage-*/*.tgz
+            ${{ runner.temp }}/package-compat-node-${{ matrix.node }}/report.json
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Report watcher capture status
         if: failure()
@@ -195,3 +215,56 @@ jobs:
         run: |
           node scripts/smoke-test-built-cli.mjs
           npm run smoke:package
+
+  macos-consumer:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: stable
+
+      - name: Cache Cargo
+        uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae
+        with:
+          workspaces: native -> target
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build native module and TypeScript
+        run: npm run build
+
+      - name: Test native-backed context and omp contracts
+        run: npx vitest run tests/tools-utils.test.ts tests/context-evidence-acceptance.test.ts tests/omp-package.test.ts
+
+      - name: Smoke-test packed MCP and omp entrypoints
+        run: npm run smoke:package -- --output-dir "${RUNNER_TEMP}/packed-cli-macos"
+
+      - name: Check published-to-candidate index compatibility
+        run: |
+          npm run smoke:compatibility -- \
+            --packages "${RUNNER_TEMP}/packed-cli-macos/validated-packages.json" \
+            --output-dir "${RUNNER_TEMP}/package-compat-macos"
+
+      - name: Upload package compatibility evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-compat-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/packed-cli-macos/validated-packages.json
+            ${{ runner.temp }}/packed-cli-macos/command-*.json
+            ${{ runner.temp }}/packed-cli-macos/stage-*/*.tgz
+            ${{ runner.temp }}/package-compat-macos/report.json
+          if-no-files-found: warn
+          retention-days: 14

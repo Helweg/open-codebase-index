@@ -46,6 +46,7 @@
     "build": "npm run build:native && npm run build:ts",
     "build:ts": "tsup && node scripts/build-types.mjs && node scripts/smoke-test-built-cli.mjs",
     "smoke:package": "node scripts/smoke-test-packed-cli.mjs",
+    "smoke:compatibility": "node scripts/smoke-test-package-compatibility.mjs",
     "build:native": "cd native && cargo build --release && napi build --release --platform",
     "build:native:all": "cd native && napi build --release --platform --target x86_64-apple-darwin --target aarch64-apple-darwin --target x86_64-unknown-linux-gnu --target aarch64-unknown-linux-gnu --target x86_64-pc-windows-msvc --target aarch64-pc-windows-msvc",
     "visualize": "node dist/cli.js visualize",
