@@ -256,10 +256,19 @@ export function isExplicitIdentifierLookup(query: string): boolean {
 
 export function isTestPath(filePath: string): boolean {
   const normalized = normalizePath(filePath);
-  return /(?:^|\/)(?:test|tests|__tests__|spec|specs)(?:\/|$)/u.test(normalized) ||
-    /(?:\.(?:test|spec)|_(?:test|spec))\.[^/]+$/u.test(normalized) ||
-    /(?:^|\/)(?:test|spec)_[^/]+\.[^/]+$/u.test(normalized) ||
-    /(?:^|\/)(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/u.test(normalized);
+  if (/(?:^|\/)(?:test|tests|__tests__|spec|specs)(?:\/|$)/u.test(normalized)) return true;
+
+  // Fixed-width markers and bounded separator searches avoid regex backtracking.
+  const fileName = normalized.slice(normalized.lastIndexOf("/") + 1);
+  const markerIndex = fileName.search(/[._](?:test|spec)\./u);
+  if (markerIndex >= 0 && markerIndex + ".test.".length < fileName.length) return true;
+
+  if (fileName.startsWith("test_") || fileName.startsWith("spec_")) {
+    const separatorIndex = fileName.indexOf(".", "test_".length + 1);
+    if (separatorIndex >= 0 && separatorIndex < fileName.length - 1) return true;
+  }
+
+  return /(?:^|\/)(?:test|spec)\.(?:[cm]?[jt]s|[jt]sx)$/u.test(normalized);
 }
 
 export function isFixturePath(filePath: string): boolean {
