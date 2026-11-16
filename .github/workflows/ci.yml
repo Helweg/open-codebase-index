@@ -183,15 +183,8 @@ jobs:
           retention-days: 14
 
       - name: Run pre-edit context eval gate (mock embeddings)
-        env:
-          OCBI_EVAL_SEARCH_TRACE_DIR: ${{ runner.temp }}/eval-pre-edit/node-${{ matrix.node }}/diagnostic
         run: |
-          # Keep the observer outside the indexed corpus and retain the original gate arguments.
-          node --import tsx --import ./.github/diagnostics/trace-eval-search.mjs src/cli.ts eval run \
-            --config .github/eval-config.json --reindex \
-            --dataset benchmarks/golden/pre-edit-context.json --ci \
-            --budget benchmarks/budgets/pre-edit.json \
-            --output "${RUNNER_TEMP}/eval-pre-edit/node-${{ matrix.node }}"
+          npm run eval:pre-edit:ci -- --output "${RUNNER_TEMP}/eval-pre-edit/node-${{ matrix.node }}"
 
       - name: Upload pre-edit context eval outputs
         if: always()
