@@ -20,6 +20,31 @@ Because inheriting worktrees operate on the same project index, clearing or forc
 
 Git project indexes store file-change and retry state in `file-hashes.<branch-hash>.json` and `failed-batches.<branch-hash>.json`. Non-Git project indexes and global indexes keep the unnamespaced `file-hashes.json` and `failed-batches.json` filenames.
 
+## Global and project merge rules
+
+Global configuration is the base; project configuration takes precedence before engine defaults are applied.
+
+- `indexing`, `search`, `debug`, `effectivenessMetrics`, and `mcp` merge field by field. Nested objects, including `indexing.gitBlame` and `indexing.scipTypeScript`, merge recursively. Omitted fields and empty objects retain global values; explicit values such as `false` and `0` override them.
+- Arrays inside these settings replace the global array, including an explicit empty array. For example, `"indexing": { "includeIgnored": [] }` clears inherited ignored-path inclusions.
+- `customProvider`, `embeddingFallback`, and `reranker` remain whole-object replacements when supplied by the project. Credentials and omitted endpoint settings are not copied into a replacement object. `"embeddingFallback": false` still disables an inherited replica.
+- Top-level `knowledgeBases` and `additionalInclude` arrays are union-merged and deduplicated. Top-level `include` and `exclude` arrays replace their global counterparts. Other fields retain project-over-global replacement behavior.
+
+For example, with this global configuration:
+
+```json
+{
+  "indexing": {
+    "maxFileSize": 200000,
+    "maxFilesPerDirectory": 500,
+    "gitBlame": { "enabled": true }
+  }
+}
+```
+
+A project configuration of `{ "indexing": { "linesPerChunk": 15 } }` retains all three global settings and changes only `linesPerChunk`. To disable inherited blame metadata, set `"indexing": { "gitBlame": { "enabled": false } }`.
+
+This changes earlier whole-section replacement behavior for the five ordinary settings sections. To reset an inherited field, set its intended value explicitly rather than relying on omission to restore an engine default.
+
 ## Minimal example
 
 ```json

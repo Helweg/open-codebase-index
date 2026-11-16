@@ -25,12 +25,34 @@ const MERGE_ARRAY_KEYS = ["knowledgeBases", "additionalInclude"] as const;
 
 type ProjectOverrideKey = (typeof PROJECT_OVERRIDE_KEYS)[number];
 
+const MERGE_OBJECT_KEYS: readonly ProjectOverrideKey[] = [
+  "indexing",
+  "search",
+  "debug",
+  "effectivenessMetrics",
+  "mcp",
+];
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function mergeConfigObjects(
+  globalConfig: Record<string, unknown>,
+  projectConfig: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...globalConfig, ...projectConfig };
+  for (const [key, value] of Object.entries(projectConfig)) {
+    const globalValue = globalConfig[key];
+    if (isRecord(globalValue) && isRecord(value)) {
+      merged[key] = mergeConfigObjects(globalValue, value);
+    }
+  }
+  return merged;
 }
 
 function applyProjectOverride(
@@ -40,7 +62,11 @@ function applyProjectOverride(
   key: ProjectOverrideKey,
 ): void {
   if (key in normalizedProjectConfig) {
-    merged[key] = normalizedProjectConfig[key];
+    const globalValue = globalConfig[key];
+    const projectValue = normalizedProjectConfig[key];
+    merged[key] = MERGE_OBJECT_KEYS.includes(key) && isRecord(globalValue) && isRecord(projectValue)
+      ? mergeConfigObjects(globalValue, projectValue)
+      : projectValue;
     return;
   }
 
@@ -149,7 +175,8 @@ export function loadProjectConfigLayer(projectRoot: string, host: HostMode): Rec
  * 
  * Merge rules:
  * - Global config is the base
- * - For most fields: project overrides global if set, otherwise load global (fallback)
+ * - For ordinary settings: recursively merge objects; project values and arrays replace global values
+ * - For provider configurations and other fields: project replaces global if set
  * - For knowledgeBases: merge arrays (union, deduplicated)
  * - For additionalInclude: merge arrays (union, deduplicated)
  * - For include/exclude: project overrides global if set, otherwise load global
