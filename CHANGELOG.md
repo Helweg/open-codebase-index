@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 
+- **Packed runtime compatibility CI**: Exercise native-backed context and packed MCP/omp entrypoints on macOS, and check that both package identities can read and update fixture indexes created by the pinned published `0.38.2` artifacts after candidate-tarball replacement. Record artifact identities separately when published and candidate versions match.
 - **Configured index location**: Add absolute, home-relative, and environment-substituted `indexPath` configuration across hosts, indexers, watchers, workers, and status reporting, preserving project-relative storage and inherited-worktree ownership safeguards.
 - **Explicit source freshness**: Add opt-in `index_status({ checkFreshness: true })` and `ocbi status --check-freshness --json` across supported hosts. Keep stored catalog readiness, source freshness, and coordinator state distinct; expose shared structured status without refreshing indexes.
 - **Source-linked pre-edit tests**: Add opt-in `includeTests` to `codebase_edit_context`, reusing current-source JS/TS discovery for direct target and one-hop caller references. Return complete budgeted citations and selected-only structured evidence across hosts, distinguish discovery caps from response omissions, and preserve explicit non-coverage labels.

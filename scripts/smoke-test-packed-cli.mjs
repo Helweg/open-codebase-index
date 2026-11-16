@@ -177,6 +177,18 @@ async function smokeIdentity(identity, expectedBinaries) {
       }`], installRoot);
   }
 
+  // Run the contract probe inside the installed consumer, including its TypeBox
+  // peer. This exercises the packed omp entrypoint, not the workspace bundle.
+  const ompHelper = path.join(installRoot, "smoke-test-packed-omp.mjs");
+  writeFileSync(ompHelper, readFileSync(path.join(repositoryRoot, "scripts", "smoke-test-packed-omp.mjs")),
+    { flag: "wx", mode: 0o600 });
+  for (const entrypoint of installed.omp?.extensions ?? []) {
+    assert.ok(typeof entrypoint === "string" && entrypoint.startsWith("./"));
+    assert.ok(packed.files.some((file) => file.path === entrypoint.slice(2)),
+      `omp extension not packed: ${entrypoint}`);
+  }
+  const omp = JSON.parse(run(process.execPath, [ompHelper, installedRoot], installRoot));
+
   // Keep upstream assignability separate so an installed SDK cannot conceal a standalone declaration leak.
   const sdkInteropTypes = [];
   const pluginVersion = lock.packages["node_modules/@opencode-ai/plugin"].version;
@@ -242,7 +254,7 @@ async function smokeIdentity(identity, expectedBinaries) {
   }
   return {
     name: packed.name, version: packed.version, tarball: tarballPath, integrity,
-    validation: { types, sdkInteropTypes, runtime: true, cliAliases: expectedBinaries },
+    validation: { types, sdkInteropTypes, runtime: true, cliAliases: expectedBinaries, omp },
   };
 }
 

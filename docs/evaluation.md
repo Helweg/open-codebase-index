@@ -253,6 +253,42 @@ There are two CI levels:
 
 This split keeps regular CI stable while preserving meaningful retrieval-quality gating.
 
+### Package/runtime compatibility CI
+
+Ordinary Linux Node 24 CI and the macOS consumer job also check package replacement
+against pinned published artifacts. These are native/runtime compatibility checks,
+not retrieval-quality measurements or the private sandbox qualification protocol.
+The macOS job builds the native module, runs the existing affected context and omp
+tests, and exercises the packed packages rather than a globally installed extension.
+Packed omp coverage loads the manifest entrypoint and its extension API contract;
+it does not claim an interactive omp application or LLM session.
+
+After building and running the intended tests, create fresh package evidence and
+run the compatibility check:
+
+```bash
+npm run smoke:package -- --output-dir /tmp/ocbi-packed-new
+npm run smoke:compatibility -- \
+  --packages /tmp/ocbi-packed-new/validated-packages.json \
+  --output-dir /tmp/ocbi-compat-new
+```
+
+Both output directories must be new. Run packing after the final test/build
+sequence: the full-suite pretest rebuilds native and TypeScript artifacts.
+The compatibility check uses a tiny temporary fixture, isolated child configuration,
+and a deterministic local embedding provider. For each package identity it creates
+an index with the published artifact, replaces only the package with the supplied
+candidate tarball, reads the persisted index before explicit candidate indexing,
+then checks fixture updates and reopening. It never uses a live user index.
+
+Published and checked-in candidate packages may both report `0.38.2`; the report
+therefore records distinct tarball integrities and installed artifacts. This is
+artifact-replacement compatibility, not a claimed SemVer version upgrade.
+The baseline stays pinned while the candidate version comes from the supplied
+manifest. Dependency changes required by that candidate are recorded, not rejected
+merely because an ordinary package replacement updates its dependencies.
+CI retains the package and compatibility reports as ordinary workflow artifacts.
+
 ### Authentication for `eval-quality.yml`
 
 Default path (no API key required):
