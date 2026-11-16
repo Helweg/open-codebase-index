@@ -1,5 +1,6 @@
 import type { ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
+import type { ChunkMetadata } from "../src/native/types.js";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import * as fs from "node:fs";
@@ -61,12 +62,12 @@ it("keeps repeated inputs stable without collapsing hash-collision inputs throug
   expect(repeated).toEqual(first);
 
   const store = new VectorStore(path.join(tempDir, "vectors"), 16);
-  const metadata = {
+  const metadata: ChunkMetadata = {
     filePath: "fixture.ts",
     startLine: 1,
     endLine: 1,
     language: "typescript",
-    chunkType: "function_declaration",
+    chunkType: "function",
     hash: "fixture",
   };
   store.addBatch([
