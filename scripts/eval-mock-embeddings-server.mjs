@@ -1,18 +1,14 @@
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 
-function stableHash(text) {
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-  }
-  return hash;
-}
-
 function buildEmbedding(text, dimensions) {
-  const seed = stableHash(text);
+  // Independent signed coordinates avoid periodic, nearly parallel F16 vectors.
+  let block = createHash("sha256").update(text).digest();
   const vector = [];
   for (let i = 0; i < dimensions; i += 1) {
-    vector.push(((seed + i * 17) % 997) / 997);
+    const offset = (i % 8) * 4;
+    if (i > 0 && offset === 0) block = createHash("sha256").update(block).digest();
+    vector.push(block.readInt32LE(offset) / 0x80000000);
   }
   return vector;
 }
@@ -72,5 +68,5 @@ const server = createServer((req, res) => {
 });
 
 server.listen(port, "127.0.0.1", () => {
-  console.log(`[eval-mock-embeddings] listening on http://127.0.0.1:${port}/v1/embeddings`);
+  console.log(`[eval-mock-embeddings] listening on http://127.0.0.1:${server.address().port}/v1/embeddings`);
 });
