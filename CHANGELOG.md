@@ -7,9 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.0] - 2026-11-17
+
+### Upgrade notes
+
+- **OpenCode host typings**: TypeScript integrations assigning the v1 `server` to an upstream `Plugin` should use `@opencode-ai/plugin@1.19.6` and its SDK `1.19.6`, replacing the previous SDK `1.3.13` type identity. The separate runtime SDK remains at `1.19.5`.
+- **Node.js requirements**: Published packages still require Node.js 22.22.0 or newer. Source builds require `^22.22.2 || ^24.15.0 || >=26.0.0`; the upstream build-only plugin and Effect are not installed by standalone consumers.
+
 ### Changed
 
 - **OpenCode plugin compatibility** (#392): Upgrade the build-only plugin to `1.19.6`; public v1 `server` typings now target its SDK `1.19.6` rather than SDK `1.3.13`. Keep Effect and the upstream plugin out of standalone consumer installs, preserve the published Node.js 22.22.0 minimum, and document the higher development-runtime requirement. Resume standalone Dependabot plugin updates.
+- **Development tooling** (#494): Update ESLint to `10.15.0` and Rollup to `4.68.3`, without changing the published runtime dependency tree.
 
 ### Fixed
 
@@ -1153,7 +1161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.39.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.40.0...HEAD
+[0.40.0]: https://github.com/Helweg/open-codebase-index/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...v0.39.0
 [0.38.2]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...v0.38.2
 [0.38.1]: https://github.com/Helweg/open-codebase-index/compare/v0.38.0...v0.38.1

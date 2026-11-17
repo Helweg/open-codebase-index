@@ -4,11 +4,11 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.40.x  | :white_check_mark: |
 | 0.39.x  | :white_check_mark: |
-| 0.38.x  | :white_check_mark: |
-| < 0.38.0 | :x:               |
+| < 0.39.0 | :x:               |
 
-The 0.39.x line requires Node.js 22.22.0 or newer. The 0.38.x line retains its published Node.js 22.13.0 minimum.
+The supported 0.40.x and 0.39.x lines require Node.js 22.22.0 or newer.
 
 ## Reporting a Vulnerability
 
@@ -58,7 +58,7 @@ Track override decisions in [#379](https://github.com/Helweg/open-codebase-index
 | `postcss@>=8.0.0 <8.5.26` | `^8.5.26` | Retain the sourceMappingURL map-file-disclosure floor from commit `5b0cf22`, including earlier PostCSS fixes |
 | `vite@>=8.0.0 <8.0.16` | `^8.0.16` | [GHSA-v6wh-96g9-6wx3](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) and [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) |
 | `@earendil-works/pi-coding-agent@^1.3.0` → `undici@>=8.0.0 <8.12.2` | `^8.12.2` | Development-only [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c); replaces the parent's exact vulnerable edge without changing the published runtime floor |
-| `@opencode-ai/plugin@1.3.13` → `zod@<4.6.6` | `^4.6.7` | Development-only [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5); aligns the build SDK with the safe direct Zod |
+| `@opencode-ai/plugin@1.19.6` → `zod@<4.6.6` | `^4.6.7` | Development-only [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5); aligns the build SDK with the safe direct Zod |
 
 ### 0.38.1 Consumer Dependency Closure
 
