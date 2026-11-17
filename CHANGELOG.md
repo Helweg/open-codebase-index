@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenCode plugin compatibility** (#392): Upgrade the build-only plugin to `1.19.6`; public v1 `server` typings now target its SDK `1.19.6` rather than SDK `1.3.13`. Keep Effect and the upstream plugin out of standalone consumer installs, preserve the published Node.js 22.22.0 minimum, and document the higher development-runtime requirement. Resume standalone Dependabot plugin updates.
+
+### Fixed
+
+- **OpenCode v2 structured tool results**: Render v1 object results through supported v2 text/file content parts, translate attachment URLs and filenames, and preserve titles under `metadata.title` instead of returning unsupported top-level fields.
+- **Minimum-runtime package validation**: Separate upstream SDK interoperability installs from standalone consumer checks with `--consumer-only`. Full development checks still cover both SDK layouts, and publication rejects consumer-only validation evidence.
+
 ## [0.39.0] - 2026-11-16
 
 ### Upgrade notes

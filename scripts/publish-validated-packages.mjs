@@ -25,6 +25,8 @@ function verifyArchive(entry) {
   const integrity = `sha512-${createHash("sha512").update(readFileSync(entry.tarball)).digest("base64")}`;
   assert.equal(integrity, entry.integrity, `Validated tarball changed: ${entry.name}`);
   assert.equal(entry.validation.runtime, true);
+  assert.ok(entry.validation.sdkInteropTypes.length > 0,
+    "Publication requires upstream SDK interoperability checks; consumer-only validation is insufficient");
   assert.equal(entry.validation.types.compiler, "5.9.3");
   assert.equal(entry.validation.types.options.strict, true);
   assert.equal(entry.validation.types.options.skipLibCheck, false);

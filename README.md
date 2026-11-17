@@ -280,7 +280,10 @@ npm run lint
 npm run test:run
 ```
 
-- Source installs and published consumers require Node.js 22.22 or newer because Chokidar 6 enforces that engine floor. The development toolchain supports `^22.22.0 || ^24.11.0 || >=26.0.0`; building the native module also requires the Rust toolchain.
+- Published consumers require Node.js 22.22.0 or newer because Chokidar 6 enforces that engine floor.
+- Source installs and development checks require `^22.22.2 || ^24.15.0 || >=26.0.0` because the build-only OpenCode plugin has a higher transitive engine requirement. Building the native module also requires the Rust toolchain.
+
+`npm run smoke:package` checks both package identities, standalone consumers, and upstream SDK interoperability on a supported development runtime. At the minimum consumer runtime, use `npm_config_engine_strict=true npm run smoke:package -- --consumer-only`: it retains standalone type, runtime, CLI, MCP, and omp checks without installing the upstream host plugin. Its empty `sdkInteropTypes` results are not sufficient for publication.
 
 Pi integration tests use the development host `@earendil-works/pi-coding-agent`
 1.3 or newer and its `emitBeforeAgentStart(trigger, systemPromptOptions)` API.

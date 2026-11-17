@@ -214,7 +214,7 @@ jobs:
           npm_config_engine_strict: 'true'
         run: |
           node scripts/smoke-test-built-cli.mjs
-          npm run smoke:package
+          npm run smoke:package -- --consumer-only
 
   macos-consumer:
     runs-on: macos-latest

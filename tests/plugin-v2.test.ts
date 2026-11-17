@@ -390,6 +390,46 @@ describe("OpenCode v2 plugin adapter (tests/plugin-v2.test.ts)", () => {
     expect(progressMock).toHaveBeenCalledWith(expect.objectContaining({ title: "t", k: 1 }));
   });
 
+  it("converts v1 attachments into supported v2 file content", async () => {
+    const { ctx, addedTools } = createFakeContext();
+    await mod.setup(ctx);
+    vi.mocked(tools.codebase_context.execute).mockResolvedValueOnce({
+      title: "Source evidence",
+      output: "Selected source and citations",
+      metadata: { filePath: "src/example.ts", title: "Older title" },
+      attachments: [
+        { type: "file", mime: "text/plain", url: "data:text/plain,evidence", filename: "source.txt" },
+        { type: "file", mime: "image/png", url: "data:image/png;base64,AA==" },
+      ],
+    });
+    const result = await addedTools[0].execute({}, {
+      sessionID: "ses-structured-result",
+      signal: new AbortController().signal,
+    });
+    expect(result).toEqual({
+      content: [
+        { type: "text", text: "Selected source and citations" },
+        { type: "file", uri: "data:text/plain,evidence", mime: "text/plain", name: "source.txt" },
+        { type: "file", uri: "data:image/png;base64,AA==", mime: "image/png" },
+      ],
+      metadata: { filePath: "src/example.ts", title: "Source evidence" },
+    });
+  });
+
+  it("keeps structured text and metadata when no attachments are returned", async () => {
+    const { ctx, addedTools } = createFakeContext();
+    await mod.setup(ctx);
+    vi.mocked(tools.codebase_context.execute).mockResolvedValueOnce({
+      output: "Text-only evidence",
+      metadata: { title: "Existing metadata title", filePath: "src/example.ts" },
+    });
+    const result = await addedTools[0].execute({}, { signal: new AbortController().signal });
+    expect(result).toEqual({
+      content: "Text-only evidence",
+      metadata: { title: "Existing metadata title", filePath: "src/example.ts" },
+    });
+  });
+
   // Case 5: Commands
   it("5. registers commands and handles $ARGUMENTS expansion and mention stripping", async () => {
     mockState.commands = new Map([

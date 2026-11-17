@@ -1,4 +1,10 @@
-import type { Plugin as V2Plugin, Context as V2Context, Cleanup as V2Cleanup, Registration } from "./opencode-v2-types.js";
+import type {
+  Plugin as V2Plugin,
+  Context as V2Context,
+  Cleanup as V2Cleanup,
+  Registration,
+  ToolResult as V2ToolResult,
+} from "./opencode-v2-types.js";
 import { tool, type ToolDefinition } from "@opencode-ai/plugin";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -206,7 +212,24 @@ export const v2Definition = {
                 },
               };
               const output = await def.execute(input as never, v1Context as never);
-              return { content: output };
+              if (typeof output === "string") return { content: output };
+              const content: V2ToolResult["content"] = output.attachments?.length
+                ? [
+                  { type: "text", text: output.output },
+                  ...output.attachments.map((attachment) => ({
+                    type: "file" as const,
+                    uri: attachment.url,
+                    mime: attachment.mime,
+                    name: attachment.filename,
+                  })),
+                ]
+                : output.output;
+              return {
+                content,
+                metadata: output.title === undefined
+                  ? output.metadata
+                  : { ...output.metadata, title: output.title },
+              } satisfies V2ToolResult;
             },
           });
         }
