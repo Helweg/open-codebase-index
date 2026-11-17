@@ -36,7 +36,7 @@ const bundle = await rollup({
   input: path.join(root, "src/index.ts"),
   external(name, importer) {
     // Let resolveId preserve the v1 host's SDK identity instead of rebinding to the runtime SDK.
-    if (name === "@opencode-ai/sdk") return false;
+    if (name === "@opencode-ai/sdk" || name.startsWith("@opencode-ai/sdk/")) return false;
     if (name === "zod" && isPluginToolDeclaration(importer)) return false;
     return name.startsWith("node:") || builtins.has(name)
       || externalPackages.some((dependency) => name === dependency || name.startsWith(`${dependency}/`));
@@ -44,7 +44,9 @@ const bundle = await rollup({
   plugins: [{
     name: "opencode-declaration-abi",
     resolveId(name, importer) {
-      if (name === "@opencode-ai/sdk") return { id: "@opencode-ai/sdk-v1", external: true };
+      if (name === "@opencode-ai/sdk" || name.startsWith("@opencode-ai/sdk/")) {
+        return { id: name.replace("@opencode-ai/sdk", "@opencode-ai/sdk-v1"), external: true };
+      }
       if (name !== "zod" || !isPluginToolDeclaration(importer)) return null;
       return { id: legacyEntry, external: true };
     },

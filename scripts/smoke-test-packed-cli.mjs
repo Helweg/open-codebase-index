@@ -4,19 +4,25 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { parseArgs } from "node:util";
 import { checkPackedTypes } from "./check-packed-types.mjs";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const catalog = JSON.parse(readFileSync(path.join(repositoryRoot, "src", "identity-catalog.json"), "utf-8"));
-const args = process.argv.slice(2);
-assert.ok(args.length === 0 || (args.length === 2 && args[0] === "--output-dir"),
-  "Usage: node scripts/smoke-test-packed-cli.mjs [--output-dir <new-directory>]");
-const scratchRoot = args.length === 0
+const { values } = parseArgs({
+  options: {
+    "output-dir": { type: "string" },
+    "consumer-only": { type: "boolean", default: false },
+  },
+});
+const outputDir = values["output-dir"];
+const consumerOnly = values["consumer-only"];
+const scratchRoot = outputDir === undefined
   ? mkdtempSync(path.join(os.tmpdir(), "packed-cli-smoke-"))
-  : path.resolve(args[1]);
-if (args.length !== 0) mkdirSync(scratchRoot, { mode: 0o700 });
+  : path.resolve(outputDir);
+if (outputDir !== undefined) mkdirSync(scratchRoot, { mode: 0o700 });
 const manifest = JSON.parse(readFileSync(path.join(repositoryRoot, "package.json"), "utf8"));
 const lock = JSON.parse(readFileSync(path.join(repositoryRoot, "package-lock.json"), "utf8"));
 let commandNumber = 0;
@@ -146,6 +152,8 @@ async function smokeIdentity(identity, expectedBinaries) {
   const consumerLock = JSON.parse(readFileSync(path.join(installRoot, "package-lock.json"), "utf8"));
   assert.ok(!Object.keys(consumerLock.packages).some((key) => key.endsWith("node_modules/@opencode-ai/plugin")),
     "Standalone consumer must not install the build-only OpenCode plugin");
+  assert.ok(!Object.keys(consumerLock.packages).some((key) => key.endsWith("node_modules/effect")),
+    "Standalone consumer must not install the build-only plugin's Effect dependency");
   const installedRoot = path.join(installRoot, "node_modules", identity.packageName);
   const installed = JSON.parse(readFileSync(path.join(installedRoot, "package.json"), "utf8"));
   assert.equal(installed.name, packed.name);
@@ -190,9 +198,10 @@ async function smokeIdentity(identity, expectedBinaries) {
   const omp = JSON.parse(run(process.execPath, [ompHelper, installedRoot], installRoot));
 
   // Keep upstream assignability separate so an installed SDK cannot conceal a standalone declaration leak.
+  // The upstream host SDK is a development dependency with a higher Node floor than standalone consumers.
   const sdkInteropTypes = [];
   const pluginVersion = lock.packages["node_modules/@opencode-ai/plugin"].version;
-  const sdkVersions = new Set([
+  const sdkVersions = consumerOnly ? [] : new Set([
     lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"],
     lock.packages["node_modules/@opencode-ai/sdk"].version,
   ]);

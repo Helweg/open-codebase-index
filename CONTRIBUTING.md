@@ -42,7 +42,7 @@ Use this when you just want the shortest path to a good PR:
 
 ### Prerequisites
 
-- Development Node.js range: `^22.22.0 || ^24.11.0 || >=26.0.0` (Chokidar 6, Pi, and tsup dependencies). Node.js 24.11+ LTS is recommended. Published consumers require Node.js 22.22 or newer.
+- Development Node.js range: `^22.22.2 || ^24.15.0 || >=26.0.0` (build-only OpenCode plugin and other development dependencies). Node.js 24.15+ LTS is recommended. Published consumers require Node.js 22.22.0 or newer.
 - Rust toolchain (for native module)
 - npm
 

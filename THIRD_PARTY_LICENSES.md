@@ -170,18 +170,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## @opencode-ai/plugin and @opencode-ai/sdk 1.3.13
+## @opencode-ai/plugin and @opencode-ai/sdk 1.19.6
 
 - Project: [anomalyco/opencode](https://github.com/anomalyco/opencode)
-- Source: [release v1.3.13](https://github.com/anomalyco/opencode/tree/v1.3.13)
+- Source: [release v1.19.6](https://github.com/anomalyco/opencode/tree/v1.19.6)
 - License: MIT
-- Notice: [upstream LICENSE](https://github.com/anomalyco/opencode/blob/v1.3.13/LICENSE)
+- Notice: [upstream LICENSE](https://github.com/anomalyco/opencode/blob/v1.19.6/LICENSE)
 
 The existing OpenCode tool helper and plugin public type declarations are bundled
 into this package. `@opencode-ai/plugin` is build-time only. The dependency-free
-`@opencode-ai/sdk-v1` npm alias retains the original `@opencode-ai/sdk@1.3.13`
-package identity for public v1 client declarations, independently of the updated
-`@opencode-ai/sdk` dependency.
+`@opencode-ai/sdk-v1` npm alias retains the exact `@opencode-ai/sdk@1.19.6`
+package identity for public v1 client declarations, independently of the separately
+versioned `@opencode-ai/sdk` dependency.
 
 ```text
 MIT License

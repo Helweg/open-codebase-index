@@ -30,11 +30,14 @@ export interface ToolContext {
   readonly [key: string]: unknown;
 }
 
+export type ToolContent =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "file"; readonly uri: string; readonly mime: string; readonly name?: string };
+
 export interface ToolResult<Output = unknown> {
   readonly output?: Output;
-  readonly content?: string | ReadonlyArray<unknown>;
+  readonly content?: string | ReadonlyArray<ToolContent>;
   readonly metadata?: ToolMetadata;
-  readonly [key: string]: unknown;
 }
 
 export interface ToolInfo<Input = unknown, Output = unknown> {
