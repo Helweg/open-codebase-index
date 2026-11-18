@@ -8,10 +8,15 @@ type WorkerOperation = "index" | "force" | "watch";
 interface RunMessage {
   type: "run";
   operation: WorkerOperation;
+  pauseBeforeWatchIndex?: boolean;
 }
 
 interface StopMessage {
   type: "stop";
+}
+
+interface ResumeWatchIndexMessage {
+  type: "resume-watch-index";
 }
 
 const projectRootValue = process.env.TEST_PROJECT_ROOT;
@@ -50,6 +55,7 @@ const config = parseConfig({
 const indexer = new Indexer(projectRoot, config, "opencode");
 let watcher: CombinedWatcher | null = null;
 let running = false;
+let resumeWatchIndex: (() => void) | null = null;
 
 function send(message: Record<string, unknown>): void {
   if (process.send) process.send(message);
@@ -91,10 +97,16 @@ async function runOnce(operation: Exclude<WorkerOperation, "watch">): Promise<vo
   }
 }
 
-async function startWatcher(): Promise<void> {
+async function startWatcher(pauseBeforeIndex = false): Promise<void> {
+  let admission = pauseBeforeIndex ? Promise.withResolvers<void>() : null;
+  resumeWatchIndex = admission?.resolve ?? null;
   const originalIndex = indexer.index.bind(indexer);
   indexer.index = async (...args) => {
     send({ type: "watch-attempt" });
+    // Gate only the first real watcher request; contention retries must proceed normally.
+    const pendingAdmission = admission;
+    admission = null;
+    if (pendingAdmission) await pendingAdmission.promise;
     try {
       const stats = await originalIndex(...args);
       send({ type: "watch-result", ok: true, stats });
@@ -105,12 +117,19 @@ async function startWatcher(): Promise<void> {
     }
   };
 
-  watcher = createWatcherWithIndexer(() => indexer, projectRoot, config);
+  watcher = createWatcherWithIndexer(() => indexer, projectRoot, config, "opencode");
   await watcher.whenReady();
   send({ type: "watcher-ready" });
 }
 
-process.on("message", (message: RunMessage | StopMessage) => {
+process.on("message", (message: RunMessage | StopMessage | ResumeWatchIndexMessage) => {
+  if (message.type === "resume-watch-index") {
+    const resume = resumeWatchIndex;
+    if (!resume) throw new Error("No paused watcher index request to resume");
+    resumeWatchIndex = null;
+    resume();
+    return;
+  }
   if (message.type === "stop") {
     void finish();
     return;
@@ -118,7 +137,7 @@ process.on("message", (message: RunMessage | StopMessage) => {
   if (message.type !== "run" || running) return;
   running = true;
   if (message.operation === "watch") {
-    void startWatcher().catch(async (error) => {
+    void startWatcher(message.pauseBeforeWatchIndex).catch(async (error) => {
       send({ type: "result", operation: "watch", ...serializeError(error) });
       await finish();
     });

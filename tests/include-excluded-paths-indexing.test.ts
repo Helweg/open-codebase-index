@@ -1317,6 +1317,120 @@ describe("include-excluded path indexing acceptance", () => {
     },
   );
 
+  async function exerciseDirectoryRoundTrip(backend: Exclude<FileWatcherBackend, "auto">): Promise<void> {
+    const config = structuralConfig({
+      exclude: ["build-*/src/blocked.ts"],
+      includeExcluded: ["build-*/src/*.ts"],
+    });
+    const directory = path.join(projectDir, "build-tools");
+    const sourceDirectory = path.join(directory, "src");
+    const selectedPath = path.join(sourceDirectory, "watched.ts");
+    const excludedPath = path.join(sourceDirectory, "blocked.ts");
+    const unchangedPath = path.join(sourceDirectory, "unchanged.ts");
+    const parkedDirectory = path.join(indexRoot, "outside-build-tools");
+    const originalDefinition = `${backend}RoundtripOriginalSelected`;
+    const updatedDefinition = `${backend}RoundtripUpdatedSelectedWithMoreBytes`;
+    const excludedOriginal = `${backend}RoundtripOriginalExcluded`;
+    const excludedUpdated = `${backend}RoundtripUpdatedExcludedWithMoreBytes`;
+    const unchangedDefinition = `${backend}RoundtripUnchangedSelected`;
+    writeSource(selectedPath, originalDefinition);
+    writeSource(excludedPath, excludedOriginal);
+    writeSource(unchangedPath, unchangedDefinition);
+    const originalDirectory = fs.statSync(directory);
+    const originalSourceDirectory = fs.statSync(sourceDirectory);
+    const originalSelected = fs.statSync(selectedPath);
+    const originalExcluded = fs.statSync(excludedPath);
+    const indexer = createIndexer(config);
+    await indexer.index();
+    expect(await hasDefinition(indexer, originalDefinition, selectedPath)).toBe(true);
+    expect(await hasDefinition(indexer, excludedOriginal, excludedPath)).toBe(false);
+    expect(await hasDefinition(indexer, unchangedDefinition, unchangedPath)).toBe(true);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const watcher = new FileWatcher(projectDir, config, "jcode", { backend, indexPath: indexRoot });
+    watchers.push(watcher);
+    const observed: FileChange[] = [];
+    let handlerTail = Promise.resolve();
+    watcher.start(async (changes) => {
+      observed.push(...changes);
+      handlerTail = handlerTail.then(async () => { await indexer.index(); });
+      handlerTails.push(handlerTail);
+      await handlerTail;
+    });
+    await watcher.waitUntilReady();
+    expect(observed).toEqual([]);
+    // A generator moves the same directory outside the watched tree, edits it,
+    // then returns it before callbacks run. Only ancestor notifications may arrive.
+    fs.renameSync(directory, parkedDirectory);
+    writeSource(path.join(parkedDirectory, "src", "watched.ts"), updatedDefinition);
+    writeSource(path.join(parkedDirectory, "src", "blocked.ts"), excludedUpdated);
+    fs.renameSync(parkedDirectory, directory);
+
+    expect(fs.statSync(directory).ino).toBe(originalDirectory.ino);
+    expect(fs.statSync(directory).dev).toBe(originalDirectory.dev);
+    expect(fs.statSync(sourceDirectory).ino).toBe(originalSourceDirectory.ino);
+    expect(fs.statSync(selectedPath).ino).toBe(originalSelected.ino);
+    expect(fs.statSync(excludedPath).ino).toBe(originalExcluded.ino);
+    expect(fs.statSync(selectedPath).size).not.toBe(originalSelected.size);
+    expect(fs.statSync(excludedPath).size).not.toBe(originalExcluded.size);
+    expect(fs.existsSync(parkedDirectory)).toBe(false);
+    await vi.waitFor(async () => {
+      expect(observed.some((change) => change.path === selectedPath)).toBe(true);
+      expect(await hasDefinition(indexer, updatedDefinition, selectedPath)).toBe(true);
+      expect(await hasDefinition(indexer, originalDefinition, selectedPath)).toBe(false);
+      expect(await hasDefinition(indexer, excludedUpdated, excludedPath)).toBe(false);
+      expect(await hasDefinition(indexer, unchangedDefinition, unchangedPath)).toBe(true);
+      expect(observed.some((change) => change.path === excludedPath)).toBe(false);
+    }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+    if (backend === "chokidar") {
+      // An ancestor rescan must not manufacture changes for untouched descendants.
+      expect(observed.some((change) => change.path === unchangedPath)).toBe(false);
+
+      // Keep the ancestor scan open until a genuine newer leaf event has arrived.
+      const secondWriteDefinition = `${backend}RoundtripLiveSecondWrite`;
+      const secondWriteGate = Promise.withResolvers<void>();
+      const emitSpy = vi.spyOn(FSWatcher.prototype, "emit");
+      let scanPaused = false;
+      snapshotFaults.beforeRead = async (readDirectory) => {
+        if (readDirectory !== sourceDirectory) return;
+        snapshotFaults.beforeRead = undefined;
+        scanPaused = true;
+        await secondWriteGate.promise;
+      };
+      try {
+        fs.renameSync(directory, parkedDirectory);
+        fs.renameSync(parkedDirectory, directory);
+        await vi.waitFor(() => expect(scanPaused).toBe(true), { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+        writeSource(selectedPath, secondWriteDefinition);
+        await vi.waitFor(() => {
+          expect(emitSpy.mock.calls.some(([event, filePath]) => event === "change" && filePath === selectedPath)).toBe(true);
+        }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+        secondWriteGate.resolve();
+        await vi.waitFor(async () => {
+          expect(await hasDefinition(indexer, secondWriteDefinition, selectedPath)).toBe(true);
+          expect(await hasDefinition(indexer, updatedDefinition, selectedPath)).toBe(false);
+          expect(watcher.isBusy()).toBe(false);
+        }, { timeout: WATCH_TIMEOUT_MS, interval: 50 });
+        expect(observed.some((change) => change.path === excludedPath || change.path === unchangedPath)).toBe(false);
+      } finally {
+        secondWriteGate.resolve();
+        snapshotFaults.beforeRead = undefined;
+        emitSpy.mockRestore();
+      }
+    } else {
+      expect(warnSpy.mock.calls.some(([message]) => String(message).toLowerCase().includes("chokidar"))).toBe(false);
+    }
+  }
+
+  it("reindexes a directory round-trip through the Chokidar FileWatcher", async () => {
+    await exerciseDirectoryRoundTrip("chokidar");
+  });
+
+  it.runIf(SUPPORTS_NATIVE_RECURSIVE_WATCH)(
+    "reindexes a directory round-trip through the native FileWatcher without fallback",
+    async () => { await exerciseDirectoryRoundTrip("native"); },
+  );
+
   it("reindexes partial-wildcard parent changes through the Chokidar FileWatcher", async () => {
     await exerciseWatcherBackend("chokidar");
   });

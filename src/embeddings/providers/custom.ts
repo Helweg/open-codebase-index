@@ -5,7 +5,7 @@ import {
   type EmbeddingBatchResult,
   type EmbeddingRequestOptions,
   readProviderErrorBody,
-  validateEmbeddingVectors,
+  normalizeEmbeddingResponseRows,
 } from "../provider-types.js";
 import { validateExternalUrl } from "../../utils/url-validation.js";
 import {
@@ -91,7 +91,7 @@ export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelIn
         }
 
         let data: {
-          data?: Array<{ embedding: number[] }>;
+          data?: unknown;
           usage?: { total_tokens: number };
         };
         try {
@@ -105,8 +105,8 @@ export class CustomEmbeddingProvider extends BaseEmbeddingProvider<CustomModelIn
         }
 
         if (data.data && Array.isArray(data.data)) {
-          const embeddings = validateEmbeddingVectors(
-            data.data.map((entry) => entry?.embedding),
+          const embeddings = normalizeEmbeddingResponseRows(
+            data.data,
             texts.length,
             this.modelInfo.dimensions,
           );

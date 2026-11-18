@@ -29,6 +29,48 @@ export function validateEmbeddingVectors(
 }
 
 /**
+ * OpenAI-compatible indices identify inputs within one HTTP request. Endpoints
+ * that omit every index retain positional ordering.
+ */
+export function normalizeEmbeddingResponseRows(
+  value: unknown,
+  expectedCount: number,
+  expectedDimensions: number,
+): number[][] {
+  if (!Array.isArray(value) || value.length !== expectedCount) {
+    throw new ProviderRequestError({
+      kind: "malformed_response",
+      retryable: false,
+      message: "The embedding provider returned vectors that do not match the configured contract.",
+    });
+  }
+
+  const indexed = value.some((row: unknown) =>
+    typeof row === "object" && row !== null && "index" in row);
+  const embeddings: unknown[] = new Array(value.length);
+  for (let position = 0; position < value.length; position++) {
+    const entry: unknown = value[position];
+    const row = typeof entry === "object" && entry !== null ? entry : undefined;
+    let index: unknown = position;
+    if (indexed) {
+      index = row && "index" in row ? row.index : undefined;
+    }
+    if (!row || !("embedding" in row)
+      || typeof index !== "number" || !Number.isInteger(index)
+      || index < 0 || index >= expectedCount || Object.hasOwn(embeddings, index)) {
+      throw new ProviderRequestError({
+        kind: "malformed_response",
+        retryable: false,
+        message: "The embedding provider returned vectors that do not match the configured contract.",
+      });
+    }
+    embeddings[index] = row.embedding;
+  }
+
+  return validateEmbeddingVectors(embeddings, expectedCount, expectedDimensions);
+}
+
+/**
  * Reads a non-2xx body for diagnostics. A connection that drops while the body is
  * being read must not hide the HTTP status that was already received, because failover
  * eligibility is decided from that status. Returns null on a failed read so a caller

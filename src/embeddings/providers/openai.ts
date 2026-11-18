@@ -6,7 +6,7 @@ import {
   type EmbeddingBatchResult,
   type EmbeddingRequestOptions,
   readProviderErrorBody,
-  validateEmbeddingVectors,
+  normalizeEmbeddingResponseRows,
 } from "../provider-types.js";
 import {
   createProviderRequestSignal,
@@ -59,7 +59,7 @@ export class OpenAIEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
         }
 
         let data: {
-          data: Array<{ embedding: number[] }>;
+          data: unknown;
           usage: { total_tokens: number };
         };
         try {
@@ -78,8 +78,8 @@ export class OpenAIEmbeddingProvider extends BaseEmbeddingProvider<EmbeddingProv
             message: "OpenAI embedding provider returned an invalid response.",
           });
         }
-        const embeddings = validateEmbeddingVectors(
-          data.data.map((entry) => entry?.embedding),
+        const embeddings = normalizeEmbeddingResponseRows(
+          data.data,
           texts.length,
           this.modelInfo.dimensions,
         );

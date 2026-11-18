@@ -300,6 +300,73 @@ describe("GoogleEmbeddingProvider", () => {
 });
 
 describe("OpenAIEmbeddingProvider", () => {
+  it.each([
+    {
+      ordering: "reversed indexed",
+      data: [{ index: 1, embedding: [0, 1] }, { index: 0, embedding: [1, 0] }],
+    },
+    {
+      ordering: "identity indexed",
+      data: [{ index: 0, embedding: [1, 0] }, { index: 1, embedding: [0, 1] }],
+    },
+    {
+      ordering: "index-less",
+      data: [{ embedding: [1, 0] }, { embedding: [0, 1] }],
+    },
+  ])("returns input-ordered vectors for $ordering responses", async ({ data }) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data,
+      usage: { total_tokens: 7 },
+    })));
+    const provider = new OpenAIEmbeddingProvider(
+      { provider: "openai", baseUrl: "https://example.test", apiKey: "test" },
+      { ...EMBEDDING_MODELS.openai["text-embedding-3-small"], dimensions: 2 },
+    );
+
+    await expect(provider.embedBatch(["first", "second"])).resolves.toEqual({
+      embeddings: [[1, 0], [0, 1]],
+      totalTokensUsed: 7,
+    });
+  });
+
+  it.each([
+    { contract: "missing first index", indices: [undefined, 1] },
+    { contract: "missing last index", indices: [0, undefined] },
+    { contract: "duplicate indices", indices: [0, 0] },
+    { contract: "incomplete permutation", indices: [1] },
+    { contract: "fractional index", indices: [0, 0.5] },
+    { contract: "negative index", indices: [0, -1] },
+    { contract: "out-of-range index", indices: [0, 2] },
+    { contract: "null index", indices: [0, null] },
+    { contract: "string index", indices: [0, "1"] },
+    { contract: "non-finite index", indices: [0, Number.POSITIVE_INFINITY] },
+    { contract: "NaN index", indices: [0, Number.NaN] },
+  ])("rejects $contract without exposing private data", async ({ indices }) => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: indices.map((index) => ({
+          ...(index === undefined ? {} : { index }),
+          embedding: [12345, 67890],
+          detail: "private response row",
+        })),
+        usage: { total_tokens: 7 },
+      }),
+    } as Response);
+    const provider = new OpenAIEmbeddingProvider(
+      { provider: "openai", baseUrl: "https://secret.example", apiKey: "private-key" },
+      { ...EMBEDDING_MODELS.openai["text-embedding-3-small"], dimensions: 2 },
+    );
+
+    const error = await provider.embedBatch(["private first", "private second"])
+      .catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(ProviderRequestError);
+    expect(error).toMatchObject({ kind: "malformed_response", retryable: false });
+    for (const secret of ["secret.example", "private-key", "private first", "private second", "12345", "67890", "private response row"]) {
+      expect(String(error)).not.toContain(secret);
+    }
+  });
+
   it("bounds the request while reading a response body", async () => {
     vi.useFakeTimers();
     try {
