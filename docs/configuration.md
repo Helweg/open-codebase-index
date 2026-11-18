@@ -221,6 +221,8 @@ For Google, use `embeddingProvider: "google"` and configure the Google API crede
 
 The `/embeddings` path is appended to `baseUrl`. `apiKey` and `maxBatchSize` are optional.
 
+Response rows with no `index` fields are consumed in array order. If any row includes `index`, every row must supply a unique integer from `0` to the request's input count minus one; vectors are reordered into input order, and invalid or mixed indices are rejected as non-retryable malformed responses. Indices restart at zero for each request when `maxBatchSize` splits a batch.
+
 Changing provider, model, dimensions, or embedding strategy can make an existing index incompatible. Check `index_status` and rebuild with `force: true` only when required.
 
 ### Embedding fallback replica

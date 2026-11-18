@@ -72,6 +72,13 @@ npm run test
 cd native && cargo test
 ```
 
+The two-process watcher coalescing regression gates the first index attempt from
+each real watcher before either can contact the embedding provider. Admit the
+owner first, observe its held request and lease, then install the known
+contender's busy waiter before admitting it. This separates watcher delivery
+from the provider deadline without extending timeouts or weakening contention,
+duplicate-embedding, or integrity assertions.
+
 Watcher permission-recovery tests use real Chokidar 6 directory registrations,
 not per-file native handles. Controlled fault cases explicitly select Chokidar's
 per-directory native backend on every platform, matching Linux's default strategy.

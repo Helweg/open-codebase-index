@@ -253,6 +253,40 @@ describe("InvertedIndex", () => {
       expect([...reloaded.search("café needle", 2000)]).toEqual(expected);
     });
 
+    it.each(["malformed", "truncated", "future"])(
+      "preserves resident state and file bytes when loading a %s snapshot",
+      (kind) => {
+        index.addChunk("retained", "durableEvidence");
+        index.save();
+        index.clear();
+        index.load();
+        index.addChunk("pending", "pendingEvidence");
+        const expected = [...index.search("evidence")];
+        const replacement = JSON.stringify({
+          term_to_chunks: { replacement: ["new"] },
+          chunk_tokens: { new: { replacement: 1 } },
+          avg_doc_length: 1,
+          tokenizer_version: kind === "future" ? 999 : 1,
+          legacy_chunks: [],
+        });
+        let unreadable = replacement;
+        if (kind === "malformed") {
+          unreadable = "{partial";
+        } else if (kind === "truncated") {
+          unreadable = replacement.slice(0, -1);
+        }
+        fs.writeFileSync(indexPath, unreadable);
+
+        expect(() => index.load()).toThrow();
+        expect(index.getDocumentCount()).toBe(2);
+        expect([...index.search("evidence")]).toEqual(expected);
+        expect([...index.search("durableEvidence").keys()]).toEqual(["retained"]);
+        expect([...index.search("pendingEvidence").keys()]).toEqual(["pending"]);
+        expect([...index.search("replacement").keys()]).toEqual([]);
+        expect(fs.readFileSync(indexPath, "utf-8")).toBe(unreadable);
+      },
+    );
+
     it("should handle loading empty index", () => {
       const newIndex = new InvertedIndex(indexPath);
       expect(() => newIndex.load()).not.toThrow();

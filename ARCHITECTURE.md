@@ -97,6 +97,8 @@ Changed-file source, parse results, pending embedding text, and queued requests 
 
 SQLite mutations participate in one coordinated write transaction, so an interrupted run does not expose partially indexed rows to other connections. Vector, BM25, file-hash, and branch-catalog publication remains at the existing final boundary. These separate artifacts are not claimed to form one cross-storage atomic transaction.
 
+Structural initialization delegates BM25 snapshot parsing to the existing native loader, without a discarded JavaScript preparse. Parsing and tokenizer-version validation finish before resident keyword state is replaced; loading still requires a full-file input string and memory proportional to the index contents.
+
 ### Search Flow
 
 ```
@@ -205,11 +207,12 @@ Tool adapters keep their existing public facades while delegating cohesive mecha
 
 ### Watcher (`src/watcher/index.ts`)
 
-File system observer using chokidar:
+File system observer using native recursive watching with a Chokidar fallback:
 - Watches for file changes → triggers incremental index
 - Watches `.git/HEAD` → detects branch switches
-- Debounces rapid changes (500ms window)
+- Reconciles invalidations after a 100ms debounce and batches file-change delivery over a 1000ms window
 - Merges `additionalInclude` patterns with `include` patterns for proper file filtering
+- Chokidar's non-polling source watcher also reconciles genuine ancestor-directory notifications against a selected-file snapshot, detecting descendant rewrites without forcing untouched files changed; live leaf events remain authoritative during asynchronous scans
 
 ## Design Decisions
 

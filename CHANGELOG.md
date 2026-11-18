@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Embedding response association**: Respect response-row indices in OpenAI and custom OpenAI-compatible providers, including split requests; preserve index-less endpoint ordering and reject invalid or mixed indices before vectors can be cached or persisted.
+- **Source-checkout Node requirements**: Align installation guidance with `^22.22.2 || ^24.15.0 || >=26.0.0` and recommend Node.js 24.15+ LTS, without changing published consumer support for Node.js 22.22.0 or newer.
+- **BM25 snapshot loading**: Delegate structural initialization parsing to the existing native loader without a discarded JavaScript preparse, preserving the snapshot format, recovery behavior and resident-state validation.
+- **Directory-only watcher notifications**: Reconcile selected descendant file facts when Chokidar receives ancestor-directory notifications, keeping directory round-trip edits indexed without manufacturing changes for untouched files or bypassing exclusions.
+
 ## [0.40.0] - 2026-11-17
 
 ### Upgrade notes

@@ -297,6 +297,7 @@ describe("provider-free structural indexing", () => {
     expect(corruptStatus.warning).toContain("Structural keyword index");
     await expect(reader.search("durableNeedle", 10)).rejects.toThrow("Structural keyword index");
     await reader.close();
+    expect(fs.readFileSync(keywordPath, "utf-8")).toBe("not-json");
 
     await indexer.close();
     indexer = createIndexer(runtime);

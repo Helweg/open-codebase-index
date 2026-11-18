@@ -320,7 +320,7 @@ Progress and diagnostics for `index` are written to `stderr`; the final formatte
 
 ## Local source checkout
 
-Development requires Node.js 22.22 or newer within 22.x, 24.12 or newer within 24.x, or 26 or newer. Source installs must satisfy both Chokidar 6 and the NAPI CLI's development-only LZMA dependency; the published runtime minimum remains Node.js 22.22.
+Development requires Node.js `^22.22.2 || ^24.15.0 || >=26.0.0` to satisfy build-only OpenCode plugin and other development dependencies. Node.js 24.15+ LTS is recommended. Published consumers require Node.js 22.22.0 or newer.
 
 ```bash
 npm ci

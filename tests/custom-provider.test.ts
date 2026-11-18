@@ -114,8 +114,97 @@ describe("CustomEmbeddingProvider", () => {
     const provider = createProvider();
     const result = await provider.embedBatch(["text1", "text2", "text3"]);
 
-    expect(result.embeddings).toHaveLength(3);
+    expect(result.embeddings).toEqual([
+      new Array(768).fill(0.1),
+      new Array(768).fill(0.2),
+      new Array(768).fill(0.3),
+    ]);
     expect(result.totalTokensUsed).toBe(30);
+  });
+
+  it.each([
+    {
+      ordering: "reversed",
+      data: [{ index: 1, embedding: [0, 1] }, { index: 0, embedding: [1, 0] }],
+    },
+    {
+      ordering: "identity",
+      data: [{ index: 0, embedding: [1, 0] }, { index: 1, embedding: [0, 1] }],
+    },
+  ])("returns input-ordered vectors for $ordering indexed responses", async ({ data }) => {
+    fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ data })));
+    const provider = createEmbeddingProvider(createCustomProviderInfo({
+      baseUrl: "http://localhost:11434/v1",
+      model: "test-embedding",
+      dimensions: 2,
+    }));
+
+    await expect(provider.embedBatch(["first", "second"])).resolves.toEqual({
+      embeddings: [[1, 0], [0, 1]],
+      totalTokensUsed: 4,
+    });
+  });
+
+  it.each([
+    { contract: "missing first index", indices: [undefined, 1] },
+    { contract: "missing last index", indices: [0, undefined] },
+    { contract: "duplicate indices", indices: [0, 0] },
+    { contract: "incomplete permutation", indices: [1] },
+    { contract: "fractional index", indices: [0, 0.5] },
+    { contract: "negative index", indices: [0, -1] },
+    { contract: "out-of-range index", indices: [0, 2] },
+    { contract: "null index", indices: [0, null] },
+    { contract: "string index", indices: [0, "1"] },
+    { contract: "non-finite index", indices: [0, Number.POSITIVE_INFINITY] },
+    { contract: "NaN index", indices: [0, Number.NaN] },
+  ])("rejects $contract without exposing private data", async ({ indices }) => {
+    fetchSpy.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: indices.map((index) => ({
+          ...(index === undefined ? {} : { index }),
+          embedding: [12345, 67890],
+          detail: "private response row",
+        })),
+      }),
+    } as Response);
+    const provider = createEmbeddingProvider(createCustomProviderInfo({
+      baseUrl: "https://secret.example/v1",
+      model: "test-embedding",
+      dimensions: 2,
+      apiKey: "private-key",
+    }));
+
+    const error = await getRejectedError(provider.embedBatch(["private first", "private second"]));
+    expect(error).toBeInstanceOf(ProviderRequestError);
+    expect(error).toMatchObject({ kind: "malformed_response", retryable: false });
+    for (const secret of ["secret.example", "private-key", "private first", "private second", "12345", "67890", "private response row"]) {
+      expect(error.message).not.toContain(secret);
+    }
+  });
+
+  it("associates split batches using indices local to each request", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ index: 1, embedding: [0, 1] }, { index: 0, embedding: [1, 0] }],
+        usage: { total_tokens: 7 },
+      })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        data: [{ index: 1, embedding: [0, 2] }, { index: 0, embedding: [2, 0] }],
+        usage: { total_tokens: 9 },
+      })));
+    const provider = createEmbeddingProvider(createCustomProviderInfo({
+      baseUrl: "http://localhost:11434/v1",
+      model: "test-embedding",
+      dimensions: 2,
+      maxBatchSize: 2,
+    }));
+
+    await expect(provider.embedBatch(["first", "second", "third", "fourth"])).resolves.toEqual({
+      embeddings: [[1, 0], [0, 1], [2, 0], [0, 2]],
+      totalTokensUsed: 16,
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   it("should split custom provider requests by maxBatchSize", async () => {

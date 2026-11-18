@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, lstatSync, statSync, type Stats } from "fs";
+import { accessSync, constants, existsSync, lstatSync, realpathSync, statSync, type Stats } from "fs";
 import { stat } from "node:fs/promises";
 import { FSWatcher } from "chokidar";
 import * as path from "path";
@@ -50,6 +50,17 @@ interface ChokidarRecovery {
   configOnly: boolean;
 }
 
+interface ChokidarReconciliation {
+  watcher: FSWatcher;
+  reconciler: FileSnapshotReconciler;
+  realProjectRoot: string;
+  initialized: boolean;
+  running: boolean;
+  directories: Set<string>;
+  liveChanges: Map<string, FileChange>;
+  timer: NodeJS.Timeout | null;
+}
+
 export class FileWatcher {
   private watcher: FSWatcher | null = null;
   private activeCallbacks = 0;
@@ -69,6 +80,8 @@ export class FileWatcher {
   private pendingClose: Promise<void> | null = null;
   private chokidarRecovery: ChokidarRecovery | null = null;
   private recoveryTask: Promise<void> | null = null;
+  private chokidarReconciliation: ChokidarReconciliation | null = null;
+  private chokidarReconciliationTask: Promise<void> = Promise.resolve();
   private startupReadySignals = 1;
   private nativeWatcher: NativeRecursiveWatcher | null = null;
   private nativeReconciler: FileSnapshotReconciler | null = null;
@@ -153,6 +166,7 @@ export class FileWatcher {
     recoveryPaths?: ReadonlySet<string>,
   ): void {
     let reportedStartupReady = false;
+    this.retireChokidarReconciliation(true);
     // Backend cutover invalidates the old scan owner, but not its already-observed changes.
     const previousRecovery = this.chokidarRecovery;
     this.chokidarRecovery = null;
@@ -228,13 +242,25 @@ export class FileWatcher {
       watcher = new FSWatcher(watcherOptions);
     }
     this.watcher = watcher;
+    const reconciliation: ChokidarReconciliation | null = !watcher.options.usePolling && watchTargets === undefined
+      ? {
+        watcher,
+        reconciler: new FileSnapshotReconciler(
+          this.projectRoot, this.getSnapshotConfig(),
+          () => [...this.projectConfigPaths, ...this.localModuleConfigTracker.getPaths()],
+        ),
+        realProjectRoot: this.getRealProjectRoot(),
+        initialized: false, running: false, directories: new Set(), liveChanges: new Map(), timer: null,
+      }
+      : null;
+    this.chokidarReconciliation = reconciliation;
     if (recoveryPaths) {
       this.chokidarRecovery = {
         watcher, previousPaths: recoveryPaths, liveChanges: new Map(),
         configOnly: this.nativeWatcher !== null || this.nativeStarting,
       };
     }
-    watcher.on("ready", () => {
+    const reportReady = (): void => {
       if (this.watcher !== watcher) return;
       const recovery = this.chokidarRecovery;
       if (recovery?.watcher === watcher) {
@@ -246,6 +272,25 @@ export class FileWatcher {
         this.reportStartupReadySignal();
         reportedStartupReady = true;
       }
+    };
+    watcher.on("ready", () => {
+      if (!reconciliation) {
+        reportReady();
+        return;
+      }
+      this.enqueueChokidarReconciliation(reconciliation, async () => {
+        try {
+          // Seed only after Chokidar's initial scan; existing files are not synthetic changes.
+          await reconciliation.reconciler.initialize();
+          if (this.isCurrentChokidarReconciliation(reconciliation)) reconciliation.initialized = true;
+        } finally {
+          reportReady();
+          this.scheduleChokidarReconciliation(reconciliation);
+        }
+      });
+    });
+    if (reconciliation) watcher.on("raw", (event: unknown, filePath: unknown, details: unknown) => {
+      this.invalidateChokidarDirectory(reconciliation, event, filePath, details);
     });
 
     watcher.on("error", (error: unknown) => {
@@ -302,6 +347,148 @@ export class FileWatcher {
     watcher.on("change", (filePath) => this.handleChange(watcher, "change", filePath));
     watcher.on("unlink", (filePath) => this.handleChange(watcher, "unlink", filePath));
     watcher.add(resolvedWatchTargets);
+  }
+
+  private getRealProjectRoot(): string {
+    try {
+      return realpathSync(this.projectRoot);
+    } catch {
+      return path.resolve(this.projectRoot);
+    }
+  }
+
+  private isCurrentChokidarReconciliation(owner: ChokidarReconciliation): boolean {
+    return this.chokidarReconciliation === owner && this.watcher === owner.watcher;
+  }
+
+  private retireChokidarReconciliation(deliverLiveChanges: boolean): void {
+    const owner = this.chokidarReconciliation;
+    this.chokidarReconciliation = null;
+    if (!owner) return;
+    clearTimeout(owner.timer ?? undefined);
+    owner.timer = null;
+    if (deliverLiveChanges) this.recordChanges([...owner.liveChanges.values()]);
+    owner.liveChanges.clear();
+    owner.directories.clear();
+  }
+
+  private enqueueChokidarReconciliation(owner: ChokidarReconciliation, work: () => Promise<void>): void {
+    this.chokidarReconciliationTask = this.chokidarReconciliationTask.then(async () => {
+      if (!this.isCurrentChokidarReconciliation(owner)) return;
+      this.activeCallbacks += 1;
+      try {
+        await work();
+      } catch (error) {
+        if (this.isCurrentChokidarReconciliation(owner)) {
+          console.error("[codebase-index] Failed to reconcile Chokidar directory invalidation:", error);
+          // Preserve genuine leaf events if supplemental snapshot work fails.
+          this.retireChokidarReconciliation(true);
+        }
+      } finally {
+        this.activeCallbacks -= 1;
+      }
+    });
+  }
+
+  private invalidateChokidarDirectory(owner: ChokidarReconciliation, event: unknown, filePath: unknown, details: unknown): void {
+    if (!this.isCurrentChokidarReconciliation(owner) || (event !== "rename" && event !== "change")) return;
+    if (!details || typeof details !== "object" || !("watchedPath" in details) || typeof details.watchedPath !== "string") return;
+    if (filePath !== null && filePath !== undefined && typeof filePath !== "string") return;
+    let directory = path.resolve(details.watchedPath, typeof filePath === "string" ? filePath : "");
+    if (isWithinPath(owner.realProjectRoot, directory)) {
+      directory = path.join(path.resolve(this.projectRoot), path.relative(owner.realProjectRoot, directory));
+    }
+    const relativePath = path.relative(this.projectRoot, directory);
+    if (this.isOutsideProjectPath(relativePath) || !this.isChokidarSnapshotDirectory(directory)) return;
+    if (relativePath !== "" && !this.isProjectConfigPathOrAncestor(relativePath) && !this.localModuleConfigTracker.hasPathOrAncestor(directory)
+      && !shouldTraverseDirectory(
+        directory, this.projectRoot, this.config.exclude, createIgnoreFilter(this.projectRoot),
+        this.config.indexing?.includeIgnored ?? [], createGitIgnoreFilter(this.projectRoot), this.getPathFilterOptions(),
+      )) return;
+    owner.directories.add(directory);
+    this.scheduleChokidarReconciliation(owner);
+  }
+
+  private isChokidarSnapshotDirectory(directory: string): boolean {
+    const root = path.resolve(this.projectRoot);
+    if (!isWithinPath(root, directory)) return false;
+    try {
+      for (let current = directory; path.relative(root, current) !== ""; current = path.dirname(current)) {
+        // Match the initial snapshot's real-directory traversal; do not newly scan symlink subtrees.
+        if (!lstatSync(current).isDirectory()) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private recordChokidarChange(watcher: FSWatcher, change: FileChange): void {
+    const owner = this.chokidarReconciliation;
+    if (!owner || owner.watcher !== watcher || !owner.initialized || !isWithinPath(path.resolve(this.projectRoot), change.path)) {
+      this.recordChanges([change]);
+      return;
+    }
+    if (!this.isProjectConfigPath(change.path) && !this.localModuleConfigTracker.has(change.path)
+      && !this.isChokidarSnapshotDirectory(path.dirname(change.path))) {
+      this.recordChanges([change]);
+      return;
+    }
+    // Refresh the snapshot before publishing a leaf event, so a later ancestor
+    // invalidation cannot rediscover it or acknowledge a newer write without delivery.
+    owner.liveChanges.set(change.path, change);
+    this.scheduleChokidarReconciliation(owner);
+  }
+
+  private scheduleChokidarReconciliation(owner: ChokidarReconciliation): void {
+    if (!this.isCurrentChokidarReconciliation(owner) || !owner.initialized || owner.running
+      || (owner.directories.size === 0 && owner.liveChanges.size === 0)) return;
+    clearTimeout(owner.timer ?? undefined);
+    owner.timer = setTimeout(() => {
+      owner.timer = null;
+      owner.running = true;
+      const liveChanges = new Map(owner.liveChanges);
+      const scopes = [...owner.directories, ...liveChanges.keys()];
+      owner.directories.clear();
+      this.enqueueChokidarReconciliation(owner, async () => {
+        try {
+          // Directory invalidations compare facts; they never force every descendant changed.
+          const changes = new Map<string, FileChangeType>(
+            (await owner.reconciler.reconcile(scopes)).map((change) => [change.path, change.type]),
+          );
+          if (!this.isCurrentChokidarReconciliation(owner)) return;
+          for (const [filePath, change] of owner.liveChanges) {
+            if (!scopes.some((scope) => isWithinPath(scope, filePath))) continue;
+            if (liveChanges.get(filePath) === change) changes.set(filePath, change.type);
+            else changes.delete(filePath); // A newer leaf event owns the next snapshot and delivery.
+          }
+          const reconciledChanges = [...changes].map(([filePath, type]) => ({ path: filePath, type }));
+          this.refreshLocalModuleConfigForChanges(reconciledChanges, owner.watcher);
+          if (!this.isCurrentChokidarReconciliation(owner)) return;
+          this.recordChanges(reconciledChanges);
+          for (const [filePath, change] of liveChanges) {
+            if (owner.liveChanges.get(filePath) === change) owner.liveChanges.delete(filePath);
+          }
+        } finally {
+          owner.running = false;
+          this.scheduleChokidarReconciliation(owner);
+        }
+      });
+    }, 100);
+  }
+
+  private refreshLocalModuleConfigForChanges(changes: FileChange[], watcher?: FSWatcher): void {
+    if (changes.length === 0) return;
+    const ignoreFilter = createIgnoreFilter(this.projectRoot);
+    const dependencyChanged = changes.some((change) => (
+      shouldTrackLocalModuleConfigPath(change.path, this.projectRoot, ignoreFilter, this.getSnapshotConfig())
+      || this.localModuleConfigTracker.shouldTrackPackagePath(change.path)
+      || this.localModuleConfigTracker.has(change.path)
+    ));
+    const importerSetChanged = changes.some((change) => this.isSelectedJavaScriptPath(change.path) && (
+      change.type === "add" || change.type === "unlink" || !this.localModuleConfigTracker.hasImporterPath(change.path)
+    ));
+    if (dependencyChanged || importerSetChanged) this.refreshLocalModuleConfigTracker(watcher);
   }
 
   private canRecoverSourceWatchPermissionError(error: NodeJS.ErrnoException): boolean {
@@ -647,28 +834,7 @@ export class FileWatcher {
       const changes = await reconciler.reconcile(invalidatedPaths);
       if (!this.isCurrentNativeSetup(generation) || this.nativeReconciler !== reconciler) return;
 
-      const ignoreFilter = createIgnoreFilter(this.projectRoot);
-      const hasLocalModuleDependencyChange = changes.some((change) => (
-        shouldTrackLocalModuleConfigPath(
-          change.path,
-          this.projectRoot,
-          ignoreFilter,
-          this.getSnapshotConfig(),
-        )
-        || this.localModuleConfigTracker.shouldTrackPackagePath(change.path)
-        || this.localModuleConfigTracker.has(change.path)
-      ));
-      const hasSelectedImporterSetChange = changes.some((change) => (
-        this.isSelectedJavaScriptPath(change.path)
-        && (
-          change.type === "add"
-          || change.type === "unlink"
-          || !this.localModuleConfigTracker.hasImporterPath(change.path)
-        )
-      ));
-      if (hasLocalModuleDependencyChange || hasSelectedImporterSetChange) {
-        this.refreshLocalModuleConfigTracker();
-      }
+      this.refreshLocalModuleConfigForChanges(changes);
       this.recordChanges(changes);
     } catch (error) {
       await this.fallbackFromNativeWatcher(generation, error);
@@ -740,8 +906,7 @@ export class FileWatcher {
 
     if (this.isProjectConfigPath(filePath)) {
       this.updateConfigPathState(filePath);
-      this.pendingChanges.set(filePath, type);
-      this.scheduleFlush();
+      this.recordChokidarChange(watcher, { path: filePath, type });
       return;
     }
 
@@ -756,8 +921,7 @@ export class FileWatcher {
       || this.localModuleConfigTracker.has(filePath)
     ) {
       this.refreshLocalModuleConfigTracker(watcher);
-      this.pendingChanges.set(filePath, type);
-      this.scheduleFlush();
+      this.recordChokidarChange(watcher, { path: filePath, type });
       return;
     }
 
@@ -772,7 +936,7 @@ export class FileWatcher {
       this.refreshLocalModuleConfigTracker(watcher);
     }
 
-    this.recordChanges([{ path: filePath, type }]);
+    this.recordChokidarChange(watcher, { path: filePath, type });
   }
 
   private recordChanges(changes: FileChange[]): void {
@@ -938,6 +1102,10 @@ export class FileWatcher {
     return this.activeCallbacks > 0 || this.resolveReady !== null || this.nativeStarting
       || this.nativeInitializing || this.nativeInvalidatedPaths.size > 0
       || this.chokidarRecovery !== null
+      || (this.chokidarReconciliation !== null && (
+        this.chokidarReconciliation.timer !== null || this.chokidarReconciliation.running
+        || this.chokidarReconciliation.directories.size > 0 || this.chokidarReconciliation.liveChanges.size > 0
+      ))
       || this.nativeReconcileTimer !== null || this.pendingChanges.size > 0;
   }
 
@@ -977,6 +1145,9 @@ export class FileWatcher {
     const nativeWatcher = this.nativeWatcher;
     const pendingClose = this.pendingClose;
     const recoveryTask = this.recoveryTask;
+    const chokidarReconciliationTask = this.chokidarReconciliationTask;
+    this.chokidarReconciliationTask = Promise.resolve();
+    this.retireChokidarReconciliation(false);
     this.chokidarRecovery = null;
     this.recoveryTask = null;
     const resolveReady = this.resolveReady;
@@ -991,7 +1162,7 @@ export class FileWatcher {
     this.readyPromise = null;
     this.pendingChanges.clear();
     this.onChanges = null;
-    await Promise.all([watcher?.close(), nativeWatcher?.stop(), pendingClose, recoveryTask]);
+    await Promise.all([watcher?.close(), nativeWatcher?.stop(), pendingClose, recoveryTask, chokidarReconciliationTask]);
 
     resolveReady?.();
   }

@@ -2144,21 +2144,27 @@ describe("multiprocess indexing", () => {
   it("coalesces two watcher processes without duplicate embeddings", async () => {
     const first = await createWorker();
     const second = await createWorker();
-    first.send({ type: "run", operation: "watch" });
-    second.send({ type: "run", operation: "watch" });
+    first.send({ type: "run", operation: "watch", pauseBeforeWatchIndex: true });
+    second.send({ type: "run", operation: "watch", pauseBeforeWatchIndex: true });
     await Promise.all([
       first.waitFor((message) => message.type === "watcher-ready"),
       second.waitFor((message) => message.type === "watcher-ready"),
     ]);
 
-    embeddingServer.block();
     fs.writeFileSync(sourcePath, "export function watched() { return 'changed'; }\n");
+    // Both actual watcher deliveries must reach indexing before a provider hold starts.
+    await Promise.all([
+      first.waitFor((message) => message.type === "watch-attempt"),
+      second.waitFor((message) => message.type === "watch-attempt"),
+    ]);
+    expect(embeddingServer.requestCount).toBe(0);
+    embeddingServer.block();
+    first.send({ type: "resume-watch-index" });
     await embeddingServer.waitForRequestCount(1);
     const ownerBefore = readOwner();
-    const busy = await Promise.race([
-      first.waitFor((message) => message.type === "watch-result" && message.code === "INDEX_BUSY"),
-      second.waitFor((message) => message.type === "watch-result" && message.code === "INDEX_BUSY"),
-    ]);
+    const busyResult = second.waitFor((message) => message.type === "watch-result" && message.code === "INDEX_BUSY");
+    second.send({ type: "resume-watch-index" });
+    const busy = await busyResult;
     expect(busy.code).toBe("INDEX_BUSY");
     expect(embeddingServer.requestCount).toBe(1);
     expect(readOwner()).toBe(ownerBefore);

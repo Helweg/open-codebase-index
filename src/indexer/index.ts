@@ -4049,9 +4049,6 @@ export class Indexer {
       }
       this.invertedIndex = new InvertedIndex(invertedIndexPath);
       try {
-        if (existsSync(invertedIndexPath)) {
-          JSON.parse(readFileSync(invertedIndexPath, "utf-8"));
-        }
         this.invertedIndex.load();
       } catch (error) {
         if (isUnsupportedKeywordIndexVersion(error)) throw error;
@@ -4088,7 +4085,6 @@ export class Indexer {
       this.invertedIndex = new InvertedIndex(invertedIndexPath);
       if (existsSync(invertedIndexPath)) {
         try {
-          JSON.parse(readFileSync(invertedIndexPath, "utf-8"));
           this.invertedIndex.load();
         } catch (error) {
           this.recordReadIssue("keyword", this.getKeywordReadIssueMessage(), error);
