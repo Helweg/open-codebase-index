@@ -59,6 +59,15 @@ Track override decisions in [#379](https://github.com/Helweg/open-codebase-index
 | `vite@>=8.0.0 <8.0.16` | `^8.0.16` | [GHSA-v6wh-96g9-6wx3](https://github.com/advisories/GHSA-v6wh-96g9-6wx3) and [GHSA-fx2h-pf6j-xcff](https://github.com/advisories/GHSA-fx2h-pf6j-xcff) |
 | `@earendil-works/pi-coding-agent@^1.3.0` → `undici@>=8.0.0 <8.12.2` | `^8.12.2` | Development-only [GHSA-xjj6-f33q-929c](https://github.com/advisories/GHSA-xjj6-f33q-929c); replaces the parent's exact vulnerable edge without changing the published runtime floor |
 | `@opencode-ai/plugin@1.19.6` → `zod@<4.6.6` | `^4.6.7` | Development-only [GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5); aligns the build SDK with the safe direct Zod |
+| `@opencode-ai/plugin@1.19.6` → `effect@4.0.0-beta.83` | `4.0.0-beta.103` | Development-only cookie attribute injection [GHSA-chp3-j5qr-2vfr](https://github.com/advisories/GHSA-chp3-j5qr-2vfr); replace only the plugin's exact vulnerable prerelease |
+| Same plugin's Effect subtree → `toml@>=4.0.0 <5.0.1` | `^5.0.1` | Development-only prototype pollution [GHSA-h895-cgqg-jf52](https://github.com/advisories/GHSA-h895-cgqg-jf52) and denial of service [GHSA-4qx8-w7c3-pj3p](https://github.com/advisories/GHSA-4qx8-w7c3-pj3p), [GHSA-9j65-hcg3-gc64](https://github.com/advisories/GHSA-9j65-hcg3-gc64), and [GHSA-9qmh-m7c6-f92p](https://github.com/advisories/GHSA-9qmh-m7c6-f92p) |
+
+The plugin still pins the vulnerable Effect prerelease, and patched Effect still
+declares TOML 4.x. TOML's fixes require 5.0.1, so this scoped development-only
+exception crosses its major version while preserving the `parse` API; unsafe
+integers are rejected rather than silently rounded. Neither Effect nor TOML is
+installed by standalone consumers. The plugin/SDK versions and published Node.js
+minimum are unchanged.
 
 ### 0.38.1 Consumer Dependency Closure
 
