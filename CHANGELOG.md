@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Source-checkout Node requirements**: Align installation guidance with `^22.22.2 || ^24.15.0 || >=26.0.0` and recommend Node.js 24.15+ LTS, without changing published consumer support for Node.js 22.22.0 or newer.
 - **BM25 snapshot loading**: Delegate structural initialization parsing to the existing native loader without a discarded JavaScript preparse, preserving the snapshot format, recovery behavior and resident-state validation.
 - **Directory-only watcher notifications**: Reconcile selected descendant file facts when Chokidar receives ancestor-directory notifications, keeping directory round-trip edits indexed without manufacturing changes for untouched files or bypassing exclusions.
+- **Development dependency security**: Scope the build-only OpenCode plugin to patched Effect `4.0.0-beta.103` and TOML `5.0.1`, fixing cookie attribute injection, prototype pollution, and three denial-of-service advisories. Preserve the plugin/SDK versions, published runtime dependencies, and Node.js minimum.
 
 ## [0.40.0] - 2026-11-17
 
