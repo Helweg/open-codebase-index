@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { evaluateBudgetGate } from "../src/eval/budget.js";
+import { buildPerQueryResult, computeEvalMetrics, getRelevantPaths } from "../src/eval/metrics.js";
+import { loadBudget, loadGoldenDataset } from "../src/eval/schema.js";
 import type { EvalBudget, EvalComparison, EvalSummary } from "../src/eval/types.js";
 
 function summary(p95: number): EvalSummary {
@@ -334,15 +336,112 @@ describe("eval budget gate", () => {
     ]);
   });
 
-  it("skips context-specific gates when a dataset has no context queries", () => {
+  it.each([
+    "maxContextResponseTokensAverage",
+    "maxContextResponseTokensP95",
+    "maxContextResponseTokensMax",
+    "maxContextDuplicateCandidateRatio",
+    "minContextSelectedFileRatio",
+    "minContextHitAt5Per1kResponseTokens",
+    "minContextMrrAt10Per1kResponseTokens",
+  ] as const)("requires context measurements for %s, even when set to zero", (metric) => {
+    const withoutContext = summary(5);
+    withoutContext.metrics.contextEfficiency.queryCount = 0;
+    const budget: EvalBudget = {
+      name: "search-only-with-context-threshold",
+      failOnMissingBaseline: false,
+      thresholds: { [metric]: 0 },
+    };
+
+    const gate = evaluateBudgetGate(budget, withoutContext);
+
+    expect(gate.passed).toBe(false);
+    expect(gate.violations).toEqual([
+      {
+        metric: "contextMeasurementRequired",
+        message: expect.stringContaining(budget.name),
+      },
+    ]);
+    expect(gate.violations[0].message).toContain("no context queries");
+    expect(gate.violations[0].message).toContain("context-bearing dataset");
+    expect(gate.violations[0].message).toContain("omit context thresholds");
+  });
+
+  it("keeps search-only gates passing without context thresholds", () => {
     const withoutContext = summary(5);
     withoutContext.metrics.contextEfficiency.queryCount = 0;
     const gate = evaluateBudgetGate({
       name: "search-only",
       failOnMissingBaseline: false,
-      thresholds: { maxContextResponseTokensMax: 1 },
+      thresholds: {
+        minHitAt5: 1,
+        minMrrAt10: 1,
+        minRawDistinctTop3Ratio: 1,
+        p95LatencyMaxAbsoluteMs: 5,
+      },
     }, withoutContext);
 
     expect(gate.passed).toBe(true);
+    expect(gate.violations).toEqual([]);
+  });
+
+  it("passes when measured context satisfies every context threshold", () => {
+    const gate = evaluateBudgetGate({
+      name: "measured-context",
+      failOnMissingBaseline: false,
+      thresholds: {
+        maxContextResponseTokensAverage: 100,
+        maxContextResponseTokensP95: 100,
+        maxContextResponseTokensMax: 100,
+        maxContextDuplicateCandidateRatio: 0.1,
+        minContextSelectedFileRatio: 1,
+        minContextHitAt5Per1kResponseTokens: 10,
+        minContextMrrAt10Per1kResponseTokens: 10,
+      },
+    }, summary(5));
+
+    expect(gate.passed).toBe(true);
+    expect(gate.violations).toEqual([]);
+  });
+
+  it("keeps smoke budgets valid for small.json but rejects a context budget for those measurements", () => {
+    const dataset = loadGoldenDataset("benchmarks/golden/small.json");
+    const perQuery = dataset.queries.map((query) => buildPerQueryResult(
+      query,
+      getRelevantPaths(query).map((filePath) => ({
+        filePath,
+        name: query.expected.symbol,
+        chunkType: "function",
+        score: 1,
+      })),
+      5,
+      10,
+    ));
+    const measured = summary(5);
+    measured.datasetName = dataset.name;
+    measured.datasetVersion = dataset.version;
+    measured.queryCount = dataset.queries.length;
+    measured.metrics = computeEvalMetrics(dataset.queries, perQuery, 0, 0, 0);
+    expect(measured.metrics.contextEfficiency.queryCount).toBe(0);
+
+    for (const budgetPath of ["benchmarks/budgets/default.json", "benchmarks/budgets/ollama.json"]) {
+      const budget = loadBudget(budgetPath);
+      const comparison = budget.baselinePath ? comparisonWithBaselineP95(5) : undefined;
+      const gate = evaluateBudgetGate(budget, measured, comparison);
+
+      expect(gate.passed, budget.name).toBe(true);
+      expect(gate.violations, budget.name).toEqual([]);
+    }
+
+    const contextBudget = loadBudget("benchmarks/budgets/pre-edit.json");
+    const gate = evaluateBudgetGate(contextBudget, measured);
+
+    expect(gate.passed).toBe(false);
+    expect(gate.violations.filter((violation) => violation.metric === "contextMeasurementRequired")).toEqual([
+      {
+        metric: "contextMeasurementRequired",
+        message: expect.stringContaining(contextBudget.name),
+      },
+    ]);
   });
 });

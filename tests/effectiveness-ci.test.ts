@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { evaluateBudgetGate } from "../src/eval/budget.js";
+import { loadGoldenDataset } from "../src/eval/schema.js";
 import { collectFiles } from "../src/utils/files.js";
 import type { EvalBudget, EvalSummary } from "../src/eval/types.js";
 
@@ -101,8 +102,39 @@ describe("effectiveness quality CI", () => {
   });
 
   it("uses a measured representative budget without weakening the smoke budget", () => {
-    expect(evaluateBudgetGate(representativeBudget, summary(0.8462, 0.5987)).passed).toBe(true);
-    expect(evaluateBudgetGate(representativeBudget, summary(0.7, 0.5)).passed).toBe(false);
+    const datasetPath = "benchmarks/golden/representative.json";
+    const dataset = loadGoldenDataset(datasetPath);
+    const contextQueryCount = dataset.queries.filter((query) => (query.retrievalMode ?? "search") !== "search").length;
+    const responseTokens = 500;
+    function measuredSummary(hitAt5: number, mrrAt10: number): EvalSummary {
+      const measured = summary(hitAt5, mrrAt10);
+      measured.datasetPath = path.join(measured.projectRoot, datasetPath);
+      measured.datasetName = dataset.name;
+      measured.datasetVersion = dataset.version;
+      measured.queryCount = dataset.queries.length;
+      measured.metrics.contextEfficiency = {
+        queryCount: contextQueryCount,
+        responseTokens: {
+          total: contextQueryCount * responseTokens,
+          average: responseTokens,
+          p95: responseTokens,
+          max: responseTokens,
+        },
+        duplicateCandidateRatio: 0,
+        selectedFileRatio: 1,
+        hitAt5Per1kResponseTokens: hitAt5 * 1000 / responseTokens,
+        mrrAt10Per1kResponseTokens: mrrAt10 * 1000 / responseTokens,
+      };
+      return measured;
+    }
+
+    const healthy = evaluateBudgetGate(representativeBudget, measuredSummary(0.8462, 0.5987));
+    const regressed = evaluateBudgetGate(representativeBudget, measuredSummary(0.7, 0.5));
+
+    expect(healthy.passed).toBe(true);
+    expect(healthy.violations).toEqual([]);
+    expect(regressed.passed).toBe(false);
+    expect(regressed.violations.map((violation) => violation.metric)).toEqual(["minHitAt5", "minMrrAt10"]);
     expect(representativeBudget.thresholds.minHitAt5).toBe(budget.thresholds.minHitAt5);
     expect(budget.thresholds.minMrrAt10).toBe(0.65);
   });

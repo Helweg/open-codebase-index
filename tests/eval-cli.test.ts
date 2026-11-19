@@ -27,6 +27,79 @@ describe("eval cli", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it.each([
+    { label: "terminal flag", args: ["--reindex", "--config"] },
+    { label: "empty value", args: ["--config", ""] },
+    { label: "next option", args: ["--config", "--reindex"] },
+    { label: "short option", args: ["--config", "-h"] },
+    { label: "against option", args: ["--config", "--against", "baseline.json"] },
+  ])("requires a config path before starting evaluation ($label)", async ({ args }) => {
+    await expect(handleEvalCommand(["run", ...args], tempDir)).rejects.toThrow("--config requires a path");
+    expect(runEvaluationMock).not.toHaveBeenCalled();
+    expect(runSweepMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "--project", "--dataset", "--current", "--output", "--against", "--budget",
+    "--fusionStrategy", "--hybridWeight", "--rrfK", "--rerankTopN",
+    "--sweepFusionStrategy", "--sweepHybridWeight", "--sweepRrfK", "--sweepRerankTopN",
+  ])("requires a value for %s before starting runner work", async (flag) => {
+    for (const suffix of [[], [""], ["--config", "config.json"], ["-h"]]) {
+      await expect(handleEvalCommand(["run", flag, ...suffix], tempDir))
+        .rejects.toThrow(`${flag} requires a value`);
+      expect(runEvaluationMock).not.toHaveBeenCalled();
+      expect(runSweepMock).not.toHaveBeenCalled();
+    }
+  });
+
+  it("resolves config from invoking cwd and forwards project, baseline, and negative numbers", async () => {
+    runEvaluationMock.mockResolvedValue({
+      outputDir: path.join(tempDir, "out"),
+      summary: { metrics: { hitAt5: 1, mrrAt10: 1, latencyMs: { p95: 1 } } },
+    });
+
+    const exitCode = await handleEvalCommand([
+      "run", "--project", "nested-project", "--config", "config.json", "--against", "baseline.json",
+      "--hybridWeight", "-0.25", "--rrfK", "-10", "--rerankTopN", "-2",
+    ], tempDir);
+
+    expect(exitCode).toBe(0);
+    expect(runEvaluationMock).toHaveBeenCalledWith(expect.objectContaining({
+      projectRoot: path.join(tempDir, "nested-project"),
+      configPath: path.join(tempDir, "config.json"),
+      againstPath: "baseline.json",
+      searchOverrides: {
+        hybridWeight: -0.25,
+        rrfK: -10,
+        rerankTopN: -2,
+      },
+    }));
+  });
+
+  it("forwards negative numeric sweep values", async () => {
+    runSweepMock.mockResolvedValue({
+      outputDir: path.join(tempDir, "out"),
+      aggregate: {
+        generatedAt: new Date().toISOString(),
+        runCount: 2,
+        runs: [],
+        gatePassed: true,
+        failedGateRuns: 0,
+      },
+    });
+
+    const exitCode = await handleEvalCommand(
+      ["run", "--sweepHybridWeight", "-0.25,0.25"],
+      tempDir,
+    );
+
+    expect(exitCode).toBe(0);
+    expect(runSweepMock).toHaveBeenCalledWith(
+      expect.any(Object),
+      { hybridWeight: [-0.25, 0.25] },
+    );
+  });
+
   it("returns non-zero for --ci sweep when any run fails gate", async () => {
     runSweepMock.mockResolvedValue({
       outputDir: path.join(tempDir, "out"),
