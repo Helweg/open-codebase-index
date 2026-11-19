@@ -41,7 +41,7 @@ function validateEvalConfigShape(rawConfig: unknown, filePath: string): Record<s
     throw new Error(`Eval config at ${filePath} field 'exclude' must be an array of strings.`);
   }
 
-  for (const section of ["customProvider", "indexing", "search", "debug", "reranker"] as const) {
+  for (const section of ["customProvider", "indexing", "search", "debug", "effectivenessMetrics", "reranker"] as const) {
     const value = config[section];
     if (value !== undefined && !isRecord(value)) {
       throw new Error(`Eval config at ${filePath} field '${section}' must be an object.`);
@@ -154,12 +154,15 @@ export function resolveEvalIndexPathOverride(
   const relativeIndexPath = getHostProjectIndexRelativePath("opencode");
   const indexPath = path.join(projectRoot, relativeIndexPath);
   const mainIndexPath = path.join(mainRepoRoot, relativeIndexPath);
-  const localPaths = [canonicalizePathForComparison(indexPath)];
-  const mainPaths = [canonicalizePathForComparison(mainIndexPath)];
-  if (config.indexing.mode === "structural") {
-    localPaths.push(canonicalizePathForComparison(path.join(indexPath, "structural")));
-    mainPaths.push(canonicalizePathForComparison(path.join(mainIndexPath, "structural")));
-  }
+  const localHybridPath = canonicalizePathForComparison(indexPath);
+  const localStructuralPath = canonicalizePathForComparison(path.join(indexPath, "structural"));
+  const localPaths = config.indexing.mode === "structural"
+    ? [localHybridPath, localStructuralPath]
+    : [localHybridPath];
+  const mainPaths = [
+    canonicalizePathForComparison(mainIndexPath),
+    canonicalizePathForComparison(path.join(mainIndexPath, "structural")),
+  ];
   if (localPaths.some((localPath) => mainPaths.includes(localPath))) {
     throw new Error(`Eval-local index path aliases the main checkout's default store: ${indexPath}`);
   }
@@ -174,7 +177,7 @@ export function resolveEvalIndexPathOverride(
   })) {
     throw new Error(`Eval-local index path escapes the linked worktree: ${indexPath}`);
   }
-  if (config.indexing.mode === "structural" && localPaths[0] === localPaths[1]) {
+  if (localHybridPath === localStructuralPath) {
     throw new Error(
       `Eval-local structural index path aliases its hybrid store: ${path.join(indexPath, "structural")}. Use a separate structural directory.`,
     );

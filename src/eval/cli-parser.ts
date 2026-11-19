@@ -98,6 +98,13 @@ export function hasSweepOptions(sweep: SweepDefinition): boolean {
   );
 }
 
+function requireOptionValue(flag: string, value: string | undefined): string {
+  if (!value || value.startsWith("--") || value === "-h") {
+    throw new Error(`${flag} requires ${flag === "--config" ? "a path" : "a value"}`);
+  }
+  return value;
+}
+
 export function parseEvalArgs(argv: string[], cwd: string): ParsedArgs {
   const parsed: ParsedArgs = {
     projectRoot: cwd,
@@ -113,38 +120,38 @@ export function parseEvalArgs(argv: string[], cwd: string): ParsedArgs {
     const arg = argv[i];
     const next = argv[i + 1];
 
-    if (arg === "--project" && next) {
-      parsed.projectRoot = path.resolve(cwd, next);
+    if (arg === "--project") {
+      parsed.projectRoot = path.resolve(cwd, requireOptionValue(arg, next));
       i += 1;
       continue;
     }
-    if (arg === "--config" && next) {
-      parsed.configPath = path.resolve(cwd, next);
+    if (arg === "--config") {
+      parsed.configPath = path.resolve(cwd, requireOptionValue(arg, next));
       i += 1;
       continue;
     }
-    if (arg === "--dataset" && next) {
-      parsed.datasetPath = next;
+    if (arg === "--dataset") {
+      parsed.datasetPath = requireOptionValue(arg, next);
       i += 1;
       continue;
     }
-    if (arg === "--current" && next) {
-      parsed.currentPath = next;
+    if (arg === "--current") {
+      parsed.currentPath = requireOptionValue(arg, next);
       i += 1;
       continue;
     }
-    if (arg === "--output" && next) {
-      parsed.outputRoot = next;
+    if (arg === "--output") {
+      parsed.outputRoot = requireOptionValue(arg, next);
       i += 1;
       continue;
     }
-    if (arg === "--against" && next) {
-      parsed.againstPath = next;
+    if (arg === "--against") {
+      parsed.againstPath = requireOptionValue(arg, next);
       i += 1;
       continue;
     }
-    if (arg === "--budget" && next) {
-      parsed.budgetPath = next;
+    if (arg === "--budget") {
+      parsed.budgetPath = requireOptionValue(arg, next);
       i += 1;
       continue;
     }
@@ -156,46 +163,47 @@ export function parseEvalArgs(argv: string[], cwd: string): ParsedArgs {
       parsed.reindex = true;
       continue;
     }
-    if (arg === "--fusionStrategy" && next) {
-      if (next !== "rrf" && next !== "weighted") {
+    if (arg === "--fusionStrategy") {
+      const value = requireOptionValue(arg, next);
+      if (value !== "rrf" && value !== "weighted") {
         throw new Error("--fusionStrategy must be rrf or weighted");
       }
-      parsed.fusionStrategy = next;
+      parsed.fusionStrategy = value;
       i += 1;
       continue;
     }
-    if (arg === "--hybridWeight" && next) {
-      parsed.hybridWeight = parseNumber(next, "--hybridWeight");
+    if (arg === "--hybridWeight") {
+      parsed.hybridWeight = parseNumber(requireOptionValue(arg, next), "--hybridWeight");
       i += 1;
       continue;
     }
-    if (arg === "--rrfK" && next) {
-      parsed.rrfK = parseNumber(next, "--rrfK");
+    if (arg === "--rrfK") {
+      parsed.rrfK = parseNumber(requireOptionValue(arg, next), "--rrfK");
       i += 1;
       continue;
     }
-    if (arg === "--rerankTopN" && next) {
-      parsed.rerankTopN = parseNumber(next, "--rerankTopN");
+    if (arg === "--rerankTopN") {
+      parsed.rerankTopN = parseNumber(requireOptionValue(arg, next), "--rerankTopN");
       i += 1;
       continue;
     }
-    if (arg === "--sweepFusionStrategy" && next) {
-      parsed.sweep.fusionStrategy = parseCsvFusion(next);
+    if (arg === "--sweepFusionStrategy") {
+      parsed.sweep.fusionStrategy = parseCsvFusion(requireOptionValue(arg, next));
       i += 1;
       continue;
     }
-    if (arg === "--sweepHybridWeight" && next) {
-      parsed.sweep.hybridWeight = parseCsvNumbers(next, "--sweepHybridWeight");
+    if (arg === "--sweepHybridWeight") {
+      parsed.sweep.hybridWeight = parseCsvNumbers(requireOptionValue(arg, next), "--sweepHybridWeight");
       i += 1;
       continue;
     }
-    if (arg === "--sweepRrfK" && next) {
-      parsed.sweep.rrfK = parseCsvNumbers(next, "--sweepRrfK");
+    if (arg === "--sweepRrfK") {
+      parsed.sweep.rrfK = parseCsvNumbers(requireOptionValue(arg, next), "--sweepRrfK");
       i += 1;
       continue;
     }
-    if (arg === "--sweepRerankTopN" && next) {
-      parsed.sweep.rerankTopN = parseCsvNumbers(next, "--sweepRerankTopN");
+    if (arg === "--sweepRerankTopN") {
+      parsed.sweep.rerankTopN = parseCsvNumbers(requireOptionValue(arg, next), "--sweepRerankTopN");
       i += 1;
       continue;
     }
@@ -205,25 +213,10 @@ export function parseEvalArgs(argv: string[], cwd: string): ParsedArgs {
 }
 
 export function parseEvalSubcommandOptions(argv: string[], cwd: string): EvalSubcommandOptions {
-  let explicitAgainst: string | undefined;
-  const filtered: string[] = [];
-
-  for (let i = 0; i < argv.length; i += 1) {
-    const current = argv[i];
-    const next = argv[i + 1];
-
-    if (current === "--against" && next) {
-      explicitAgainst = next;
-      i += 1;
-      continue;
-    }
-
-    filtered.push(current);
-  }
-
+  const parsed = parseEvalArgs(argv, cwd);
   return {
-    parsed: parseEvalArgs(filtered, cwd),
-    explicitAgainst,
+    parsed,
+    explicitAgainst: parsed.againstPath,
   };
 }
 

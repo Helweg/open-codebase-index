@@ -300,32 +300,43 @@ describe("eval runner", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("rejects an eval-local structural catalog aliasing its hybrid sibling", async () => {
+  it.each(["hybrid", "structural"] as const)("rejects eval-local sibling catalog aliases in %s mode", async (mode) => {
     const fixture = await createLinkedEvalFixture();
     const options = {
       projectRoot: fixture.worktreeDir,
       datasetPath: path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json"),
     };
-    const hybridResult = await runEvaluation({
+    const config = loadParsedConfig(fixture.mainRepoDir);
+    const configPath = path.join(fixture.worktreeDir, "eval-config.json");
+    const seedMode = mode === "hybrid" ? "structural" : "hybrid";
+    writeFileSync(
+      configPath,
+      JSON.stringify({ ...config, indexing: { ...config.indexing, mode: seedMode } }),
+    );
+    const seedResult = await runEvaluation({
       ...options,
-      outputRoot: "benchmarks/hybrid-results",
+      configPath: "eval-config.json",
+      outputRoot: "benchmarks/seed-results",
       reindex: true,
     });
-    expect(hybridResult.perQuery[0]?.hitAt1).toBe(true);
-    const hybridDatabasePath = path.join(fixture.localIndexPath, "codebase.db");
-    const hybridBytes = readFileSync(hybridDatabasePath);
-    const siblingSentinel = path.join(fixture.localIndexPath, "sentinel.txt");
-    writeFileSync(siblingSentinel, "keep-hybrid");
+    expect(seedResult.perQuery[0]?.hitAt1).toBe(true);
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    let protectedIndexPath = fixture.localIndexPath;
+    if (mode === "hybrid") {
+      const seedIndexPath = path.join(fixture.worktreeDir, "seed-index");
+      renameSync(fixture.localIndexPath, seedIndexPath);
+      protectedIndexPath = path.join(seedIndexPath, "structural");
+      symlinkSync(protectedIndexPath, fixture.localIndexPath, linkType);
+    }
+    const protectedDatabasePath = path.join(protectedIndexPath, "codebase.db");
+    const protectedBytes = readFileSync(protectedDatabasePath);
+    const siblingSentinel = path.join(protectedIndexPath, "sentinel.txt");
+    writeFileSync(siblingSentinel, "keep-sibling");
     const structuralIndexPath = path.join(fixture.localIndexPath, "structural");
-    symlinkSync(
-      fixture.localIndexPath,
-      structuralIndexPath,
-      process.platform === "win32" ? "junction" : "dir",
-    );
-    const config = loadParsedConfig(fixture.mainRepoDir);
+    symlinkSync(protectedIndexPath, structuralIndexPath, linkType);
     writeFileSync(
-      path.join(fixture.worktreeDir, "eval-config.json"),
-      JSON.stringify({ ...config, indexing: { ...config.indexing, mode: "structural" } }),
+      configPath,
+      JSON.stringify({ ...config, indexing: { ...config.indexing, mode } }),
     );
     fetchSpy.mockClear();
 
@@ -339,8 +350,8 @@ describe("eval runner", () => {
         `Eval-local structural index path aliases its hybrid store: ${structuralIndexPath}. Use a separate structural directory.`,
       );
 
-      expect(readFileSync(hybridDatabasePath)).toEqual(hybridBytes);
-      expect(readFileSync(siblingSentinel, "utf-8")).toBe("keep-hybrid");
+      expect(readFileSync(protectedDatabasePath)).toEqual(protectedBytes);
+      expect(readFileSync(siblingSentinel, "utf-8")).toBe("keep-sibling");
       expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
       expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
       expect(existsSync(path.join(fixture.worktreeDir, "benchmarks", "results"))).toBe(false);
@@ -348,8 +359,56 @@ describe("eval runner", () => {
     }
   });
 
+  it("rejects hybrid eval aliasing the main structural catalog", async () => {
+    const fixture = await createLinkedEvalFixture();
+    const config = loadParsedConfig(fixture.mainRepoDir);
+    const mainStructuralIndexer = new Indexer(fixture.mainRepoDir, {
+      ...config,
+      indexing: { ...config.indexing, mode: "structural" },
+    }, "opencode");
+    try {
+      await mainStructuralIndexer.index();
+    } finally {
+      await mainStructuralIndexer.close();
+    }
+    const mainStructuralPath = path.join(fixture.mainIndexPath, "structural");
+    const structuralDatabasePath = path.join(mainStructuralPath, "codebase.db");
+    const structuralBytes = readFileSync(structuralDatabasePath);
+    const structuralSentinel = path.join(mainStructuralPath, "sentinel.txt");
+    writeFileSync(structuralSentinel, "keep-main-structural");
+    mkdirSync(path.dirname(fixture.localIndexPath), { recursive: true });
+    renameSync(mainStructuralPath, fixture.localIndexPath);
+    symlinkSync(
+      fixture.localIndexPath,
+      mainStructuralPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    fetchSpy.mockClear();
+
+    for (const reindex of [false, true]) {
+      await expect(runEvaluation({
+        projectRoot: fixture.worktreeDir,
+        datasetPath: path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json"),
+        outputRoot: "benchmarks/results",
+        reindex,
+      })).rejects.toThrow(
+        `Eval-local index path aliases the main checkout's default store: ${fixture.localIndexPath}`,
+      );
+
+      expect(readFileSync(structuralDatabasePath)).toEqual(structuralBytes);
+      expect(readFileSync(structuralSentinel, "utf-8")).toBe("keep-main-structural");
+      expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+      expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+      expect(readFileSync(fixture.mainConfigPath)).toEqual(fixture.mainConfigBytes);
+      expect(existsSync(path.join(fixture.worktreeDir, "benchmarks", "results"))).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  });
+
   it.each([
     ["base-main", "hybrid"],
+    ["base-main", "structural"],
+    ["structural-main", "structural"],
     ["base-outside", "hybrid"],
     ["base-self", "hybrid"],
     ["structural-outside", "structural"],
@@ -365,6 +424,10 @@ describe("eval runner", () => {
     switch (alias) {
       case "base-main":
         symlinkSync(fixture.mainIndexPath, fixture.localIndexPath, linkType);
+        break;
+      case "structural-main":
+        mkdirSync(fixture.localIndexPath, { recursive: true });
+        symlinkSync(fixture.mainIndexPath, path.join(fixture.localIndexPath, "structural"), linkType);
         break;
       case "base-outside":
         symlinkSync(outsidePath, fixture.localIndexPath, linkType);
@@ -1963,5 +2026,31 @@ describe("eval runner", () => {
         reindex: false,
       })
     ).rejects.toThrow(/field 'knowledgeBases' must be an array of strings/);
+  });
+
+  it.each([
+    { value: null },
+    { value: false },
+    { value: 0 },
+    { value: "enabled" },
+    { value: [] },
+  ])("rejects non-object effectivenessMetrics before indexing ($value)", async ({ value }) => {
+    const invalidConfigPath = path.join(tempDir, "invalid-metrics-config.json");
+    const config = loadParsedConfig(tempDir);
+    writeFileSync(invalidConfigPath, JSON.stringify({ ...config, effectivenessMetrics: value }));
+
+    await expect(runEvaluation({
+      projectRoot: tempDir,
+      configPath: "invalid-metrics-config.json",
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      reindex: true,
+    })).rejects.toThrow(
+      `Eval config at ${invalidConfigPath} field 'effectivenessMetrics' must be an object.`,
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(existsSync(path.join(tempDir, ".opencode", "index"))).toBe(false);
+    expect(existsSync(path.join(tempDir, "benchmarks", "results"))).toBe(false);
   });
 });
