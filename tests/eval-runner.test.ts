@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
@@ -115,6 +115,24 @@ describe("eval runner", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
+  it.each([false, true])("rejects missing explicit config before indexing (reindex: %s)", async (reindex) => {
+    const configPath = path.join("config", "missing-eval.json");
+    fetchSpy.mockClear();
+
+    await expect(runEvaluation({
+      projectRoot: tempDir,
+      configPath,
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex,
+    })).rejects.toThrow(`Config file not found: ${path.join(tempDir, configPath)}`);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(existsSync(path.join(tempDir, ".opencode", "index"))).toBe(false);
+    expect(existsSync(path.join(tempDir, "benchmarks", "results"))).toBe(false);
+  });
+
   it("runs eval and writes required artifacts", async () => {
     const result = await runEvaluation({
       projectRoot: tempDir,
@@ -150,6 +168,202 @@ describe("eval runner", () => {
     });
 
     expect(repeatRun.summary.datasetFingerprint).toBe(result.summary.datasetFingerprint);
+  });
+
+  async function createLinkedEvalFixture() {
+    const mainRepoDir = path.join(tempDir, "main-repo");
+    const worktreeDir = path.join(tempDir, "worktree-feature");
+    const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
+    mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
+    mkdirSync(worktreeGitDir, { recursive: true });
+    mkdirSync(worktreeDir, { recursive: true });
+    for (const directory of ["src", ".opencode", "benchmarks"]) {
+      cpSync(path.join(tempDir, directory), path.join(mainRepoDir, directory), { recursive: true });
+    }
+    cpSync(path.join(tempDir, "src"), path.join(worktreeDir, "src"), { recursive: true });
+    writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
+    writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), `${"1".repeat(40)}\n`);
+    writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
+    writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
+    writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
+
+    const mainIndexer = new Indexer(mainRepoDir, loadParsedConfig(mainRepoDir), "opencode");
+    try {
+      await mainIndexer.index();
+    } finally {
+      await mainIndexer.close();
+    }
+    const mainIndexPath = path.join(mainRepoDir, ".opencode", "index");
+    const localIndexPath = path.join(worktreeDir, ".opencode", "index");
+    const mainDatabasePath = path.join(mainIndexPath, "codebase.db");
+    const mainDatabaseBytes = readFileSync(mainDatabasePath);
+    const mainConfigPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
+    const mainConfigBytes = readFileSync(mainConfigPath);
+    const sentinelPath = path.join(mainIndexPath, "sentinel.txt");
+    writeFileSync(sentinelPath, "keep-main");
+    return {
+      mainRepoDir,
+      worktreeDir,
+      mainIndexPath,
+      localIndexPath,
+      mainDatabasePath,
+      mainDatabaseBytes,
+      mainConfigPath,
+      mainConfigBytes,
+      sentinelPath,
+    };
+  }
+
+  function getEmbeddingRequestInputs(): string[] {
+    return fetchSpy.mock.calls.flatMap(([, init]) => {
+      const body: unknown = JSON.parse(String(init?.body ?? "{}"));
+      if (body === null || typeof body !== "object" || !("input" in body) || !Array.isArray(body.input)) {
+        return [];
+      }
+      return body.input.filter((input): input is string => typeof input === "string");
+    });
+  }
+
+  it.each([false, true])("preserves the project config during explicit reindex (late failure: %s)", async (lateFailure) => {
+    const projectConfigPath = path.join(tempDir, ".opencode", "codebase-index.json");
+    const originalConfig = readFileSync(projectConfigPath);
+    const config = loadParsedConfig(tempDir);
+    const model = "eval-only-embedding-model";
+    writeFileSync(
+      path.join(tempDir, "eval-config.json"),
+      JSON.stringify({
+        ...config,
+        embeddingModel: model,
+        customProvider: { ...config.customProvider, model },
+      }),
+    );
+    fetchSpy.mockClear();
+
+    const evaluation = runEvaluation({
+      projectRoot: tempDir,
+      configPath: "eval-config.json",
+      datasetPath: "benchmarks/golden/small.json",
+      outputRoot: "benchmarks/results",
+      reindex: true,
+      ciMode: lateFailure,
+      budgetPath: "benchmarks/budgets/missing.json",
+    });
+    if (lateFailure) {
+      await expect(evaluation).rejects.toMatchObject({
+        code: "ENOENT",
+        path: path.join(tempDir, "benchmarks", "budgets", "missing.json"),
+      });
+    } else {
+      const result = await evaluation;
+      expect(result.perQuery[0]?.hitAt1).toBe(true);
+    }
+
+    const requestedModels = fetchSpy.mock.calls.map(([, init]) => {
+      const body: unknown = JSON.parse(String(init?.body ?? "{}"));
+      return body !== null && typeof body === "object" && "model" in body ? body.model : undefined;
+    });
+    expect(requestedModels).toContain(model);
+    expect(readFileSync(projectConfigPath)).toEqual(originalConfig);
+  });
+
+  it("keeps an eval-local structural catalog separate from its hybrid sibling", async () => {
+    const fixture = await createLinkedEvalFixture();
+    const options = {
+      projectRoot: fixture.worktreeDir,
+      datasetPath: path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json"),
+      outputRoot: "benchmarks/results",
+    };
+    await runEvaluation({ ...options, reindex: true });
+    const hybridDatabasePath = path.join(fixture.localIndexPath, "codebase.db");
+    const hybridBytes = readFileSync(hybridDatabasePath);
+    const siblingSentinel = path.join(fixture.localIndexPath, "sentinel.txt");
+    writeFileSync(siblingSentinel, "keep-hybrid");
+    const config = loadParsedConfig(fixture.mainRepoDir);
+    writeFileSync(
+      path.join(fixture.worktreeDir, "eval-config.json"),
+      JSON.stringify({ ...config, indexing: { ...config.indexing, mode: "structural" } }),
+    );
+    fetchSpy.mockClear();
+
+    for (const reindex of [true, false]) {
+      const result = await runEvaluation({ ...options, configPath: "eval-config.json", reindex });
+
+      expect(result.perQuery[0]?.hitAt1).toBe(true);
+      expect(existsSync(path.join(fixture.localIndexPath, "structural", "codebase.db"))).toBe(true);
+      expect(readFileSync(hybridDatabasePath)).toEqual(hybridBytes);
+      expect(readFileSync(siblingSentinel, "utf-8")).toBe("keep-hybrid");
+      expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+      expect(readFileSync(fixture.mainConfigPath)).toEqual(fixture.mainConfigBytes);
+      expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+      expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["base-main", "hybrid"],
+    ["base-outside", "hybrid"],
+    ["base-self", "hybrid"],
+    ["structural-outside", "structural"],
+    ["main-inward", "hybrid"],
+    ["structural-main-inward", "structural"],
+  ] as const)("rejects eval-local index aliases or escapes (%s, %s)", async (alias, mode) => {
+    const fixture = await createLinkedEvalFixture();
+    const outsidePath = path.join(tempDir, "outside-index");
+    mkdirSync(outsidePath, { recursive: true });
+    writeFileSync(path.join(outsidePath, "sentinel.txt"), "keep-outside");
+    mkdirSync(path.dirname(fixture.localIndexPath), { recursive: true });
+    const linkType = process.platform === "win32" ? "junction" : "dir";
+    switch (alias) {
+      case "base-main":
+        symlinkSync(fixture.mainIndexPath, fixture.localIndexPath, linkType);
+        break;
+      case "base-outside":
+        symlinkSync(outsidePath, fixture.localIndexPath, linkType);
+        break;
+      case "base-self":
+        symlinkSync(fixture.worktreeDir, fixture.localIndexPath, linkType);
+        break;
+      case "structural-outside":
+        mkdirSync(fixture.localIndexPath, { recursive: true });
+        symlinkSync(outsidePath, path.join(fixture.localIndexPath, "structural"), linkType);
+        break;
+      case "main-inward":
+        renameSync(fixture.mainIndexPath, fixture.localIndexPath);
+        symlinkSync(fixture.localIndexPath, fixture.mainIndexPath, linkType);
+        break;
+      case "structural-main-inward":
+        mkdirSync(path.join(fixture.localIndexPath, "structural"), { recursive: true });
+        symlinkSync(
+          path.join(fixture.localIndexPath, "structural"),
+          path.join(fixture.mainIndexPath, "structural"),
+          linkType,
+        );
+        break;
+    }
+    const config = loadParsedConfig(fixture.mainRepoDir);
+    writeFileSync(
+      path.join(fixture.worktreeDir, "eval-config.json"),
+      JSON.stringify({ ...config, indexing: { ...config.indexing, mode } }),
+    );
+    fetchSpy.mockClear();
+
+    await expect(runEvaluation({
+      projectRoot: fixture.worktreeDir,
+      configPath: "eval-config.json",
+      datasetPath: path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json"),
+      outputRoot: "benchmarks/results",
+      reindex: true,
+    })).rejects.toThrow(alias.endsWith("outside") || alias === "base-self"
+      ? /escapes the linked worktree/
+      : /aliases the main checkout/);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+    expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+    expect(readFileSync(path.join(outsidePath, "sentinel.txt"), "utf-8")).toBe("keep-outside");
+    expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+    expect(existsSync(path.join(fixture.worktreeDir, "benchmarks", "results"))).toBe(false);
   });
 
   describe("configured index reindexing", () => {
@@ -471,6 +685,53 @@ describe("eval runner", () => {
     expect(result.summary.metrics.contextEfficiency.queryCount).toBe(2);
     expect(readFileSync(path.join(result.outputDir, "summary.md"), "utf-8"))
       .toContain("Graph-neighbor recall");
+  });
+
+  it("does not use the expected path to disambiguate edit-context requests", async () => {
+    const symbol = "prepareEditTarget";
+    const filePath = "src/primary/target.ts";
+    for (const directory of ["primary", "secondary"]) {
+      mkdirSync(path.join(tempDir, "src", directory), { recursive: true });
+      writeFileSync(
+        path.join(tempDir, "src", directory, "target.ts"),
+        `export function ${symbol}(value: string) { return '${directory}:' + value; }\n`,
+        "utf-8",
+      );
+    }
+
+    const query = {
+      query: "change prepareEditTarget behavior",
+      queryType: "definition",
+      retrievalMode: "edit-context",
+      args: { symbol, tokenBudget: 512 },
+      expected: { filePath, symbol },
+    };
+    writeFileSync(
+      path.join(tempDir, "benchmarks", "golden", "edit-context-scope.json"),
+      JSON.stringify({
+        version: "1.0.0",
+        name: "edit-context-scope",
+        queries: [
+          { ...query, id: "unscoped" },
+          { ...query, id: "scoped", args: { ...query.args, filePath } },
+        ],
+      }, null, 2),
+      "utf-8",
+    );
+
+    const result = await runEvaluation({
+      projectRoot: tempDir,
+      datasetPath: "benchmarks/golden/edit-context-scope.json",
+      outputRoot: "benchmarks/results",
+      ciMode: false,
+      reindex: false,
+    });
+
+    const scoped = result.perQuery.find((item) => item.id === "scoped");
+    expect(scoped).toMatchObject({ resolvedRoute: "definition", hitAt1: true });
+    expect(scoped?.results[0]).toMatchObject({ filePath: path.join(tempDir, filePath), name: symbol });
+    const unscoped = result.perQuery.find((item) => item.id === "unscoped");
+    expect(unscoped?.resolvedRoute).toBe("search");
   });
 
   it.each(["checkout", "snapshot", "tests", "docs", `long-${"nested-".repeat(20)}`])("grades published edit-context evidence relative to a %s project root", async (rootName) => {
@@ -948,331 +1209,195 @@ describe("eval runner", () => {
     expect(readFileSync(path.join(mainRepoDir, ".opencode", "index", "sentinel.txt"), "utf-8")).toBe("keep-me");
   });
 
-  it("creates a local eval config boundary when reindexing from a fallback worktree", async () => {
-    const mainRepoDir = path.join(tempDir, "main-repo");
-    const worktreeDir = path.join(tempDir, "worktree-feature");
-    const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
-
-    mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "docs", "reference"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "indexer"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "tools"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "benchmarks", "golden"), { recursive: true });
-    mkdirSync(worktreeGitDir, { recursive: true });
-    mkdirSync(worktreeDir, { recursive: true });
-
-    writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
-    writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
-    writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
-    writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
-
-    writeFileSync(
-      path.join(mainRepoDir, ".opencode", "codebase-index.json"),
-      JSON.stringify(
+  it("uses a local eval catalog without creating config when inheriting worktree settings", async () => {
+    const fixture = await createLinkedEvalFixture();
+    writeFileSync(fixture.mainConfigPath, JSON.stringify({
+      ...loadParsedConfig(fixture.mainRepoDir),
+      include: ["src/**/*.ts", "*.ts"],
+      additionalInclude: ["docs/**/*.md"],
+      knowledgeBases: ["docs/reference"],
+    }));
+    const sourceConfigBytes = readFileSync(fixture.mainConfigPath);
+    for (const [root, prefix] of [[fixture.mainRepoDir, "main"], [fixture.worktreeDir, "worktree"]]) {
+      mkdirSync(path.join(root, "docs", "reference"), { recursive: true });
+      writeFileSync(
+        path.join(root, "docs", "reference", "guide.ts"),
+        `export function ${prefix}KbSymbol() { return '${prefix}'; }\n`,
+      );
+      writeFileSync(path.join(root, "docs", "notes.md"), `# ${prefix}IncludeMarker\nSelected ${prefix} documentation.\n`);
+    }
+    const datasetPath = path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json");
+    writeFileSync(datasetPath, JSON.stringify({
+      version: "1.0.0",
+      name: "inherited-worktree",
+      queries: [
         {
-          embeddingProvider: "custom",
-          customProvider: {
-            baseUrl: "http://localhost:11434/v1",
-            model: "mock-embedding-model",
-            dimensions: 8,
-          },
-          indexing: {
-            watchFiles: false,
-          },
-          additionalInclude: ["docs/**/*.md"],
-          knowledgeBases: ["docs/reference"],
-          search: {
-            maxResults: 10,
-            minScore: 0,
-            fusionStrategy: "rrf",
-            rrfK: 60,
-            rerankTopN: 20,
-          },
+          id: "kb", query: "worktreeKbSymbol", queryType: "definition",
+          expected: { filePath: "docs/reference/guide.ts", symbol: "worktreeKbSymbol" },
         },
-        null,
-        2
-      ),
-      "utf-8"
-    );
-
-    writeFileSync(
-      path.join(mainRepoDir, "src", "indexer", "index.ts"),
-      "export function rankHybridResults(query: string) { return query.length; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "src", "tools", "index.ts"),
-      "export const codebase_search = () => 'ok';\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "benchmarks", "golden", "small.json"),
-      JSON.stringify(
         {
-          version: "1.0.0",
-          name: "small",
-          queries: [
-            {
-              id: "q1",
-              query: "where is rankHybridResults implementation",
-              queryType: "definition",
-              expected: {
-                filePath: "src/indexer/index.ts",
-                symbol: "rankHybridResults",
-              },
-            },
-          ],
+          id: "include", query: "worktreeIncludeMarker", queryType: "definition",
+          expected: { filePath: "docs/notes.md" },
         },
-        null,
-        2
-      ),
-      "utf-8"
-    );
+        {
+          id: "target", query: "rankHybridResults", queryType: "definition",
+          expected: { filePath: "src/indexer/index.ts", symbol: "rankHybridResults" },
+        },
+      ],
+    }));
 
-    await runEvaluation({
-      projectRoot: worktreeDir,
-      datasetPath: path.relative(worktreeDir, path.join(mainRepoDir, "benchmarks", "golden", "small.json")),
+    for (const reindex of [true, false]) {
+      fetchSpy.mockClear();
+      const result = await runEvaluation({
+        projectRoot: fixture.worktreeDir,
+        datasetPath,
+        outputRoot: "benchmarks/results",
+        reindex,
+      });
+
+      expect(existsSync(path.join(fixture.localIndexPath, "codebase.db"))).toBe(true);
+      expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+      expect(readFileSync(fixture.mainConfigPath)).toEqual(sourceConfigBytes);
+      expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+      expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+      expect(result.perQuery[2]?.hitAt1).toBe(true);
+      if (reindex) {
+        const inputs = getEmbeddingRequestInputs();
+        expect(inputs).toEqual(expect.arrayContaining([
+          expect.stringContaining("export function worktreeKbSymbol("),
+          expect.stringContaining("Selected worktree documentation."),
+        ]));
+        expect(inputs.some((input) => input.includes("export function mainKbSymbol("))).toBe(false);
+        expect(inputs.some((input) => input.includes("Selected main documentation."))).toBe(false);
+      }
+    }
+  });
+
+  it("uses an explicit project config in memory with worktree-relative sources", async () => {
+    const fixture = await createLinkedEvalFixture();
+    writeFileSync(fixture.mainConfigPath, JSON.stringify({
+      ...loadParsedConfig(fixture.mainRepoDir),
+      include: ["src/**/*.ts", "*.ts"],
+      additionalInclude: ["docs/**/*.md"],
+      knowledgeBases: ["docs/reference"],
+    }));
+    const sourceConfigBytes = readFileSync(fixture.mainConfigPath);
+    for (const [root, prefix] of [[fixture.mainRepoDir, "main"], [fixture.worktreeDir, "worktree"]]) {
+      mkdirSync(path.join(root, "docs", "reference"), { recursive: true });
+      writeFileSync(
+        path.join(root, "docs", "reference", "guide.ts"),
+        `export function ${prefix}ExplicitKb() { return '${prefix}'; }\n`,
+      );
+      writeFileSync(path.join(root, "docs", "notes.md"), `# ${prefix}ExplicitInclude\nSelected ${prefix} documentation.\n`);
+    }
+    const datasetPath = path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json");
+    writeFileSync(datasetPath, JSON.stringify({
+      version: "1.0.0",
+      name: "explicit-project-config",
+      queries: [
+        {
+          id: "kb", query: "worktreeExplicitKb", queryType: "definition",
+          expected: { filePath: "docs/reference/guide.ts", symbol: "worktreeExplicitKb" },
+        },
+        {
+          id: "include", query: "worktreeExplicitInclude", queryType: "definition",
+          expected: { filePath: "docs/notes.md" },
+        },
+        {
+          id: "target", query: "rankHybridResults", queryType: "definition",
+          expected: { filePath: "src/indexer/index.ts", symbol: "rankHybridResults" },
+        },
+      ],
+    }));
+
+    fetchSpy.mockClear();
+    const result = await runEvaluation({
+      projectRoot: fixture.worktreeDir,
+      configPath: path.relative(fixture.worktreeDir, fixture.mainConfigPath),
+      datasetPath,
       outputRoot: "benchmarks/results",
-      ciMode: false,
       reindex: true,
     });
 
-    const localEvalConfig = JSON.parse(
-      readFileSync(path.join(worktreeDir, ".opencode", "codebase-index.json"), "utf-8")
-    ) as {
-      additionalInclude?: string[];
-      knowledgeBases?: string[];
-      customProvider?: { model?: string };
-    };
-
-    expect(localEvalConfig.customProvider?.model).toBe("mock-embedding-model");
-    expect(localEvalConfig.additionalInclude).toEqual(["docs/**/*.md"]);
-    expect(localEvalConfig.knowledgeBases).toEqual(["docs/reference"]);
+    expect(result.perQuery[2]?.hitAt1).toBe(true);
+    const inputs = getEmbeddingRequestInputs();
+    expect(inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("export function worktreeExplicitKb("),
+      expect.stringContaining("Selected worktree documentation."),
+    ]));
+    expect(inputs.some((input) => input.includes("export function mainExplicitKb("))).toBe(false);
+    expect(inputs.some((input) => input.includes("Selected main documentation."))).toBe(false);
+    expect(existsSync(path.join(fixture.localIndexPath, "codebase.db"))).toBe(true);
+    expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+    expect(readFileSync(fixture.mainConfigPath)).toEqual(sourceConfigBytes);
+    expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+    expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
   });
 
-  it("creates a local eval config boundary when reindexing with an explicit config path", async () => {
-    const mainRepoDir = path.join(tempDir, "main-repo");
-    const worktreeDir = path.join(tempDir, "worktree-feature");
-    const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
-
-    mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, ".opencode", "index"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "docs", "reference"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "indexer"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "tools"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "benchmarks", "golden"), { recursive: true });
-    mkdirSync(path.join(worktreeDir, ".opencode", "index"), { recursive: true });
-    mkdirSync(worktreeGitDir, { recursive: true });
-    mkdirSync(worktreeDir, { recursive: true });
-
-    writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
-    writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
-    writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
-    writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
-
-    const externalConfigPath = path.join(mainRepoDir, ".opencode", "codebase-index.json");
-    writeFileSync(
-      externalConfigPath,
-      JSON.stringify(
-        {
-          embeddingProvider: "custom",
-          customProvider: {
-            baseUrl: "http://localhost:11434/v1",
-            model: "mock-embedding-model",
-            dimensions: 8,
-          },
-          indexing: {
-            watchFiles: false,
-          },
-          additionalInclude: ["docs/**/*.md"],
-          knowledgeBases: ["docs/reference"],
-          search: {
-            maxResults: 10,
-            minScore: 0,
-            fusionStrategy: "rrf",
-            rrfK: 60,
-            rerankTopN: 20,
-          },
-        },
-        null,
-        2
-      ),
-      "utf-8"
-    );
-
-    writeFileSync(
-      path.join(mainRepoDir, "src", "indexer", "index.ts"),
-      "export function rankHybridResults(query: string) { return query.length; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "src", "tools", "index.ts"),
-      "export const codebase_search = () => 'ok';\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "benchmarks", "golden", "small.json"),
-      JSON.stringify(
-        {
-          version: "1.0.0",
-          name: "small",
-          queries: [
-            {
-              id: "q1",
-              query: "where is rankHybridResults implementation",
-              queryType: "definition",
-              expected: {
-                filePath: "src/indexer/index.ts",
-                symbol: "rankHybridResults",
-              },
-            },
-          ],
-        },
-        null,
-        2
-      ),
-      "utf-8"
-    );
-
-    await runEvaluation({
-      projectRoot: worktreeDir,
-      configPath: path.relative(worktreeDir, externalConfigPath),
-      datasetPath: path.relative(worktreeDir, path.join(mainRepoDir, "benchmarks", "golden", "small.json")),
-      outputRoot: "benchmarks/results",
-      ciMode: false,
-      reindex: true,
-    });
-
-    const localEvalConfig = JSON.parse(
-      readFileSync(path.join(worktreeDir, ".opencode", "codebase-index.json"), "utf-8")
-    ) as {
-      additionalInclude?: string[];
-      knowledgeBases?: string[];
-      customProvider?: { model?: string };
-    };
-
-    expect(localEvalConfig.customProvider?.model).toBe("mock-embedding-model");
-    expect(localEvalConfig.additionalInclude).toEqual(["docs/**/*.md"]);
-    expect(localEvalConfig.knowledgeBases).toEqual(["docs/reference"]);
-  });
-
-  it("resolves relative knowledge bases from an arbitrary explicit config path during eval reindex", async () => {
-    const mainRepoDir = path.join(tempDir, "main-repo");
-    const worktreeDir = path.join(tempDir, "worktree-feature");
-    const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
-    const configDir = path.join(mainRepoDir, "config");
-    const externalKbDir = path.join(mainRepoDir, "external-kb");
+  it("resolves source-relative knowledge bases and includes from an arbitrary explicit config", async () => {
+    const fixture = await createLinkedEvalFixture();
+    const configDir = path.join(fixture.mainRepoDir, "config");
+    const externalKbDir = path.join(fixture.mainRepoDir, "external-kb");
     const externalConfigPath = path.join(configDir, "eval-config.json");
-
-    mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "indexer"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "tools"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "benchmarks", "golden"), { recursive: true });
-    mkdirSync(path.join(worktreeDir, ".opencode", "index"), { recursive: true });
-    mkdirSync(worktreeGitDir, { recursive: true });
     mkdirSync(configDir, { recursive: true });
     mkdirSync(externalKbDir, { recursive: true });
-    mkdirSync(worktreeDir, { recursive: true });
-
-    writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
-    writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
-    writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
-    writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
-
+    for (const root of [fixture.mainRepoDir, fixture.worktreeDir]) {
+      mkdirSync(path.join(root, "docs"), { recursive: true });
+    }
+    mkdirSync(path.join(fixture.worktreeDir, "external-kb"), { recursive: true });
+    writeFileSync(path.join(externalKbDir, "guide.ts"), "export function externalKbSymbol() { return 'selected'; }\n");
     writeFileSync(
-      externalConfigPath,
-      JSON.stringify(
+      path.join(fixture.worktreeDir, "external-kb", "guide.ts"),
+      "export function wrongKbSymbol() { return 'unselected'; }\n",
+    );
+    writeFileSync(path.join(fixture.mainRepoDir, "docs", "notes.md"), "# wrongIncludeMarker\nUnselected documentation.\n");
+    writeFileSync(path.join(fixture.worktreeDir, "docs", "notes.md"), "# sourceRelativeInclude\nSelected documentation.\n");
+    writeFileSync(externalConfigPath, JSON.stringify({
+      ...loadParsedConfig(fixture.mainRepoDir),
+      include: ["src/**/*.ts", "*.ts"],
+      additionalInclude: ["../../worktree-feature/docs/**/*.md"],
+      knowledgeBases: ["../external-kb"],
+    }));
+    const sourceConfigBytes = readFileSync(externalConfigPath);
+    const datasetPath = path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json");
+    writeFileSync(datasetPath, JSON.stringify({
+      version: "1.0.0",
+      name: "source-relative-config",
+      queries: [
         {
-          embeddingProvider: "custom",
-          customProvider: {
-            baseUrl: "http://localhost:11434/v1",
-            model: "mock-embedding-model",
-            dimensions: 8,
-          },
-          indexing: {
-            watchFiles: false,
-          },
-          additionalInclude: ["../docs/**/*.md"],
-          knowledgeBases: ["../external-kb"],
-          search: {
-            maxResults: 10,
-            minScore: 0,
-            fusionStrategy: "rrf",
-            rrfK: 60,
-            rerankTopN: 20,
-          },
+          id: "kb", query: "externalKbSymbol", queryType: "definition",
+          expected: { filePath: "external-kb/guide.ts", symbol: "externalKbSymbol" },
         },
-        null,
-        2
-      ),
-      "utf-8"
-    );
-
-    writeFileSync(
-      path.join(mainRepoDir, "src", "indexer", "index.ts"),
-      "export function rankHybridResults(query: string) { return query.length; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "src", "tools", "index.ts"),
-      "export const codebase_search = () => 'ok';\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(externalKbDir, "guide.ts"),
-      "export function externalKbSymbol() { return 'kb'; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "benchmarks", "golden", "small.json"),
-      JSON.stringify(
         {
-          version: "1.0.0",
-          name: "small",
-          queries: [
-            {
-              id: "q1",
-              query: "where is externalKbSymbol implementation",
-              queryType: "definition",
-              expected: {
-                filePath: "external-kb/guide.ts",
-                symbol: "externalKbSymbol",
-              },
-            },
-          ],
+          id: "include", query: "sourceRelativeInclude", queryType: "definition",
+          expected: { filePath: "docs/notes.md" },
         },
-        null,
-        2
-      ),
-      "utf-8"
-    );
+      ],
+    }));
 
+    fetchSpy.mockClear();
     const result = await runEvaluation({
-      projectRoot: worktreeDir,
-      configPath: path.relative(worktreeDir, externalConfigPath),
-      datasetPath: path.relative(worktreeDir, path.join(mainRepoDir, "benchmarks", "golden", "small.json")),
+      projectRoot: fixture.worktreeDir,
+      configPath: path.relative(fixture.worktreeDir, externalConfigPath),
+      datasetPath,
       outputRoot: "benchmarks/results",
-      ciMode: false,
       reindex: true,
     });
 
-    expect(result.perQuery).toHaveLength(1);
     expect(result.perQuery[0]?.hitAt10).toBe(true);
-    expect(result.perQuery[0]?.failureBucket).toBeUndefined();
-
-    const localEvalConfig = JSON.parse(
-      readFileSync(path.join(worktreeDir, ".opencode", "codebase-index.json"), "utf-8")
-    ) as {
-      additionalInclude?: string[];
-      knowledgeBases?: string[];
-    };
-
-    expect(localEvalConfig.additionalInclude).toEqual(["../main-repo/docs/**/*.md"]);
-    expect(localEvalConfig.knowledgeBases).toEqual(["../main-repo/external-kb"]);
+    const inputs = getEmbeddingRequestInputs();
+    expect(inputs).toEqual(expect.arrayContaining([
+      expect.stringContaining("export function externalKbSymbol("),
+      expect.stringContaining("Selected documentation."),
+    ]));
+    expect(inputs.some((input) => input.includes("export function wrongKbSymbol("))).toBe(false);
+    expect(inputs.some((input) => input.includes("Unselected documentation."))).toBe(false);
+    expect(existsSync(path.join(fixture.localIndexPath, "codebase.db"))).toBe(true);
+    expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+    expect(readFileSync(externalConfigPath)).toEqual(sourceConfigBytes);
+    expect(readFileSync(fixture.mainConfigPath)).toEqual(fixture.mainConfigBytes);
+    expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+    expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
   });
 
   it("includes the baseline path when eval summary JSON is malformed", async () => {
@@ -1346,128 +1471,81 @@ describe("eval runner", () => {
     ).rejects.toThrow(new RegExp(`${invalidBaselinePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.metrics\\.hitAt1 must be a finite number`));
   });
 
-  it("rematerializes the local eval config when repeated reindex runs use different explicit config paths", async () => {
-    const mainRepoDir = path.join(tempDir, "main-repo");
-    const worktreeDir = path.join(tempDir, "worktree-feature");
-    const worktreeGitDir = path.join(mainRepoDir, ".git", "worktrees", "feature");
-    const configDir = path.join(mainRepoDir, "config");
-    const kbOneDir = path.join(mainRepoDir, "kb-one");
-    const kbTwoDir = path.join(mainRepoDir, "kb-two");
-    const configOnePath = path.join(configDir, "eval-config-one.json");
-    const configTwoPath = path.join(configDir, "eval-config-two.json");
-
-    mkdirSync(path.join(mainRepoDir, ".git", "refs", "heads"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "indexer"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "src", "tools"), { recursive: true });
-    mkdirSync(path.join(mainRepoDir, "benchmarks", "golden"), { recursive: true });
-    mkdirSync(path.join(worktreeDir, ".opencode", "index"), { recursive: true });
-    mkdirSync(worktreeGitDir, { recursive: true });
+  it("uses each explicit config on repeated reindexes without creating project config", async () => {
+    const fixture = await createLinkedEvalFixture();
+    const configDir = path.join(fixture.mainRepoDir, "config");
     mkdirSync(configDir, { recursive: true });
-    mkdirSync(kbOneDir, { recursive: true });
-    mkdirSync(kbTwoDir, { recursive: true });
-    mkdirSync(worktreeDir, { recursive: true });
-
-    writeFileSync(path.join(mainRepoDir, ".git", "HEAD"), "ref: refs/heads/main\n");
-    writeFileSync(path.join(mainRepoDir, ".git", "refs", "heads", "main"), "1111111111111111111111111111111111111111\n");
-    writeFileSync(path.join(worktreeDir, ".git"), `gitdir: ${worktreeGitDir}\n`);
-    writeFileSync(path.join(worktreeGitDir, "HEAD"), "ref: refs/heads/feature\n");
-    writeFileSync(path.join(worktreeGitDir, "commondir"), "../..\n");
-
-    const baseConfig = {
-      embeddingProvider: "custom",
-      customProvider: {
-        baseUrl: "http://localhost:11434/v1",
-        model: "mock-embedding-model",
-        dimensions: 8,
-      },
-      indexing: {
-        watchFiles: false,
-      },
-      search: {
-        maxResults: 10,
-        minScore: 0,
-        fusionStrategy: "rrf",
-        rrfK: 60,
-        rerankTopN: 20,
-      },
-    };
-
-    writeFileSync(configOnePath, JSON.stringify({ ...baseConfig, knowledgeBases: ["../kb-one"] }, null, 2), "utf-8");
-    writeFileSync(configTwoPath, JSON.stringify({ ...baseConfig, knowledgeBases: ["../kb-two"] }, null, 2), "utf-8");
-
-    writeFileSync(
-      path.join(mainRepoDir, "src", "indexer", "index.ts"),
-      "export function rankHybridResults(query: string) { return query.length; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "src", "tools", "index.ts"),
-      "export const codebase_search = () => 'ok';\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(kbOneDir, "guide.ts"),
-      "export function kbOneSymbol() { return 'one'; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(kbTwoDir, "guide.ts"),
-      "export function kbTwoSymbol() { return 'two'; }\n",
-      "utf-8"
-    );
-    writeFileSync(
-      path.join(mainRepoDir, "benchmarks", "golden", "small.json"),
-      JSON.stringify(
+    const configPaths: string[] = [];
+    const sourceConfigBytes: Buffer[] = [];
+    for (const [name, suffix] of [["one", "One"], ["two", "Two"]]) {
+      const kbDir = path.join(fixture.mainRepoDir, `kb-${name}`);
+      const docsDir = path.join(fixture.worktreeDir, `docs-${name}`);
+      mkdirSync(kbDir, { recursive: true });
+      mkdirSync(docsDir, { recursive: true });
+      writeFileSync(path.join(kbDir, "guide.ts"), `export function kb${suffix}Symbol() { return '${name}'; }\n`);
+      writeFileSync(path.join(docsDir, "guide.md"), `# include${suffix}Marker\nSelected ${name} documentation.\n`);
+      const configPath = path.join(configDir, `eval-config-${name}.json`);
+      writeFileSync(configPath, JSON.stringify({
+        ...loadParsedConfig(fixture.mainRepoDir),
+        include: ["src/**/*.ts", "*.ts"],
+        additionalInclude: [`../../worktree-feature/docs-${name}/**/*.md`],
+        knowledgeBases: [`../kb-${name}`],
+      }));
+      configPaths.push(configPath);
+      sourceConfigBytes.push(readFileSync(configPath));
+    }
+    const datasetPath = path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json");
+    writeFileSync(datasetPath, JSON.stringify({
+      version: "1.0.0",
+      name: "successive-configs",
+      queries: [
         {
-          version: "1.0.0",
-          name: "small",
-          queries: [
-            {
-              id: "q1",
-              query: "where is kbTwoSymbol implementation",
-              queryType: "definition",
-              expected: {
-                filePath: "kb-two/guide.ts",
-                symbol: "kbTwoSymbol",
-              },
-            },
-          ],
+          id: "kb-one", query: "kbOneSymbol", queryType: "definition",
+          expected: { filePath: "kb-one/guide.ts", symbol: "kbOneSymbol" },
         },
-        null,
-        2
-      ),
-      "utf-8"
-    );
+        {
+          id: "kb-two", query: "kbTwoSymbol", queryType: "definition",
+          expected: { filePath: "kb-two/guide.ts", symbol: "kbTwoSymbol" },
+        },
+        {
+          id: "include-one", query: "includeOneMarker", queryType: "definition",
+          expected: { filePath: "docs-one/guide.md" },
+        },
+        {
+          id: "include-two", query: "includeTwoMarker", queryType: "definition",
+          expected: { filePath: "docs-two/guide.md" },
+        },
+      ],
+    }));
 
-    await runEvaluation({
-      projectRoot: worktreeDir,
-      configPath: path.relative(worktreeDir, configOnePath),
-      datasetPath: path.relative(worktreeDir, path.join(mainRepoDir, "benchmarks", "golden", "small.json")),
-      outputRoot: "benchmarks/results",
-      ciMode: false,
-      reindex: true,
-    });
+    for (const [index, configPath] of configPaths.entries()) {
+      fetchSpy.mockClear();
+      const result = await runEvaluation({
+        projectRoot: fixture.worktreeDir,
+        configPath: path.relative(fixture.worktreeDir, configPath),
+        datasetPath,
+        outputRoot: "benchmarks/results",
+        reindex: true,
+      });
 
-    const secondRun = await runEvaluation({
-      projectRoot: worktreeDir,
-      configPath: path.relative(worktreeDir, configTwoPath),
-      datasetPath: path.relative(worktreeDir, path.join(mainRepoDir, "benchmarks", "golden", "small.json")),
-      outputRoot: "benchmarks/results",
-      ciMode: false,
-      reindex: true,
-    });
-
-    expect(secondRun.perQuery).toHaveLength(1);
-    expect(secondRun.perQuery[0]?.hitAt10).toBe(true);
-    expect(secondRun.perQuery[0]?.results.some((result) => result.filePath.endsWith(path.join("kb-two", "guide.ts")))).toBe(true);
-
-    const localEvalConfig = JSON.parse(
-      readFileSync(path.join(worktreeDir, ".opencode", "codebase-index.json"), "utf-8")
-    ) as {
-      knowledgeBases?: string[];
-    };
-
-    expect(localEvalConfig.knowledgeBases).toEqual(["../main-repo/kb-two"]);
+      expect(result.perQuery.slice(0, 2).map((query) => query.hitAt10))
+        .toEqual(index === 0 ? [true, false] : [false, true]);
+      const inputs = getEmbeddingRequestInputs();
+      const selected = index === 0 ? "One" : "Two";
+      const unselected = index === 0 ? "Two" : "One";
+      expect(inputs).toEqual(expect.arrayContaining([
+        expect.stringContaining(`export function kb${selected}Symbol(`),
+        expect.stringContaining(`Selected ${selected.toLowerCase()} documentation.`),
+      ]));
+      expect(inputs.some((input) => input.includes(`export function kb${unselected}Symbol(`))).toBe(false);
+      expect(inputs.some((input) => input.includes(`Selected ${unselected.toLowerCase()} documentation.`))).toBe(false);
+      expect(readFileSync(configPath)).toEqual(sourceConfigBytes[index]);
+      expect(existsSync(path.join(fixture.localIndexPath, "codebase.db"))).toBe(true);
+      expect(existsSync(path.join(fixture.worktreeDir, ".opencode", "codebase-index.json"))).toBe(false);
+      expect(readFileSync(fixture.mainConfigPath)).toEqual(fixture.mainConfigBytes);
+      expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+      expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+    }
   });
 
   it("compares against baseline and writes compare artifact", async () => {

@@ -19,9 +19,9 @@ import { evaluateBudgetGate } from "./budget.js";
 import { compareSummaries } from "./compare.js";
 import { buildPerQueryResult, computeEvalMetrics } from "./metrics.js";
 import {
-  ensureLocalEvalProjectConfig,
   getEmbeddingCostPer1MTokens,
   loadParsedConfig,
+  resolveEvalIndexPathOverride,
   resolveSearchConfig,
   toAbsolute,
 } from "./runner-config.js";
@@ -226,7 +226,7 @@ async function runEditContextQuery(
   const editContext = await resolveCodebaseEditContextWithDependencies({
     query: query.query,
     symbol: query.args?.symbol,
-    filePath: query.args?.filePath ?? query.expected.filePath,
+    filePath: query.args?.filePath,
     callerLimit: query.args?.callerLimit,
     calleeLimit: query.args?.calleeLimit,
     tokenBudget: query.args?.tokenBudget,
@@ -285,14 +285,12 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
 
   const dataset = loadGoldenDataset(datasetPath);
 
-  const resolvedEvalConfigPath = options.reindex
-    ? ensureLocalEvalProjectConfig(options.projectRoot, options.configPath)
-    : options.configPath;
-
-  const parsedConfig = loadParsedConfig(options.projectRoot, resolvedEvalConfigPath);
+  const parsedConfig = loadParsedConfig(options.projectRoot, options.configPath);
   const effectiveConfig = resolveSearchConfig(parsedConfig, options.searchOverrides);
 
-  const indexer = new Indexer(options.projectRoot, effectiveConfig, "opencode");
+  const indexer = new Indexer(options.projectRoot, effectiveConfig, "opencode", {
+    indexPath: resolveEvalIndexPathOverride(options.projectRoot, effectiveConfig),
+  });
 
   try {
     if (options.reindex) {

@@ -71,6 +71,11 @@ Version 2 golden queries can declare:
 
 The pre-edit path additionally supports:
 
+- `args.filePath` to scope an `edit-context` request to a file. Omitting it leaves
+  symbol resolution unscoped, including ambiguity when multiple declarations
+  match. `expected.filePath` only evaluates results; it never scopes or
+  disambiguates the request.
+
 - `expected.graphNeighbor` with:
   - `direction`: `caller` or `callee`
   - one of `filePath` or `symbol` (at least one required)
@@ -194,20 +199,24 @@ Optional flags:
 
 The eval runner accepts `--config <path>` and loads the same config shape used by the main plugin, but it now validates that shape earlier and with file-specific errors.
 
+An explicitly supplied `--config <path>` must exist. The CLI resolves relative `--config` paths from the invoking current working directory; a direct runner `configPath` resolves from `projectRoot`. A missing path fails with `Config file not found: <resolved path>` before indexing, including with `--reindex`. Omitting `--config` keeps the existing project, global, and default fallback.
+
 Expected field shapes at the eval config boundary:
 
 - `knowledgeBases`, `additionalInclude`, `include`, `exclude` must be arrays of strings
 - `customProvider`, `indexing`, `search`, `debug`, `effectivenessMetrics`, `reranker` must be objects when present
 - malformed JSON fails with a file-specific parse error before evaluation starts
 
-Relative path handling during eval config materialization is also important when `--reindex` creates a local `.opencode/codebase-index.json` boundary:
+Both incremental evaluation and `--reindex` load the selected config in memory. Neither creates nor replaces `.opencode/codebase-index.json`, even when evaluation fails.
 
-- `knowledgeBases` entries are rebased relative to the source config file location
-- `additionalInclude` entries are rebased the same way
+Path rebasing retains the selected config's origin:
 
-This means explicit eval config files outside the project root can safely use relative `knowledgeBases` and `additionalInclude` entries; the generated local eval config preserves the correct paths for the eval project root.
+- `.opencode/codebase-index.json` retains project-relative worktree rebasing for `knowledgeBases` and `additionalInclude`; paths inside the source project follow the eval worktree.
+- Arbitrary explicit config files resolve relative `knowledgeBases` and `additionalInclude` entries from the config file's directory, then rebase them for the eval project root.
 
-`--reindex` uses the indexer's force-rebuild lifecycle under its writer lease, honoring `indexPath` without deleting that directory or an unused default index. Structural mode rebuilds only the `structural/` store; global scope preserves other projects' indexed data. A linked worktree cannot force-rebuild an inherited configured project index, even after eval materializes a local config: run that rebuild from the owning main checkout.
+In a linked Git worktree, project-scoped eval without a configured `indexPath` uses `<projectRoot>/.opencode/index` for both incremental runs and forced reindexes, leaving the catalog there for reuse without writing a local config. This eval-only selection does not change normal host commands' shared-store lookup. The canonical base destination and active `structural/` child must stay inside the worktree and must not alias the main checkout's default store, including when the main path points inward through a symlink. Main-checkout defaults, configured paths, and global scope retain their existing storage resolution.
+
+`--reindex` uses the indexer's force-rebuild lifecycle under its writer lease, honoring `indexPath` without deleting that directory or an unused default index. Structural mode rebuilds only the `structural/` store and preserves its hybrid sibling; global scope preserves other projects' indexed data. A linked worktree still cannot force-rebuild an inherited configured project index: run that rebuild from the owning main checkout.
 
 ### Compare against baseline
 
@@ -531,9 +540,10 @@ see [Public Benchmark Matrix](./public-benchmark-matrix.md).
 
 ## CI budget tuning
 
-Budget file: `benchmarks/budgets/default.json`
+Search-only smoke budget: `benchmarks/budgets/default.json`, paired with
+`benchmarks/golden/small.json`.
 
-Example:
+Checked-in budget:
 
 ```json
 {
@@ -543,22 +553,23 @@ Example:
   "thresholds": {
     "hitAt5MaxDrop": 0.03,
     "mrrAt10MaxDrop": 0.03,
+    "rawDistinctTop3RatioMaxDrop": 0.1,
     "p95LatencyMaxMultiplier": 1.35,
     "p95LatencyMaxAbsoluteMs": 4000,
     "minHitAt5": 0.4,
     "minMrrAt10": 0.25,
-    "minRouteAccuracy": 0.75,
-    "minOutcomeAccuracy": 0.75,
-    "maxContextResponseTokensAverage": 1000,
-    "maxContextResponseTokensP95": 1200,
-    "maxContextResponseTokensMax": 1200,
-    "maxContextDuplicateCandidateRatio": 0.5,
-    "minContextSelectedFileRatio": 0.5,
-    "minContextHitAt5Per1kResponseTokens": 0.5,
-    "minContextMrrAt10Per1kResponseTokens": 0.25
+    "minRawDistinctTop3Ratio": 0.5
   }
 }
 ```
+
+For context token caps, ratios, and quality-per-token floors, see the
+[pre-edit context budget](../benchmarks/budgets/pre-edit.json) paired with
+`benchmarks/golden/pre-edit-context.json`. The search-only smoke budgets
+(`default.json` and `ollama.json`) omit these thresholds. Configuring any context
+threshold when no context queries are measured fails with
+`contextMeasurementRequired`; use a context-bearing dataset or omit context
+thresholds from a search-only budget.
 
 Guidance:
 

@@ -121,6 +121,24 @@ export function evaluateBudgetGate(
   }
 
   const context = summary.metrics.contextEfficiency;
+  if (
+    context.queryCount === 0 &&
+    (
+      thresholds.maxContextResponseTokensAverage !== undefined ||
+      thresholds.maxContextResponseTokensP95 !== undefined ||
+      thresholds.maxContextResponseTokensMax !== undefined ||
+      thresholds.maxContextDuplicateCandidateRatio !== undefined ||
+      thresholds.minContextSelectedFileRatio !== undefined ||
+      thresholds.minContextHitAt5Per1kResponseTokens !== undefined ||
+      thresholds.minContextMrrAt10Per1kResponseTokens !== undefined
+    )
+  ) {
+    violations.push({
+      metric: "contextMeasurementRequired",
+      message: `Budget "${budget.name}" configures context thresholds, but no context queries were measured; use a context-bearing dataset or omit context thresholds from a search-only budget`,
+    });
+  }
+
   if (context.queryCount > 0) {
     if (
       thresholds.maxContextResponseTokensAverage !== undefined &&

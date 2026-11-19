@@ -1,11 +1,17 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
 
 import { getDefaultModelForProvider } from "../config/index.js";
-import { resolveProjectConfigPath } from "../config/paths.js";
+import { getHostProjectIndexRelativePath, resolveProjectConfigPath } from "../config/paths.js";
 import { rebasePathEntries, resolveInheritedKnowledgeBaseEntries } from "../config/rebase.js";
-import { parseConfig, type SearchConfig as ConfigSearchConfig } from "../config/schema.js";
+import {
+  parseConfig,
+  type ParsedCodebaseIndexConfig,
+  type SearchConfig as ConfigSearchConfig,
+} from "../config/schema.js";
+import { resolveWorktreeMainRepoRoot } from "../git/index.js";
+import { canonicalizePathForComparison } from "../utils/canonical-path.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -99,8 +105,11 @@ function normalizeEvalConfigKnowledgeBases(
 }
 
 function loadRawConfig(projectRoot: string, configPath?: string): unknown {
-  const fromPath = configPath ? toAbsolute(projectRoot, configPath) : null;
-  if (fromPath && existsSync(fromPath)) {
+  if (configPath !== undefined) {
+    const fromPath = toAbsolute(projectRoot, configPath);
+    if (!existsSync(fromPath)) {
+      throw new Error(`Config file not found: ${fromPath}`);
+    }
     return normalizeEvalConfigKnowledgeBases(
       parseJsonConfigFile(fromPath),
       projectRoot,
@@ -125,38 +134,47 @@ function loadRawConfig(projectRoot: string, configPath?: string): unknown {
   return {};
 }
 
-function getLocalProjectConfigPath(projectRoot: string): string {
-  return path.join(projectRoot, ".opencode", "codebase-index.json");
-}
-
-export function ensureLocalEvalProjectConfig(projectRoot: string, configPath?: string): string | undefined {
-  const localConfigPath = getLocalProjectConfigPath(projectRoot);
-  const resolvedConfigPath = configPath
-    ? toAbsolute(projectRoot, configPath)
-    : resolveProjectConfigPath(projectRoot, "opencode");
-
-  if (!configPath && existsSync(localConfigPath)) {
-    return localConfigPath;
-  }
-
-  if (!existsSync(resolvedConfigPath) || resolvedConfigPath === localConfigPath) {
-    return resolvedConfigPath;
-  }
-
-  const sourceConfig = normalizeEvalConfigKnowledgeBases(
-    parseJsonConfigFile(resolvedConfigPath),
-    projectRoot,
-    resolvedConfigPath,
-  );
-
-  mkdirSync(path.dirname(localConfigPath), { recursive: true });
-  writeFileSync(localConfigPath, JSON.stringify(sourceConfig, null, 2), "utf-8");
-  return localConfigPath;
-}
-
 export function loadParsedConfig(projectRoot: string, configPath?: string): ReturnType<typeof parseConfig> {
   const raw = loadRawConfig(projectRoot, configPath);
   return parseConfig(raw);
+}
+
+export function resolveEvalIndexPathOverride(
+  projectRoot: string,
+  config: ParsedCodebaseIndexConfig,
+): string | undefined {
+  if (config.scope !== "project" || config.indexPath) {
+    return undefined;
+  }
+  const mainRepoRoot = resolveWorktreeMainRepoRoot(projectRoot);
+  if (mainRepoRoot === null) {
+    return undefined;
+  }
+
+  const relativeIndexPath = getHostProjectIndexRelativePath("opencode");
+  const indexPath = path.join(projectRoot, relativeIndexPath);
+  const mainIndexPath = path.join(mainRepoRoot, relativeIndexPath);
+  const localPaths = [canonicalizePathForComparison(indexPath)];
+  const mainPaths = [canonicalizePathForComparison(mainIndexPath)];
+  if (config.indexing.mode === "structural") {
+    localPaths.push(canonicalizePathForComparison(path.join(indexPath, "structural")));
+    mainPaths.push(canonicalizePathForComparison(path.join(mainIndexPath, "structural")));
+  }
+  if (localPaths.some((localPath) => mainPaths.includes(localPath))) {
+    throw new Error(`Eval-local index path aliases the main checkout's default store: ${indexPath}`);
+  }
+
+  const worktreeRoot = canonicalizePathForComparison(projectRoot);
+  if (localPaths.some((localPath) => {
+    const relativePath = path.relative(worktreeRoot, localPath);
+    return relativePath === ""
+      || relativePath === ".."
+      || relativePath.startsWith(`..${path.sep}`)
+      || path.isAbsolute(relativePath);
+  })) {
+    throw new Error(`Eval-local index path escapes the linked worktree: ${indexPath}`);
+  }
+  return indexPath;
 }
 
 export function resolveSearchConfig(
