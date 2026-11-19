@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.1] - 2026-11-19
+
 ### Fixed
 
 - **Embedding response association**: Respect response-row indices in OpenAI and custom OpenAI-compatible providers, including split requests; preserve index-less endpoint ordering and reject invalid or mixed indices before vectors can be cached or persisted.
@@ -1169,7 +1171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.40.1...HEAD
+[0.40.1]: https://github.com/Helweg/open-codebase-index/compare/v0.40.0...v0.40.1
 [0.40.0]: https://github.com/Helweg/open-codebase-index/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...v0.39.0
 [0.38.2]: https://github.com/Helweg/open-codebase-index/compare/v0.38.1...v0.38.2
