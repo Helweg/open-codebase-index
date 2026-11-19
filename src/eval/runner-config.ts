@@ -174,6 +174,11 @@ export function resolveEvalIndexPathOverride(
   })) {
     throw new Error(`Eval-local index path escapes the linked worktree: ${indexPath}`);
   }
+  if (config.indexing.mode === "structural" && localPaths[0] === localPaths[1]) {
+    throw new Error(
+      `Eval-local structural index path aliases its hybrid store: ${path.join(indexPath, "structural")}. Use a separate structural directory.`,
+    );
+  }
   return indexPath;
 }
 

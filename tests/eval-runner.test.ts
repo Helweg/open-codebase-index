@@ -300,6 +300,54 @@ describe("eval runner", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rejects an eval-local structural catalog aliasing its hybrid sibling", async () => {
+    const fixture = await createLinkedEvalFixture();
+    const options = {
+      projectRoot: fixture.worktreeDir,
+      datasetPath: path.join(fixture.mainRepoDir, "benchmarks", "golden", "small.json"),
+    };
+    const hybridResult = await runEvaluation({
+      ...options,
+      outputRoot: "benchmarks/hybrid-results",
+      reindex: true,
+    });
+    expect(hybridResult.perQuery[0]?.hitAt1).toBe(true);
+    const hybridDatabasePath = path.join(fixture.localIndexPath, "codebase.db");
+    const hybridBytes = readFileSync(hybridDatabasePath);
+    const siblingSentinel = path.join(fixture.localIndexPath, "sentinel.txt");
+    writeFileSync(siblingSentinel, "keep-hybrid");
+    const structuralIndexPath = path.join(fixture.localIndexPath, "structural");
+    symlinkSync(
+      fixture.localIndexPath,
+      structuralIndexPath,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const config = loadParsedConfig(fixture.mainRepoDir);
+    writeFileSync(
+      path.join(fixture.worktreeDir, "eval-config.json"),
+      JSON.stringify({ ...config, indexing: { ...config.indexing, mode: "structural" } }),
+    );
+    fetchSpy.mockClear();
+
+    for (const reindex of [false, true]) {
+      await expect(runEvaluation({
+        ...options,
+        configPath: "eval-config.json",
+        outputRoot: "benchmarks/results",
+        reindex,
+      })).rejects.toThrow(
+        `Eval-local structural index path aliases its hybrid store: ${structuralIndexPath}. Use a separate structural directory.`,
+      );
+
+      expect(readFileSync(hybridDatabasePath)).toEqual(hybridBytes);
+      expect(readFileSync(siblingSentinel, "utf-8")).toBe("keep-hybrid");
+      expect(readFileSync(fixture.mainDatabasePath)).toEqual(fixture.mainDatabaseBytes);
+      expect(readFileSync(fixture.sentinelPath, "utf-8")).toBe("keep-main");
+      expect(existsSync(path.join(fixture.worktreeDir, "benchmarks", "results"))).toBe(false);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    }
+  });
+
   it.each([
     ["base-main", "hybrid"],
     ["base-outside", "hybrid"],
