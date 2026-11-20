@@ -38,9 +38,16 @@ export interface ExtractionCase {
 interface ExtractionResult {
   ordered: { name: string; calls: NativeModule.CallSiteData[] }[];
   firstMs: number;
-  smallMs: number;
-  largeMs: number;
+  small: TimedBatch;
+  large: TimedBatch;
 }
+
+interface TimedBatch {
+  start: bigint;
+  end: bigint;
+}
+
+const EXTRACTION_THREADS = 3;
 
 interface PublicationProbe {
   replaceBranchCatalog: (...args: unknown[]) => boolean;
@@ -68,6 +75,7 @@ async function loadArm(root: string) {
 function runExtraction(
   extract: (source: string, language: string) => NativeModule.CallSiteData[],
   cases: ExtractionCase[],
+  barrier?: Int32Array,
 ): ExtractionResult {
   const callsFor = (entry: ExtractionCase) => extract(entry.source, entry.language);
   const firstStart = performance.now();
@@ -83,24 +91,41 @@ function runExtraction(
   const small = cases.filter(({ source }) => source.length < 8192);
   const large = cases.filter(({ source }) => source.length >= 8192);
   assert(small.length && large.length);
-  function measure(batch: ExtractionCase[], rounds: number) {
+  function measure(batch: ExtractionCase[], slot: number): TimedBatch {
+    const rounds = 2;
+    if (barrier) {
+      if (Atomics.add(barrier, slot, 1) === EXTRACTION_THREADS - 1) {
+        Atomics.notify(barrier, slot);
+      } else {
+        // Use a separate slot for each batch so even the large batch starts
+        // only once all threads finish the small batch and reach this point.
+        let arrivals = Atomics.load(barrier, slot);
+        while (arrivals < EXTRACTION_THREADS) {
+          assert.notEqual(Atomics.wait(barrier, slot, arrivals, 30_000), "timed-out",
+            `Extraction workers did not rendezvous for batch ${slot}`);
+          arrivals = Atomics.load(barrier, slot);
+        }
+      }
+    }
     let count = 0;
-    const start = performance.now();
+    // hrtime has a shared monotonic origin across this process's workers.
+    const start = process.hrtime.bigint();
     for (let round = 0; round < rounds; round++) {
       for (const entry of batch) count += callsFor(entry).length;
     }
-    const ms = performance.now() - start;
+    const end = process.hrtime.bigint();
     assert.equal(count, rounds * ordered.filter(({ name }) => batch.some((entry) => entry.name === name))
       .reduce((sum, { calls }) => sum + calls.length, 0));
-    return ms;
+    return { start, end };
   }
-  return { ordered, firstMs, smallMs: measure(small, 2), largeMs: measure(large, 2) };
+  return { ordered, firstMs, small: measure(small, 0), large: measure(large, 1) };
 }
 
 async function extractParallel(root: string, cases: ExtractionCase[]): Promise<ExtractionResult[]> {
-  return Promise.all(Array.from({ length: 3 }, () => {
+  const barrier = new SharedArrayBuffer(2 * Int32Array.BYTES_PER_ELEMENT);
+  return Promise.all(Array.from({ length: EXTRACTION_THREADS }, () => {
     const { promise, resolve, reject } = Promise.withResolvers<ExtractionResult>();
-    const worker = new Worker(new URL(import.meta.url), { workerData: { root, cases } });
+    const worker = new Worker(new URL(import.meta.url), { workerData: { root, cases, barrier } });
     let result: ExtractionResult | undefined;
     worker.once("message", (message: ExtractionResult) => { result = message; });
     worker.once("error", reject);
@@ -110,6 +135,17 @@ async function extractParallel(root: string, cases: ExtractionCase[]): Promise<E
     });
     return promise;
   }));
+}
+
+function elapsedBatchMs(batches: TimedBatch[]): number {
+  const { start, end } = batches[0]!;
+  let first = start;
+  let last = end;
+  for (const batch of batches) {
+    if (batch.start < first) first = batch.start;
+    if (batch.end > last) last = batch.end;
+  }
+  return Number(last - first) / 1e6;
 }
 
 function withoutIndexTimestamps(status: IndexerModule.StatusResult) {
@@ -209,10 +245,10 @@ async function run(job: Job) {
       const parallel = await extractParallel(job.root, cases);
       for (const result of parallel) assert.deepEqual(result.ordered, serial.ordered);
       timings.first = serial.firstMs;
-      timings.small = serial.smallMs;
-      timings.large = serial.largeMs;
-      timings.parallelSmall = Math.max(...parallel.map(({ smallMs }) => smallMs));
-      timings.parallelLarge = Math.max(...parallel.map(({ largeMs }) => largeMs));
+      timings.small = elapsedBatchMs([serial.small]);
+      timings.large = elapsedBatchMs([serial.large]);
+      timings.parallelSmall = elapsedBatchMs(parallel.map(({ small }) => small));
+      timings.parallelLarge = elapsedBatchMs(parallel.map(({ large }) => large));
       markRss();
       evidence = serial.ordered;
     } else if (job.scenario === "database") {
@@ -338,7 +374,7 @@ if (isMainThread) {
   // All handles and extraction threads are closed; don't wait for loader internals.
   process.stdout.write(`${JSON.stringify(result)}\n`, () => process.exit(0));
 } else {
-  const { root, cases } = workerData as { root: string; cases: ExtractionCase[] };
+  const { root, cases, barrier } = workerData as { root: string; cases: ExtractionCase[]; barrier: SharedArrayBuffer };
   const { extractCalls } = await loadArm(root);
-  parentPort!.postMessage(runExtraction(extractCalls, cases));
+  parentPort!.postMessage(runExtraction(extractCalls, cases, new Int32Array(barrier)));
 }

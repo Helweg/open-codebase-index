@@ -184,11 +184,21 @@ const env = {
   GIT_COMMITTER_DATE: "2001-01-01T00:00:00Z", LC_ALL: "C", TZ: "UTC",
 };
 const git = (cwd: string, args: string[]): string => execFileSync("git", args, { cwd, env, encoding: "utf8" });
+
+function sourcePin(root: string, base: string) {
+  const untracked = git(root, ["ls-files", "--others", "--exclude-standard"]);
+  assert.equal(untracked, "", `Commit or stage untracked inputs in ${root}:\n${untracked}`);
+  return {
+    revision: git(root, ["rev-parse", "HEAD"]).trim(),
+    diffSha256: sha(git(root, ["diff", "--binary", "--no-ext-diff", "--no-textconv", base, "--"])),
+  };
+}
+
 const arms = ([
   ["upstream", values.upstream, UPSTREAM], ["candidate", values.candidate, UPSTREAM], ["fork", values.fork, FORK],
 ] as const).filter(([name]) => name !== "fork" || !values.self).map(([name, checkout, expected]) => {
   const root = fs.realpathSync(checkout);
-  const revision = git(root, ["rev-parse", "HEAD"]).trim();
+  const { revision, diffSha256 } = sourcePin(root, expected);
   const allowCandidateChanges = name === "candidate" && !values.self;
   if (allowCandidateChanges) {
     assert.equal(git(root, ["merge-base", expected, revision]).trim(), expected,
@@ -197,10 +207,9 @@ const arms = ([
     assert.equal(revision, expected, `${name} Git revision`);
   }
   // Hash changes from the pin, including optimizations already committed to the candidate.
-  const diff = git(root, ["diff", "--binary", expected, "--"]);
-  if (!allowCandidateChanges) assert.equal(diff, "", `${name} must be clean`);
+  if (!allowCandidateChanges) assert.equal(diffSha256, sha(""), `${name} must be clean`);
   return {
-    name, root, revision, diffSha256: sha(diff),
+    name, root, base: expected, revision, diffSha256,
     packageLockSha256: sha(fs.readFileSync(path.join(root, "package-lock.json"))),
     cargoLockSha256: sha(fs.readFileSync(path.join(root, "native/Cargo.lock"))),
   };
@@ -208,6 +217,7 @@ const arms = ([
 assert.equal(new Set(arms.map(({ root }) => root)).size, arms.length, "Each arm must have its own checkout");
 const fixtureEvidence = fixture(project, corpus, (args) => git(project, args));
 const serverFile = path.join(arms[0]!.root, "scripts/eval-mock-embeddings-server.mjs");
+const mockServer = { path: serverFile, sha256: sha(fs.readFileSync(serverFile)), dimensions: 8 };
 const server = spawn(process.execPath, [serverFile], {
   env: { ...env, EVAL_EMBED_PORT: "0", EVAL_EMBED_DIMS: "8" }, stdio: ["ignore", "pipe", "inherit"],
 });
@@ -374,19 +384,26 @@ try {
     phase: values.phase ?? "all",
     fixtureProjectPath: project, worker: { path: WORKER, sha256: workerSha256 },
     driver: { path: driverPath, sha256: driverSha256 },
-    mockServer: { path: serverFile, sha256: sha(fs.readFileSync(serverFile)), dimensions: 8 },
-    toolchain: {
+    mockServer,
+    measurementHost: {
       node: process.version, nodePath: process.execPath, npm: execFileSync("npm", ["--version"], { encoding: "utf8" }).trim(),
       rust: execFileSync("rustc", ["-vV"], { encoding: "utf8" }).trim(),
       cargo: execFileSync("cargo", ["--version"], { encoding: "utf8" }).trim(),
       os: `${os.platform()} ${os.release()} ${os.arch()}`, cpu: os.cpus()[0]?.model,
-      build: "npm ci && npm run build (native release)", rustflags: process.env.RUSTFLAGS ?? "",
+      rustflagsInMeasurementEnvironment: process.env.RUSTFLAGS ?? "",
     },
+    // The native files were built before this run. Their hashes identify the
+    // measured artifacts; host environment values are not build attestations.
+    nativeBuild: "prebuilt; use npm ci && npm run build per checkout with matching toolchain and flags",
     arms, binaries: Object.fromEntries(bins), configs: Object.fromEntries(configs), seedEvidence,
     compatibility, oracles, warmups, samples, comparisons, counterexamples,
   };
   assert.equal(sha(fs.readFileSync(driverPath)), driverSha256, "Driver changed during measurement");
   assert.equal(sha(fs.readFileSync(WORKER)), workerSha256, "Worker changed during measurement");
+  assert.equal(sha(fs.readFileSync(serverFile)), mockServer.sha256, "Mock server changed during measurement");
+  for (const { name, root, base, revision, diffSha256 } of arms) {
+    assert.deepEqual(sourcePin(root, base), { revision, diffSha256 }, `${name} source changed during measurement`);
+  }
   fs.writeFileSync(output, JSON.stringify(report, null, 2) + "\n", { flag: "wx" });
   console.log(output);
 } finally {
