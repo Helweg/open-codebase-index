@@ -167,7 +167,22 @@ assert(values.upstream && values.fork && values.candidate && values.output,
 assert(!values.phase || ["reads", "queries", "writes"].includes(values.phase),
   "--phase must be reads, queries, or writes");
 assert(!values.self || !values.phase, "The self comparison must cover all scenarios");
-const output = path.resolve(values.output);
+const checkouts = ([
+  ["upstream", values.upstream, UPSTREAM], ["candidate", values.candidate, UPSTREAM], ["fork", values.fork, FORK],
+] as const).filter(([name]) => name !== "fork" || !values.self)
+  .map(([name, checkout, base]) => ({ name, root: fs.realpathSync(checkout), base }));
+assert.equal(new Set(checkouts.map(({ root }) => root)).size, checkouts.length, "Each arm must have its own checkout");
+
+// Resolve symlinked ancestors too, even when the output directory doesn't exist.
+const requestedOutput = path.resolve(values.output);
+let ancestor = path.dirname(requestedOutput);
+while (!fs.existsSync(ancestor)) ancestor = path.dirname(ancestor);
+const output = path.join(fs.realpathSync(ancestor), path.relative(ancestor, requestedOutput));
+for (const { root } of checkouts) {
+  const relative = path.relative(root, output);
+  assert(path.isAbsolute(relative) || relative === ".." || relative.startsWith(`..${path.sep}`),
+    `Benchmark output and scratch must be outside measured checkouts: ${output}`);
+}
 fs.mkdirSync(path.dirname(output), { recursive: true });
 assert(!fs.existsSync(output), `Report already exists: ${output}`);
 const work = fs.mkdtempSync(path.join(path.dirname(output), "index-refresh-"));
@@ -194,10 +209,7 @@ function sourcePin(root: string, base: string) {
   };
 }
 
-const arms = ([
-  ["upstream", values.upstream, UPSTREAM], ["candidate", values.candidate, UPSTREAM], ["fork", values.fork, FORK],
-] as const).filter(([name]) => name !== "fork" || !values.self).map(([name, checkout, expected]) => {
-  const root = fs.realpathSync(checkout);
+const arms = checkouts.map(({ name, root, base: expected }) => {
   const { revision, diffSha256 } = sourcePin(root, expected);
   const allowCandidateChanges = name === "candidate" && !values.self;
   if (allowCandidateChanges) {
@@ -214,7 +226,6 @@ const arms = ([
     cargoLockSha256: sha(fs.readFileSync(path.join(root, "native/Cargo.lock"))),
   };
 });
-assert.equal(new Set(arms.map(({ root }) => root)).size, arms.length, "Each arm must have its own checkout");
 const fixtureEvidence = fixture(project, corpus, (args) => git(project, args));
 const serverFile = path.join(arms[0]!.root, "scripts/eval-mock-embeddings-server.mjs");
 const mockServer = { path: serverFile, sha256: sha(fs.readFileSync(serverFile)), dimensions: 8 };
@@ -386,9 +397,7 @@ try {
     driver: { path: driverPath, sha256: driverSha256 },
     mockServer,
     measurementHost: {
-      node: process.version, nodePath: process.execPath, npm: execFileSync("npm", ["--version"], { encoding: "utf8" }).trim(),
-      rust: execFileSync("rustc", ["-vV"], { encoding: "utf8" }).trim(),
-      cargo: execFileSync("cargo", ["--version"], { encoding: "utf8" }).trim(),
+      node: process.version, nodePath: process.execPath,
       os: `${os.platform()} ${os.release()} ${os.arch()}`, cpu: os.cpus()[0]?.model,
       rustflagsInMeasurementEnvironment: process.env.RUSTFLAGS ?? "",
     },

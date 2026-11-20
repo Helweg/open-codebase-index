@@ -6,7 +6,7 @@ import type * as NativeModule from "../../src/native/index.js";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { closeSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -55,21 +55,62 @@ interface PublicationProbe {
 
 const workerPath = fileURLToPath(import.meta.url);
 const sha = (data: string | Buffer): string => createHash("sha256").update(data).digest("hex");
-const filePin = (file: string) => ({ path: realpathSync(file), sha256: sha(readFileSync(file)) });
+
+interface FilePin { path: string; sha256: string }
+
+function filePin(file: string): FilePin {
+  const resolved = realpathSync(file);
+  const fd = openSync(resolved, "r");
+  const hash = createHash("sha256");
+  // A pre-load pin must not allocate a second copy of the addon in the worker.
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  try {
+    let count: number;
+    while ((count = readSync(fd, buffer, 0, buffer.length, null)) !== 0) {
+      hash.update(buffer.subarray(0, count));
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return { path: resolved, sha256: hash.digest("hex") };
+}
 
 async function loadArm(root: string) {
   // Only the runner chooses the source worktree; never statically load the executor's Indexer.
   const indexerUrl = pathToFileURL(path.join(root, "src/indexer/index.ts"));
+  const indexerSource = filePin(fileURLToPath(indexerUrl));
   const importFromArm = (file: string) => import(pathToFileURL(path.join(root, file)).href);
+  // The binding module loads the addon on import. Observe the actual filename
+  // immediately before dlopen rather than duplicating its platform resolution.
+  const dlopen = process.dlopen;
+  let binary: FilePin | undefined;
+  let binding: typeof BindingModule;
+  let pinMs = 0;
+  const start = performance.now();
+  try {
+    process.dlopen = function (module, filename, flags) {
+      assert.equal(binary, undefined, "Expected exactly one addon load");
+      const pinStart = performance.now();
+      binary = filePin(filename);
+      pinMs += performance.now() - pinStart;
+      dlopen.call(process, module, filename, flags);
+    };
+    binding = await importFromArm("src/native/binding.ts");
+  } finally {
+    process.dlopen = dlopen;
+  }
+  const expected = binding.resolveNativeBindingPath(root);
+  const loaded = createRequire(indexerUrl).cache[expected];
+  assert(loaded?.loaded && loaded.exports === binding.native, `Expected the loaded native addon at ${expected}`);
+  assert.equal(binary?.path, expected, "Native addon must belong to the selected worktree");
+  assert.equal(realpathSync(loaded.filename), binary.path);
+  const verifyStart = performance.now();
+  assert.deepEqual(filePin(expected), binary, "Native addon changed while loading");
+  pinMs += performance.now() - verifyStart;
   const { Indexer } = await import(indexerUrl.href) as typeof IndexerModule;
   const { parseConfig } = await importFromArm("src/config/schema.ts") as typeof ConfigModule;
   const api = await importFromArm("src/native/index.ts") as typeof NativeModule;
-  const binding = await importFromArm("src/native/binding.ts") as typeof BindingModule;
-  const binary = binding.resolveNativeBindingPath(root);
-  const loaded = createRequire(indexerUrl).cache[binary];
-  assert(loaded?.loaded && loaded.exports === binding.native, `Expected the loaded native addon at ${binary}`);
-  assert.equal(realpathSync(loaded.filename), binary, "Native addon must belong to the selected worktree");
-  return { Indexer, parseConfig, ...api, binary, indexerSource: fileURLToPath(indexerUrl) };
+  return { Indexer, parseConfig, ...api, binary, indexerSource, importMs: performance.now() - start - pinMs };
 }
 
 function runExtraction(
@@ -157,9 +198,7 @@ function withoutIndexTimestamps(status: IndexerModule.StatusResult) {
 }
 
 async function run(job: Job) {
-  const importStart = performance.now();
   const arm = await loadArm(job.root);
-  const importMs = performance.now() - importStart;
   const requests: { model: string; inputs: string[] }[] = [];
   // Observe real HTTP requests to the fixture server, never an installed provider.
   const realFetch = globalThis.fetch;
@@ -362,9 +401,11 @@ async function run(job: Job) {
     await indexer?.close();
     globalThis.fetch = realFetch;
   }
+  assert.deepEqual(filePin(arm.binary.path), arm.binary, "Native addon changed during measurement");
+  assert.deepEqual(filePin(arm.indexerSource.path), arm.indexerSource, "Indexer source changed during measurement");
   return {
-    scenario: job.scenario, mode: job.mode, timings, importMs, peakRssBytes, evidence, config,
-    provenance: { worker: filePin(workerPath), indexer: filePin(arm.indexerSource), binary: filePin(arm.binary) },
+    scenario: job.scenario, mode: job.mode, timings, importMs: arm.importMs, peakRssBytes, evidence, config,
+    provenance: { worker: filePin(workerPath), indexer: arm.indexerSource, binary: arm.binary },
   };
 }
 
@@ -375,6 +416,8 @@ if (isMainThread) {
   process.stdout.write(`${JSON.stringify(result)}\n`, () => process.exit(0));
 } else {
   const { root, cases, barrier } = workerData as { root: string; cases: ExtractionCase[]; barrier: SharedArrayBuffer };
-  const { extractCalls } = await loadArm(root);
-  parentPort!.postMessage(runExtraction(extractCalls, cases, new Int32Array(barrier)));
+  const arm = await loadArm(root);
+  const result = runExtraction(arm.extractCalls, cases, new Int32Array(barrier));
+  assert.deepEqual(filePin(arm.binary.path), arm.binary, "Native addon changed during extraction");
+  parentPort!.postMessage(result);
 }
