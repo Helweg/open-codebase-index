@@ -114,7 +114,7 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
 }
 
 /// Opens a published database without creating files or running migrations.
-pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
+pub fn open_db_read_only(db_path: &Path) -> DbResult<(Connection, CallGraphLayout)> {
     let conn = Connection::open_with_flags(
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -142,12 +142,15 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
             "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
         )));
     }
-    if current_version < 9 {
+    let layout = if current_version < 9 {
         shared_calls::create_legacy_read_view(&conn)?;
-    }
+        CallGraphLayout::Legacy
+    } else {
+        CallGraphLayout::BranchSets
+    };
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
 
-    Ok(conn)
+    Ok((conn, layout))
 }
 
 /// Creates an empty in-memory catalog, then locks it for read-only access.
@@ -1339,6 +1342,7 @@ pub struct DbStats {
 
 #[cfg(test)]
 mod tests {
+    use super::CallGraphLayout::BranchSets;
     use super::*;
     use tempfile::TempDir;
 
@@ -1399,7 +1403,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let reader = open_db_read_only(&dir.path().join("test.db")).unwrap();
+        let (reader, _) = open_db_read_only(&dir.path().join("test.db")).unwrap();
         let expected = read(&reader, SCAN);
         assert_eq!(expected.len(), 352);
         assert_eq!(get_all_branches(&reader).unwrap(), expected);
@@ -1570,18 +1574,27 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let reader = open_db_read_only(&db_path).unwrap();
-        let edges = get_callees(&reader, "legacy", "main", None).unwrap();
+        let (reader, layout) = open_db_read_only(&db_path).unwrap();
+        let edges = get_callees(&reader, "legacy", "main", None, layout).unwrap();
         assert_eq!(edges.len(), 1);
         assert_eq!(
             (&*edges[0].target_name, edges[0].line, edges[0].col),
             ("missing", 2, 4)
         );
         assert_eq!(
-            get_callers(&reader, "missing", "main", Some("Call"))
+            get_callers(&reader, "missing", "main", Some("Call"), layout)
                 .unwrap()
                 .len(),
             1
+        );
+        let callers = get_callers_with_context(&reader, "missing", "main", None, layout).unwrap();
+        assert_eq!(callers.len(), 1);
+        assert_eq!(
+            (
+                &*callers[0].from_symbol_name,
+                &*callers[0].from_symbol_file_path
+            ),
+            ("work", "legacy.ts")
         );
         assert_eq!(get_stats(&reader).unwrap().call_edge_count, 1);
         assert_eq!(
@@ -1613,7 +1626,7 @@ mod tests {
             get_metadata(&upgraded, "schema_version").unwrap().unwrap(),
             SCHEMA_VERSION.to_string()
         );
-        let after = get_callees(&upgraded, "legacy", "main", None).unwrap();
+        let after = get_callees(&upgraded, "legacy", "main", None, BranchSets).unwrap();
         assert_eq!(after.len(), 1);
         assert_eq!(
             (&*after[0].target_name, after[0].line, after[0].col),
@@ -2064,26 +2077,26 @@ mod tests {
         upsert_call_edge(&conn, &edge).unwrap();
 
         // Get callees of main
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert_eq!(callees.len(), 1);
         assert_eq!(callees[0].target_name, "helper");
         assert!(!callees[0].is_resolved);
 
         // Get callers of helper (branch-filtered)
-        let callers = get_callers(&conn, "helper", "main", None).unwrap();
+        let callers = get_callers(&conn, "helper", "main", None, BranchSets).unwrap();
         assert_eq!(callers.len(), 1);
         assert_eq!(callers[0].from_symbol_id, "sym_main");
 
         // Resolve the edge
         resolve_call_edge(&conn, "edge1", "sym_helper").unwrap();
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert!(callees[0].is_resolved);
         assert_eq!(callees[0].to_symbol_id, Some("sym_helper".to_string()));
 
         // Delete by file
         let deleted = delete_call_edges_by_file(&conn, "src/main.ts").unwrap();
         assert_eq!(deleted, 1);
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert!(callees.is_empty());
     }
 
@@ -2117,26 +2130,81 @@ mod tests {
         ];
         upsert_call_edges_batch(&mut conn, &edges).unwrap();
 
-        let swift_lower = get_callers(&conn, "load", "main", None).unwrap();
+        let swift_lower = get_callers(&conn, "load", "main", None, BranchSets).unwrap();
         assert_eq!(swift_lower.len(), 1);
         assert_eq!(swift_lower[0].id, "swift_lower_edge");
 
-        let swift_upper = get_callers(&conn, "Load", "main", Some("Call")).unwrap();
+        let swift_upper = get_callers(&conn, "Load", "main", Some("Call"), BranchSets).unwrap();
         assert_eq!(swift_upper.len(), 1);
         assert_eq!(swift_upper[0].id, "swift_upper_edge");
 
-        let cpp_lower = get_callers_with_context(&conn, "render", "main", None).unwrap();
+        let cpp_lower =
+            get_callers_with_context(&conn, "render", "main", None, BranchSets).unwrap();
         assert_eq!(cpp_lower.len(), 1);
         assert_eq!(cpp_lower[0].id, "cpp_lower_edge");
         assert_eq!(cpp_lower[0].from_symbol_name, "cppLowerCaller");
 
-        let cpp_upper = get_callers_with_context(&conn, "Render", "main", Some("Call")).unwrap();
+        let cpp_upper =
+            get_callers_with_context(&conn, "Render", "main", Some("Call"), BranchSets).unwrap();
         assert_eq!(cpp_upper.len(), 1);
         assert_eq!(cpp_upper[0].id, "cpp_upper_edge");
 
-        let php = get_callers_with_context(&conn, "HANDLER", "main", None).unwrap();
+        let php = get_callers_with_context(&conn, "HANDLER", "main", None, BranchSets).unwrap();
         assert_eq!(php.len(), 1);
         assert_eq!(php[0].id, "php_edge");
+    }
+
+    #[test]
+    fn indexed_point_readers_merge_legacy_and_shared_sites_without_duplicates() {
+        let (_dir, mut conn) = setup_test_db();
+        let symbols = [
+            call_graph_symbol("caller", "sharedCaller", "typescript"),
+            call_graph_symbol("target", "target", "typescript"),
+            call_graph_symbol("legacy", "legacyCaller", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch(&conn, "main", &symbols.map(|symbol| symbol.id)).unwrap();
+        add_symbols_to_branch(&conn, "other", &["caller".to_owned()]).unwrap();
+        upsert_call_edge(&conn, &call_graph_edge("flat", "legacy", "TARGET", None)).unwrap();
+        for branch in ["main", "other"] {
+            replace_branch_call_sets(
+                &mut conn,
+                branch,
+                vec![BranchCallSet {
+                    from_symbol_id: "caller".to_owned(),
+                    sites: vec![BranchCallSite {
+                        target_name: "target".to_owned(),
+                        to_symbol_id: Some("target".to_owned()),
+                        call_type: "Call".to_owned(),
+                        confidence: "Direct".to_owned(),
+                        line: 3,
+                        col: 0,
+                    }],
+                }],
+            )
+            .unwrap();
+        }
+
+        let callees = get_callees(&conn, "caller", "main", Some("Call"), BranchSets).unwrap();
+        assert_eq!(callees.len(), 1);
+        assert_eq!(callees[0].to_symbol_id.as_deref(), Some("target"));
+        let callers = get_callers(&conn, "target", "main", Some("Call"), BranchSets).unwrap();
+        assert_eq!(callers.len(), 2, "literal and resolved name hit one site");
+        assert!(callers.iter().any(|edge| edge.id == "flat"));
+        assert!(callers
+            .iter()
+            .any(|edge| edge.id == callees[0].id && edge.is_resolved));
+        let context = get_callers_with_context(&conn, "TARGET", "main", None, BranchSets).unwrap();
+        assert_eq!(context.len(), 1, "PHP alone matches case-insensitively");
+        assert_eq!(
+            (&*context[0].id, &*context[0].from_symbol_name),
+            ("flat", "legacyCaller")
+        );
+        let inactive = get_callees(&conn, "caller", "other", None, BranchSets).unwrap();
+        assert_eq!(inactive.len(), 1);
+        assert_eq!(inactive[0].id, callees[0].id);
+        assert_eq!(inactive[0].to_symbol_id, None);
+        assert!(!inactive[0].is_resolved);
     }
 
     #[test]
@@ -2360,7 +2428,7 @@ mod tests {
         let removed_edges = gc_orphan_call_edges(&conn).unwrap();
         assert_eq!(removed_edges, 0);
         // Edge from 'used' still exists
-        let remaining_edges = get_callees(&conn, "used", "main", None).unwrap();
+        let remaining_edges = get_callees(&conn, "used", "main", None, BranchSets).unwrap();
         assert_eq!(remaining_edges.len(), 1);
     }
 
@@ -2419,7 +2487,9 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(get_branch_symbol_ids(&conn, "main").unwrap().is_empty());
-        assert!(get_callees(&conn, "sym1", "main", None).unwrap().is_empty());
+        assert!(get_callees(&conn, "sym1", "main", None, BranchSets)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -2544,7 +2614,7 @@ mod tests {
         // The old catalog had no branch membership yet. Populating it after the
         // upgrade must expose the legacy call edge with its original callsite.
         add_symbols_to_branch(&conn, "main", &["old".to_owned()]).unwrap();
-        let edges = get_callees(&conn, "old", "main", None).unwrap();
+        let edges = get_callees(&conn, "old", "main", None, BranchSets).unwrap();
         assert_eq!(edges.len(), 1);
         assert_eq!(
             (&*edges[0].target_name, edges[0].line, edges[0].col),
@@ -2626,7 +2696,7 @@ mod tests {
             is_resolved: false,
         };
         upsert_call_edge(&conn, &edge).unwrap();
-        let before = get_callees(&conn, "sym_caller", "main", None).unwrap();
+        let before = get_callees(&conn, "sym_caller", "main", None, BranchSets).unwrap();
         assert_eq!(before.len(), 1);
 
         let deleted = delete_symbols_by_file(&conn, "src/main.ts").unwrap();

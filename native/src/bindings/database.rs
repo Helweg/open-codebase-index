@@ -8,6 +8,7 @@ use napi_derive::napi;
 #[napi]
 pub struct Database {
     conn: std::sync::Mutex<Option<rusqlite::Connection>>,
+    call_graph_layout: db::CallGraphLayout,
 }
 
 #[napi(object)]
@@ -73,9 +74,10 @@ pub struct DatabaseStats {
 
 #[napi]
 impl Database {
-    fn from_connection(conn: rusqlite::Connection) -> Self {
+    fn from_connection(conn: rusqlite::Connection, call_graph_layout: db::CallGraphLayout) -> Self {
         Self {
             conn: std::sync::Mutex::new(Some(conn)),
+            call_graph_layout,
         }
     }
 
@@ -83,21 +85,21 @@ impl Database {
     pub fn new(db_path: String) -> Result<Self> {
         let conn = db::init_db(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(conn, db::CallGraphLayout::BranchSets))
     }
 
     #[napi(factory)]
     pub fn open_read_only(db_path: String) -> Result<Self> {
-        let conn = db::open_db_read_only(std::path::Path::new(&db_path))
+        let (conn, layout) = db::open_db_read_only(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(conn, layout))
     }
 
     #[napi(factory)]
     pub fn create_empty_read_only() -> Result<Self> {
         let conn =
             db::create_empty_read_only_db().map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(conn, db::CallGraphLayout::BranchSets))
     }
 
     fn closed_error() -> Error {
@@ -870,8 +872,14 @@ impl Database {
         call_type_filter: Option<String>,
     ) -> Result<Vec<CallEdgeData>> {
         self.with_conn(|conn| {
-            let rows = db::get_callers(conn, &symbol_name, &branch, call_type_filter.as_deref())
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+            let rows = db::get_callers(
+                conn,
+                &symbol_name,
+                &branch,
+                call_type_filter.as_deref(),
+                self.call_graph_layout,
+            )
+            .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows
                 .into_iter()
                 .map(|r| CallEdgeData {
@@ -899,8 +907,14 @@ impl Database {
         call_type_filter: Option<String>,
     ) -> Result<Vec<CallEdgeData>> {
         self.with_conn(|conn| {
-            let rows = db::get_callees(conn, &symbol_id, &branch, call_type_filter.as_deref())
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+            let rows = db::get_callees(
+                conn,
+                &symbol_id,
+                &branch,
+                call_type_filter.as_deref(),
+                self.call_graph_layout,
+            )
+            .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows
                 .into_iter()
                 .map(|r| CallEdgeData {
@@ -933,6 +947,7 @@ impl Database {
                 &symbol_name,
                 &branch,
                 call_type_filter.as_deref(),
+                self.call_graph_layout,
             )
             .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows

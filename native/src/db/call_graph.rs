@@ -1,5 +1,5 @@
 use super::{DbResult, SQL_BIND_PARAM_BATCH_SIZE};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, types::ValueRef, Connection, OptionalExtension};
 
 // ============================================================================
 // Symbol Operations (Call Graph)
@@ -401,30 +401,88 @@ fn symbol_names_match(language: &str, left: &str, right: &str) -> bool {
     }
 }
 
-// Keep the name and type filters identical across both callers APIs.
-macro_rules! callers_sql {
-    ($columns:literal) => {
+#[derive(Clone, Copy)]
+pub enum CallGraphLayout {
+    Legacy,
+    BranchSets,
+}
+
+impl CallGraphLayout {
+    fn point_query(self, legacy: &'static str, branch_sets: &'static str) -> &'static str {
+        match self {
+            Self::Legacy => legacy,
+            Self::BranchSets => branch_sets,
+        }
+    }
+}
+
+macro_rules! legacy_call_edges_sql {
+    ($context:literal, $condition:literal) => {
         concat!(
-            "SELECT ", $columns,
+            "SELECT e.id, e.from_symbol_id, ",
+            $context,
+            r#"e.target_name, e.to_symbol_id, e.call_type, e.confidence, e.line, e.col, e.is_resolved
+            FROM branch_symbols b
+            JOIN call_edges e ON e.from_symbol_id = b.symbol_id
+            JOIN symbols s ON s.id = b.symbol_id
+            WHERE b.branch = ?1 AND (?3 IS NULL OR e.call_type = ?3)
+            "#,
+            $condition,
+        )
+    };
+}
+
+macro_rules! legacy_callers_sql {
+    ($context:literal) => {
+        legacy_call_edges_sql!(
+            $context,
             r#"
-            FROM catalog_call_edges ce
-            JOIN symbols s ON s.id = ce.from_symbol_id
-            WHERE ce.branch = ?1 AND (?3 IS NULL OR ce.call_type = ?3) AND (
-                (s.language IN ('apex', 'php') AND ce.target_name = ?2 COLLATE NOCASE)
+            AND (
+                (s.language IN ('apex', 'php') AND e.target_name = ?2 COLLATE NOCASE)
                 OR
-                (s.language NOT IN ('apex', 'php') AND ce.target_name = ?2 COLLATE BINARY)
+                (s.language NOT IN ('apex', 'php') AND e.target_name = ?2 COLLATE BINARY)
                 OR EXISTS (
                     SELECT 1
                     FROM symbols target
-                    JOIN branch_symbols target_bs ON target_bs.symbol_id = target.id AND target_bs.branch = ?1
-                    WHERE target.id = ce.to_symbol_id AND (
+                    JOIN branch_symbols member ON member.symbol_id = target.id AND member.branch = ?1
+                    WHERE target.id = e.to_symbol_id AND (
                         (target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE)
                         OR
                         (target.language NOT IN ('apex', 'php') AND target.name = ?2 COLLATE BINARY)
                     )
                 )
             )
-            "#,
+            "#
+        )
+    };
+}
+
+// Shared sets are JS/TS only: seek exact spellings and proven alias targets.
+// Keep the indexed hits outermost; joining from branch membership scans every set.
+macro_rules! callers_sql {
+    ($layout:expr, $context:literal) => {
+        ($layout).point_query(
+            legacy_callers_sql!($context),
+            concat!(
+                legacy_callers_sql!($context),
+                " AND b.edge_set_id IS NULL UNION ALL SELECT e.id, b.symbol_id, ",
+                $context,
+                r#"e.target_name, t.symbol_id, e.call_type, e.confidence, e.line, e.col, t.symbol_id IS NOT NULL
+                FROM (
+                    SELECT id FROM shared_call_edges WHERE target_name = ?2 COLLATE BINARY
+                    UNION
+                    SELECT edge.id FROM symbols target
+                    CROSS JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
+                    CROSS JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
+                    WHERE target.name = ?2 COLLATE BINARY
+                ) hit
+                CROSS JOIN shared_call_edges e ON e.id = hit.id
+                CROSS JOIN branch_symbols b ON b.edge_set_id = e.edge_set_id AND b.branch = ?1
+                JOIN symbols s ON s.id = b.symbol_id
+                LEFT JOIN branch_symbols t ON t.branch = ?1 AND t.symbol_id = e.to_symbol_id
+                WHERE (?3 IS NULL OR e.call_type = ?3)
+                "#,
+            ),
         )
     };
 }
@@ -435,10 +493,9 @@ pub fn get_callers(
     symbol_name: &str,
     branch: &str,
     call_type_filter: Option<&str>,
+    layout: CallGraphLayout,
 ) -> DbResult<Vec<CallEdgeRow>> {
-    let mut stmt = conn.prepare_cached(callers_sql!(
-        "ce.id, ce.from_symbol_id, ce.target_name, ce.to_symbol_id, ce.call_type, ce.confidence, ce.line, ce.col, ce.is_resolved"
-    ))?;
+    let mut stmt = conn.prepare_cached(callers_sql!(layout, ""))?;
     let rows = stmt.query_map(
         params![branch, symbol_name, call_type_filter],
         call_edge_row,
@@ -446,9 +503,16 @@ pub fn get_callers(
     Ok(rows.collect::<Result<_, _>>()?)
 }
 
+fn call_edge_id(row: &rusqlite::Row<'_>) -> rusqlite::Result<String> {
+    match row.get_ref(0)? {
+        ValueRef::Integer(id) => Ok(format!("shared:{id}")),
+        _ => row.get(0),
+    }
+}
+
 fn call_edge_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CallEdgeRow> {
     Ok(CallEdgeRow {
-        id: row.get(0)?,
+        id: call_edge_id(row)?,
         from_symbol_id: row.get(1)?,
         target_name: row.get(2)?,
         to_symbol_id: row.get(3)?,
@@ -465,13 +529,12 @@ pub fn get_callers_with_context(
     symbol_name: &str,
     branch: &str,
     call_type_filter: Option<&str>,
+    layout: CallGraphLayout,
 ) -> DbResult<Vec<CallerRow>> {
-    let mut stmt = conn.prepare_cached(callers_sql!(
-        "ce.id, ce.from_symbol_id, s.name, s.file_path, ce.target_name, ce.to_symbol_id, ce.call_type, ce.confidence, ce.line, ce.col, ce.is_resolved"
-    ))?;
+    let mut stmt = conn.prepare_cached(callers_sql!(layout, "s.name, s.file_path, "))?;
     let rows = stmt.query_map(params![branch, symbol_name, call_type_filter], |row| {
         Ok(CallerRow {
-            id: row.get(0)?,
+            id: call_edge_id(row)?,
             from_symbol_id: row.get(1)?,
             from_symbol_name: row.get(2)?,
             from_symbol_file_path: row.get(3)?,
@@ -498,15 +561,25 @@ pub fn get_callees(
     symbol_id: &str,
     branch: &str,
     call_type_filter: Option<&str>,
+    layout: CallGraphLayout,
 ) -> DbResult<Vec<CallEdgeRow>> {
-    let mut stmt = conn.prepare_cached(
-        r#"
-        SELECT ce.id, ce.from_symbol_id, ce.target_name, ce.to_symbol_id, ce.call_type, ce.confidence, ce.line, ce.col, ce.is_resolved
-        FROM catalog_call_edges ce
-        JOIN symbols s ON s.id = ce.from_symbol_id
-        WHERE ce.branch = ?1 AND ce.from_symbol_id = ?2 AND (?3 IS NULL OR ce.call_type = ?3)
-        "#,
-    )?;
+    let sql = layout.point_query(
+        legacy_call_edges_sql!("", " AND b.symbol_id = ?2"),
+        concat!(
+            legacy_call_edges_sql!("", " AND b.symbol_id = ?2"),
+            r#"
+            AND b.edge_set_id IS NULL
+            UNION ALL
+            SELECT e.id, b.symbol_id, e.target_name, t.symbol_id, e.call_type, e.confidence,
+                   e.line, e.col, t.symbol_id IS NOT NULL
+            FROM branch_symbols b
+            JOIN shared_call_edges e ON e.edge_set_id = b.edge_set_id
+            LEFT JOIN branch_symbols t ON t.branch = ?1 AND t.symbol_id = e.to_symbol_id
+            WHERE b.branch = ?1 AND b.symbol_id = ?2 AND (?3 IS NULL OR e.call_type = ?3)
+            "#
+        ),
+    );
+    let mut stmt = conn.prepare_cached(sql)?;
     let rows = stmt.query_map(params![branch, symbol_id, call_type_filter], call_edge_row)?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
