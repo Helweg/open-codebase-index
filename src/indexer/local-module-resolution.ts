@@ -1224,6 +1224,39 @@ export class LocalModuleCallResolver {
     this.exportCacheEpoch++;
   }
 
+  /** Direct AST inputs to module resolution, including alternatives that were absent. */
+  getModuleDependencyProbes(importer: string, syntax: ModuleSyntaxData): {
+    imports: string[];
+    reexports: string[];
+    usesPackageFormat: boolean;
+  } {
+    const normalized = normalizeFilePath(importer);
+    const imports = new Set<string>();
+    const reexports = new Set<string>();
+    let usesPackageFormat = false;
+    for (const binding of syntax.bindings) {
+      const commonJs = binding.kind === "require";
+      if (!binding.source || (binding.kind !== "import" && binding.kind !== "namespace" && !commonJs)) continue;
+      this.resolveModuleSpecifier(normalized, binding.source, commonJs, imports);
+      if (commonJs) usesPackageFormat = true;
+    }
+    for (const entry of syntax.exports) {
+      if (entry.kind === "reexport" && entry.source) {
+        this.resolveModuleSpecifier(normalized, entry.source, false, reexports);
+      } else if (entry.kind === "root") {
+        usesPackageFormat = true;
+      }
+    }
+    for (const source of syntax.starExports) {
+      this.resolveModuleSpecifier(normalized, source, false, reexports);
+    }
+    return {
+      imports: [...imports],
+      reexports: [...reexports],
+      usesPackageFormat: usesPackageFormat && !/\.[cm][jt]s$/iu.test(normalized),
+    };
+  }
+
   /** Resolve only a current-AST call's exact lexical binding and source ancestry. */
   async resolveCallTarget(
     importerFilePath: string,
@@ -1397,24 +1430,24 @@ export class LocalModuleCallResolver {
     return parsed;
   }
 
-  private resolveModuleSpecifier(importerFilePath: string, specifier: string, commonJs = false): string[] {
+  private resolveModuleSpecifier(importerFilePath: string, specifier: string, commonJs = false, probes?: Set<string>): string[] {
     if (specifier.startsWith(".")) {
       const base = normalizeFilePath(path.posix.join(path.posix.dirname(importerFilePath), specifier));
-      return this.resolveModuleCandidates(base);
+      return this.resolveModuleCandidates(base, probes);
     }
 
     const pathAliases = this.pathAliasesForImporter
       ? this.pathAliasesForImporter(importerFilePath)
       : this.tsConfigPathAliases;
-    const aliasCandidates = this.resolveModuleSpecifierFromAliases(specifier, pathAliases);
+    const aliasCandidates = this.resolveModuleSpecifierFromAliases(specifier, pathAliases, probes);
     if (aliasCandidates !== undefined) {
       return aliasCandidates;
     }
 
-    return this.resolveModuleSpecifierFromWorkspacePackage(specifier, commonJs);
+    return this.resolveModuleSpecifierFromWorkspacePackage(specifier, commonJs, probes);
   }
 
-  private resolveModuleSpecifierFromWorkspacePackage(specifier: string, commonJs: boolean): string[] {
+  private resolveModuleSpecifierFromWorkspacePackage(specifier: string, commonJs: boolean, probes?: Set<string>): string[] {
     const packageNames = [...this.workspacePackages.keys()]
       .filter((name) => specifier === name || specifier.startsWith(`${name}/`))
       .sort((left, right) => right.length - left.length || left.localeCompare(right));
@@ -1431,7 +1464,7 @@ export class LocalModuleCallResolver {
     const exports = commonJs ? workspacePackage.commonJs : workspacePackage;
     if (exports.entryPoints.has(exportPath)) {
       const entryPoints = exports.entryPoints.get(exportPath) ?? [];
-      return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint)))].sort();
+      return [...new Set(entryPoints.flatMap((entryPoint) => this.resolveModuleCandidates(entryPoint, probes)))].sort();
     }
 
     const matchedPattern = exports.exportPatterns
@@ -1447,19 +1480,20 @@ export class LocalModuleCallResolver {
           workspacePackage.rootPath,
           this.replaceWildcard(targetPattern, wildcard),
         );
-        return target ? this.resolveModuleCandidates(target) : [];
+        return target ? this.resolveModuleCandidates(target, probes) : [];
       });
       return [...new Set(targets)].sort();
     }
     if (exports.restrictsSubpaths) return [];
     if (suffix.length === 0) return [];
 
-    return this.resolveModuleCandidates(path.posix.join(workspacePackage.rootPath, suffix));
+    return this.resolveModuleCandidates(path.posix.join(workspacePackage.rootPath, suffix), probes);
   }
 
   private resolveModuleSpecifierFromAliases(
     specifier: string,
     pathAliases: LocalModulePathAliases | undefined,
+    probes?: Set<string>,
   ): string[] | undefined {
     if (!pathAliases || pathAliases.aliases.length === 0) return undefined;
 
@@ -1477,7 +1511,7 @@ export class LocalModuleCallResolver {
         const target = this.replaceWildcard(targetPattern, wildcard);
         const rawPath = normalizeFilePath(path.posix.join(alias.baseUrl ?? pathAliases.baseUrl, target));
         if (!isProjectLocalPath(rawPath)) continue;
-        for (const candidate of this.resolveModuleCandidates(trimLeadingCurrentDir(rawPath))) {
+        for (const candidate of this.resolveModuleCandidates(trimLeadingCurrentDir(rawPath), probes)) {
           matchedAliasTargets.add(candidate);
         }
       }
@@ -1487,11 +1521,12 @@ export class LocalModuleCallResolver {
     return [...matchedAliasTargets].sort();
   }
 
-  private resolveModuleCandidates(base: string): string[] {
+  private resolveModuleCandidates(base: string, probes?: Set<string>): string[] {
     if (!isProjectLocalPath(base)) return [];
 
     const candidates = new Set<string>();
     const normalizedBase = trimLeadingCurrentDir(base);
+    probes?.add(normalizedBase);
     if (this.modulePaths.has(normalizedBase)) {
       candidates.add(normalizedBase);
     }
@@ -1501,6 +1536,7 @@ export class LocalModuleCallResolver {
       const withoutExtension = normalizedBase.slice(0, -extension.length);
       for (const sourceExtension of TYPESCRIPT_SOURCE_EXTENSIONS) {
         const candidate = `${withoutExtension}${sourceExtension}`;
+        probes?.add(candidate);
         if (this.modulePaths.has(candidate)) candidates.add(candidate);
       }
       return [...candidates].sort();
@@ -1517,6 +1553,8 @@ export class LocalModuleCallResolver {
     for (const sourceExtension of JAVASCRIPT_SOURCE_EXTENSIONS) {
       const fileCandidate = `${normalizedBase}${sourceExtension}`;
       const indexCandidate = path.posix.join(normalizedBase, `index${sourceExtension}`);
+      probes?.add(fileCandidate);
+      probes?.add(indexCandidate);
       if (this.modulePaths.has(fileCandidate)) candidates.add(fileCandidate);
       if (this.modulePaths.has(indexCandidate)) candidates.add(indexCandidate);
     }

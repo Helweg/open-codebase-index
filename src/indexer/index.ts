@@ -132,6 +132,12 @@ import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
 } from "./local-module-resolution.js";
+import {
+  affectedJavaScriptGraphFiles,
+  readJavaScriptGraphDependencies,
+  writeJavaScriptGraphDependencies,
+  type JavaScriptGraphDependency,
+} from "./javascript-graph-dependencies.js";
 import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
 import { PdfExtractionError } from "../documents/pdf.js";
 import {
@@ -1510,10 +1516,15 @@ export class Indexer {
     this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
   }
 
-  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string): SymbolData[] {
-    const preparedNamespace = this.config.indexing.scipTypeScript.enabled
-      ? hashContent(this.getBranchCatalogKey()).slice(0, 16)
-      : this.getPreparedBranchNamespace();
+  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string, javaScriptNamespace?: string): SymbolData[] {
+    let preparedNamespace: string | null;
+    if (javaScriptNamespace && isJavaScriptFamilyFilePath(parsed.path)) {
+      preparedNamespace = javaScriptNamespace;
+    } else if (this.config.indexing.scipTypeScript.enabled) {
+      preparedNamespace = hashContent(this.getBranchCatalogKey()).slice(0, 16);
+    } else {
+      preparedNamespace = this.getPreparedBranchNamespace();
+    }
     return parsed.symbols
       .filter((parsedSymbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind))
       .map((parsedSymbol) => {
@@ -4998,6 +5009,16 @@ export class Indexer {
     const indexedCommit = this.expectedCommitOverride ?? materializedCommit;
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
+    const projectStructural = isStructural && this.config.scope === "project";
+    const trackJavaScriptDependencies = projectStructural && !this.config.indexing.scipTypeScript.enabled;
+    // Outgoing edge IDs contain the caller symbol ID. Give each branch its own
+    // JS/TS symbols so identical callers can have different targets without a schema change.
+    const javaScriptNamespace = trackJavaScriptDependencies
+      ? hashContent(`structural-js:${branchCatalogKey}`).slice(0, 16)
+      : undefined;
+    const javaScriptDependencyKey = projectStructural
+      ? this.getBranchMigrationMetadataKey("index.javaScriptGraphDependencies")
+      : undefined;
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
     const previousBranchSymbolIdSet = new Set(database.getBranchSymbolIds(branchCatalogKey));
@@ -5157,6 +5178,86 @@ export class Indexer {
         message: this.scipTypeScriptState.message,
       });
     }
+    const moduleFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
+    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
+      const manifestPath = path.join(directory, "package.json");
+      let realManifest: string;
+      try {
+        const realDirectory = await fsPromises.realpath(directory);
+        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
+        realManifest = await fsPromises.realpath(manifestPath);
+      } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
+          ? undefined
+          : null;
+      }
+      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
+      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
+      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!handle) return null;
+      let content: string | null = null;
+      let interruption: unknown;
+      try {
+        const openedStats = await handle.stat();
+        throwIfOperationAborted(signal);
+        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
+          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
+          // One spare byte proves EOF and rejects growth beyond the observed size.
+          const buffer = Buffer.alloc(openedStats.size + 1);
+          let offset = 0;
+          while (true) {
+            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+            throwIfOperationAborted(signal);
+            if (bytesRead === 0) {
+              content = buffer.subarray(0, offset).toString("utf8");
+              break;
+            }
+            offset += bytesRead;
+            if (offset > openedStats.size) break;
+          }
+        }
+      } catch (error: unknown) {
+        if (isOperationInterruption(error)) interruption = error;
+      } finally {
+        try {
+          await handle.close();
+        } catch (error: unknown) {
+          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
+        }
+      }
+      if (interruption !== undefined) throw interruption;
+      return content;
+    };
+    const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
+      const cached = moduleFormats.get(filePath);
+      if (cached) return cached;
+      const lookup = (async () => {
+        const materializedPath = this.toMaterializedFilePath(filePath);
+        if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return "unknown" as const;
+        let directory = path.dirname(materializedPath);
+        while (isPathWithinRoot(directory, this.materializedProjectRoot)) {
+          throwIfOperationAborted(signal);
+          const content = await readBoundedManifest(directory);
+          if (content === null) return "unknown" as const;
+          if (content !== undefined) return declaredPackageFormat(content);
+          const parent = path.dirname(directory);
+          if (parent === directory) break;
+          directory = parent;
+        }
+        // The ownership boundary prevents proving the nearest enclosing format.
+        return "unknown" as const;
+      })();
+      moduleFormats.set(filePath, lookup);
+      return lookup;
+    };
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -5169,6 +5270,20 @@ export class Indexer {
     const localModuleResolutionConfigChanged =
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== this.localModuleResolutionConfigHash;
+    const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
+    let priorJavaScriptDependencies = trackJavaScriptDependencies && !localModuleResolutionConfigChanged
+      && !needsCallGraphResolutionMigration && !scipStateChanged
+      ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, this.fileHashCache)
+      : undefined;
+    if (priorJavaScriptDependencies) {
+      for (const [file, { format }] of priorJavaScriptDependencies) {
+        if (format !== undefined && format !== await moduleFormatForFile(file)) {
+          priorJavaScriptDependencies = undefined;
+          break;
+        }
+      }
+    }
+    const changedJavaScriptFiles = new Set<string>();
     let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
       (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
       && isJavaScriptFamilyFilePath(filePath)
@@ -5228,6 +5343,7 @@ export class Indexer {
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
       if (!cachedHashMatches && isJavaScriptFamilyFilePath(storedPath)) {
         javaScriptGraphSourcesChanged = true;
+        if (priorJavaScriptDependencies) changedJavaScriptFiles.add(storedPath);
       }
       if (!cachedHashMatches && isGoFilePath(storedPath)) {
         changedGoPackageDirectories.add(path.posix.dirname(storedPath.split(path.sep).join("/")));
@@ -5283,7 +5399,23 @@ export class Indexer {
       }
     }
 
-    if (javaScriptGraphSourcesChanged || pythonGraphSourcesChanged) {
+    if (priorJavaScriptDependencies) {
+      for (const filePath of priorJavaScriptDependencies.keys()) {
+        if (!allFileDescriptors.has(filePath)) changedJavaScriptFiles.add(filePath);
+      }
+    }
+    const refreshAllJavaScript = trackJavaScriptDependencies && !priorJavaScriptDependencies;
+    const affectedJavaScriptFiles = priorJavaScriptDependencies && changedJavaScriptFiles.size > 0
+      ? affectedJavaScriptGraphFiles(changedJavaScriptFiles, priorJavaScriptDependencies)
+      : undefined;
+    const javaScriptDependencies = trackJavaScriptDependencies
+      ? priorJavaScriptDependencies ?? new Map<string, JavaScriptGraphDependency>()
+      : undefined;
+    let javaScriptDependenciesDirty = refreshAllJavaScript || changedJavaScriptFiles.size > 0;
+    for (const filePath of changedJavaScriptFiles) javaScriptDependencies?.delete(filePath);
+
+    const broadJavaScriptRefresh = refreshAllJavaScript || (!trackJavaScriptDependencies && javaScriptGraphSourcesChanged);
+    if (broadJavaScriptRefresh || affectedJavaScriptFiles || pythonGraphSourcesChanged) {
       let processedDescriptors = 0;
       for (const [storedPath, descriptor] of allFileDescriptors) {
         if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
@@ -5292,7 +5424,8 @@ export class Indexer {
         }
         processedDescriptors += 1;
         if (
-          !(javaScriptGraphSourcesChanged && isJavaScriptFamilyFilePath(storedPath))
+          !(broadJavaScriptRefresh && isJavaScriptFamilyFilePath(storedPath))
+          && !affectedJavaScriptFiles?.has(storedPath)
           && !(pythonGraphSourcesChanged && isPythonFilePath(storedPath))
         ) continue;
         if (changedFilePathSet.has(storedPath)) continue;
@@ -5425,86 +5558,6 @@ export class Indexer {
         descriptor,
       ]),
     );
-    const moduleFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
-    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
-      const manifestPath = path.join(directory, "package.json");
-      let realManifest: string;
-      try {
-        const realDirectory = await fsPromises.realpath(directory);
-        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
-        realManifest = await fsPromises.realpath(manifestPath);
-      } catch (error) {
-        if (isOperationInterruption(error)) throw error;
-        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
-          ? undefined
-          : null;
-      }
-      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
-      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
-      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!handle) return null;
-      let content: string | null = null;
-      let interruption: unknown;
-      try {
-        const openedStats = await handle.stat();
-        throwIfOperationAborted(signal);
-        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
-          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
-          // One spare byte proves EOF and rejects growth beyond the observed size.
-          const buffer = Buffer.alloc(openedStats.size + 1);
-          let offset = 0;
-          while (true) {
-            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
-            throwIfOperationAborted(signal);
-            if (bytesRead === 0) {
-              content = buffer.subarray(0, offset).toString("utf8");
-              break;
-            }
-            offset += bytesRead;
-            if (offset > openedStats.size) break;
-          }
-        }
-      } catch (error: unknown) {
-        if (isOperationInterruption(error)) interruption = error;
-      } finally {
-        try {
-          await handle.close();
-        } catch (error: unknown) {
-          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
-        }
-      }
-      if (interruption !== undefined) throw interruption;
-      return content;
-    };
-    const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
-      const cached = moduleFormats.get(filePath);
-      if (cached) return cached;
-      const lookup = (async () => {
-        const materializedPath = this.toMaterializedFilePath(filePath);
-        if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return "unknown" as const;
-        let directory = path.dirname(materializedPath);
-        while (isPathWithinRoot(directory, this.materializedProjectRoot)) {
-          throwIfOperationAborted(signal);
-          const content = await readBoundedManifest(directory);
-          if (content === null) return "unknown" as const;
-          if (content !== undefined) return declaredPackageFormat(content);
-          const parent = path.dirname(directory);
-          if (parent === directory) break;
-          directory = parent;
-        }
-        // The ownership boundary prevents proving the nearest enclosing format.
-        return "unknown" as const;
-      })();
-      moduleFormats.set(filePath, lookup);
-      return lookup;
-    };
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       moduleFormatForFile,
@@ -5530,7 +5583,7 @@ export class Indexer {
         )[0];
         return {
           content,
-          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
+          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash, javaScriptNamespace) : [],
           moduleSyntax: parsed?.moduleSyntax,
         };
       },
@@ -5624,6 +5677,13 @@ export class Indexer {
       )) {
         throwIfOperationAborted(signal);
         const parseStartTime = performance.now();
+        if (javaScriptDependencies) {
+          for (const { storedPath } of descriptorBatch) {
+            if (!isJavaScriptFamilyFilePath(storedPath)) continue;
+            javaScriptDependencies.delete(storedPath);
+            javaScriptDependenciesDirty = true;
+          }
+        }
         const loadedEntries = await Promise.all(descriptorBatch.map(async (descriptor) => {
           try {
             const bytes = await fsPromises.readFile(descriptor.materializedPath);
@@ -5793,7 +5853,7 @@ export class Indexer {
             });
           }
 
-          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash);
+          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash, javaScriptNamespace);
           for (const symbol of fileSymbols) {
             if (!symbolBatchIds.has(symbol.id)) {
               symbolBatch.push(symbol);
@@ -5803,6 +5863,16 @@ export class Indexer {
           }
           if (parsed.kind === "source") {
             localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
+          }
+          if (javaScriptDependencies && isJavaScriptFamilyFilePath(descriptor.storedPath) && parsed.moduleSyntax?.valid) {
+            const { imports, reexports, usesPackageFormat } =
+              localModuleResolver.getModuleDependencyProbes(descriptor.storedPath, parsed.moduleSyntax);
+            javaScriptDependencies.set(descriptor.storedPath, {
+              hash: descriptor.hash,
+              imports,
+              reexports,
+              ...(usesPackageFormat ? { format: await moduleFormatForFile(descriptor.storedPath) } : {}),
+            });
           }
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
@@ -6092,6 +6162,16 @@ export class Indexer {
               disagreements: result.disagreements,
             });
           }
+        }
+      }
+
+      // Publish the dependency proof atomically with its branch's edges. A
+      // missing row (e.g. read/parse failure) makes the next scan go broad.
+      if (javaScriptDependencyKey) {
+        if (javaScriptDependencies && javaScriptDependenciesDirty) {
+          database.setMetadata(javaScriptDependencyKey, writeJavaScriptGraphDependencies(javaScriptDependencies));
+        } else if (!javaScriptDependencies && storedJavaScriptDependencies !== null) {
+          database.deleteMetadata(javaScriptDependencyKey);
         }
       }
 
