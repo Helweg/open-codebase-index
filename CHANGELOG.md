@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Performance
 
 - **Index startup and refresh**: Use targeted SQLite presence and count queries, seek distinct branch names through existing indexes, compile each native call query once, and publish only changed branch memberships. Existing catalogs open and refresh without a format migration.
-- **Structural JS/TS call-graph refresh**: Refresh changed files and callers affected by import and re-export probes. Project branch graphs are isolated; missing dependency records or resolver configuration changes trigger a full JS/TS refresh. SCIP and hybrid indexing are unchanged.
+- **Structural JS/TS call-graph refresh**: Refresh changed files and callers affected by import and re-export probes. Project branch graphs are isolated; missing dependency records or resolver configuration changes trigger a full JS/TS refresh. Existing catalogs upgrade branch by branch on normal refresh without a schema change. SCIP and hybrid indexing are unchanged.
 
 ### Fixed
 

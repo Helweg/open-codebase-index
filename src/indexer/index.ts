@@ -224,6 +224,9 @@ const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "12";
+const BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION = "1";
+const JAVASCRIPT_GRAPH_OWNERSHIP_KEY = "index.javaScriptGraphOwnership";
+const JAVASCRIPT_GRAPH_DEPENDENCIES_KEY = "index.javaScriptGraphDependencies";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -1978,6 +1981,15 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
   }
 
+  private usesBranchLocalJavaScriptGraph(): boolean {
+    return this.config.scope === "project" && this.config.indexing.mode === "structural"
+      && !this.config.indexing.scipTypeScript.enabled;
+  }
+
+  private getJavaScriptGraphOwnershipMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
+    return this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_OWNERSHIP_KEY, catalogIdentity);
+  }
+
   private getLocalModuleResolutionConfigMetadataKey(
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
@@ -2062,7 +2074,10 @@ export class Indexer {
       && database.getMetadata(this.getRubyParserVersionMetadataKey(catalogIdentity))
       === RUBY_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
-      === SYMBOL_EXTRACTOR_VERSION;
+      === SYMBOL_EXTRACTOR_VERSION
+      && (!this.usesBranchLocalJavaScriptGraph()
+        || database.getMetadata(this.getJavaScriptGraphOwnershipMetadataKey(catalogIdentity))
+          === BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION);
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -5021,14 +5036,15 @@ export class Indexer {
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
     const projectStructural = isStructural && this.config.scope === "project";
-    const trackJavaScriptDependencies = projectStructural && !this.config.indexing.scipTypeScript.enabled;
+    const trackJavaScriptDependencies = this.usesBranchLocalJavaScriptGraph();
     // Outgoing edge IDs contain the caller symbol ID. Give each branch its own
     // JS/TS symbols so identical callers can have different targets without a schema change.
     const javaScriptNamespace = trackJavaScriptDependencies
       ? hashContent(`structural-js:${branchCatalogKey}`).slice(0, 16)
       : undefined;
+    const javaScriptOwnershipKey = projectStructural ? this.getJavaScriptGraphOwnershipMetadataKey() : undefined;
     const javaScriptDependencyKey = projectStructural
-      ? this.getBranchMigrationMetadataKey("index.javaScriptGraphDependencies")
+      ? this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_DEPENDENCIES_KEY)
       : undefined;
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
@@ -5283,7 +5299,9 @@ export class Indexer {
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== this.localModuleResolutionConfigHash;
     const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
+    const storedJavaScriptOwnership = javaScriptOwnershipKey ? database.getMetadata(javaScriptOwnershipKey) : null;
     let priorJavaScriptDependencies = javaScriptGraphConfigHash !== undefined
+      && storedJavaScriptOwnership === BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION
       && !needsCallGraphResolutionMigration && !scipStateChanged
       ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
       : undefined;
@@ -6213,6 +6231,15 @@ export class Indexer {
           );
         } else if (storedJavaScriptDependencies !== null) {
           database.deleteMetadata(javaScriptDependencyKey);
+        }
+      }
+      // Ownership is independent of proof completeness. A malformed file must
+      // not keep an already-upgraded branch in the legacy-readiness state.
+      if (javaScriptOwnershipKey) {
+        if (trackJavaScriptDependencies && storedJavaScriptOwnership !== BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION) {
+          database.setMetadata(javaScriptOwnershipKey, BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION);
+        } else if (!trackJavaScriptDependencies && storedJavaScriptOwnership !== null) {
+          database.deleteMetadata(javaScriptOwnershipKey);
         }
       }
 
@@ -7496,6 +7523,11 @@ export class Indexer {
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
     if (this.config.indexing.mode === "structural") {
+      for (const branchKey of clearedBranchKeys) {
+        const suffix = hashContent(branchKey).slice(0, 24);
+        database.deleteMetadata(`${JAVASCRIPT_GRAPH_OWNERSHIP_KEY}.${suffix}`);
+        database.deleteMetadata(`${JAVASCRIPT_GRAPH_DEPENDENCIES_KEY}.${suffix}`);
+      }
       this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
     }
 
