@@ -1113,15 +1113,41 @@ pub fn chunk_exists_on_branch(conn: &Connection, branch: &str, chunk_id: &str) -
     Ok(count > 0)
 }
 
+// Seek to the next distinct key in each existing branch index instead of
+// scanning all memberships. Both callers consume the same name relation.
+macro_rules! branch_names_sql {
+    ($select:literal) => {
+        concat!(
+            r#"
+            WITH RECURSIVE
+              chunk_branches(branch) AS (
+                SELECT MIN(branch) FROM branch_chunks
+                UNION ALL
+                SELECT (SELECT MIN(branch) FROM branch_chunks WHERE branch > current.branch)
+                FROM chunk_branches AS current WHERE current.branch IS NOT NULL
+              ),
+              symbol_branches(branch) AS (
+                SELECT MIN(branch) FROM branch_symbols
+                UNION ALL
+                SELECT (SELECT MIN(branch) FROM branch_symbols WHERE branch > current.branch)
+                FROM symbol_branches AS current WHERE current.branch IS NOT NULL
+              ),
+              branch_names(branch) AS (
+                SELECT branch FROM chunk_branches WHERE branch IS NOT NULL
+                UNION
+                SELECT branch FROM symbol_branches WHERE branch IS NOT NULL
+              )
+            "#,
+            $select
+        )
+    };
+}
+
 /// Get all branches
 pub fn get_all_branches(conn: &Connection) -> DbResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        r#"
-        SELECT branch FROM branch_chunks
-        UNION
-        SELECT branch FROM branch_symbols
-        "#,
-    )?;
+    let mut stmt = conn.prepare_cached(branch_names_sql!(
+        "SELECT branch FROM branch_names ORDER BY branch COLLATE BINARY"
+    ))?;
     let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
 
     let mut results = Vec::new();
@@ -1243,31 +1269,39 @@ pub fn gc_orphan_call_edges(conn: &Connection) -> DbResult<usize> {
     Ok(count)
 }
 
+pub fn has_chunks(conn: &Connection) -> DbResult<bool> {
+    Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM chunks)", [], |row| row.get(0))?)
+}
+
+pub fn has_chunks_or_symbols(conn: &Connection) -> DbResult<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM chunks) OR EXISTS(SELECT 1 FROM symbols)",
+        [],
+        |row| row.get(0),
+    )?)
+}
+
+pub fn get_chunk_count(conn: &Connection) -> DbResult<u64> {
+    let count: i64 = conn.query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))?;
+    Ok(count as u64)
+}
+
 /// Get database statistics
 pub fn get_stats(conn: &Connection) -> DbResult<DbStats> {
     let embedding_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM embeddings", [], |row| row.get(0))?;
-    let chunk_count: i64 = conn.query_row("SELECT COUNT(*) FROM chunks", [], |row| row.get(0))?;
+    let chunk_count = get_chunk_count(conn)?;
     let branch_chunk_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM branch_chunks", [], |row| row.get(0))?;
-    let branch_count: i64 = conn.query_row(
-        r#"
-        SELECT COUNT(*)
-        FROM (
-            SELECT branch FROM branch_chunks
-            UNION
-            SELECT branch FROM branch_symbols
-        )
-        "#,
-        [],
-        |row| row.get(0),
-    )?;
+    let branch_count: i64 = conn
+        .prepare_cached(branch_names_sql!("SELECT COUNT(*) FROM branch_names"))?
+        .query_row([], |row| row.get(0))?;
     let symbol_count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))?;
     let call_edge_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM call_edges", [], |row| row.get(0))?;
     Ok(DbStats {
         embedding_count: embedding_count as u64,
-        chunk_count: chunk_count as u64,
+        chunk_count,
         branch_chunk_count: branch_chunk_count as u64,
         branch_count: branch_count as u64,
         symbol_count: symbol_count as u64,
@@ -1294,6 +1328,89 @@ mod tests {
         let db_path = temp_dir.path().join("test.db");
         let conn = init_db(&db_path).unwrap();
         (temp_dir, conn)
+    }
+
+    #[test]
+    fn branch_names_seek_existing_indexes_and_match_membership_union() {
+        use std::time::Instant;
+
+        const SCAN: &str =
+            "SELECT branch FROM branch_chunks UNION SELECT branch FROM branch_symbols ORDER BY branch";
+        const SEEK: &str =
+            branch_names_sql!("SELECT branch FROM branch_names ORDER BY branch COLLATE BINARY");
+        let (dir, conn) = setup_test_db();
+        conn.execute_batch(
+            "INSERT INTO branch_chunks VALUES ('main', '0');
+             INSERT INTO branch_symbols VALUES ('main', '0');",
+        )
+        .unwrap();
+        let read = |conn: &Connection, sql: &str| -> Vec<String> {
+            conn.prepare(sql)
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect()
+        };
+        let measure = |conn: &Connection, rounds: usize| {
+            let baseline = Instant::now();
+            for _ in 0..rounds {
+                std::hint::black_box(read(conn, SCAN));
+            }
+            let scan = baseline.elapsed();
+            let candidate = Instant::now();
+            for _ in 0..rounds {
+                std::hint::black_box(get_all_branches(conn).unwrap());
+            }
+            eprintln!(
+                "{rounds} queries: scan={scan:?}, seek={:?}",
+                candidate.elapsed()
+            );
+        };
+        assert_eq!(get_all_branches(&conn).unwrap(), vec!["main"]);
+        measure(&conn, 1000);
+        conn.execute_batch(
+            "DELETE FROM branch_chunks; DELETE FROM branch_symbols;
+             WITH RECURSIVE b(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM b WHERE n<349),
+                            m(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM m WHERE n<199)
+             INSERT INTO branch_chunks SELECT printf('b%03d', b.n), CAST(m.n AS TEXT) FROM b, m;
+             INSERT INTO branch_symbols SELECT branch, chunk_id FROM branch_chunks;
+             INSERT INTO branch_chunks VALUES ('z-chunk-only', '0');
+             INSERT INTO branch_symbols VALUES ('A-symbol-only', '0');",
+        )
+        .unwrap();
+        drop(conn);
+        let reader = open_db_read_only(&dir.path().join("test.db")).unwrap();
+        let expected = read(&reader, SCAN);
+        assert_eq!(expected.len(), 352);
+        assert_eq!(get_all_branches(&reader).unwrap(), expected);
+        let stats = get_stats(&reader).unwrap();
+        assert_eq!(stats.branch_count, 352);
+        assert_eq!(stats.branch_chunk_count, 70_001);
+        assert!(
+            !has_chunks_or_symbols(&reader).unwrap(),
+            "membership is not backing data"
+        );
+        let plan = reader
+            .prepare(&format!("EXPLAIN QUERY PLAN {SEEK}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect::<Vec<_>>();
+        for table in ["branch_chunks", "branch_symbols"] {
+            assert!(
+                plan.iter().any(|detail| {
+                    detail.starts_with(&format!("SEARCH {table} ")) && detail.contains("(branch>?)")
+                }),
+                "{plan:?}"
+            );
+            assert!(!plan
+                .iter()
+                .any(|detail| detail.starts_with(&format!("SCAN {table} "))));
+        }
+        eprintln!("Bundled SQLite {} plan: {plan:?}", rusqlite::version());
+        measure(&reader, 15);
     }
 
     fn call_graph_symbol(id: &str, name: &str, language: &str) -> SymbolRow {

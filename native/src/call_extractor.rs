@@ -1,6 +1,7 @@
 use crate::types::Language;
 use anyhow::{anyhow, Result};
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use streaming_iterator::StreamingIterator;
 use tree_sitter::{Parser, Query, QueryCursor};
 
@@ -122,81 +123,126 @@ fn is_pipe_callable(mut node: tree_sitter::Node<'_>, source: &[u8]) -> bool {
     false
 }
 
+struct CompiledCalls {
+    grammar: tree_sitter::Language,
+    query: Query,
+    callee_name_idx: Option<u32>,
+    call_idx: Option<u32>,
+    method_call_idx: Option<u32>,
+    static_call_idx: Option<u32>,
+    constructor_idx: Option<u32>,
+    import_name_idx: Option<u32>,
+    import_default_idx: Option<u32>,
+    import_namespace_idx: Option<u32>,
+    inherits_name_idx: Option<u32>,
+    implements_name_idx: Option<u32>,
+    constructor_type_idx: Option<u32>,
+    excluded_name_idx: Option<u32>,
+    indirect_type_idx: Option<u32>,
+    indirect_variable_type_idx: Option<u32>,
+    indirect_variable_idx: Option<u32>,
+}
+
+impl CompiledCalls {
+    fn compile(grammar: tree_sitter::Language, source: &str) -> Result<Self, String> {
+        let query =
+            Query::new(&grammar, source).map_err(|e| format!("Failed to compile query: {e}"))?;
+        Ok(Self {
+            grammar,
+            callee_name_idx: query.capture_index_for_name("callee.name"),
+            call_idx: query.capture_index_for_name("call"),
+            method_call_idx: query.capture_index_for_name("method.call"),
+            static_call_idx: query.capture_index_for_name("static.call"),
+            constructor_idx: query.capture_index_for_name("constructor"),
+            import_name_idx: query.capture_index_for_name("import.name"),
+            import_default_idx: query.capture_index_for_name("import.default"),
+            import_namespace_idx: query.capture_index_for_name("import.namespace"),
+            inherits_name_idx: query.capture_index_for_name("inherits.name"),
+            implements_name_idx: query.capture_index_for_name("implements.name"),
+            constructor_type_idx: query.capture_index_for_name("constructor.type"),
+            excluded_name_idx: query.capture_index_for_name("excluded.name"),
+            indirect_type_idx: query.capture_index_for_name("indirect.type"),
+            indirect_variable_type_idx: query.capture_index_for_name("indirect.variable_type"),
+            indirect_variable_idx: query.capture_index_for_name("indirect.variable"),
+            query,
+        })
+    }
+}
+
+fn compiled_calls(language: Language) -> Result<Option<&'static CompiledCalls>> {
+    // Each expansion owns a separate slot, including C++ and Metal.
+    macro_rules! cached {
+        ($grammar:expr, $name:literal) => {{
+            static CALLS: OnceLock<Result<CompiledCalls, String>> = OnceLock::new();
+            CALLS.get_or_init(|| {
+                CompiledCalls::compile(
+                    $grammar.into(),
+                    include_str!(concat!("../queries/", $name, "-calls.scm")),
+                )
+            })
+        }};
+    }
+    let compiled = match language {
+        Language::TypeScript | Language::TypeScriptTsx => {
+            cached!(tree_sitter_typescript::LANGUAGE_TSX, "typescript")
+        }
+        Language::JavaScript | Language::JavaScriptJsx => {
+            cached!(tree_sitter_javascript::LANGUAGE, "javascript")
+        }
+        Language::Python => cached!(tree_sitter_python::LANGUAGE, "python"),
+        Language::Rust => cached!(tree_sitter_rust::LANGUAGE, "rust"),
+        Language::Swift => cached!(tree_sitter_swift::LANGUAGE, "swift"),
+        Language::Go => cached!(tree_sitter_go::LANGUAGE, "go"),
+        Language::Kotlin => cached!(tree_sitter_kotlin_ng::LANGUAGE, "kotlin"),
+        Language::Metal => cached!(tree_sitter_cpp::LANGUAGE, "metal"),
+        Language::Php => cached!(tree_sitter_php::LANGUAGE_PHP, "php"),
+        Language::Zig => cached!(tree_sitter_zig::LANGUAGE, "zig"),
+        Language::Gdscript => cached!(tree_sitter_gdscript::LANGUAGE, "gdscript"),
+        Language::Matlab => cached!(tree_sitter_matlab::LANGUAGE, "matlab"),
+        Language::Apex => cached!(tree_sitter_sfapex::apex::LANGUAGE, "apex"),
+        Language::Bash => cached!(tree_sitter_bash::LANGUAGE, "bash"),
+        Language::C => cached!(tree_sitter_c::LANGUAGE, "c"),
+        Language::Cpp => cached!(tree_sitter_cpp::LANGUAGE, "cpp"),
+        _ => return Ok(None),
+    };
+    compiled
+        .as_ref()
+        .map(Some)
+        .map_err(|error| anyhow!("{error}"))
+}
+
 pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>> {
     let language = Language::from_string(language_name);
-    let ts_language = match language {
-        Language::TypeScript | Language::TypeScriptTsx => {
-            tree_sitter_typescript::LANGUAGE_TSX.into()
-        }
-        Language::JavaScript | Language::JavaScriptJsx => tree_sitter_javascript::LANGUAGE.into(),
-        Language::Python => tree_sitter_python::LANGUAGE.into(),
-        Language::Rust => tree_sitter_rust::LANGUAGE.into(),
-        Language::Swift => tree_sitter_swift::LANGUAGE.into(),
-        Language::Go => tree_sitter_go::LANGUAGE.into(),
-        Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
-        Language::Metal => tree_sitter_cpp::LANGUAGE.into(),
-        Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
-        Language::Zig => tree_sitter_zig::LANGUAGE.into(),
-        Language::Gdscript => tree_sitter_gdscript::LANGUAGE.into(),
-        Language::Matlab => tree_sitter_matlab::LANGUAGE.into(),
-        Language::Apex => tree_sitter_sfapex::apex::LANGUAGE.into(),
-        Language::Bash => tree_sitter_bash::LANGUAGE.into(),
-        Language::C => tree_sitter_c::LANGUAGE.into(),
-        Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
-        _ => return Ok(vec![]),
+    let Some(calls) = compiled_calls(language)? else {
+        return Ok(Vec::new());
     };
-
     let mut parser = Parser::new();
     parser
-        .set_language(&ts_language)
+        .set_language(&calls.grammar)
         .map_err(|e| anyhow!("Failed to set language: {}", e))?;
-
     let tree = parser
         .parse(content, None)
         .ok_or_else(|| anyhow!("Parse failed"))?;
 
-    let query_source = match language {
-        Language::TypeScript | Language::TypeScriptTsx => {
-            include_str!("../queries/typescript-calls.scm")
-        }
-        Language::JavaScript | Language::JavaScriptJsx => {
-            include_str!("../queries/javascript-calls.scm")
-        }
-        Language::Python => include_str!("../queries/python-calls.scm"),
-        Language::Rust => include_str!("../queries/rust-calls.scm"),
-        Language::Swift => include_str!("../queries/swift-calls.scm"),
-        Language::Go => include_str!("../queries/go-calls.scm"),
-        Language::Kotlin => include_str!("../queries/kotlin-calls.scm"),
-        Language::Metal => include_str!("../queries/metal-calls.scm"),
-        Language::Php => include_str!("../queries/php-calls.scm"),
-        Language::Zig => include_str!("../queries/zig-calls.scm"),
-        Language::Gdscript => include_str!("../queries/gdscript-calls.scm"),
-        Language::Matlab => include_str!("../queries/matlab-calls.scm"),
-        Language::Apex => include_str!("../queries/apex-calls.scm"),
-        Language::Bash => include_str!("../queries/bash-calls.scm"),
-        Language::C => include_str!("../queries/c-calls.scm"),
-        Language::Cpp => include_str!("../queries/cpp-calls.scm"),
-        _ => return Ok(vec![]),
-    };
-
-    let query = Query::new(&ts_language, query_source)
-        .map_err(|e| anyhow!("Failed to compile query: {}", e))?;
-
-    let callee_name_idx = query.capture_index_for_name("callee.name");
-    let call_idx = query.capture_index_for_name("call");
-    let method_call_idx = query.capture_index_for_name("method.call");
-    let static_call_idx = query.capture_index_for_name("static.call");
-    let constructor_idx = query.capture_index_for_name("constructor");
-    let import_name_idx = query.capture_index_for_name("import.name");
-    let import_default_idx = query.capture_index_for_name("import.default");
-    let import_namespace_idx = query.capture_index_for_name("import.namespace");
-    let inherits_name_idx = query.capture_index_for_name("inherits.name");
-    let implements_name_idx = query.capture_index_for_name("implements.name");
-    let constructor_type_idx = query.capture_index_for_name("constructor.type");
-    let excluded_name_idx = query.capture_index_for_name("excluded.name");
-    let indirect_type_idx = query.capture_index_for_name("indirect.type");
-    let indirect_variable_type_idx = query.capture_index_for_name("indirect.variable_type");
-    let indirect_variable_idx = query.capture_index_for_name("indirect.variable");
+    let CompiledCalls {
+        ref query,
+        callee_name_idx,
+        call_idx,
+        method_call_idx,
+        static_call_idx,
+        constructor_idx,
+        import_name_idx,
+        import_default_idx,
+        import_namespace_idx,
+        inherits_name_idx,
+        implements_name_idx,
+        constructor_type_idx,
+        excluded_name_idx,
+        indirect_type_idx,
+        indirect_variable_type_idx,
+        indirect_variable_idx,
+        ..
+    } = *calls;
     let text_bytes = content.as_bytes();
 
     let root = tree.root_node();
@@ -204,7 +250,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let mut indirect_types = HashSet::new();
     if excluded_name_idx.is_some() || indirect_type_idx.is_some() {
         let mut exclusion_cursor = QueryCursor::new();
-        let mut exclusion_matches = exclusion_cursor.captures(&query, tree.root_node(), text_bytes);
+        let mut exclusion_matches = exclusion_cursor.captures(query, root, text_bytes);
         while let Some((match_, _)) = exclusion_matches.next() {
             for capture in match_.captures {
                 if excluded_name_idx == Some(capture.index) {
@@ -233,7 +279,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
         && indirect_variable_idx.is_some()
     {
         let mut variable_cursor = QueryCursor::new();
-        let mut variables = variable_cursor.captures(&query, tree.root_node(), text_bytes);
+        let mut variables = variable_cursor.captures(query, root, text_bytes);
         while let Some((match_, _)) = variables.next() {
             let mut variable_type = None;
             let mut variable_name = None;
@@ -268,7 +314,7 @@ pub fn extract_calls(content: &str, language_name: &str) -> Result<Vec<CallSite>
     let mut cursor = QueryCursor::new();
     let mut calls = Vec::new();
 
-    let mut captures_iter = cursor.captures(&query, tree.root_node(), text_bytes);
+    let mut captures_iter = cursor.captures(query, root, text_bytes);
 
     while let Some((match_, _)) = captures_iter.next() {
         // A `foo(...)` reference is a call only when the PHP pipe invokes it,
@@ -481,6 +527,43 @@ fn call_type_specificity(call_type: CallType) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cpp_and_metal_queries_keep_distinct_ordered_calls_across_threads() {
+        const SOURCE: &str = "void f() { ns::helper(); direct(); }";
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                scope.spawn(|| {
+                    for (language, qualified, column, kind) in [
+                        ("cpp", "ns::helper", 11, CallType::Call),
+                        ("metal", "helper", 15, CallType::MethodCall),
+                        ("C++", "ns::helper", 11, CallType::Call),
+                    ] {
+                        let sites = extract_calls(SOURCE, language).unwrap();
+                        let observed: Vec<_> = sites
+                            .iter()
+                            .map(|site| {
+                                (
+                                    site.callee_name.as_str(),
+                                    site.line,
+                                    site.column,
+                                    site.call_type,
+                                    site.confidence,
+                                )
+                            })
+                            .collect();
+                        assert_eq!(
+                            observed,
+                            [
+                                (qualified, 1, column, kind, Confidence::Direct),
+                                ("direct", 1, 25, CallType::Call, Confidence::Direct),
+                            ]
+                        );
+                    }
+                });
+            }
+        });
+    }
 
     #[test]
     fn test_extract_direct_calls() {

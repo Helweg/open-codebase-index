@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -284,10 +284,23 @@ describe("indexer checkpoint resume", () => {
       .flatMap((record) => record.chunks);
     expect(persistedChunks.length).toBeGreaterThan(0);
     expect(persistedChunks.some((chunk) => chunk.content?.includes("triggerFailure"))).toBe(true);
+    const failedIds = Array.from(readFailedBatchRecords<{ id: string }>(failedBatchesPath))
+      .flatMap((record) => record.chunks.map(({ id }) => id));
+    const checkpoint = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+    try {
+      const published = new Set(checkpoint.getBranchChunkIds("default"));
+      for (const id of failedIds) {
+        expect(checkpoint.getChunk(id)).not.toBeNull();
+        expect(published.has(id)).toBe(false);
+      }
+    } finally {
+      checkpoint.close();
+    }
 
     failEmbeddingText = null;
     const callsBeforeRun2 = fetchSpy.mock.calls.length;
-    const run2Stats = await indexer.index();
+    await indexer.close();
+    const run2Stats = await createIndexer(1).index();
     expect(run2Stats.failedChunks).toBe(0);
     expect(run2Stats.indexedChunks).toBeGreaterThan(0);
 
@@ -300,6 +313,11 @@ describe("indexer checkpoint resume", () => {
 
     const finalDb = Database.openReadOnly(path.join(indexDir, "codebase.db"));
     try {
+      const published = new Set(finalDb.getBranchChunkIds("default"));
+      for (const id of failedIds) {
+        expect(finalDb.getChunk(id)).not.toBeNull();
+        expect(published.has(id)).toBe(true);
+      }
       for (const filePath of ["src/alpha.ts", "src/beta.ts", "src/gamma.ts"]) {
         expect(finalDb.getChunksByFile(filePath).length).toBeGreaterThan(0);
       }
@@ -375,7 +393,8 @@ describe("indexer checkpoint resume", () => {
 
     // The checkpointed file's chunks must survive in the branch catalog after
     // the resume, even though the file itself is skipped as unchanged.
-    const resumedStats = await indexer.index();
+    await indexer.close();
+    const resumedStats = await createIndexer(1).index();
     expect(resumedStats.failedChunks).toBe(0);
 
     const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
@@ -518,6 +537,111 @@ describe("indexer checkpoint resume", () => {
     fs.rmSync(projectBDir, { recursive: true, force: true });
     fs.rmSync(kbDir, { recursive: true, force: true });
     fs.rmSync(tempHome, { recursive: true, force: true });
+  });
+
+  it("refreshes only the active catalog while shared rows and a foreign main graph survive", async () => {
+    const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "checkpoint-catalog-home-"));
+    vi.stubEnv("HOME", tempHome);
+    vi.stubEnv("USERPROFILE", tempHome);
+    const { projectBDir, kbDir } = setupGlobalScope();
+    const model = "checkpoint-test-model";
+    const alpha = path.join(projectDir, "src", "alpha.ts");
+    const bonus = path.join(projectDir, "src", "bonus.ts");
+    const beta = path.join(projectBDir, "src", "beta.ts");
+    const shared = path.join(kbDir, "docs", "shared.ts");
+    function git(root: string, ...args: string[]): void {
+      execFileSync("git", ["-c", "core.hooksPath=/dev/null", ...args], { cwd: root, stdio: "pipe" });
+    }
+    function catalog() {
+      const db = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+      try {
+        return Object.fromEntries(db.getAllBranches().map((branch) => [
+          branch, {
+            chunks: db.getBranchChunkIds(branch).sort().map((id) => {
+              const chunk = db.getChunk(id);
+              expect(chunk?.chunkId).toBe(id);
+              return chunk!;
+            }),
+            symbols: db.getSymbolsForBranch(branch).sort((a, b) => a.id.localeCompare(b.id)),
+          },
+        ]));
+      } finally {
+        db.close();
+      }
+    }
+    try {
+      fs.writeFileSync(beta, "export function betaTarget() { return 7; }\nexport function betaCaller() { return betaTarget(); }\n");
+      for (const root of [projectDir, projectBDir]) {
+        git(root, "init", "-q", "-b", "main");
+        git(root, "add", "src");
+        git(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid",
+          "commit", "--no-gpg-sign", "-qm", "Fixture");
+      }
+      const a = createGlobalIndexer(projectDir, model, kbDir);
+      await a.index();
+      git(projectDir, "switch", "-qc", "inactive");
+      await a.index();
+      git(projectDir, "switch", "-q", "main");
+      const b = createGlobalIndexer(projectBDir, model, kbDir);
+      await b.index();
+      const graph = await b.getCallers("betaTarget");
+      expect(graph.map(({ fromSymbolName }) => fromSymbolName)).toEqual(["betaCaller"]);
+      await b.close();
+
+      const aKey = `${projectIdentityHash(projectDir)}:main`;
+      const inactiveKey = `${projectIdentityHash(projectDir)}:inactive`;
+      const bKey = `${projectIdentityHash(projectBDir)}:main`;
+      const initial = catalog();
+      expect(Object.keys(initial).sort()).toEqual([aKey, inactiveKey, bKey].sort());
+      const matchesFile = (file: string) => (row: { filePath: string }): boolean =>
+        fs.existsSync(row.filePath) && canonicalPath(row.filePath) === canonicalPath(file);
+      const sharedChunk = initial[aKey]!.chunks.find(matchesFile(shared));
+      const sharedSymbol = initial[aKey]!.symbols.find(matchesFile(shared));
+      expect(sharedChunk).toBeDefined();
+      expect(sharedSymbol).toBeDefined();
+      expect(initial[bKey]!.chunks).toContainEqual(sharedChunk);
+      expect(initial[bKey]!.symbols).toContainEqual(sharedSymbol);
+      await a.index();
+      expect(catalog()).toEqual(initial);
+
+      writeSourceFile(bonus, ["onlyOnActiveBranch"]);
+      const addition = await a.index();
+      const added = catalog();
+      const bonusChunks = added[aKey]!.chunks.filter(matchesFile(bonus));
+      const bonusSymbols = added[aKey]!.symbols.filter(matchesFile(bonus));
+      expect(bonusChunks.length, JSON.stringify(addition)).toBeGreaterThan(0);
+      expect(bonusSymbols.map(({ name }) => name)).toContain("onlyOnActiveBranch");
+      fs.unlinkSync(bonus);
+      const deletion = await a.index();
+      expect(deletion.totalChunks).toBe(0);
+      expect(deletion.removedChunks).toBeGreaterThan(0);
+      expect(catalog()).toEqual(initial);
+
+      const oldSymbol = initial[aKey]!.symbols.find(({ name }) => name === "alphaOne")!;
+      writeSourceFile(alpha, ["alphaRenamed", "alphaTwo"]);
+      await a.index();
+      await a.close();
+      const final = catalog();
+      expect(final[aKey]!.symbols).not.toContainEqual(oldSymbol);
+      expect(final[aKey]!.symbols.some(({ name, id }) => name === "alphaRenamed" && id !== oldSymbol.id)).toBe(true);
+      expect(final[inactiveKey]).toEqual(initial[inactiveKey]);
+      expect(final[bKey]).toEqual(initial[bKey]);
+      const reopened = createGlobalIndexer(projectBDir, model, kbDir);
+      expect(await reopened.getCallers("betaTarget")).toEqual(graph);
+      const rows = Database.openReadOnly(path.join(indexDir, "codebase.db"));
+      try {
+        for (const chunk of bonusChunks) expect(rows.getChunk(chunk.chunkId)).toBeNull();
+        expect(rows.getSymbolsByFile(bonusSymbols[0]!.filePath)).toEqual([]);
+        expect(rows.getSymbolsByFile(oldSymbol.filePath)).toContainEqual(oldSymbol);
+      } finally {
+        rows.close();
+      }
+    } finally {
+      await Promise.all(indexers.map((indexer) => indexer.close()));
+      fs.rmSync(projectBDir, { recursive: true, force: true });
+      fs.rmSync(kbDir, { recursive: true, force: true });
+      fs.rmSync(tempHome, { recursive: true, force: true });
+    }
   });
 
   it("retryFailedBatches does not close an interrupted strategy migration", async () => {

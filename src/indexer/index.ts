@@ -1835,23 +1835,58 @@ export class Indexer {
     }
   }
 
+  private publishBranchMembership(
+    before: ReadonlySet<string>,
+    staged: ReadonlySet<string>,
+    target: ReadonlySet<string>,
+    remove: (ids: string[]) => void,
+    add: (ids: string[]) => void,
+  ): string[] {
+    // Only previously published IDs are backing-row cleanup candidates.
+    const retired: string[] = [];
+    for (const id of before) {
+      if (!target.has(id)) retired.push(id);
+    }
+    let excludedStaged: string[] | undefined;
+    for (const id of staged) {
+      if (!target.has(id)) (excludedStaged ??= []).push(id);
+    }
+    if (excludedStaged) {
+      for (const id of retired) excludedStaged.push(id);
+      remove(excludedStaged);
+    } else if (retired.length > 0) {
+      remove(retired);
+    }
+    const added: string[] = [];
+    for (const id of target) {
+      if (!before.has(id) && !staged.has(id)) added.push(id);
+    }
+    if (added.length > 0) add(added);
+    return retired;
+  }
+
   private replaceBranchCatalog(
     store: VectorStore | null,
     invertedIndex: InvertedIndex,
     database: Database,
     branchCatalogKey: string,
-    previousChunkIds: readonly string[],
-    currentChunkIds: readonly string[],
-    previousSymbolIds: readonly string[],
-    currentSymbolIds: readonly string[],
+    previousChunkIds: ReadonlySet<string>,
+    stagedChunkIds: ReadonlySet<string>,
+    currentChunkIds: ReadonlySet<string>,
+    previousSymbolIds: ReadonlySet<string>,
+    stagedSymbolIds: ReadonlySet<string>,
+    currentSymbolIds: ReadonlySet<string>,
   ): boolean {
-    database.clearBranch(branchCatalogKey);
-    database.addChunksToBranchBatch(branchCatalogKey, [...currentChunkIds]);
-    database.clearBranchSymbols(branchCatalogKey);
-    database.addSymbolsToBranchBatch(branchCatalogKey, [...currentSymbolIds]);
-
-    const currentChunkIdSet = new Set(currentChunkIds);
-    const removedChunkCandidates = previousChunkIds.filter((chunkId) => !currentChunkIdSet.has(chunkId));
+    const removedChunkCandidates = this.publishBranchMembership(
+      previousChunkIds, stagedChunkIds, currentChunkIds,
+      (ids) => database.deleteBranchChunksForBranch(branchCatalogKey, ids),
+      (ids) => database.addChunksToBranchBatch(branchCatalogKey, ids),
+    );
+    const removedSymbolCandidates = this.publishBranchMembership(
+      previousSymbolIds, stagedSymbolIds, currentSymbolIds,
+      (ids) => database.deleteBranchSymbolsForBranch(branchCatalogKey, ids),
+      (ids) => database.addSymbolsToBranchBatch(branchCatalogKey, ids),
+    );
     const referencedChunkIds = new Set(database.getReferencedChunkIds(removedChunkCandidates));
     const removableChunkIds = removedChunkCandidates.filter((chunkId) => !referencedChunkIds.has(chunkId));
     if (removableChunkIds.length > 0) {
@@ -1862,8 +1897,6 @@ export class Indexer {
       database.deleteChunksByIds(removableChunkIds);
     }
 
-    const currentSymbolIdSet = new Set(currentSymbolIds);
-    const removedSymbolCandidates = previousSymbolIds.filter((symbolId) => !currentSymbolIdSet.has(symbolId));
     const referencedSymbolIds = new Set(database.getReferencedSymbolIds(removedSymbolCandidates));
     const removableSymbolIds = removedSymbolCandidates.filter((symbolId) => !referencedSymbolIds.has(symbolId));
     database.clearCallEdgeTargetsForSymbols(removableSymbolIds);
@@ -3707,7 +3740,7 @@ export class Indexer {
     if (
       keywordChanged || structuralGenerationChanged || (isStructural && databaseChanged) || retryDue("keyword") ||
       (!existsSync(invertedIndexPath) && (isStructural
-        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        ? (this.database?.hasChunks() ?? false)
         : (this.store?.count() ?? 0) > 0))
     ) {
       if (existsSync(invertedIndexPath)) {
@@ -3715,13 +3748,13 @@ export class Indexer {
           const invertedIndex = new InvertedIndex(invertedIndexPath);
           invertedIndex.load();
           if (isStructural) {
-            const chunkCount = this.database?.getStats()?.chunkCount ?? 0;
+            const hasChunks = this.database?.hasChunks() ?? false;
             const storedGeneration = this.database?.getMetadata("index.structuralGeneration") ?? null;
             const publishedGeneration = this.readStructuralPublishedGeneration();
-            if (chunkCount > 0 && invertedIndex.getDocumentCount() === 0) {
+            if (hasChunks && invertedIndex.getDocumentCount() === 0) {
               throw new Error("Structural keyword index is empty for the committed chunk catalog.");
             }
-            if (chunkCount > 0 && storedGeneration !== publishedGeneration) {
+            if (hasChunks && storedGeneration !== publishedGeneration) {
               throw new Error("Structural keyword publication generation does not match SQLite.");
             }
           }
@@ -3733,7 +3766,7 @@ export class Indexer {
           setIssue("keyword", this.getKeywordReadIssueMessage(), error);
         }
       } else if ((isStructural
-        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        ? (this.database?.hasChunks() ?? false)
         : (this.store?.count() ?? 0) > 0) || issues.has("keyword")) {
         if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
         setIssue("keyword", this.getKeywordReadIssueMessage());
@@ -4063,12 +4096,10 @@ export class Indexer {
       const storedGeneration = this.database.getMetadata("index.structuralGeneration");
       const publishedGeneration = this.readStructuralPublishedGeneration();
       if (
-        (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)
-        && (this.database.getStats()?.chunkCount ?? 0) > 0
+        (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0 ||
+          storedGeneration !== publishedGeneration)
+        && this.database.hasChunks()
       ) {
-        this.structuralKeywordRebuildRequired = true;
-      }
-      if (storedGeneration !== publishedGeneration && (this.database.getStats()?.chunkCount ?? 0) > 0) {
         this.structuralKeywordRebuildRequired = true;
       }
       if (!this.invertedIndex.hasCurrentTokenizer()) {
@@ -4076,7 +4107,7 @@ export class Indexer {
       }
       if (this.structuralKeywordRebuildRequired) {
         this.logger.info("Rebuilding structural keyword index from the persisted chunk catalog", {
-          chunks: this.database.getStats()?.chunkCount ?? 0,
+          chunks: this.database.getChunkCount(),
         });
         this.rebuildStructuralKeywordFromCatalog(this.invertedIndex, this.database);
         this.structuralKeywordRebuildRequired = false;
@@ -4103,13 +4134,13 @@ export class Indexer {
       }
       const storedGeneration = this.database.getMetadata("index.structuralGeneration");
       const publishedGeneration = this.readStructuralPublishedGeneration();
-      const structuralChunkCount = this.database.getStats()?.chunkCount ?? 0;
-      if (structuralChunkCount > 0 && (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)) {
+      const hasChunks = this.database.hasChunks();
+      if (hasChunks && (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)) {
         this.recordReadIssue(
           "keyword",
           "Structural keyword index is missing or empty for the committed chunk catalog. Run index_codebase to recover it.",
         );
-      } else if (storedGeneration !== publishedGeneration && structuralChunkCount > 0) {
+      } else if (storedGeneration !== publishedGeneration && hasChunks) {
         this.recordReadIssue(
           "keyword",
           "Structural keyword publication does not match the committed chunk catalog. Run index_codebase to recover it.",
@@ -4410,10 +4441,9 @@ export class Indexer {
   }
 
   private hasStoredIndexData(): boolean {
-    const stats = this.database?.getStats();
+    const hasDatabaseData = this.database?.hasChunksOrSymbols() ?? false;
     return (this.store?.count() ?? 0) > 0
-      || (stats?.chunkCount ?? 0) > 0
-      || (stats?.symbolCount ?? 0) > 0
+      || hasDatabaseData
       || this.fileHashCache.size > 0;
   }
 
@@ -4970,8 +5000,25 @@ export class Indexer {
     const branchCatalogKey = this.getBranchCatalogKey();
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
-    const previousBranchSymbolIds = database.getBranchSymbolIds(branchCatalogKey);
-    const previousBranchSymbolIdSet = new Set(previousBranchSymbolIds);
+    const previousBranchSymbolIdSet = new Set(database.getBranchSymbolIds(branchCatalogKey));
+    // The index mutation lease covers all writes to these memberships, even
+    // when a checkpoint commits and opens a new SQLite transaction.
+    const stagedChunkIds = new Set<string>();
+    const stagedSymbolIds = new Set<string>();
+    const stageChunks = (chunks: readonly PendingChunk[]): void => {
+      const ids = chunks.map((chunk) => chunk.id);
+      database.addChunksToBranchBatch(branchCatalogKey, ids);
+      for (const id of ids) {
+        if (!previousBranchChunkIdSet.has(id)) stagedChunkIds.add(id);
+      }
+    };
+    const stageSymbols = (symbols: readonly SymbolData[]): void => {
+      const ids = symbols.map((symbol) => symbol.id);
+      database.addSymbolsToBranchBatch(branchCatalogKey, ids);
+      for (const id of ids) {
+        if (!previousBranchSymbolIdSet.has(id)) stagedSymbolIds.add(id);
+      }
+    };
     const restrictExistingChunksToBranch = this.branchNameOverride !== undefined
       || previousBranchChunkIds.length > 0
       || database.getAllBranches().length > 0;
@@ -5841,10 +5888,7 @@ export class Indexer {
         }
         if (symbolBatch.length > 0) {
           database.upsertSymbolsBatch(symbolBatch);
-          database.addSymbolsToBranchBatch(
-            this.getBranchCatalogKey(),
-            symbolBatch.map((symbol) => symbol.id),
-          );
+          stageSymbols(symbolBatch);
         }
         if (edgeBatch.length > 0) {
           database.upsertCallEdgesBatch(edgeBatch);
@@ -5865,7 +5909,7 @@ export class Indexer {
             invertedIndex.removeChunk(chunk.id);
             invertedIndex.addChunk(chunk.id, chunk.content);
           }
-          database.addChunksToBranchBatch(branchCatalogKey, pendingChunks.map((chunk) => chunk.id));
+          stageChunks(pendingChunks);
           stats.indexedChunks += pendingChunks.length;
         } else if (pendingChunks.length > 0) {
           onProgress?.({
@@ -5893,12 +5937,7 @@ export class Indexer {
             setPhase,
             heartbeat,
             onProviderError,
-            onSucceeded: (succeededChunks) => {
-              database.addChunksToBranchBatch(
-                this.getBranchCatalogKey(),
-                succeededChunks.map((chunk) => chunk.id),
-              );
-            },
+            onSucceeded: stageChunks,
             onProgress: (batchProgress) => onProgress?.({
               phase: "embedding",
               filesProcessed: unchangedFilePaths.size + processedChangedFiles,
@@ -5995,10 +6034,7 @@ export class Indexer {
           heartbeat,
           onProviderError,
           onSucceeded: (succeededChunks) => {
-            database.addChunksToBranchBatch(
-              this.getBranchCatalogKey(),
-              succeededChunks.map((chunk) => chunk.id),
-            );
+            stageChunks(succeededChunks);
             for (const chunk of succeededChunks) {
               failedProcessing.latestById.delete(chunk.id);
               resolvedRetryChunkIds.add(chunk.id);
@@ -6083,10 +6119,8 @@ export class Indexer {
           invertedIndex,
           database,
           branchCatalogKey,
-          previousBranchChunkIds,
-          Array.from(currentChunkIds),
-          previousBranchSymbolIds,
-          Array.from(allSymbolIds),
+          previousBranchChunkIdSet, stagedChunkIds, currentChunkIds,
+          previousBranchSymbolIdSet, stagedSymbolIds, allSymbolIds,
         );
         const vectorPath = path.join(this.indexPath, "vectors");
         const shouldFingerprintLegacyPair = !isStructural && !requireLoadedCapability(store, "vector store").hasFingerprint() &&
@@ -6138,10 +6172,8 @@ export class Indexer {
           invertedIndex,
           database,
           branchCatalogKey,
-          previousBranchChunkIds,
-          Array.from(currentChunkIds),
-          previousBranchSymbolIds,
-          Array.from(allSymbolIds),
+          previousBranchChunkIdSet, stagedChunkIds, currentChunkIds,
+          previousBranchSymbolIdSet, stagedSymbolIds, allSymbolIds,
         );
         if (!isStructural) requireLoadedCapability(store, "vector store").save();
         if (!isStructural) this.saveInvertedIndex(invertedIndex);
@@ -6187,20 +6219,19 @@ export class Indexer {
         totalChunks: stats.totalChunks,
       });
 
-      const branchChunkIds = Array.from(currentChunkIds).filter((chunkId) => {
-        const isNewlyFailed = failedChunkIds.has(chunkId) && !retryableChunksWithExistingData.has(chunkId);
-        const isForcedFailed = forceScopedReembed && failedForcedChunkIds.has(chunkId);
-        return !isNewlyFailed && !isForcedFailed;
-      });
+      for (const chunkId of failedChunkIds) {
+        if (!retryableChunksWithExistingData.has(chunkId)) currentChunkIds.delete(chunkId);
+      }
+      if (forceScopedReembed) {
+        for (const chunkId of failedForcedChunkIds) currentChunkIds.delete(chunkId);
+      }
       this.replaceBranchCatalog(
         store,
         invertedIndex,
         database,
         branchCatalogKey,
-        previousBranchChunkIds,
-        branchChunkIds,
-        previousBranchSymbolIds,
-        Array.from(allSymbolIds),
+        previousBranchChunkIdSet, stagedChunkIds, currentChunkIds,
+        previousBranchSymbolIdSet, stagedSymbolIds, allSymbolIds,
       );
 
       if (!isStructural) requireLoadedCapability(store, "vector store").save();
@@ -6962,7 +6993,7 @@ export class Indexer {
       try {
         startupWarning = database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? "";
         branchReadiness = this.getBranchReadiness(database);
-        if (isStructural) indexedChunkCount = database.getStats().chunkCount;
+        if (isStructural) indexedChunkCount = database.getChunkCount();
         const hasBranchData = branchReadiness.activeCatalogChunkCount > 0
           || (branchReadiness.state === "legacy" && indexedChunkCount > 0);
         migrationRequired = hasBranchData && !this.areBranchMigrationVersionsCurrent(database);
