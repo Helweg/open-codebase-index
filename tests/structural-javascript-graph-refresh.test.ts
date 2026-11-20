@@ -120,7 +120,7 @@ describe("project structural JS/TS graph refresh", () => {
     git("config", "commit.gpgsign", "false");
     put("app.js", "import { selected } from './outer.js';\nexport function run() { return selected() + absent(); }");
     put("outer.ts", "export * from './barrel.js';");
-    put("left.ts", "export function left() { return 1; }");
+    put("left.ts", "export function left() { return leftOnly(); }");
     put("right.ts", "export function right() { return 2; }");
     put("third.ts", "export function third() { return 3; }");
     barrel("left");
@@ -134,7 +134,8 @@ describe("project structural JS/TS graph refresh", () => {
     await refresh();
     git("switch", "-c", "other");
     barrel("right");
-    git("add", "barrel.ts");
+    put("right.ts", "export function right() { return 23; }");
+    git("add", "barrel.ts", "right.ts");
     git("commit", "-m", "Other barrel target");
     await refresh();
     git("switch", "main");
@@ -144,6 +145,40 @@ describe("project structural JS/TS graph refresh", () => {
     await seedBothBranches();
     expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: true, target: { file: "left.ts" } });
     expect(callFrom("other", "run", "selected")).toMatchObject({ resolved: true, target: { file: "right.ts" } });
+    const db = Database.openReadOnly(catalogPath(indexRoot));
+    try {
+      const caller = db.getSymbolsForFiles(["app.js"], "main").find(({ name }) => name === "run")!;
+      expect(db.getSymbolsForFiles(["app.js"], "other")).toContainEqual(caller);
+      const left = db.getSymbolsForFiles(["left.ts"], "main").find(({ name }) => name === "left")!;
+      const right = db.getSymbolsForFiles(["right.ts"], "other").find(({ name }) => name === "right")!;
+      expect(db.getCallers("left", "main", "Call")).toEqual([
+        expect.objectContaining({ fromSymbolId: caller.id, toSymbolId: left.id, targetName: "selected" }),
+      ]);
+      expect(db.getCallersWithContext("right", "other", "Call")).toEqual([
+        expect.objectContaining({ fromSymbolName: "run", fromSymbolFilePath: "app.js", toSymbolId: right.id }),
+      ]);
+      expect(db.getCallers("left", "other", "Call")).toEqual([]);
+      expect(db.findShortestPath("run", "leftOnly", "main").map(({ symbolName }) => symbolName))
+        .toEqual(["run", "left", "leftOnly"]);
+      expect(db.findShortestPath("run", "leftOnly", "other")).toEqual([]);
+      expect(db.getTransitiveReachability([caller.id], "other", "callees")).toEqual([
+        expect.objectContaining({ symbolId: right.id, depth: 1 }),
+      ]);
+      expect(db.getTransitiveReachability([left.id], "main", "callers")).toEqual([
+        expect.objectContaining({ symbolId: caller.id, depth: 1 }),
+      ]);
+      expect(db.getTransitiveReachability([left.id], "other", "callers")).toEqual([]);
+      for (const [branch, target] of [["main", left], ["other", right]] as const) {
+        expect(db.computeCentrality(branch).find(({ symbolId }) => symbolId === target.id)?.callerCount).toBe(1);
+        const assignments = db.detectCommunities(branch);
+        const members = assignments.filter(({ communityId }) =>
+          communityId === assignments.find(({ symbolId }) => symbolId === caller.id)?.communityId
+        );
+        expect(members.map(({ symbolId }) => symbolId).sort()).toEqual([caller.id, target.id].sort());
+      }
+    } finally {
+      db.close();
+    }
     const otherBefore = persistedGraph(indexRoot, "other");
     barrel("third");
     await refresh();
@@ -154,6 +189,41 @@ describe("project structural JS/TS graph refresh", () => {
     git("restore", "barrel.ts");
     git("switch", "other");
     expect(persistedGraph(indexRoot, "other")).toEqual(await cleanGraph("other"));
+  });
+
+  it("reuses a complete outgoing set for an identical branch and keeps it after its original owner drops it", async () => {
+    await refresh();
+    const original = persistedGraph(indexRoot, "main");
+    const first = Database.openReadOnly(catalogPath(indexRoot));
+    const initial = first.getStats();
+    first.close();
+    git("switch", "-c", "identical");
+    await refresh();
+    expect(persistedGraph(indexRoot, "identical")).toEqual(original);
+    const second = Database.openReadOnly(catalogPath(indexRoot));
+    try {
+      expect(second.getStats()).toMatchObject({
+        symbolCount: initial.symbolCount, callEdgeCount: initial.callEdgeCount,
+      });
+    } finally {
+      second.close();
+    }
+    git("switch", "main");
+    barrel("right");
+    await refresh();
+    expect(callFrom("main", "run", "selected")).toMatchObject({ target: { file: "right.ts" } });
+    expect(persistedGraph(indexRoot, "identical")).toEqual(original);
+    barrel("left");
+    await refresh();
+    expect(persistedGraph(indexRoot, "main")).toEqual(original);
+    const reverted = Database.openReadOnly(catalogPath(indexRoot));
+    try {
+      expect(reverted.getStats()).toMatchObject({
+        symbolCount: initial.symbolCount, callEdgeCount: initial.callEdgeCount,
+      });
+    } finally {
+      reverted.close();
+    }
   });
 
   it("upgrades a legacy shared caller on ordinary refresh, without rebuilding or overwriting the other branch", async () => {

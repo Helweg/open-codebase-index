@@ -46,6 +46,22 @@ pub struct EmbeddingBatchItem {
 }
 
 #[napi(object)]
+pub struct BranchCallSetData {
+    pub from_symbol_id: String,
+    pub sites: Vec<BranchCallSiteData>,
+}
+
+#[napi(object)]
+pub struct BranchCallSiteData {
+    pub target_name: String,
+    pub to_symbol_id: Option<String>,
+    pub call_type: String,
+    pub confidence: String,
+    pub line: u32,
+    pub col: u32,
+}
+
+#[napi(object)]
 pub struct DatabaseStats {
     pub embedding_count: u32,
     pub chunk_count: u32,
@@ -813,6 +829,36 @@ impl Database {
             .collect();
         self.with_conn_mut(|conn| {
             db::upsert_call_edges_batch(conn, &rows).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
+    pub fn replace_branch_call_sets(
+        &self,
+        branch: String,
+        sets: Vec<BranchCallSetData>,
+    ) -> Result<()> {
+        let sets = sets
+            .into_iter()
+            .map(|set| db::BranchCallSet {
+                from_symbol_id: set.from_symbol_id,
+                sites: set
+                    .sites
+                    .into_iter()
+                    .map(|site| db::BranchCallSite {
+                        target_name: site.target_name,
+                        to_symbol_id: site.to_symbol_id,
+                        call_type: site.call_type,
+                        confidence: site.confidence,
+                        line: site.line,
+                        col: site.col,
+                    })
+                    .collect(),
+            })
+            .collect();
+        self.with_conn_mut(|conn| {
+            db::replace_branch_call_sets(conn, &branch, sets)
+                .map_err(|error| Error::from_reason(error.to_string()))
         })
     }
 

@@ -35,6 +35,7 @@ import {
   estimateTokens,
 } from "../native/index.js";
 import type { ParsedFile, SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CommunityCouplingData, CentralityData } from "../native/index.js";
+import type { BranchCallSet } from "../native/types.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
@@ -224,7 +225,7 @@ const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "12";
-const BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION = "1";
+const BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION = "2";
 const JAVASCRIPT_GRAPH_OWNERSHIP_KEY = "index.javaScriptGraphOwnership";
 const JAVASCRIPT_GRAPH_DEPENDENCIES_KEY = "index.javaScriptGraphDependencies";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
@@ -1520,10 +1521,12 @@ export class Indexer {
     this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
   }
 
-  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string, javaScriptNamespace?: string): SymbolData[] {
+  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string, shareJavaScript = false): SymbolData[] {
+    const shared = shareJavaScript && isJavaScriptFamilyFilePath(parsed.path);
     let preparedNamespace: string | null;
-    if (javaScriptNamespace && isJavaScriptFamilyFilePath(parsed.path)) {
-      preparedNamespace = javaScriptNamespace;
+    if (shared) {
+      // Different from any legacy symbol, but identical across branches.
+      preparedNamespace = "structural-js:shared";
     } else if (this.config.indexing.scipTypeScript.enabled) {
       preparedNamespace = hashContent(this.getBranchCatalogKey()).slice(0, 16);
     } else {
@@ -1535,7 +1538,8 @@ export class Indexer {
         const symbolId = `sym_${hashContent(
           (preparedNamespace ? `${preparedNamespace}:` : "")
           + parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":"
-          + parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":" + sourceHash,
+          + parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":"
+          + (shared ? `${parsedSymbol.endLine}:${parsedSymbol.endCol}:` : "") + sourceHash,
         ).slice(0, 16)}`;
         return {
           id: symbolId,
@@ -5037,11 +5041,6 @@ export class Indexer {
     const branchCatalogKey = this.getBranchCatalogKey();
     const projectStructural = isStructural && this.config.scope === "project";
     const trackJavaScriptDependencies = this.usesBranchLocalJavaScriptGraph();
-    // Outgoing edge IDs contain the caller symbol ID. Give each branch its own
-    // JS/TS symbols so identical callers can have different targets without a schema change.
-    const javaScriptNamespace = trackJavaScriptDependencies
-      ? hashContent(`structural-js:${branchCatalogKey}`).slice(0, 16)
-      : undefined;
     const javaScriptOwnershipKey = projectStructural ? this.getJavaScriptGraphOwnershipMetadataKey() : undefined;
     const javaScriptDependencyKey = projectStructural
       ? this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_DEPENDENCIES_KEY)
@@ -5615,7 +5614,7 @@ export class Indexer {
         )[0];
         return {
           content,
-          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash, javaScriptNamespace) : [],
+          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash, trackJavaScriptDependencies) : [],
           moduleSyntax: parsed?.moduleSyntax,
         };
       },
@@ -5787,6 +5786,7 @@ export class Indexer {
         const symbolBatch: SymbolData[] = [];
         const symbolBatchIds = new Set<string>();
         const edgeBatch: CallEdgeData[] = [];
+        const sharedCallSets: BranchCallSet[] = [];
 
         for (const entry of parsedFiles) {
           const parsed = entry.prepared;
@@ -5898,13 +5898,21 @@ export class Indexer {
             });
           }
 
-          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash, javaScriptNamespace);
+          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash, trackJavaScriptDependencies);
+          const fileCallSets = trackJavaScriptDependencies && isJavaScriptFamilyFilePath(parsed.path)
+            ? new Map<string, BranchCallSet>()
+            : undefined;
           for (const symbol of fileSymbols) {
             if (!symbolBatchIds.has(symbol.id)) {
               symbolBatch.push(symbol);
               symbolBatchIds.add(symbol.id);
             }
             allSymbolIds.add(symbol.id);
+            if (fileCallSets && !fileCallSets.has(symbol.id)) {
+              const set = { fromSymbolId: symbol.id, sites: [] };
+              fileCallSets.set(symbol.id, set);
+              sharedCallSets.push(set);
+            }
           }
           if (parsed.kind === "source") {
             localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
@@ -5983,19 +5991,26 @@ export class Indexer {
                 allSymbolIds.add(resolvedTarget.id);
               }
             }
-            edgeBatch.push({
-              id: `edge_${hashContent(
-                enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column,
-              ).slice(0, 16)}`,
-              fromSymbolId: enclosingSymbol.id,
+            const callSite = {
               targetName: site.calleeName,
               toSymbolId: resolvedTarget?.id,
               callType: site.callType,
               confidence: site.confidence,
               line: site.line,
               col: site.column,
-              isResolved: resolvedTarget !== undefined,
-            });
+            };
+            if (fileCallSets) {
+              fileCallSets.get(enclosingSymbol.id)!.sites.push(callSite);
+            } else {
+              edgeBatch.push({
+                ...callSite,
+                id: `edge_${hashContent(
+                  enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column,
+                ).slice(0, 16)}`,
+                fromSymbolId: enclosingSymbol.id,
+                isResolved: resolvedTarget !== undefined,
+              });
+            }
           }
         }
 
@@ -6008,6 +6023,9 @@ export class Indexer {
         }
         if (edgeBatch.length > 0) {
           database.upsertCallEdgesBatch(edgeBatch);
+        }
+        if (sharedCallSets.length > 0) {
+          database.replaceBranchCallSets(branchCatalogKey, sharedCallSets);
         }
 
         processedChangedFiles += descriptorBatch.length;

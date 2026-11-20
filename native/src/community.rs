@@ -182,10 +182,9 @@ fn bfs_callees(
     let mut stmt = conn.prepare(
         r#"
         SELECT ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN symbols s ON ce.from_symbol_id = s.id
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE ce.from_symbol_id = ?
+        FROM catalog_call_edges ce
+        JOIN symbols s ON s.id = ce.from_symbol_id
+        WHERE ce.branch = ? AND ce.from_symbol_id = ?
         "#,
     )?;
 
@@ -252,10 +251,9 @@ fn bfs_callers(
     let mut stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.to_symbol_id, ce.target_name
-        FROM call_edges ce
-        INNER JOIN symbols s ON ce.from_symbol_id = s.id
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE (ce.to_symbol_id = ? OR ce.target_name = ? COLLATE NOCASE)
+        FROM catalog_call_edges ce
+        JOIN symbols s ON s.id = ce.from_symbol_id
+        WHERE ce.branch = ? AND (ce.to_symbol_id = ? OR ce.target_name = ? COLLATE NOCASE)
         "#,
     )?;
 
@@ -326,8 +324,7 @@ pub fn detect_communities(
     let mut edges_stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 
@@ -529,8 +526,7 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
     let mut edges_stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 
@@ -600,8 +596,7 @@ pub fn detect_community_couplings(
     let mut edges_stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 

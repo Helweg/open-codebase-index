@@ -5,6 +5,8 @@ use thiserror::Error;
 
 mod call_graph;
 pub use call_graph::*;
+mod shared_calls;
+pub use shared_calls::{replace_branch_call_sets, BranchCallSet, BranchCallSite};
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -16,12 +18,14 @@ pub enum DbError {
     ReadOnlySchema(String),
     #[error("Invalid transaction state: {0}")]
     TransactionState(String),
+    #[error("Call graph error: {0}")]
+    CallGraph(&'static str),
 }
 
 pub type DbResult<T> = Result<T, DbError>;
 
 /// Schema version for migrations
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 /// Maximum number of SQL bind parameters per query.
 /// SQLite defaults to 999 (SQLITE_MAX_VARIABLE_NUMBER). We use 900 to stay safely under.
@@ -116,8 +120,6 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
 
-    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
-
     let stored_version: String = conn
         .query_row(
             "SELECT value FROM metadata WHERE key = 'schema_version'",
@@ -135,11 +137,15 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
         ))
     })?;
 
-    if current_version != 6 && current_version != 7 && current_version != SCHEMA_VERSION {
+    if !(6..=SCHEMA_VERSION).contains(&current_version) {
         return Err(DbError::ReadOnlySchema(format!(
             "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
         )));
     }
+    if current_version < 9 {
+        shared_calls::create_legacy_read_view(&conn)?;
+    }
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
 
     Ok(conn)
 }
@@ -398,7 +404,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         migration.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["8"],
         )?;
         migration.commit()?;
     }
@@ -406,8 +412,12 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
     if from_version == 0 {
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["8"],
         )?;
+    }
+
+    if from_version < 9 {
+        shared_calls::migrate(conn)?;
     }
 
     Ok(())
@@ -1160,6 +1170,7 @@ pub fn get_all_branches(conn: &Connection) -> DbResult<Vec<String>> {
 /// Remove all indexed data so a force rebuild starts from an empty database.
 pub fn clear_all_indexed_data(conn: &Connection) -> DbResult<()> {
     conn.execute("DELETE FROM branch_symbols", [])?;
+    conn.execute("DELETE FROM call_edge_sets", [])?;
     conn.execute("DELETE FROM branch_chunks", [])?;
     conn.execute("DELETE FROM call_edges", [])?;
     conn.execute("DELETE FROM symbols", [])?;
@@ -1297,8 +1308,16 @@ pub fn get_stats(conn: &Connection) -> DbResult<DbStats> {
         .prepare_cached(branch_names_sql!("SELECT COUNT(*) FROM branch_names"))?
         .query_row([], |row| row.get(0))?;
     let symbol_count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))?;
-    let call_edge_count: i64 =
+    let mut call_edge_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM call_edges", [], |row| row.get(0))?;
+    let has_shared_edges: bool = conn
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'shared_call_edges')")?
+        .query_row([], |row| row.get(0))?;
+    if has_shared_edges {
+        call_edge_count += conn.query_row("SELECT COUNT(*) FROM shared_call_edges", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+    }
     Ok(DbStats {
         embedding_count: embedding_count as u64,
         chunk_count,
@@ -1341,7 +1360,7 @@ mod tests {
         let (dir, conn) = setup_test_db();
         conn.execute_batch(
             "INSERT INTO branch_chunks VALUES ('main', '0');
-             INSERT INTO branch_symbols VALUES ('main', '0');",
+             INSERT INTO branch_symbols (branch, symbol_id) VALUES ('main', '0');",
         )
         .unwrap();
         let read = |conn: &Connection, sql: &str| -> Vec<String> {
@@ -1374,9 +1393,9 @@ mod tests {
              WITH RECURSIVE b(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM b WHERE n<349),
                             m(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM m WHERE n<199)
              INSERT INTO branch_chunks SELECT printf('b%03d', b.n), CAST(m.n AS TEXT) FROM b, m;
-             INSERT INTO branch_symbols SELECT branch, chunk_id FROM branch_chunks;
+             INSERT INTO branch_symbols (branch, symbol_id) SELECT branch, chunk_id FROM branch_chunks;
              INSERT INTO branch_chunks VALUES ('z-chunk-only', '0');
-             INSERT INTO branch_symbols VALUES ('A-symbol-only', '0');",
+             INSERT INTO branch_symbols (branch, symbol_id) VALUES ('A-symbol-only', '0');",
         )
         .unwrap();
         drop(conn);
@@ -1481,7 +1500,7 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_v8_fresh_database() {
+    fn test_current_schema_fresh_database() {
         let (_temp_dir, conn) = setup_test_db();
         let version: String = conn
             .query_row(
@@ -1490,11 +1509,11 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "8");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
     }
 
     #[test]
-    fn test_schema_v8_read_only_accepts_compatible_v6_and_v7() {
+    fn test_read_only_accepts_compatible_v6_and_v7() {
         let (temp_dir, conn) = setup_test_db();
         let db_path = temp_dir.path().join("test.db");
         set_metadata(&conn, "schema_version", "7").unwrap();
@@ -1518,8 +1537,89 @@ mod tests {
         let error = open_db_read_only(&db_path).err().unwrap();
         assert_eq!(
             error.to_string(),
-            "Read-only database schema error: found version 5, expected 8; a writer must migrate the index"
+            format!("Read-only database schema error: found version 5, expected {SCHEMA_VERSION}; a writer must migrate the index")
         );
+    }
+
+    #[test]
+    fn reads_an_unmigrated_v8_graph_and_rolls_back_an_interrupted_upgrade() {
+        let (temp_dir, conn) = setup_test_db();
+        let db_path = temp_dir.path().join("test.db");
+        conn.execute_batch(
+            r#"
+            DROP VIEW catalog_call_edges;
+            DROP TRIGGER gc_call_set_after_branch_symbol_delete;
+            DROP TRIGGER gc_call_set_after_branch_symbol_update;
+            DROP INDEX idx_branch_symbols_set;
+            ALTER TABLE branch_symbols DROP COLUMN edge_set_id;
+            DROP TABLE shared_call_edges;
+            DROP TABLE call_edge_sets;
+            UPDATE metadata SET value = '8' WHERE key = 'schema_version';
+            INSERT INTO symbols VALUES ('legacy', 'legacy.ts', 'work', 'function', 1, 0, 3, 1, 'typescript');
+            INSERT INTO branch_symbols (branch, symbol_id) VALUES ('main', 'legacy');
+            INSERT INTO call_edges
+              (id, from_symbol_id, target_name, call_type, line, col)
+              VALUES ('site', 'legacy', 'missing', 'Call', 2, 4);
+            CREATE TRIGGER reject_schema_v9 BEFORE INSERT ON metadata
+              WHEN NEW.key = 'schema_version' AND NEW.value = '9'
+            BEGIN
+              SELECT RAISE(ABORT, 'injected schema upgrade failure');
+            END;
+            "#,
+        )
+        .unwrap();
+        drop(conn);
+
+        let reader = open_db_read_only(&db_path).unwrap();
+        let edges = get_callees(&reader, "legacy", "main", None).unwrap();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(
+            (&*edges[0].target_name, edges[0].line, edges[0].col),
+            ("missing", 2, 4)
+        );
+        assert_eq!(
+            get_callers(&reader, "missing", "main", Some("Call"))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(get_stats(&reader).unwrap().call_edge_count, 1);
+        assert_eq!(
+            get_metadata(&reader, "schema_version").unwrap().as_deref(),
+            Some("8")
+        );
+        drop(reader);
+
+        assert!(init_db(&db_path)
+            .unwrap_err()
+            .to_string()
+            .contains("injected schema upgrade failure"));
+        let writer = Connection::open(&db_path).unwrap();
+        let has_selector: bool = writer
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('branch_symbols') WHERE name = 'edge_set_id')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!has_selector);
+        writer
+            .execute_batch("DROP TRIGGER reject_schema_v9;")
+            .unwrap();
+        drop(writer);
+
+        let upgraded = init_db(&db_path).unwrap();
+        assert_eq!(
+            get_metadata(&upgraded, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
+        let after = get_callees(&upgraded, "legacy", "main", None).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(
+            (&*after[0].target_name, after[0].line, after[0].col),
+            ("missing", 2, 4)
+        );
+        assert_eq!(after[0].to_symbol_id, None);
     }
 
     #[test]
@@ -1598,7 +1698,10 @@ mod tests {
 
         let conn = init_db(&db_path).unwrap();
 
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         assert_eq!(
             get_metadata(&conn, "index.embeddingModel")
                 .unwrap()
@@ -1672,7 +1775,10 @@ mod tests {
         }
 
         let conn = init_db(&db_path).unwrap();
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         let added_columns: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
@@ -1694,7 +1800,10 @@ mod tests {
         }
 
         let conn = init_db(&db_path).unwrap();
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         let columns: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
@@ -2414,6 +2523,8 @@ mod tests {
                 CREATE INDEX idx_call_edges_from ON call_edges(from_symbol_id);
                 CREATE INDEX idx_call_edges_to ON call_edges(to_symbol_id);
                 CREATE INDEX idx_call_edges_target_name ON call_edges(target_name);
+                INSERT INTO symbols VALUES ('old', 'old.ts', 'run', 'function', 1, 0, 2, 1, 'typescript');
+                INSERT INTO call_edges VALUES ('site', 'old', 'work', NULL, 'Call', 2, 1, 0);
                 INSERT INTO metadata (key, value) VALUES ('schema_version', '2');
                 "#,
             )
@@ -2429,7 +2540,16 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(schema_version, "8");
+        assert_eq!(schema_version, SCHEMA_VERSION.to_string());
+        // The old catalog had no branch membership yet. Populating it after the
+        // upgrade must expose the legacy call edge with its original callsite.
+        add_symbols_to_branch(&conn, "main", &["old".to_owned()]).unwrap();
+        let edges = get_callees(&conn, "old", "main", None).unwrap();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(
+            (&*edges[0].target_name, edges[0].line, edges[0].col),
+            ("work", 2, 1)
+        );
 
         let on_delete: String = conn
             .query_row("PRAGMA foreign_key_list(call_edges)", [], |row| row.get(6))
