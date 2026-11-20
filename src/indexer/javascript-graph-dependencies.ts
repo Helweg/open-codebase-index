@@ -16,6 +16,7 @@ export interface JavaScriptGraphDependency {
 /** Reuse only a complete snapshot of the file hashes that backed the published graph. */
 export function readJavaScriptGraphDependencies(
   raw: string | null,
+  configHash: string,
   previousHashes: ReadonlyMap<string, string>,
 ): Map<string, JavaScriptGraphDependency> | undefined {
   if (!raw) return undefined;
@@ -25,11 +26,12 @@ export function readJavaScriptGraphDependencies(
   } catch {
     return undefined;
   }
-  if (!Array.isArray(value) || value.length !== 2 || value[0] !== VERSION || !Array.isArray(value[1])) {
+  if (!Array.isArray(value) || value.length !== 3 || value[0] !== VERSION
+    || value[1] !== configHash || !Array.isArray(value[2])) {
     return undefined;
   }
   const rows = new Map<string, JavaScriptGraphDependency>();
-  for (const entry of value[1]) {
+  for (const entry of value[2]) {
     if (!Array.isArray(entry) || entry.length !== 2) return undefined;
     const [file, row]: [unknown, unknown] = [entry[0], entry[1]];
     if (typeof file !== "string" || !isJavaScriptFamilyFilePath(file) || rows.has(file)
@@ -54,8 +56,11 @@ function isPathList(paths: unknown): paths is string[] {
   return Array.isArray(paths) && paths.every((file) => typeof file === "string" && file.length > 0);
 }
 
-export function writeJavaScriptGraphDependencies(rows: ReadonlyMap<string, JavaScriptGraphDependency>): string {
-  return JSON.stringify([VERSION, [...rows]]);
+export function writeJavaScriptGraphDependencies(
+  configHash: string,
+  rows: ReadonlyMap<string, JavaScriptGraphDependency>,
+): string {
+  return JSON.stringify([VERSION, configHash, [...rows]]);
 }
 
 /** A source edit propagates through re-export chains; an import alone doesn't change its owner's exports. */

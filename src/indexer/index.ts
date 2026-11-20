@@ -596,6 +596,7 @@ export interface IndexFreshnessResult {
 
 interface LocalModuleResolutionState {
   configHash: string;
+  javaScriptGraphConfigHash?: string;
   pathAliasCache: TsConfigPathAliasCache;
   workspacePackages: ReturnType<typeof getLocalWorkspacePackages>;
 }
@@ -4901,7 +4902,10 @@ export class Indexer {
     }, options.signal);
   }
 
-  private getLocalModuleResolutionState(files: readonly { path: string }[]): LocalModuleResolutionState {
+  private getLocalModuleResolutionState(
+    files: readonly { path: string }[],
+    trackJavaScriptDependencies = false,
+  ): LocalModuleResolutionState {
     const loadFileText = (configPath: string): string | undefined => {
       try {
         return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
@@ -4917,15 +4921,22 @@ export class Indexer {
     });
     const workspaceManifestPaths = getLocalWorkspacePackageManifestPaths(importerPaths, loadFileText);
     const workspacePackages = getLocalWorkspacePackages(importerPaths, loadFileText);
-    const configHash = hashContent(JSON.stringify({
-      tsconfig: pathAliasCache.getConfigState(importerPaths),
-      packageManifests: workspaceManifestPaths.map((manifestPath) => [
-        manifestPath,
-        loadFileText(manifestPath) ?? null,
-      ]),
-    }));
+    const tsconfig = pathAliasCache.getConfigState(importerPaths);
+    const packageManifests = workspaceManifestPaths.map((manifestPath) => [
+      manifestPath,
+      loadFileText(manifestPath) ?? null,
+    ] as const);
+    const configHash = hashContent(JSON.stringify({ tsconfig, packageManifests }));
+    // Discovery also fingerprints absent configs for the existing freshness check.
+    // A newly indexed source directory with no configs is not a resolver change.
+    const javaScriptGraphConfigHash = trackJavaScriptDependencies
+      ? hashContent(JSON.stringify({
+        tsconfig: tsconfig.filter(([, content]) => content !== null),
+        packageManifests: packageManifests.filter(([, content]) => content !== null),
+      }))
+      : undefined;
 
-    return { configHash, pathAliasCache, workspacePackages };
+    return { configHash, javaScriptGraphConfigHash, pathAliasCache, workspacePackages };
   }
 
   async indexBranchIfMissing(
@@ -5158,7 +5169,8 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
-    const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    const localModuleResolutionState = this.getLocalModuleResolutionState(files, trackJavaScriptDependencies);
+    const { javaScriptGraphConfigHash } = localModuleResolutionState;
     this.localModuleResolutionConfigHash = localModuleResolutionState.configHash;
     const scipConfig = this.config.indexing.scipTypeScript;
     this.scipTypeScriptState = await prepareScipTypeScriptEnrichment({
@@ -5271,9 +5283,9 @@ export class Indexer {
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== this.localModuleResolutionConfigHash;
     const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
-    let priorJavaScriptDependencies = trackJavaScriptDependencies && !localModuleResolutionConfigChanged
+    let priorJavaScriptDependencies = javaScriptGraphConfigHash !== undefined
       && !needsCallGraphResolutionMigration && !scipStateChanged
-      ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, this.fileHashCache)
+      ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
       : undefined;
     if (priorJavaScriptDependencies) {
       for (const [file, { format }] of priorJavaScriptDependencies) {
@@ -5354,7 +5366,9 @@ export class Indexer {
       const needsCallGraphRefresh = cachedHashMatches
         && (
           (
-            (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged || scipStateChanged)
+            (needsCallGraphResolutionMigration || scipStateChanged || (
+              localModuleResolutionConfigChanged && !(trackJavaScriptDependencies && isJavaScriptFamilyFilePath(storedPath))
+            ))
             && (
               isJavaScriptFamilyFilePath(storedPath)
               || database.getChunksByFile(storedPath).some((chunk) =>
@@ -5864,7 +5878,8 @@ export class Indexer {
           if (parsed.kind === "source") {
             localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
           }
-          if (javaScriptDependencies && isJavaScriptFamilyFilePath(descriptor.storedPath) && parsed.moduleSyntax?.valid) {
+          if (javaScriptDependencies && isJavaScriptFamilyFilePath(descriptor.storedPath)
+            && parsed.hash === descriptor.hash && parsed.moduleSyntax?.valid) {
             const { imports, reexports, usesPackageFormat } =
               localModuleResolver.getModuleDependencyProbes(descriptor.storedPath, parsed.moduleSyntax);
             javaScriptDependencies.set(descriptor.storedPath, {
@@ -6165,12 +6180,25 @@ export class Indexer {
         }
       }
 
-      // Publish the dependency proof atomically with its branch's edges. A
-      // missing row (e.g. read/parse failure) makes the next scan go broad.
-      if (javaScriptDependencyKey) {
-        if (javaScriptDependencies && javaScriptDependenciesDirty) {
-          database.setMetadata(javaScriptDependencyKey, writeJavaScriptGraphDependencies(javaScriptDependencies));
-        } else if (!javaScriptDependencies && storedJavaScriptDependencies !== null) {
+      // Publish only a complete proof, atomically with its branch's edges.
+      // The prior proof suffices to invalidate this run; a read/parse failure means it
+      // cannot justify pruning the next run, even if the file hash cache was updated.
+      if (javaScriptDependencyKey && (javaScriptDependenciesDirty || !javaScriptDependencies)) {
+        let complete = javaScriptDependencies !== undefined;
+        if (javaScriptDependencies) {
+          for (const file of currentStoredFilePaths) {
+            if (isJavaScriptFamilyFilePath(file) && !javaScriptDependencies.has(file)) {
+              complete = false;
+              break;
+            }
+          }
+        }
+        if (complete && javaScriptDependencies && javaScriptGraphConfigHash !== undefined) {
+          database.setMetadata(
+            javaScriptDependencyKey,
+            writeJavaScriptGraphDependencies(javaScriptGraphConfigHash, javaScriptDependencies),
+          );
+        } else if (storedJavaScriptDependencies !== null) {
           database.deleteMetadata(javaScriptDependencyKey);
         }
       }
