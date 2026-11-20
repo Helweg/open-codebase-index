@@ -28,6 +28,9 @@ describe("Database", () => {
       db.close();
 
       expect(() => db.getStats()).toThrow("Database is closed");
+      expect(() => db.hasChunks()).toThrow("Database is closed");
+      expect(() => db.hasChunksOrSymbols()).toThrow("Database is closed");
+      expect(() => db.getChunkCount()).toThrow("Database is closed");
       expect(() => db.embeddingExists("hash123")).toThrow("Database is closed");
       expect(() => db.setMetadata("key", "value")).toThrow("Database is closed");
     });
@@ -107,6 +110,10 @@ describe("Database", () => {
           symbolCount: 0,
           callEdgeCount: 0,
         });
+        expect(reader.getAllBranches()).toEqual([]);
+        expect(reader.hasChunks()).toBe(false);
+        expect(reader.hasChunksOrSymbols()).toBe(false);
+        expect(reader.getChunkCount()).toBe(0);
         expect(() => reader.setMetadata("reader-write", "forbidden")).toThrow(/read.?only/i);
         expect(fs.readdirSync(tempDir).sort()).toEqual(filesBefore);
       } finally {
@@ -625,36 +632,65 @@ describe("Database", () => {
       expect(stats.branchCount).toBe(1);
     });
 
-    it("should count branches that only have symbols", () => {
-      const testSymbol: SymbolData = {
-        id: "sym_stats",
-        filePath: "/file.ts",
-        name: "statsFunction",
-        kind: "function",
-        startLine: 1,
-        startCol: 0,
-        endLine: 5,
-        endCol: 0,
-        language: "typescript",
+    it.each(["chunks", "symbols"] as const)("reads exact branch stats with %s inserted first", (first) => {
+      const chunk: ChunkData = {
+        chunkId: "chunk_stats", contentHash: "hash_stats", filePath: "/chunk.ts",
+        startLine: 1, endLine: 5, language: "typescript",
       };
-
-      db.upsertChunk({
-        chunkId: "chunk_stats",
-        contentHash: "hash_stats",
-        filePath: "/chunk.ts",
-        startLine: 1,
-        endLine: 5,
-        language: "typescript",
-      });
-      db.addChunksToBranch("chunk-branch", ["chunk_stats"]);
-      db.upsertSymbol(testSymbol);
-      db.addSymbolsToBranchBatch("symbol-branch", [testSymbol.id]);
-
-      const stats = db.getStats();
-
-      expect(stats.branchChunkCount).toBe(1);
-      expect(stats.branchCount).toBe(2);
-      expect(stats.symbolCount).toBe(1);
+      const symbol: SymbolData = {
+        id: "sym_stats", filePath: "/symbol.ts", name: "statsFunction", kind: "function",
+        startLine: 1, startCol: 0, endLine: 5, endCol: 0, language: "typescript",
+      };
+      db.setMetadata("index.complete.metadata-only", "true");
+      const reader = Database.openReadOnly(path.join(tempDir, "test.db"));
+      const empty = {
+        embeddingCount: 0, chunkCount: 0, branchChunkCount: 0,
+        branchCount: 0, symbolCount: 0, callEdgeCount: 0,
+      };
+      function expectCatalog(branches: string[], stats: typeof empty): void {
+        for (const connection of [db, reader]) {
+          expect(connection.getAllBranches()).toEqual(branches);
+          expect(connection.getStats()).toEqual(stats);
+          expect(connection.getChunkCount()).toBe(stats.chunkCount);
+          expect(connection.hasChunks()).toBe(stats.chunkCount > 0);
+          expect(connection.hasChunksOrSymbols()).toBe(stats.chunkCount > 0 || stats.symbolCount > 0);
+        }
+      }
+      function addChunks(): void {
+        db.upsertEmbedding(chunk.contentHash, Buffer.from(new Float32Array([1]).buffer), "text", "model");
+        db.upsertChunk(chunk);
+        db.addChunksToBranch("shared", [chunk.chunkId]);
+        db.addChunksToBranch("chunk-only", [chunk.chunkId]);
+      }
+      function addSymbols(): void {
+        db.upsertSymbol(symbol);
+        db.addSymbolsToBranchBatch("shared", [symbol.id]);
+        db.addSymbolsToBranchBatch("Symbol-only", [symbol.id]);
+        db.upsertCallEdge({
+          id: "edge", fromSymbolId: symbol.id, targetName: "callee",
+          callType: "Call", confidence: "Direct", line: 2, col: 0, isResolved: false,
+        });
+      }
+      try {
+        expectCatalog([], empty);
+        if (first === "chunks") {
+          addChunks();
+          expectCatalog(["chunk-only", "shared"], {
+            ...empty, embeddingCount: 1, chunkCount: 1, branchChunkCount: 2, branchCount: 2,
+          });
+          addSymbols();
+        } else {
+          addSymbols();
+          expectCatalog(["Symbol-only", "shared"], { ...empty, branchCount: 2, symbolCount: 1, callEdgeCount: 1 });
+          addChunks();
+        }
+        expectCatalog(["Symbol-only", "chunk-only", "shared"], {
+          embeddingCount: 1, chunkCount: 1, branchChunkCount: 2,
+          branchCount: 3, symbolCount: 1, callEdgeCount: 1,
+        });
+      } finally {
+        reader.close();
+      }
     });
   });
 

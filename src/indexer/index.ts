@@ -3707,7 +3707,7 @@ export class Indexer {
     if (
       keywordChanged || structuralGenerationChanged || (isStructural && databaseChanged) || retryDue("keyword") ||
       (!existsSync(invertedIndexPath) && (isStructural
-        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        ? (this.database?.hasChunks() ?? false)
         : (this.store?.count() ?? 0) > 0))
     ) {
       if (existsSync(invertedIndexPath)) {
@@ -3715,13 +3715,13 @@ export class Indexer {
           const invertedIndex = new InvertedIndex(invertedIndexPath);
           invertedIndex.load();
           if (isStructural) {
-            const chunkCount = this.database?.getStats()?.chunkCount ?? 0;
+            const hasChunks = this.database?.hasChunks() ?? false;
             const storedGeneration = this.database?.getMetadata("index.structuralGeneration") ?? null;
             const publishedGeneration = this.readStructuralPublishedGeneration();
-            if (chunkCount > 0 && invertedIndex.getDocumentCount() === 0) {
+            if (hasChunks && invertedIndex.getDocumentCount() === 0) {
               throw new Error("Structural keyword index is empty for the committed chunk catalog.");
             }
-            if (chunkCount > 0 && storedGeneration !== publishedGeneration) {
+            if (hasChunks && storedGeneration !== publishedGeneration) {
               throw new Error("Structural keyword publication generation does not match SQLite.");
             }
           }
@@ -3733,7 +3733,7 @@ export class Indexer {
           setIssue("keyword", this.getKeywordReadIssueMessage(), error);
         }
       } else if ((isStructural
-        ? (this.database?.getStats()?.chunkCount ?? 0) > 0
+        ? (this.database?.hasChunks() ?? false)
         : (this.store?.count() ?? 0) > 0) || issues.has("keyword")) {
         if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
         setIssue("keyword", this.getKeywordReadIssueMessage());
@@ -4063,12 +4063,10 @@ export class Indexer {
       const storedGeneration = this.database.getMetadata("index.structuralGeneration");
       const publishedGeneration = this.readStructuralPublishedGeneration();
       if (
-        (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)
-        && (this.database.getStats()?.chunkCount ?? 0) > 0
+        (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0 ||
+          storedGeneration !== publishedGeneration)
+        && this.database.hasChunks()
       ) {
-        this.structuralKeywordRebuildRequired = true;
-      }
-      if (storedGeneration !== publishedGeneration && (this.database.getStats()?.chunkCount ?? 0) > 0) {
         this.structuralKeywordRebuildRequired = true;
       }
       if (!this.invertedIndex.hasCurrentTokenizer()) {
@@ -4076,7 +4074,7 @@ export class Indexer {
       }
       if (this.structuralKeywordRebuildRequired) {
         this.logger.info("Rebuilding structural keyword index from the persisted chunk catalog", {
-          chunks: this.database.getStats()?.chunkCount ?? 0,
+          chunks: this.database.getChunkCount(),
         });
         this.rebuildStructuralKeywordFromCatalog(this.invertedIndex, this.database);
         this.structuralKeywordRebuildRequired = false;
@@ -4103,13 +4101,13 @@ export class Indexer {
       }
       const storedGeneration = this.database.getMetadata("index.structuralGeneration");
       const publishedGeneration = this.readStructuralPublishedGeneration();
-      const structuralChunkCount = this.database.getStats()?.chunkCount ?? 0;
-      if (structuralChunkCount > 0 && (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)) {
+      const hasChunks = this.database.hasChunks();
+      if (hasChunks && (!existsSync(invertedIndexPath) || this.invertedIndex.getDocumentCount() === 0)) {
         this.recordReadIssue(
           "keyword",
           "Structural keyword index is missing or empty for the committed chunk catalog. Run index_codebase to recover it.",
         );
-      } else if (storedGeneration !== publishedGeneration && structuralChunkCount > 0) {
+      } else if (storedGeneration !== publishedGeneration && hasChunks) {
         this.recordReadIssue(
           "keyword",
           "Structural keyword publication does not match the committed chunk catalog. Run index_codebase to recover it.",
@@ -4410,10 +4408,9 @@ export class Indexer {
   }
 
   private hasStoredIndexData(): boolean {
-    const stats = this.database?.getStats();
+    const hasDatabaseData = this.database?.hasChunksOrSymbols() ?? false;
     return (this.store?.count() ?? 0) > 0
-      || (stats?.chunkCount ?? 0) > 0
-      || (stats?.symbolCount ?? 0) > 0
+      || hasDatabaseData
       || this.fileHashCache.size > 0;
   }
 
@@ -6962,7 +6959,7 @@ export class Indexer {
       try {
         startupWarning = database.getMetadata(STARTUP_WARNING_METADATA_KEY) ?? "";
         branchReadiness = this.getBranchReadiness(database);
-        if (isStructural) indexedChunkCount = database.getStats().chunkCount;
+        if (isStructural) indexedChunkCount = database.getChunkCount();
         const hasBranchData = branchReadiness.activeCatalogChunkCount > 0
           || (branchReadiness.state === "legacy" && indexedChunkCount > 0);
         migrationRequired = hasBranchData && !this.areBranchMigrationVersionsCurrent(database);

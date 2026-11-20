@@ -248,6 +248,21 @@ export class Database {
     return this.inner.gcOrphanChunks();
   }
 
+  hasChunks(): boolean {
+    this.throwIfClosed();
+    return this.inner.hasChunks();
+  }
+
+  hasChunksOrSymbols(): boolean {
+    this.throwIfClosed();
+    return this.inner.hasChunksOrSymbols();
+  }
+
+  getChunkCount(): number {
+    this.throwIfClosed();
+    return this.inner.getChunkCount();
+  }
+
   getStats(): DatabaseStats {
     this.throwIfClosed();
     return this.inner.getStats();

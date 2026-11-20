@@ -555,6 +555,26 @@ impl Database {
     }
 
     #[napi]
+    pub fn has_chunks(&self) -> Result<bool> {
+        self.with_conn(|conn| db::has_chunks(conn).map_err(|e| Error::from_reason(e.to_string())))
+    }
+
+    #[napi]
+    pub fn has_chunks_or_symbols(&self) -> Result<bool> {
+        self.with_conn(|conn| {
+            db::has_chunks_or_symbols(conn).map_err(|e| Error::from_reason(e.to_string()))
+        })
+    }
+
+    #[napi]
+    pub fn get_chunk_count(&self) -> Result<u32> {
+        self.with_conn(|conn| {
+            let count = db::get_chunk_count(conn).map_err(|e| Error::from_reason(e.to_string()))?;
+            Ok(count as u32)
+        })
+    }
+
+    #[napi]
     pub fn get_stats(&self) -> Result<DatabaseStats> {
         self.with_conn(|conn| {
             let stats = db::get_stats(conn).map_err(|e| Error::from_reason(e.to_string()))?;
