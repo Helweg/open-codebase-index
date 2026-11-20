@@ -1336,7 +1336,8 @@ mod tests {
 
         const SCAN: &str =
             "SELECT branch FROM branch_chunks UNION SELECT branch FROM branch_symbols ORDER BY branch";
-        const SEEK: &str = branch_names_sql!("SELECT branch FROM branch_names ORDER BY branch COLLATE BINARY");
+        const SEEK: &str =
+            branch_names_sql!("SELECT branch FROM branch_names ORDER BY branch COLLATE BINARY");
         let (dir, conn) = setup_test_db();
         conn.execute_batch(
             "INSERT INTO branch_chunks VALUES ('main', '0');
@@ -1361,7 +1362,10 @@ mod tests {
             for _ in 0..rounds {
                 std::hint::black_box(get_all_branches(conn).unwrap());
             }
-            eprintln!("{rounds} queries: scan={scan:?}, seek={:?}", candidate.elapsed());
+            eprintln!(
+                "{rounds} queries: scan={scan:?}, seek={:?}",
+                candidate.elapsed()
+            );
         };
         assert_eq!(get_all_branches(&conn).unwrap(), vec!["main"]);
         measure(&conn, 1000);
@@ -1383,7 +1387,10 @@ mod tests {
         let stats = get_stats(&reader).unwrap();
         assert_eq!(stats.branch_count, 352);
         assert_eq!(stats.branch_chunk_count, 70_001);
-        assert!(!has_chunks_or_symbols(&reader).unwrap(), "membership is not backing data");
+        assert!(
+            !has_chunks_or_symbols(&reader).unwrap(),
+            "membership is not backing data"
+        );
         let plan = reader
             .prepare(&format!("EXPLAIN QUERY PLAN {SEEK}"))
             .unwrap()
@@ -1392,10 +1399,15 @@ mod tests {
             .map(Result::unwrap)
             .collect::<Vec<_>>();
         for table in ["branch_chunks", "branch_symbols"] {
-            assert!(plan.iter().any(|detail| {
-                detail.starts_with(&format!("SEARCH {table} ")) && detail.contains("(branch>?)")
-            }), "{plan:?}");
-            assert!(!plan.iter().any(|detail| detail.starts_with(&format!("SCAN {table} "))));
+            assert!(
+                plan.iter().any(|detail| {
+                    detail.starts_with(&format!("SEARCH {table} ")) && detail.contains("(branch>?)")
+                }),
+                "{plan:?}"
+            );
+            assert!(!plan
+                .iter()
+                .any(|detail| detail.starts_with(&format!("SCAN {table} "))));
         }
         eprintln!("Bundled SQLite {} plan: {plan:?}", rusqlite::version());
         measure(&reader, 15);
