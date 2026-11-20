@@ -5672,11 +5672,24 @@ export class Indexer {
         }
       }
 
+      const retainedJavaScriptFiles: string[] | undefined =
+        trackJavaScriptDependencies && restrictExistingChunksToBranch ? [] : undefined;
       for (const filePath of unchangedFilePaths) {
+        if (retainedJavaScriptFiles && isJavaScriptFamilyFilePath(filePath)) {
+          retainedJavaScriptFiles.push(filePath);
+          continue;
+        }
         for (const symbol of database.getSymbolsByFile(filePath)) {
           if (!restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)) {
             allSymbolIds.add(symbol.id);
           }
+        }
+      }
+      if (retainedJavaScriptFiles?.length) {
+        // JS/TS symbols are branch-owned. Do not materialize other branches'
+        // declarations just to discard them when retaining unchanged files.
+        for (const { id } of database.getSymbolsForFiles(retainedJavaScriptFiles, branchCatalogKey)) {
+          allSymbolIds.add(id);
         }
       }
 
