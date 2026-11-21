@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structural JS/TS call-graph refresh**: Refresh changed files and callers affected by import and re-export probes. Missing dependency records or resolver configuration changes trigger a full JS/TS refresh.
 - **Retained call-graph symbols**: Seek indexed files before checking branch membership. CommonJS format checks share package manifest lookups across files in a refresh and recheck them on the next refresh.
 - **Call-graph point queries**: Caller and callee lookups use the callsite and branch-selector indexes directly rather than scanning the combined graph view.
+- **Graph centrality**: Count branch edges as SQLite returns them rather than copying the graph into a second set of records.
 
 ### Fixed
 
