@@ -458,8 +458,9 @@ macro_rules! legacy_callers_sql {
     };
 }
 
-// Keep indexed name and alias hits outermost. Only Apex/PHP need extra
-// case-insensitive matches, based on the source or target language respectively.
+// Start with indexed spelling or declaration-name hits, not with every symbol
+// in a case-insensitive language. A folded spelling match is valid only for
+// an Apex/PHP caller; aliases use the target declaration's language.
 macro_rules! callers_sql {
     ($layout:expr, $context:literal) => {
         ($layout).point_query(
@@ -470,21 +471,23 @@ macro_rules! callers_sql {
                 $context,
                 r#"e.target_name, t.symbol_id, e.call_type, e.confidence, e.line, e.col, t.symbol_id IS NOT NULL
                 FROM (
-                    SELECT id FROM shared_call_edges WHERE target_name = ?2 COLLATE BINARY
+                    SELECT edge.id FROM shared_call_edges edge
+                    JOIN branch_symbols caller ON caller.branch = ?1 AND caller.edge_set_id = edge.edge_set_id
+                    WHERE edge.target_name = ?2 COLLATE NOCASE AND (
+                        edge.target_name = ?2 COLLATE BINARY OR EXISTS (
+                            SELECT 1 FROM symbols source
+                            WHERE source.id = caller.symbol_id AND source.language IN ('apex', 'php')
+                        )
+                    )
                     UNION
                     SELECT edge.id FROM symbols target
                     CROSS JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
                     CROSS JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
                     WHERE target.name = ?2 COLLATE BINARY
                     UNION
-                    SELECT edge.id FROM symbols source
-                    CROSS JOIN branch_symbols caller ON caller.branch = ?1 AND caller.symbol_id = source.id
-                    CROSS JOIN shared_call_edges edge ON edge.edge_set_id = caller.edge_set_id
-                    WHERE source.language IN ('apex', 'php') AND edge.target_name = ?2 COLLATE NOCASE
-                    UNION
                     SELECT edge.id FROM symbols target
-                    CROSS JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
-                    CROSS JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
+                    JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
+                    JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
                     WHERE target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE
                 ) hit
                 CROSS JOIN shared_call_edges e ON e.id = hit.id
@@ -1099,4 +1102,76 @@ pub fn delete_branch_symbols_for_branch(
     }
 
     Ok(total)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::CallGraphLayout::BranchSets;
+    use rusqlite::StatementStatus;
+
+    #[test]
+    fn caller_query_work_does_not_grow_with_unrelated_php_symbols() {
+        fn work(conn: &Connection, sql: &str) -> (i32, i32) {
+            let mut stmt = conn.prepare(sql).unwrap();
+            let mut rows = stmt
+                .query(params!["project:main", "target", "Call"])
+                .unwrap();
+            assert!(rows.next().unwrap().is_some());
+            assert!(rows.next().unwrap().is_none());
+            drop(rows);
+            (
+                stmt.get_status(StatementStatus::VmStep),
+                stmt.get_status(StatementStatus::FullscanStep),
+            )
+        }
+        for optional_indexes in [true, false] {
+            let dir = tempfile::TempDir::new().unwrap();
+            let conn = super::super::init_db(&dir.path().join("callers.db")).unwrap();
+            if !optional_indexes {
+                conn.execute_batch(
+                    "DROP INDEX idx_shared_call_edges_name_ci;
+                     DROP INDEX idx_symbols_insensitive_name;
+                     CREATE INDEX idx_shared_call_edges_name ON shared_call_edges(target_name);",
+                )
+                .unwrap();
+            }
+            conn.execute_batch(
+                "INSERT INTO symbols VALUES ('caller', 'src/caller.ts', 'run', 'function', 1, 0, 3, 1, 'typescript');
+                 INSERT INTO symbols VALUES ('target', 'src/target.ts', 'target', 'function', 1, 0, 3, 1, 'typescript');
+                 INSERT INTO call_edge_sets VALUES (1, 'caller', X'00');
+                 INSERT INTO branch_symbols VALUES ('project:main', 'caller', 1), ('project:main', 'target', NULL);
+                 INSERT INTO shared_call_edges VALUES (1, 1, 'target', 'target', 'Call', 'Direct', 2, 8);",
+            )
+            .unwrap();
+            let queries = [
+                callers_sql!(BranchSets, ""),
+                callers_sql!(BranchSets, "s.name, s.file_path, "),
+            ];
+            let before = queries.map(|sql| work(&conn, sql));
+            conn.execute_batch(
+                "WITH RECURSIVE unrelated(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM unrelated WHERE n<20000)
+                 INSERT INTO symbols SELECT 'php-' || n, '/other/src/' || n || '.php', 'unrelated' || n,
+                 'function', 1, 0, 3, 1, 'php' FROM unrelated;
+                 INSERT INTO call_edge_sets (from_symbol_id, digest)
+                 SELECT id, X'00' FROM symbols WHERE language = 'php';
+                 INSERT INTO branch_symbols (branch, symbol_id, edge_set_id)
+                 SELECT 'other-project:main', from_symbol_id, id FROM call_edge_sets WHERE id > 1;
+                 INSERT INTO shared_call_edges
+                 SELECT id, id, 'callee' || id, NULL, 'Call', 'Direct', 2, 8 FROM call_edge_sets WHERE id > 1;",
+            )
+            .unwrap();
+            let after = queries.map(|sql| work(&conn, sql));
+            eprintln!("optional indexes {optional_indexes}: (VM instructions, full-scan steps) {before:?} -> {after:?}");
+            for ((before_steps, _), (after_steps, full_scan_steps)) in before.into_iter().zip(after)
+            {
+                // Allow a constant amount of work to close an index range.
+                assert!(
+                    after_steps <= before_steps + 16,
+                    "VM work scaled with another project"
+                );
+                assert_eq!(full_scan_steps, 0);
+            }
+        }
+    }
 }

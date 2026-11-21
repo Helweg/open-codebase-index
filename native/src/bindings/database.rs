@@ -9,6 +9,7 @@ use napi_derive::napi;
 pub struct Database {
     conn: std::sync::Mutex<Option<rusqlite::Connection>>,
     call_graph_layout: db::CallGraphLayout,
+    opened_read_only_schema_version: Option<String>,
 }
 
 #[napi(object)]
@@ -74,10 +75,15 @@ pub struct DatabaseStats {
 
 #[napi]
 impl Database {
-    fn from_connection(conn: rusqlite::Connection, call_graph_layout: db::CallGraphLayout) -> Self {
+    fn from_connection(
+        conn: rusqlite::Connection,
+        call_graph_layout: db::CallGraphLayout,
+        opened_read_only_schema_version: Option<String>,
+    ) -> Self {
         Self {
             conn: std::sync::Mutex::new(Some(conn)),
             call_graph_layout,
+            opened_read_only_schema_version,
         }
     }
 
@@ -85,21 +91,42 @@ impl Database {
     pub fn new(db_path: String) -> Result<Self> {
         let conn = db::init_db(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn, db::CallGraphLayout::BranchSets))
+        Ok(Self::from_connection(
+            conn,
+            db::CallGraphLayout::BranchSets,
+            None,
+        ))
     }
 
     #[napi(factory)]
     pub fn open_read_only(db_path: String) -> Result<Self> {
-        let (conn, layout) = db::open_db_read_only(std::path::Path::new(&db_path))
+        let (conn, layout, version) = db::open_db_read_only(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn, layout))
+        Ok(Self::from_connection(conn, layout, Some(version)))
     }
 
     #[napi(factory)]
     pub fn create_empty_read_only() -> Result<Self> {
         let conn =
             db::create_empty_read_only_db().map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn, db::CallGraphLayout::BranchSets))
+        Ok(Self::from_connection(
+            conn,
+            db::CallGraphLayout::BranchSets,
+            None,
+        ))
+    }
+
+    /// The legacy TEMP view and call-graph layout are chosen when a reader opens.
+    #[napi]
+    pub fn read_only_schema_changed(&self) -> Result<bool> {
+        let Some(opened_version) = self.opened_read_only_schema_version.as_deref() else {
+            return Ok(false);
+        };
+        self.with_conn(|conn| {
+            db::has_catalog_schema_version(conn, opened_version)
+                .map(|matches| !matches)
+                .map_err(|e| Error::from_reason(e.to_string()))
+        })
     }
 
     fn closed_error() -> Error {

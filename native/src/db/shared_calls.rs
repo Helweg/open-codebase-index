@@ -2,12 +2,14 @@ use super::{run_batch_with_write_transaction, DbError, DbResult};
 use rusqlite::{params, types::ValueRef, Connection, OptionalExtension};
 use xxhash_rust::xxh3::Xxh3;
 
-/// Optional access path for languages with case-insensitive call names.
-/// An existing v9 reader works without the index; a writer installs it.
+/// Optional name indexes. Read-only v9 catalogs remain readable before upgrade.
 pub(super) fn ensure_lookup_indexes(conn: &Connection) -> DbResult<()> {
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_symbols_insensitive_name ON symbols(name COLLATE NOCASE)
-         WHERE language IN ('apex', 'php');",
+         WHERE language IN ('apex', 'php');
+         CREATE INDEX IF NOT EXISTS idx_shared_call_edges_name_ci
+         ON shared_call_edges(target_name COLLATE NOCASE);
+         DROP INDEX IF EXISTS idx_shared_call_edges_name;",
     )?;
     Ok(())
 }
@@ -43,7 +45,6 @@ pub(super) fn migrate(conn: &Connection) -> DbResult<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_shared_call_edges_set ON shared_call_edges(edge_set_id);
         CREATE INDEX IF NOT EXISTS idx_shared_call_edges_to ON shared_call_edges(to_symbol_id);
-        CREATE INDEX IF NOT EXISTS idx_shared_call_edges_name ON shared_call_edges(target_name);
         "#,
     )?;
     let has_column: bool = migration.query_row(

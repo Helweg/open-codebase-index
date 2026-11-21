@@ -115,7 +115,7 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
 }
 
 /// Opens a published database without creating files or running migrations.
-pub fn open_db_read_only(db_path: &Path) -> DbResult<(Connection, CallGraphLayout)> {
+pub fn open_db_read_only(db_path: &Path) -> DbResult<(Connection, CallGraphLayout, String)> {
     let conn = Connection::open_with_flags(
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
@@ -151,7 +151,15 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<(Connection, CallGraphLayou
     };
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
 
-    Ok((conn, layout))
+    Ok((conn, layout, stored_version))
+}
+
+/// Check the application schema version without reopening on normal WAL writes.
+pub(super) fn has_catalog_schema_version(conn: &Connection, version: &str) -> DbResult<bool> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM metadata WHERE key = 'schema_version' AND value = ?1)",
+    )?;
+    Ok(stmt.query_row([version], |row| row.get(0))?)
 }
 
 /// Creates an empty in-memory catalog, then locks it for read-only access.
@@ -1404,7 +1412,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let (reader, _) = open_db_read_only(&dir.path().join("test.db")).unwrap();
+        let (reader, _, _) = open_db_read_only(&dir.path().join("test.db")).unwrap();
         let expected = read(&reader, SCAN);
         assert_eq!(expected.len(), 352);
         assert_eq!(get_all_branches(&reader).unwrap(), expected);
@@ -1575,7 +1583,7 @@ mod tests {
         .unwrap();
         drop(conn);
 
-        let (reader, layout) = open_db_read_only(&db_path).unwrap();
+        let (reader, layout, _) = open_db_read_only(&db_path).unwrap();
         let edges = get_callees(&reader, "legacy", "main", None, layout).unwrap();
         assert_eq!(edges.len(), 1);
         assert_eq!(

@@ -36,6 +36,11 @@ export class Database {
     return Database.fromNative(native.Database.createEmptyReadOnly());
   }
 
+  readOnlySchemaChanged(): boolean {
+    this.throwIfClosed();
+    return this.inner.readOnlySchemaChanged();
+  }
+
   private throwIfClosed(): void {
     if (this.closed) {
       throw new Error("Database is closed");

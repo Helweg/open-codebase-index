@@ -3737,22 +3737,26 @@ export class Indexer {
       }
     }
 
-    const shouldRefreshStructuralDatabase = isStructural && (
-      databaseReplaced || databaseChanged || structuralGenerationChanged || retryDue("database") || retryDue("keyword")
-    );
-    if (shouldRefreshStructuralDatabase) {
-      if (existsSync(dbPath)) {
-        try {
-          const database = Database.openReadOnly(dbPath);
-          if (this.database) this.retiredDatabases.push(this.database);
-          this.database = database;
-          issues.delete("database");
-          this.readerArtifactRetryAfter.delete("database");
-        } catch (error) {
-          setIssue("database", this.getDatabaseReadIssueMessage(), error);
+    if (
+      databaseReplaced || databaseChanged || retryDue("database") ||
+      (isStructural && (structuralGenerationChanged || retryDue("keyword")))
+    ) {
+      try {
+        if (existsSync(dbPath)) {
+          // Existing hybrid connections see ordinary WAL writes, but their
+          // call-graph layout is fixed to the schema version at open.
+          if (isStructural || databaseReplaced || issues.has("database") || this.database?.readOnlySchemaChanged()) {
+            const database = Database.openReadOnly(dbPath);
+            if (this.database) this.retiredDatabases.push(this.database);
+            this.database = database;
+            issues.delete("database");
+            this.readerArtifactRetryAfter.delete("database");
+          }
+        } else if (isStructural || (this.store?.count() ?? 0) > 0 || issues.has("database")) {
+          setIssue("database", this.getDatabaseReadIssueMessage());
         }
-      } else {
-        setIssue("database", this.getDatabaseReadIssueMessage());
+      } catch (error) {
+        setIssue("database", this.getDatabaseReadIssueMessage(), error);
       }
     }
 
@@ -3789,30 +3793,6 @@ export class Indexer {
         : (this.store?.count() ?? 0) > 0) || issues.has("keyword")) {
         if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
         setIssue("keyword", this.getKeywordReadIssueMessage());
-      }
-    }
-
-    if (
-      !isStructural && (
-      databaseReplaced ||
-      (databaseChanged && issues.has("database")) ||
-      retryDue("database")
-      )
-    ) {
-      if (existsSync(dbPath)) {
-        try {
-          const database = Database.openReadOnly(dbPath);
-          if (this.database) {
-            this.retiredDatabases.push(this.database);
-          }
-          this.database = database;
-          issues.delete("database");
-          this.readerArtifactRetryAfter.delete("database");
-        } catch (error) {
-          setIssue("database", this.getDatabaseReadIssueMessage(), error);
-        }
-      } else if ((this.store?.count() ?? 0) > 0 || issues.has("database")) {
-        setIssue("database", this.getDatabaseReadIssueMessage());
       }
     }
 
