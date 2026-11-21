@@ -458,8 +458,8 @@ macro_rules! legacy_callers_sql {
     };
 }
 
-// Shared sets are JS/TS only: seek exact spellings and proven alias targets.
-// Keep the indexed hits outermost; joining from branch membership scans every set.
+// Keep indexed name and alias hits outermost. Only Apex/PHP need extra
+// case-insensitive matches, based on the source or target language respectively.
 macro_rules! callers_sql {
     ($layout:expr, $context:literal) => {
         ($layout).point_query(
@@ -476,6 +476,16 @@ macro_rules! callers_sql {
                     CROSS JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
                     CROSS JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
                     WHERE target.name = ?2 COLLATE BINARY
+                    UNION
+                    SELECT edge.id FROM symbols source
+                    CROSS JOIN branch_symbols caller ON caller.branch = ?1 AND caller.symbol_id = source.id
+                    CROSS JOIN shared_call_edges edge ON edge.edge_set_id = caller.edge_set_id
+                    WHERE source.language IN ('apex', 'php') AND edge.target_name = ?2 COLLATE NOCASE
+                    UNION
+                    SELECT edge.id FROM symbols target
+                    CROSS JOIN branch_symbols member ON member.branch = ?1 AND member.symbol_id = target.id
+                    CROSS JOIN shared_call_edges edge ON edge.to_symbol_id = target.id
+                    WHERE target.language IN ('apex', 'php') AND target.name = ?2 COLLATE NOCASE
                 ) hit
                 CROSS JOIN shared_call_edges e ON e.id = hit.id
                 CROSS JOIN branch_symbols b ON b.edge_set_id = e.edge_set_id AND b.branch = ?1

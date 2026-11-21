@@ -20,7 +20,7 @@ const config = parseConfig({
 
 function legacyGraphMetadata(branch: string): string[] {
   const suffix = hashContent(branch).slice(0, 24);
-  return [`index.javaScriptGraphDependencies.${suffix}`, `index.javaScriptGraphOwnership.${suffix}`];
+  return [`index.javaScriptGraphDependencies.${suffix}`, `index.callGraphStorageVersion.${suffix}`];
 }
 
 function catalogPath(indexRoot: string): string {
@@ -242,6 +242,15 @@ describe("project structural JS/TS graph refresh", () => {
         id: `edge_${hashContent(`${legacyId}:${edge.targetName}:${edge.line}:${edge.col}`).slice(0, 16)}`,
         fromSymbolId: legacyId,
       })));
+      // A legacy off-branch pointer may name a declaration only the active
+      // branch owns. Retiring that declaration must not rewrite the other graph.
+      const mainOnly = { ...db.getSymbolsByName("left")[0], id: "legacy-main-only" };
+      db.upsertSymbol(mainOnly);
+      db.addSymbolsToBranch("main", [mainOnly.id]);
+      db.upsertCallEdge({
+        id: "legacy-foreign-pointer", fromSymbolId: legacyId, targetName: "legacyPointer",
+        toSymbolId: mainOnly.id, callType: "Call", confidence: "Direct", line: 13, col: 4, isResolved: true,
+      });
       for (const [i, branch] of branches.entries()) {
         db.deleteBranchSymbolsForBranch(branch, [callers[i].id]);
         db.addSymbolsToBranch(branch, [legacyId]);

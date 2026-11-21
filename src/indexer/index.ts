@@ -226,8 +226,7 @@ const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "12";
-const BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION = "2";
-const JAVASCRIPT_GRAPH_OWNERSHIP_KEY = "index.javaScriptGraphOwnership";
+const CALL_GRAPH_STORAGE_VERSION = "1";
 const JAVASCRIPT_GRAPH_DEPENDENCIES_KEY = "index.javaScriptGraphDependencies";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
@@ -1522,26 +1521,16 @@ export class Indexer {
     this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
   }
 
-  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string, shareJavaScript = false): SymbolData[] {
-    const shared = shareJavaScript && isJavaScriptFamilyFilePath(parsed.path);
-    let preparedNamespace: string | null;
-    if (shared) {
-      // Different from any legacy symbol, but identical across branches.
-      preparedNamespace = "structural-js:shared";
-    } else if (this.config.indexing.scipTypeScript.enabled) {
-      preparedNamespace = hashContent(this.getBranchCatalogKey()).slice(0, 16);
-    } else {
-      preparedNamespace = this.getPreparedBranchNamespace();
-    }
+  private buildCallGraphSymbols(parsed: ParsedFile): SymbolData[] {
     return parsed.symbols
       .filter((parsedSymbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind))
       .map((parsedSymbol) => {
+        // Keep the existing shared declaration ID format across languages.
+        // The namespace is historical; it does not select a resolver.
         const symbolId = `sym_${hashContent(
-          (preparedNamespace ? `${preparedNamespace}:` : "")
-          + parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":"
-          + parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":"
-          + (shared ? `${parsedSymbol.endLine}:${parsedSymbol.endCol}:` : "") + sourceHash,
-        ).slice(0, 16)}`;
+          `structural-js:shared:${parsed.path}:${parsedSymbol.name}:${parsedSymbol.kind}:`
+          + `${parsedSymbol.startLine}:${parsedSymbol.startCol}:${parsedSymbol.endLine}:${parsedSymbol.endCol}:${parsed.hash}`,
+        )}`;
         return {
           id: symbolId,
           filePath: parsed.path,
@@ -1902,7 +1891,7 @@ export class Indexer {
       (ids) => database.deleteBranchChunksForBranch(branchCatalogKey, ids),
       (ids) => database.addChunksToBranchBatch(branchCatalogKey, ids),
     );
-    const removedSymbolCandidates = this.publishBranchMembership(
+    this.publishBranchMembership(
       previousSymbolIds, stagedSymbolIds, currentSymbolIds,
       (ids) => database.deleteBranchSymbolsForBranch(branchCatalogKey, ids),
       (ids) => database.addSymbolsToBranchBatch(branchCatalogKey, ids),
@@ -1917,9 +1906,8 @@ export class Indexer {
       database.deleteChunksByIds(removableChunkIds);
     }
 
-    const referencedSymbolIds = new Set(database.getReferencedSymbolIds(removedSymbolCandidates));
-    const removableSymbolIds = removedSymbolCandidates.filter((symbolId) => !referencedSymbolIds.has(symbolId));
-    database.clearCallEdgeTargetsForSymbols(removableSymbolIds);
+    // Only unowned backing rows are collectible. Legacy outgoing rows on other
+    // branches must not be rewritten when this branch retires a target.
     database.gcOrphanSymbols();
     database.gcOrphanCallEdges();
     database.gcOrphanEmbeddings();
@@ -1986,13 +1974,13 @@ export class Indexer {
     return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
   }
 
-  private usesBranchLocalJavaScriptGraph(): boolean {
+  private canPruneJavaScriptGraphRefresh(): boolean {
     return this.config.scope === "project" && this.config.indexing.mode === "structural"
       && !this.config.indexing.scipTypeScript.enabled;
   }
 
-  private getJavaScriptGraphOwnershipMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
-    return this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_OWNERSHIP_KEY, catalogIdentity);
+  private getCallGraphStorageMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
+    return this.getBranchMigrationMetadataKey("index.callGraphStorageVersion", catalogIdentity);
   }
 
   private getLocalModuleResolutionConfigMetadataKey(
@@ -2080,9 +2068,8 @@ export class Indexer {
       === RUBY_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
       === SYMBOL_EXTRACTOR_VERSION
-      && (!this.usesBranchLocalJavaScriptGraph()
-        || database.getMetadata(this.getJavaScriptGraphOwnershipMetadataKey(catalogIdentity))
-          === BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION);
+      && database.getMetadata(this.getCallGraphStorageMetadataKey(catalogIdentity))
+        === CALL_GRAPH_STORAGE_VERSION;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -5041,8 +5028,9 @@ export class Indexer {
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
     const projectStructural = isStructural && this.config.scope === "project";
-    const trackJavaScriptDependencies = this.usesBranchLocalJavaScriptGraph();
-    const javaScriptOwnershipKey = projectStructural ? this.getJavaScriptGraphOwnershipMetadataKey() : undefined;
+    const trackJavaScriptDependencies = this.canPruneJavaScriptGraphRefresh();
+    const callGraphStorageKey = this.getCallGraphStorageMetadataKey();
+    const needsCallGraphStorageMigration = database.getMetadata(callGraphStorageKey) !== CALL_GRAPH_STORAGE_VERSION;
     const javaScriptDependencyKey = projectStructural
       ? this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_DEPENDENCIES_KEY)
       : undefined;
@@ -5318,10 +5306,8 @@ export class Indexer {
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== this.localModuleResolutionConfigHash;
     const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
-    const storedJavaScriptOwnership = javaScriptOwnershipKey ? database.getMetadata(javaScriptOwnershipKey) : null;
     let priorJavaScriptDependencies = javaScriptGraphConfigHash !== undefined
-      && storedJavaScriptOwnership === BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION
-      && !needsCallGraphResolutionMigration && !scipStateChanged
+      && !needsCallGraphStorageMigration && !needsCallGraphResolutionMigration && !scipStateChanged
       ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
       : undefined;
     if (priorJavaScriptDependencies && !await packageFormatsMatch(priorJavaScriptDependencies)) {
@@ -5428,6 +5414,7 @@ export class Indexer {
       if (
         cachedHashMatches
         && !inMigrationScope
+        && !needsCallGraphStorageMigration
         && !needsCallGraphRefresh
         && !requiresJavaScriptParserUpgrade
         && !requiresSwiftParserUpgrade
@@ -5614,9 +5601,7 @@ export class Indexer {
         const content = await fsPromises.readFile(descriptor.materializedPath, "utf-8");
         throwIfOperationAborted(signal);
         if (unchangedFilePaths.has(descriptor.storedPath)) {
-          const symbols = database.getSymbolsByFile(descriptor.storedPath).filter((symbol) =>
-            !restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)
-          );
+          const symbols = database.getSymbolsForFiles([descriptor.storedPath], branchCatalogKey);
           return { content, symbols };
         }
 
@@ -5629,7 +5614,7 @@ export class Indexer {
         )[0];
         return {
           content,
-          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash, trackJavaScriptDependencies) : [],
+          symbols: parsed ? this.buildCallGraphSymbols(parsed) : [],
           moduleSyntax: parsed?.moduleSyntax,
         };
       },
@@ -5704,25 +5689,8 @@ export class Indexer {
         }
       }
 
-      const retainedJavaScriptFiles: string[] | undefined =
-        trackJavaScriptDependencies && restrictExistingChunksToBranch ? [] : undefined;
-      for (const filePath of unchangedFilePaths) {
-        if (retainedJavaScriptFiles && isJavaScriptFamilyFilePath(filePath)) {
-          retainedJavaScriptFiles.push(filePath);
-          continue;
-        }
-        for (const symbol of database.getSymbolsByFile(filePath)) {
-          if (!restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)) {
-            allSymbolIds.add(symbol.id);
-          }
-        }
-      }
-      if (retainedJavaScriptFiles?.length) {
-        // JS/TS symbols are branch-owned. Do not materialize other branches'
-        // declarations just to discard them when retaining unchanged files.
-        for (const { id } of database.getSymbolsForFiles(retainedJavaScriptFiles, branchCatalogKey)) {
-          allSymbolIds.add(id);
-        }
+      for (const { id } of database.getSymbolsForFiles([...unchangedFilePaths], branchCatalogKey)) {
+        allSymbolIds.add(id);
       }
 
       let processedChangedFiles = 0;
@@ -5800,8 +5768,7 @@ export class Indexer {
         const pendingChunks: PendingChunk[] = [];
         const symbolBatch: SymbolData[] = [];
         const symbolBatchIds = new Set<string>();
-        const edgeBatch: CallEdgeData[] = [];
-        const sharedCallSets: BranchCallSet[] = [];
+        const callSets = new Map<string, BranchCallSet>();
 
         for (const entry of parsedFiles) {
           const parsed = entry.prepared;
@@ -5913,20 +5880,15 @@ export class Indexer {
             });
           }
 
-          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash, trackJavaScriptDependencies);
-          const fileCallSets = trackJavaScriptDependencies && isJavaScriptFamilyFilePath(parsed.path)
-            ? new Map<string, BranchCallSet>()
-            : undefined;
+          const fileSymbols = this.buildCallGraphSymbols(parsed);
           for (const symbol of fileSymbols) {
             if (!symbolBatchIds.has(symbol.id)) {
               symbolBatch.push(symbol);
               symbolBatchIds.add(symbol.id);
             }
             allSymbolIds.add(symbol.id);
-            if (fileCallSets && !fileCallSets.has(symbol.id)) {
-              const set = { fromSymbolId: symbol.id, sites: [] };
-              fileCallSets.set(symbol.id, set);
-              sharedCallSets.push(set);
+            if (!callSets.has(symbol.id)) {
+              callSets.set(symbol.id, { fromSymbolId: symbol.id, sites: [] });
             }
           }
           if (parsed.kind === "source") {
@@ -6006,26 +5968,14 @@ export class Indexer {
                 allSymbolIds.add(resolvedTarget.id);
               }
             }
-            const callSite = {
+            callSets.get(enclosingSymbol.id)!.sites.push({
               targetName: site.calleeName,
               toSymbolId: resolvedTarget?.id,
               callType: site.callType,
               confidence: site.confidence,
               line: site.line,
               col: site.column,
-            };
-            if (fileCallSets) {
-              fileCallSets.get(enclosingSymbol.id)!.sites.push(callSite);
-            } else {
-              edgeBatch.push({
-                ...callSite,
-                id: `edge_${hashContent(
-                  enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column,
-                ).slice(0, 16)}`,
-                fromSymbolId: enclosingSymbol.id,
-                isResolved: resolvedTarget !== undefined,
-              });
-            }
+            });
           }
         }
 
@@ -6036,12 +5986,7 @@ export class Indexer {
           database.upsertSymbolsBatch(symbolBatch);
           stageSymbols(symbolBatch);
         }
-        if (edgeBatch.length > 0) {
-          database.upsertCallEdgesBatch(edgeBatch);
-        }
-        if (sharedCallSets.length > 0) {
-          database.replaceBranchCallSets(branchCatalogKey, sharedCallSets);
-        }
+        database.replaceBranchCallSets(branchCatalogKey, [...callSets.values()]);
 
         processedChangedFiles += descriptorBatch.length;
         stats.totalChunks += pendingChunks.length;
@@ -6223,16 +6168,30 @@ export class Indexer {
       }
 
       if (this.scipTypeScriptState?.outcome === "ready") {
-        // During a configuration-only identity transition, newly parsed symbols are
-        // added before replaceBranchCatalog retires the previous IDs. Restrict the
-        // overlay to the catalog we are about to publish so stale and current
-        // declarations cannot make otherwise unique SCIP definitions ambiguous.
+        // SCIP must see the declarations and targets that the active branch
+        // will publish, not memberships awaiting retirement.
         const branchSymbols = database.getSymbolsForBranch(branchCatalogKey)
           .filter((symbol) => allSymbolIds.has(symbol.id));
-        const allBranchEdges = branchSymbols.flatMap((symbol) => database.getCallees(symbol.id, branchCatalogKey));
+        const allBranchEdges = branchSymbols.flatMap((symbol) =>
+          database.getCallees(symbol.id, branchCatalogKey).map((edge) =>
+            edge.toSymbolId && !allSymbolIds.has(edge.toSymbolId)
+              ? { ...edge, toSymbolId: undefined, isResolved: false }
+              : edge
+          )
+        );
         if (allBranchEdges.length > 0) {
           const result = this.scipTypeScriptState.apply(allBranchEdges, branchSymbols);
-          database.upsertCallEdgesBatch(result.edges);
+          if (result.matchedEdges > 0) {
+            // Replace complete sets only for callers that SCIP enriched.
+            const enriched = new Map<string, BranchCallSet>();
+            for (const [i, edge] of result.edges.entries()) {
+              if (edge.toSymbolId !== allBranchEdges[i].toSymbolId && !enriched.has(edge.fromSymbolId)) {
+                enriched.set(edge.fromSymbolId, { fromSymbolId: edge.fromSymbolId, sites: [] });
+              }
+            }
+            for (const edge of result.edges) enriched.get(edge.fromSymbolId)?.sites.push(edge);
+            database.replaceBranchCallSets(branchCatalogKey, [...enriched.values()]);
+          }
           if (result.matchedEdges > 0 || result.ambiguousDefinitions > 0 || result.disagreements > 0) {
             this.logger.info("Applied SCIP TypeScript call graph enrichment", {
               matchedEdges: result.matchedEdges,
@@ -6266,14 +6225,8 @@ export class Indexer {
           database.deleteMetadata(javaScriptDependencyKey);
         }
       }
-      // Ownership is independent of proof completeness. A malformed file must
-      // not keep an already-upgraded branch in the legacy-readiness state.
-      if (javaScriptOwnershipKey) {
-        if (trackJavaScriptDependencies && storedJavaScriptOwnership !== BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION) {
-          database.setMetadata(javaScriptOwnershipKey, BRANCH_LOCAL_JAVASCRIPT_GRAPH_VERSION);
-        } else if (!trackJavaScriptDependencies && storedJavaScriptOwnership !== null) {
-          database.deleteMetadata(javaScriptOwnershipKey);
-        }
+      if (needsCallGraphStorageMigration) {
+        database.setMetadata(callGraphStorageKey, CALL_GRAPH_STORAGE_VERSION);
       }
 
       const removedChunkIds: string[] = [];
@@ -7555,12 +7508,11 @@ export class Indexer {
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
+    for (const branchKey of clearedBranchKeys) {
+      database.deleteMetadata(this.getCallGraphStorageMetadataKey(branchKey));
+      database.deleteMetadata(`${JAVASCRIPT_GRAPH_DEPENDENCIES_KEY}.${hashContent(branchKey).slice(0, 24)}`);
+    }
     if (this.config.indexing.mode === "structural") {
-      for (const branchKey of clearedBranchKeys) {
-        const suffix = hashContent(branchKey).slice(0, 24);
-        database.deleteMetadata(`${JAVASCRIPT_GRAPH_OWNERSHIP_KEY}.${suffix}`);
-        database.deleteMetadata(`${JAVASCRIPT_GRAPH_DEPENDENCIES_KEY}.${suffix}`);
-      }
       this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
     }
 
@@ -7674,10 +7626,6 @@ export class Indexer {
       database.deleteBranchSymbolsForBranch(branchKey, missingSymbolIds);
       await options.heartbeat?.();
     }
-    const referencedSymbolIds = new Set(database.getReferencedSymbolIds(missingSymbolIds));
-    throwIfOperationAborted(options.signal);
-    const removedSymbolIds = missingSymbolIds.filter((symbolId) => !referencedSymbolIds.has(symbolId));
-    database.clearCallEdgeTargetsForSymbols(removedSymbolIds);
 
     const removedChunkKeySet = new Set(removedChunkKeys);
     const removedStoredFilePaths = missingStoredFilePaths.filter((filePath) =>

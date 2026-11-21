@@ -2,6 +2,16 @@ use super::{run_batch_with_write_transaction, DbError, DbResult};
 use rusqlite::{params, types::ValueRef, Connection, OptionalExtension};
 use xxhash_rust::xxh3::Xxh3;
 
+/// Optional access path for languages with case-insensitive call names.
+/// An existing v9 reader works without the index; a writer installs it.
+pub(super) fn ensure_lookup_indexes(conn: &Connection) -> DbResult<()> {
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_symbols_insensitive_name ON symbols(name COLLATE NOCASE)
+         WHERE language IN ('apex', 'php');",
+    )?;
+    Ok(())
+}
+
 pub(super) fn migrate(conn: &Connection) -> DbResult<()> {
     let migration = conn.unchecked_transaction()?;
     migration.execute_batch(

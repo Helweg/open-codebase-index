@@ -109,6 +109,7 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
     if current_version < SCHEMA_VERSION {
         migrate_schema(&conn, current_version)?;
     }
+    shared_calls::ensure_lookup_indexes(&conn)?;
 
     Ok(conn)
 }
@@ -2205,6 +2206,53 @@ mod tests {
         assert_eq!(inactive[0].id, callees[0].id);
         assert_eq!(inactive[0].to_symbol_id, None);
         assert!(!inactive[0].is_resolved);
+    }
+
+    #[test]
+    fn shared_point_readers_match_case_by_source_spelling_and_branch_target_name() {
+        let (_dir, mut conn) = setup_test_db();
+        let symbols = [
+            call_graph_symbol("apex", "ApexCaller", "apex"),
+            call_graph_symbol("swift", "SwiftCaller", "swift"),
+            call_graph_symbol("target", "DisplayName", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch(&conn, "main", &symbols.map(|symbol| symbol.id)).unwrap();
+        add_symbols_to_branch(&conn, "other", &["apex".to_owned(), "swift".to_owned()]).unwrap();
+        for branch in ["main", "other"] {
+            let sets = ["apex", "swift"]
+                .into_iter()
+                .map(|caller| BranchCallSet {
+                    from_symbol_id: caller.to_owned(),
+                    sites: vec![BranchCallSite {
+                        target_name: "Mixed".to_owned(),
+                        to_symbol_id: Some("target".to_owned()),
+                        call_type: "Call".to_owned(),
+                        confidence: "Direct".to_owned(),
+                        line: 3,
+                        col: 6,
+                    }],
+                })
+                .collect();
+            replace_branch_call_sets(&mut conn, branch, sets).unwrap();
+        }
+        let spelling = get_callers(&conn, "MIXED", "main", None, BranchSets).unwrap();
+        assert_eq!(spelling.len(), 1);
+        assert_eq!(spelling[0].from_symbol_id, "apex");
+        let alias =
+            get_callers_with_context(&conn, "DISPLAYNAME", "main", None, BranchSets).unwrap();
+        assert_eq!(alias.len(), 2);
+        assert!(alias.iter().any(|edge| edge.from_symbol_id == "swift"));
+        assert!(alias
+            .iter()
+            .all(|edge| edge.to_symbol_id.as_deref() == Some("target")));
+        assert!(get_callers(&conn, "DISPLAYNAME", "other", None, BranchSets)
+            .unwrap()
+            .is_empty());
+        let other = get_callers(&conn, "MIXED", "other", None, BranchSets).unwrap();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, spelling[0].id);
+        assert!(!other[0].is_resolved);
     }
 
     #[test]
