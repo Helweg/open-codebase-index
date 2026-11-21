@@ -108,25 +108,14 @@ describe("PDF database metadata persistence", () => {
   });
 
   it("migrates schema 7 additively and preserves existing chunk rows", () => {
+    new Database(dbPath).close();
     const legacy = new DatabaseSync(dbPath);
     legacy.exec(`
-      CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-      INSERT INTO metadata (key, value) VALUES ('schema_version', '7');
-      CREATE TABLE chunks (
-        chunk_id TEXT PRIMARY KEY,
-        content_hash TEXT NOT NULL,
-        file_path TEXT NOT NULL,
-        start_line INTEGER NOT NULL,
-        end_line INTEGER NOT NULL,
-        node_type TEXT,
-        name TEXT,
-        language TEXT NOT NULL,
-        blame_sha TEXT,
-        blame_author TEXT,
-        blame_author_email TEXT,
-        blame_committed_at INTEGER,
-        blame_summary TEXT
-      );
+      ALTER TABLE chunks DROP COLUMN document_kind;
+      ALTER TABLE chunks DROP COLUMN page_start;
+      ALTER TABLE chunks DROP COLUMN page_end;
+      ALTER TABLE chunks DROP COLUMN source_text;
+      UPDATE metadata SET value = '7' WHERE key = 'schema_version';
       INSERT INTO chunks (
         chunk_id, content_hash, file_path, start_line, end_line, node_type, name, language
       ) VALUES (
@@ -137,7 +126,7 @@ describe("PDF database metadata persistence", () => {
 
     db = new Database(dbPath);
 
-    expect(db.getMetadata("schema_version")).toBe("8");
+    expect(db.getMetadata("schema_version")).toBe("9");
     const migrated = db.getChunk("legacy-code")!;
     expect(migrated).toMatchObject({
       chunkId: "legacy-code",
