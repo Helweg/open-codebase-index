@@ -28,6 +28,7 @@ function copyIndexedMigrationMetadataToBranch(database: Database, catalogIdentit
   const branchSuffix = hashContent(catalogIdentity).slice(0, 24);
   for (const prefix of [
     "index.callGraphResolutionVersion",
+    "index.callGraphStorageVersion",
     "index.parser.javascriptVersion",
     "index.parser.swiftVersion",
     "index.parser.metalVersion",

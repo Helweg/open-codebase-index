@@ -5,6 +5,8 @@ use thiserror::Error;
 
 mod call_graph;
 pub use call_graph::*;
+mod shared_calls;
+pub use shared_calls::{replace_branch_call_sets, BranchCallSet, BranchCallSite};
 
 #[derive(Error, Debug)]
 pub enum DbError {
@@ -16,12 +18,14 @@ pub enum DbError {
     ReadOnlySchema(String),
     #[error("Invalid transaction state: {0}")]
     TransactionState(String),
+    #[error("Call graph error: {0}")]
+    CallGraph(&'static str),
 }
 
 pub type DbResult<T> = Result<T, DbError>;
 
 /// Schema version for migrations
-const SCHEMA_VERSION: i32 = 8;
+const SCHEMA_VERSION: i32 = 9;
 
 /// Maximum number of SQL bind parameters per query.
 /// SQLite defaults to 999 (SQLITE_MAX_VARIABLE_NUMBER). We use 900 to stay safely under.
@@ -105,18 +109,17 @@ pub fn init_db(db_path: &Path) -> DbResult<Connection> {
     if current_version < SCHEMA_VERSION {
         migrate_schema(&conn, current_version)?;
     }
+    shared_calls::ensure_lookup_indexes(&conn)?;
 
     Ok(conn)
 }
 
 /// Opens a published database without creating files or running migrations.
-pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
+pub fn open_db_read_only(db_path: &Path) -> DbResult<(Connection, CallGraphLayout, String)> {
     let conn = Connection::open_with_flags(
         db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )?;
-
-    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
 
     let stored_version: String = conn
         .query_row(
@@ -135,13 +138,28 @@ pub fn open_db_read_only(db_path: &Path) -> DbResult<Connection> {
         ))
     })?;
 
-    if current_version != 6 && current_version != 7 && current_version != SCHEMA_VERSION {
+    if !(6..=SCHEMA_VERSION).contains(&current_version) {
         return Err(DbError::ReadOnlySchema(format!(
             "found version {current_version}, expected {SCHEMA_VERSION}; a writer must migrate the index"
         )));
     }
+    let layout = if current_version < 9 {
+        shared_calls::create_legacy_read_view(&conn)?;
+        CallGraphLayout::Legacy
+    } else {
+        CallGraphLayout::BranchSets
+    };
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA foreign_keys = ON;")?;
 
-    Ok(conn)
+    Ok((conn, layout, stored_version))
+}
+
+/// Check the application schema version without reopening on normal WAL writes.
+pub(super) fn has_catalog_schema_version(conn: &Connection, version: &str) -> DbResult<bool> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT EXISTS(SELECT 1 FROM metadata WHERE key = 'schema_version' AND value = ?1)",
+    )?;
+    Ok(stmt.query_row([version], |row| row.get(0))?)
 }
 
 /// Creates an empty in-memory catalog, then locks it for read-only access.
@@ -398,7 +416,7 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
 
         migration.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["8"],
         )?;
         migration.commit()?;
     }
@@ -406,8 +424,12 @@ fn migrate_schema(conn: &Connection, from_version: i32) -> DbResult<()> {
     if from_version == 0 {
         conn.execute(
             "INSERT OR REPLACE INTO metadata (key, value) VALUES ('schema_version', ?)",
-            params![SCHEMA_VERSION.to_string()],
+            params!["8"],
         )?;
+    }
+
+    if from_version < 9 {
+        shared_calls::migrate(conn)?;
     }
 
     Ok(())
@@ -1160,6 +1182,7 @@ pub fn get_all_branches(conn: &Connection) -> DbResult<Vec<String>> {
 /// Remove all indexed data so a force rebuild starts from an empty database.
 pub fn clear_all_indexed_data(conn: &Connection) -> DbResult<()> {
     conn.execute("DELETE FROM branch_symbols", [])?;
+    conn.execute("DELETE FROM call_edge_sets", [])?;
     conn.execute("DELETE FROM branch_chunks", [])?;
     conn.execute("DELETE FROM call_edges", [])?;
     conn.execute("DELETE FROM symbols", [])?;
@@ -1297,8 +1320,16 @@ pub fn get_stats(conn: &Connection) -> DbResult<DbStats> {
         .prepare_cached(branch_names_sql!("SELECT COUNT(*) FROM branch_names"))?
         .query_row([], |row| row.get(0))?;
     let symbol_count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))?;
-    let call_edge_count: i64 =
+    let mut call_edge_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM call_edges", [], |row| row.get(0))?;
+    let has_shared_edges: bool = conn
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = 'shared_call_edges')")?
+        .query_row([], |row| row.get(0))?;
+    if has_shared_edges {
+        call_edge_count += conn.query_row("SELECT COUNT(*) FROM shared_call_edges", [], |row| {
+            row.get::<_, i64>(0)
+        })?;
+    }
     Ok(DbStats {
         embedding_count: embedding_count as u64,
         chunk_count,
@@ -1320,6 +1351,7 @@ pub struct DbStats {
 
 #[cfg(test)]
 mod tests {
+    use super::CallGraphLayout::BranchSets;
     use super::*;
     use tempfile::TempDir;
 
@@ -1341,7 +1373,7 @@ mod tests {
         let (dir, conn) = setup_test_db();
         conn.execute_batch(
             "INSERT INTO branch_chunks VALUES ('main', '0');
-             INSERT INTO branch_symbols VALUES ('main', '0');",
+             INSERT INTO branch_symbols (branch, symbol_id) VALUES ('main', '0');",
         )
         .unwrap();
         let read = |conn: &Connection, sql: &str| -> Vec<String> {
@@ -1374,13 +1406,13 @@ mod tests {
              WITH RECURSIVE b(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM b WHERE n<349),
                             m(n) AS (VALUES(0) UNION ALL SELECT n+1 FROM m WHERE n<199)
              INSERT INTO branch_chunks SELECT printf('b%03d', b.n), CAST(m.n AS TEXT) FROM b, m;
-             INSERT INTO branch_symbols SELECT branch, chunk_id FROM branch_chunks;
+             INSERT INTO branch_symbols (branch, symbol_id) SELECT branch, chunk_id FROM branch_chunks;
              INSERT INTO branch_chunks VALUES ('z-chunk-only', '0');
-             INSERT INTO branch_symbols VALUES ('A-symbol-only', '0');",
+             INSERT INTO branch_symbols (branch, symbol_id) VALUES ('A-symbol-only', '0');",
         )
         .unwrap();
         drop(conn);
-        let reader = open_db_read_only(&dir.path().join("test.db")).unwrap();
+        let (reader, _, _) = open_db_read_only(&dir.path().join("test.db")).unwrap();
         let expected = read(&reader, SCAN);
         assert_eq!(expected.len(), 352);
         assert_eq!(get_all_branches(&reader).unwrap(), expected);
@@ -1481,7 +1513,7 @@ mod tests {
     }
 
     #[test]
-    fn test_schema_v8_fresh_database() {
+    fn test_current_schema_fresh_database() {
         let (_temp_dir, conn) = setup_test_db();
         let version: String = conn
             .query_row(
@@ -1490,11 +1522,11 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(version, "8");
+        assert_eq!(version, SCHEMA_VERSION.to_string());
     }
 
     #[test]
-    fn test_schema_v8_read_only_accepts_compatible_v6_and_v7() {
+    fn test_read_only_accepts_compatible_v6_and_v7() {
         let (temp_dir, conn) = setup_test_db();
         let db_path = temp_dir.path().join("test.db");
         set_metadata(&conn, "schema_version", "7").unwrap();
@@ -1518,8 +1550,98 @@ mod tests {
         let error = open_db_read_only(&db_path).err().unwrap();
         assert_eq!(
             error.to_string(),
-            "Read-only database schema error: found version 5, expected 8; a writer must migrate the index"
+            format!("Read-only database schema error: found version 5, expected {SCHEMA_VERSION}; a writer must migrate the index")
         );
+    }
+
+    #[test]
+    fn reads_an_unmigrated_v8_graph_and_rolls_back_an_interrupted_upgrade() {
+        let (temp_dir, conn) = setup_test_db();
+        let db_path = temp_dir.path().join("test.db");
+        conn.execute_batch(
+            r#"
+            DROP VIEW catalog_call_edges;
+            DROP TRIGGER gc_call_set_after_branch_symbol_delete;
+            DROP TRIGGER gc_call_set_after_branch_symbol_update;
+            DROP INDEX idx_branch_symbols_set;
+            ALTER TABLE branch_symbols DROP COLUMN edge_set_id;
+            DROP TABLE shared_call_edges;
+            DROP TABLE call_edge_sets;
+            UPDATE metadata SET value = '8' WHERE key = 'schema_version';
+            INSERT INTO symbols VALUES ('legacy', 'legacy.ts', 'work', 'function', 1, 0, 3, 1, 'typescript');
+            INSERT INTO branch_symbols (branch, symbol_id) VALUES ('main', 'legacy');
+            INSERT INTO call_edges
+              (id, from_symbol_id, target_name, call_type, line, col)
+              VALUES ('site', 'legacy', 'missing', 'Call', 2, 4);
+            CREATE TRIGGER reject_schema_v9 BEFORE INSERT ON metadata
+              WHEN NEW.key = 'schema_version' AND NEW.value = '9'
+            BEGIN
+              SELECT RAISE(ABORT, 'injected schema upgrade failure');
+            END;
+            "#,
+        )
+        .unwrap();
+        drop(conn);
+
+        let (reader, layout, _) = open_db_read_only(&db_path).unwrap();
+        let edges = get_callees(&reader, "legacy", "main", None, layout).unwrap();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(
+            (&*edges[0].target_name, edges[0].line, edges[0].col),
+            ("missing", 2, 4)
+        );
+        assert_eq!(
+            get_callers(&reader, "missing", "main", Some("Call"), layout)
+                .unwrap()
+                .len(),
+            1
+        );
+        let callers = get_callers_with_context(&reader, "missing", "main", None, layout).unwrap();
+        assert_eq!(callers.len(), 1);
+        assert_eq!(
+            (
+                &*callers[0].from_symbol_name,
+                &*callers[0].from_symbol_file_path
+            ),
+            ("work", "legacy.ts")
+        );
+        assert_eq!(get_stats(&reader).unwrap().call_edge_count, 1);
+        assert_eq!(
+            get_metadata(&reader, "schema_version").unwrap().as_deref(),
+            Some("8")
+        );
+        drop(reader);
+
+        assert!(init_db(&db_path)
+            .unwrap_err()
+            .to_string()
+            .contains("injected schema upgrade failure"));
+        let writer = Connection::open(&db_path).unwrap();
+        let has_selector: bool = writer
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM pragma_table_info('branch_symbols') WHERE name = 'edge_set_id')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(!has_selector);
+        writer
+            .execute_batch("DROP TRIGGER reject_schema_v9;")
+            .unwrap();
+        drop(writer);
+
+        let upgraded = init_db(&db_path).unwrap();
+        assert_eq!(
+            get_metadata(&upgraded, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
+        let after = get_callees(&upgraded, "legacy", "main", None, BranchSets).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(
+            (&*after[0].target_name, after[0].line, after[0].col),
+            ("missing", 2, 4)
+        );
+        assert_eq!(after[0].to_symbol_id, None);
     }
 
     #[test]
@@ -1598,7 +1720,10 @@ mod tests {
 
         let conn = init_db(&db_path).unwrap();
 
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         assert_eq!(
             get_metadata(&conn, "index.embeddingModel")
                 .unwrap()
@@ -1672,7 +1797,10 @@ mod tests {
         }
 
         let conn = init_db(&db_path).unwrap();
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         let added_columns: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
@@ -1694,7 +1822,10 @@ mod tests {
         }
 
         let conn = init_db(&db_path).unwrap();
-        assert_eq!(get_metadata(&conn, "schema_version").unwrap().unwrap(), "8");
+        assert_eq!(
+            get_metadata(&conn, "schema_version").unwrap().unwrap(),
+            SCHEMA_VERSION.to_string()
+        );
         let columns: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('chunks') WHERE name IN ('document_kind', 'page_start', 'page_end', 'source_text')",
@@ -1955,26 +2086,26 @@ mod tests {
         upsert_call_edge(&conn, &edge).unwrap();
 
         // Get callees of main
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert_eq!(callees.len(), 1);
         assert_eq!(callees[0].target_name, "helper");
         assert!(!callees[0].is_resolved);
 
         // Get callers of helper (branch-filtered)
-        let callers = get_callers(&conn, "helper", "main", None).unwrap();
+        let callers = get_callers(&conn, "helper", "main", None, BranchSets).unwrap();
         assert_eq!(callers.len(), 1);
         assert_eq!(callers[0].from_symbol_id, "sym_main");
 
         // Resolve the edge
         resolve_call_edge(&conn, "edge1", "sym_helper").unwrap();
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert!(callees[0].is_resolved);
         assert_eq!(callees[0].to_symbol_id, Some("sym_helper".to_string()));
 
         // Delete by file
         let deleted = delete_call_edges_by_file(&conn, "src/main.ts").unwrap();
         assert_eq!(deleted, 1);
-        let callees = get_callees(&conn, "sym_main", "main", None).unwrap();
+        let callees = get_callees(&conn, "sym_main", "main", None, BranchSets).unwrap();
         assert!(callees.is_empty());
     }
 
@@ -2008,26 +2139,128 @@ mod tests {
         ];
         upsert_call_edges_batch(&mut conn, &edges).unwrap();
 
-        let swift_lower = get_callers(&conn, "load", "main", None).unwrap();
+        let swift_lower = get_callers(&conn, "load", "main", None, BranchSets).unwrap();
         assert_eq!(swift_lower.len(), 1);
         assert_eq!(swift_lower[0].id, "swift_lower_edge");
 
-        let swift_upper = get_callers(&conn, "Load", "main", Some("Call")).unwrap();
+        let swift_upper = get_callers(&conn, "Load", "main", Some("Call"), BranchSets).unwrap();
         assert_eq!(swift_upper.len(), 1);
         assert_eq!(swift_upper[0].id, "swift_upper_edge");
 
-        let cpp_lower = get_callers_with_context(&conn, "render", "main", None).unwrap();
+        let cpp_lower =
+            get_callers_with_context(&conn, "render", "main", None, BranchSets).unwrap();
         assert_eq!(cpp_lower.len(), 1);
         assert_eq!(cpp_lower[0].id, "cpp_lower_edge");
         assert_eq!(cpp_lower[0].from_symbol_name, "cppLowerCaller");
 
-        let cpp_upper = get_callers_with_context(&conn, "Render", "main", Some("Call")).unwrap();
+        let cpp_upper =
+            get_callers_with_context(&conn, "Render", "main", Some("Call"), BranchSets).unwrap();
         assert_eq!(cpp_upper.len(), 1);
         assert_eq!(cpp_upper[0].id, "cpp_upper_edge");
 
-        let php = get_callers_with_context(&conn, "HANDLER", "main", None).unwrap();
+        let php = get_callers_with_context(&conn, "HANDLER", "main", None, BranchSets).unwrap();
         assert_eq!(php.len(), 1);
         assert_eq!(php[0].id, "php_edge");
+    }
+
+    #[test]
+    fn indexed_point_readers_merge_legacy_and_shared_sites_without_duplicates() {
+        let (_dir, mut conn) = setup_test_db();
+        let symbols = [
+            call_graph_symbol("caller", "sharedCaller", "typescript"),
+            call_graph_symbol("target", "target", "typescript"),
+            call_graph_symbol("legacy", "legacyCaller", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch(&conn, "main", &symbols.map(|symbol| symbol.id)).unwrap();
+        add_symbols_to_branch(&conn, "other", &["caller".to_owned()]).unwrap();
+        upsert_call_edge(&conn, &call_graph_edge("flat", "legacy", "TARGET", None)).unwrap();
+        for branch in ["main", "other"] {
+            replace_branch_call_sets(
+                &mut conn,
+                branch,
+                vec![BranchCallSet {
+                    from_symbol_id: "caller".to_owned(),
+                    sites: vec![BranchCallSite {
+                        target_name: "target".to_owned(),
+                        to_symbol_id: Some("target".to_owned()),
+                        call_type: "Call".to_owned(),
+                        confidence: "Direct".to_owned(),
+                        line: 3,
+                        col: 0,
+                    }],
+                }],
+            )
+            .unwrap();
+        }
+
+        let callees = get_callees(&conn, "caller", "main", Some("Call"), BranchSets).unwrap();
+        assert_eq!(callees.len(), 1);
+        assert_eq!(callees[0].to_symbol_id.as_deref(), Some("target"));
+        let callers = get_callers(&conn, "target", "main", Some("Call"), BranchSets).unwrap();
+        assert_eq!(callers.len(), 2, "literal and resolved name hit one site");
+        assert!(callers.iter().any(|edge| edge.id == "flat"));
+        assert!(callers
+            .iter()
+            .any(|edge| edge.id == callees[0].id && edge.is_resolved));
+        let context = get_callers_with_context(&conn, "TARGET", "main", None, BranchSets).unwrap();
+        assert_eq!(context.len(), 1, "PHP alone matches case-insensitively");
+        assert_eq!(
+            (&*context[0].id, &*context[0].from_symbol_name),
+            ("flat", "legacyCaller")
+        );
+        let inactive = get_callees(&conn, "caller", "other", None, BranchSets).unwrap();
+        assert_eq!(inactive.len(), 1);
+        assert_eq!(inactive[0].id, callees[0].id);
+        assert_eq!(inactive[0].to_symbol_id, None);
+        assert!(!inactive[0].is_resolved);
+    }
+
+    #[test]
+    fn shared_point_readers_match_case_by_source_spelling_and_branch_target_name() {
+        let (_dir, mut conn) = setup_test_db();
+        let symbols = [
+            call_graph_symbol("apex", "ApexCaller", "apex"),
+            call_graph_symbol("swift", "SwiftCaller", "swift"),
+            call_graph_symbol("target", "DisplayName", "php"),
+        ];
+        upsert_symbols_batch(&mut conn, &symbols).unwrap();
+        add_symbols_to_branch(&conn, "main", &symbols.map(|symbol| symbol.id)).unwrap();
+        add_symbols_to_branch(&conn, "other", &["apex".to_owned(), "swift".to_owned()]).unwrap();
+        for branch in ["main", "other"] {
+            let sets = ["apex", "swift"]
+                .into_iter()
+                .map(|caller| BranchCallSet {
+                    from_symbol_id: caller.to_owned(),
+                    sites: vec![BranchCallSite {
+                        target_name: "Mixed".to_owned(),
+                        to_symbol_id: Some("target".to_owned()),
+                        call_type: "Call".to_owned(),
+                        confidence: "Direct".to_owned(),
+                        line: 3,
+                        col: 6,
+                    }],
+                })
+                .collect();
+            replace_branch_call_sets(&mut conn, branch, sets).unwrap();
+        }
+        let spelling = get_callers(&conn, "MIXED", "main", None, BranchSets).unwrap();
+        assert_eq!(spelling.len(), 1);
+        assert_eq!(spelling[0].from_symbol_id, "apex");
+        let alias =
+            get_callers_with_context(&conn, "DISPLAYNAME", "main", None, BranchSets).unwrap();
+        assert_eq!(alias.len(), 2);
+        assert!(alias.iter().any(|edge| edge.from_symbol_id == "swift"));
+        assert!(alias
+            .iter()
+            .all(|edge| edge.to_symbol_id.as_deref() == Some("target")));
+        assert!(get_callers(&conn, "DISPLAYNAME", "other", None, BranchSets)
+            .unwrap()
+            .is_empty());
+        let other = get_callers(&conn, "MIXED", "other", None, BranchSets).unwrap();
+        assert_eq!(other.len(), 1);
+        assert_eq!(other[0].id, spelling[0].id);
+        assert!(!other[0].is_resolved);
     }
 
     #[test]
@@ -2251,7 +2484,7 @@ mod tests {
         let removed_edges = gc_orphan_call_edges(&conn).unwrap();
         assert_eq!(removed_edges, 0);
         // Edge from 'used' still exists
-        let remaining_edges = get_callees(&conn, "used", "main", None).unwrap();
+        let remaining_edges = get_callees(&conn, "used", "main", None, BranchSets).unwrap();
         assert_eq!(remaining_edges.len(), 1);
     }
 
@@ -2310,7 +2543,9 @@ mod tests {
             .unwrap()
             .is_empty());
         assert!(get_branch_symbol_ids(&conn, "main").unwrap().is_empty());
-        assert!(get_callees(&conn, "sym1", "main", None).unwrap().is_empty());
+        assert!(get_callees(&conn, "sym1", "main", None, BranchSets)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -2414,6 +2649,8 @@ mod tests {
                 CREATE INDEX idx_call_edges_from ON call_edges(from_symbol_id);
                 CREATE INDEX idx_call_edges_to ON call_edges(to_symbol_id);
                 CREATE INDEX idx_call_edges_target_name ON call_edges(target_name);
+                INSERT INTO symbols VALUES ('old', 'old.ts', 'run', 'function', 1, 0, 2, 1, 'typescript');
+                INSERT INTO call_edges VALUES ('site', 'old', 'work', NULL, 'Call', 2, 1, 0);
                 INSERT INTO metadata (key, value) VALUES ('schema_version', '2');
                 "#,
             )
@@ -2429,7 +2666,16 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(schema_version, "8");
+        assert_eq!(schema_version, SCHEMA_VERSION.to_string());
+        // The old catalog had no branch membership yet. Populating it after the
+        // upgrade must expose the legacy call edge with its original callsite.
+        add_symbols_to_branch(&conn, "main", &["old".to_owned()]).unwrap();
+        let edges = get_callees(&conn, "old", "main", None, BranchSets).unwrap();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(
+            (&*edges[0].target_name, edges[0].line, edges[0].col),
+            ("work", 2, 1)
+        );
 
         let on_delete: String = conn
             .query_row("PRAGMA foreign_key_list(call_edges)", [], |row| row.get(6))
@@ -2506,7 +2752,7 @@ mod tests {
             is_resolved: false,
         };
         upsert_call_edge(&conn, &edge).unwrap();
-        let before = get_callees(&conn, "sym_caller", "main", None).unwrap();
+        let before = get_callees(&conn, "sym_caller", "main", None, BranchSets).unwrap();
         assert_eq!(before.len(), 1);
 
         let deleted = delete_symbols_by_file(&conn, "src/main.ts").unwrap();
@@ -2734,8 +2980,15 @@ mod tests {
 
         upsert_symbols_batch(&mut conn, &symbols).unwrap();
         add_symbols_to_branch(&conn, "main", &symbol_ids).unwrap();
+        let mut other = symbols[950].clone();
+        other.id = "other-version".to_owned();
+        upsert_symbol(&conn, &other).unwrap();
+        add_symbols_to_branch(&conn, "other", &[other.id]).unwrap();
 
         let result = get_symbols_for_files(&conn, &file_paths, "main").unwrap();
-        assert_eq!(result.len(), 1000);
+        assert_eq!(
+            result.into_iter().map(|row| row.id).collect::<Vec<_>>(),
+            symbol_ids
+        );
     }
 }

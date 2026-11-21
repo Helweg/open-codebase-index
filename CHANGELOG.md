@@ -9,10 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Performance
 
-- **Index startup and refresh**: Use targeted SQLite presence and count queries, seek distinct branch names through existing indexes, compile each native call query once, and publish only changed branch memberships. Existing catalogs open and refresh without a format migration.
+- **Index startup and refresh**: Use targeted SQLite presence and count queries, seek distinct branch names through existing indexes, compile each native call query once, and publish only changed branch memberships.
+- **Structural JS/TS call-graph refresh**: Refresh changed files and callers affected by import and re-export probes. Missing dependency records or resolver configuration changes trigger a full JS/TS refresh.
+- **Retained call-graph symbols**: Seek indexed files before checking branch membership. CommonJS format checks share package manifest lookups across files in a refresh and recheck them on the next refresh.
+- **Call-graph point queries**: Caller and callee lookups use the callsite and branch-selector indexes directly. Case-insensitive caller lookup seeks matching names instead of scanning unrelated PHP and Apex declarations.
+- **Graph centrality**: Count branch edges as SQLite returns them rather than copying the graph into a second set of records.
 
 ### Fixed
 
+- **Call graph branch isolation**: All call-graph languages share declarations and outgoing call sets without overwriting other branches’ graphs, including with SCIP enrichment. Normal refresh converts each branch separately and leaves language-specific refresh rules unchanged. The v9 catalog requires an index rebuild to downgrade to an older reader.
+- **Live hybrid readers**: Reopen SQLite after an in-place schema upgrade so already-running readers see newly published call edges.
 - **Explicit eval config selection**: Reject missing `--config` paths before indexing instead of silently falling back to another config; omitted `--config` keeps the existing fallback.
 - **Pre-edit evaluation scope**: Keep `expected.filePath` out of `edit-context` requests; only explicit `args.filePath` scopes target resolution, so unscoped duplicate symbols no longer resolve using a gold label.
 - **Eval reindex isolation**: Load evaluation configs in memory without writing project configuration; incremental and forced project-scoped evals use an isolated worktree-local default catalog, preserving configured-store rebuild guards and structural/global isolation.

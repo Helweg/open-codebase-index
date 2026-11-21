@@ -2956,16 +2956,12 @@ main() {
         await indexer.close();
 
         const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        database.upsertCallEdge({
-          id: resolvedEdge!.id,
+        database.replaceBranchCallSets("default", [{
           fromSymbolId: resolvedEdge!.fromSymbolId,
-          targetName: resolvedEdge!.targetName,
-          callType: resolvedEdge!.callType,
-          confidence: resolvedEdge!.confidence,
-          line: resolvedEdge!.line,
-          col: resolvedEdge!.col,
-          isResolved: false,
-        });
+          sites: database.getCallees(resolvedEdge!.fromSymbolId, "default").map((site) =>
+            site.id === resolvedEdge!.id ? { ...site, toSymbolId: undefined } : site
+          ),
+        }]);
         database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "8");
         database.close();
 
@@ -3211,16 +3207,12 @@ main() {
         await indexer.close();
 
         const database = new Database(path.join(projectDir, ".opencode", "index", "codebase.db"));
-        database.upsertCallEdge({
-          id: edge!.id,
+        database.replaceBranchCallSets("default", [{
           fromSymbolId: edge!.fromSymbolId,
-          targetName: edge!.targetName,
-          callType: edge!.callType,
-          confidence: edge!.confidence,
-          line: edge!.line,
-          col: edge!.col,
-          isResolved: false,
-        });
+          sites: database.getCallees(edge!.fromSymbolId, "default").map((site) =>
+            site.id === edge!.id ? { ...site, toSymbolId: undefined } : site
+          ),
+        }]);
         database.setMetadata(migrationMetadataKey("index.callGraphResolutionVersion"), "6");
         database.close();
         const embeddingCallsBeforeMigration = fetchSpy.mock.calls.length;

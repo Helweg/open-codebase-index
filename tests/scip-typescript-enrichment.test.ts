@@ -297,6 +297,13 @@ describe("SCIP TypeScript enrichment", () => {
     expect((await targetState(indexer)).resolved).toBe(false);
     await indexer.close();
 
+    indexer = new Indexer(repo, config(true, decoder), "jcode", { indexPath });
+    await indexer.index();
+    const branchB = await targetState(indexer);
+    expect(branchB.resolved).toBe(true);
+    expect(branchB.targetId).not.toBe(branchA.targetId);
+    await indexer.close();
+
     indexer = new Indexer(repo, config(false, decoder), "jcode", { indexPath });
     await indexer.index();
     expect((await targetState(indexer)).resolved).toBe(false);

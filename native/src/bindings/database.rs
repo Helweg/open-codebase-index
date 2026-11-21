@@ -8,6 +8,8 @@ use napi_derive::napi;
 #[napi]
 pub struct Database {
     conn: std::sync::Mutex<Option<rusqlite::Connection>>,
+    call_graph_layout: db::CallGraphLayout,
+    opened_read_only_schema_version: Option<String>,
 }
 
 #[napi(object)]
@@ -46,6 +48,22 @@ pub struct EmbeddingBatchItem {
 }
 
 #[napi(object)]
+pub struct BranchCallSetData {
+    pub from_symbol_id: String,
+    pub sites: Vec<BranchCallSiteData>,
+}
+
+#[napi(object)]
+pub struct BranchCallSiteData {
+    pub target_name: String,
+    pub to_symbol_id: Option<String>,
+    pub call_type: String,
+    pub confidence: String,
+    pub line: u32,
+    pub col: u32,
+}
+
+#[napi(object)]
 pub struct DatabaseStats {
     pub embedding_count: u32,
     pub chunk_count: u32,
@@ -57,9 +75,15 @@ pub struct DatabaseStats {
 
 #[napi]
 impl Database {
-    fn from_connection(conn: rusqlite::Connection) -> Self {
+    fn from_connection(
+        conn: rusqlite::Connection,
+        call_graph_layout: db::CallGraphLayout,
+        opened_read_only_schema_version: Option<String>,
+    ) -> Self {
         Self {
             conn: std::sync::Mutex::new(Some(conn)),
+            call_graph_layout,
+            opened_read_only_schema_version,
         }
     }
 
@@ -67,21 +91,42 @@ impl Database {
     pub fn new(db_path: String) -> Result<Self> {
         let conn = db::init_db(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(
+            conn,
+            db::CallGraphLayout::BranchSets,
+            None,
+        ))
     }
 
     #[napi(factory)]
     pub fn open_read_only(db_path: String) -> Result<Self> {
-        let conn = db::open_db_read_only(std::path::Path::new(&db_path))
+        let (conn, layout, version) = db::open_db_read_only(std::path::Path::new(&db_path))
             .map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(conn, layout, Some(version)))
     }
 
     #[napi(factory)]
     pub fn create_empty_read_only() -> Result<Self> {
         let conn =
             db::create_empty_read_only_db().map_err(|e| Error::from_reason(e.to_string()))?;
-        Ok(Self::from_connection(conn))
+        Ok(Self::from_connection(
+            conn,
+            db::CallGraphLayout::BranchSets,
+            None,
+        ))
+    }
+
+    /// The legacy TEMP view and call-graph layout are chosen when a reader opens.
+    #[napi]
+    pub fn read_only_schema_changed(&self) -> Result<bool> {
+        let Some(opened_version) = self.opened_read_only_schema_version.as_deref() else {
+            return Ok(false);
+        };
+        self.with_conn(|conn| {
+            db::has_catalog_schema_version(conn, opened_version)
+                .map(|matches| !matches)
+                .map_err(|e| Error::from_reason(e.to_string()))
+        })
     }
 
     fn closed_error() -> Error {
@@ -817,6 +862,36 @@ impl Database {
     }
 
     #[napi]
+    pub fn replace_branch_call_sets(
+        &self,
+        branch: String,
+        sets: Vec<BranchCallSetData>,
+    ) -> Result<()> {
+        let sets = sets
+            .into_iter()
+            .map(|set| db::BranchCallSet {
+                from_symbol_id: set.from_symbol_id,
+                sites: set
+                    .sites
+                    .into_iter()
+                    .map(|site| db::BranchCallSite {
+                        target_name: site.target_name,
+                        to_symbol_id: site.to_symbol_id,
+                        call_type: site.call_type,
+                        confidence: site.confidence,
+                        line: site.line,
+                        col: site.col,
+                    })
+                    .collect(),
+            })
+            .collect();
+        self.with_conn_mut(|conn| {
+            db::replace_branch_call_sets(conn, &branch, sets)
+                .map_err(|error| Error::from_reason(error.to_string()))
+        })
+    }
+
+    #[napi]
     pub fn get_callers(
         &self,
         symbol_name: String,
@@ -824,8 +899,14 @@ impl Database {
         call_type_filter: Option<String>,
     ) -> Result<Vec<CallEdgeData>> {
         self.with_conn(|conn| {
-            let rows = db::get_callers(conn, &symbol_name, &branch, call_type_filter.as_deref())
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+            let rows = db::get_callers(
+                conn,
+                &symbol_name,
+                &branch,
+                call_type_filter.as_deref(),
+                self.call_graph_layout,
+            )
+            .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows
                 .into_iter()
                 .map(|r| CallEdgeData {
@@ -853,8 +934,14 @@ impl Database {
         call_type_filter: Option<String>,
     ) -> Result<Vec<CallEdgeData>> {
         self.with_conn(|conn| {
-            let rows = db::get_callees(conn, &symbol_id, &branch, call_type_filter.as_deref())
-                .map_err(|e| Error::from_reason(e.to_string()))?;
+            let rows = db::get_callees(
+                conn,
+                &symbol_id,
+                &branch,
+                call_type_filter.as_deref(),
+                self.call_graph_layout,
+            )
+            .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows
                 .into_iter()
                 .map(|r| CallEdgeData {
@@ -887,6 +974,7 @@ impl Database {
                 &symbol_name,
                 &branch,
                 call_type_filter.as_deref(),
+                self.call_graph_layout,
             )
             .map_err(|e| Error::from_reason(e.to_string()))?;
             Ok(rows

@@ -16,6 +16,8 @@ CLI `--host omp` normalizes to canonical `pi` and uses the same existing `.codeb
 
 Linked worktrees without their own host-specific project config inherit both the config and project index from the main checkout. Project-owned paths are stored relative to the project root, while branch catalogs and branch-scoped runtime state keep each checkout's contents separate. Adding a project config inside a worktree creates a local config and index boundary instead.
 
+Ordinary indexing updates only the active branch’s call graph, for every supported language and indexing mode. Existing catalogs convert each branch on its next normal refresh; refresh rules remain language-specific.
+
 Because inheriting worktrees operate on the same project index, clearing or force-rebuilding it from one checkout affects the main checkout and every other inheriting worktree. Legacy project indexes that contain absolute stored paths must be rebuilt once with `index_codebase` and `force: true`. Global indexes continue to use canonical absolute paths.
 
 Git project indexes store file-change and retry state in `file-hashes.<branch-hash>.json` and `failed-batches.<branch-hash>.json`. Non-Git project indexes and global indexes keep the unnamespaced `file-hashes.json` and `failed-batches.json` filenames.

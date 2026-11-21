@@ -1,5 +1,6 @@
 import type {
   BranchDelta,
+  BranchCallSet,
   CallEdgeData,
   CentralityData,
   ChunkData,
@@ -33,6 +34,11 @@ export class Database {
 
   static createEmptyReadOnly(): Database {
     return Database.fromNative(native.Database.createEmptyReadOnly());
+  }
+
+  readOnlySchemaChanged(): boolean {
+    this.throwIfClosed();
+    return this.inner.readOnlySchemaChanged();
   }
 
   private throwIfClosed(): void {
@@ -322,6 +328,12 @@ export class Database {
     this.throwIfClosed();
     if (edges.length === 0) return;
     this.inner.upsertCallEdgesBatch(edges);
+  }
+
+  replaceBranchCallSets(branch: string, sets: BranchCallSet[]): void {
+    this.throwIfClosed();
+    if (sets.length === 0) return;
+    this.inner.replaceBranchCallSets(branch, sets);
   }
 
   getCallers(targetName: string, branch: string, callTypeFilter?: string): CallEdgeData[] {

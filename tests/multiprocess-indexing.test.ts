@@ -6,6 +6,7 @@ import { createServer, type Server, type ServerResponse } from "http";
 import * as os from "os";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -607,6 +608,53 @@ describe("multiprocess indexing", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(embeddingServer.inputs).toEqual(["alpha"]);
     assertIndexIntegrity();
+  });
+
+  it("keeps a held hybrid reader's call graph readable after an in-place v8 upgrade", async () => {
+    await seedIndex();
+    const dbPath = path.join(projectRoot, ".opencode", "index", "codebase.db");
+    const legacy = new DatabaseSync(dbPath);
+    try {
+      // Restore the v8 flat graph with no v9 view, selectors or tables.
+      legacy.exec(`
+        BEGIN;
+        INSERT INTO call_edges (id, from_symbol_id, target_name, to_symbol_id, call_type, confidence, line, col, is_resolved)
+        SELECT id, from_symbol_id, target_name, to_symbol_id, call_type, confidence, line, col, is_resolved
+        FROM catalog_call_edges WHERE branch = 'default';
+        DROP VIEW catalog_call_edges;
+        DROP TRIGGER gc_call_set_after_branch_symbol_delete;
+        DROP TRIGGER gc_call_set_after_branch_symbol_update;
+        DROP INDEX idx_branch_symbols_set;
+        ALTER TABLE branch_symbols DROP COLUMN edge_set_id;
+        DROP TABLE shared_call_edges;
+        DROP TABLE call_edge_sets;
+        UPDATE metadata SET value = '8' WHERE key = 'schema_version';
+        DELETE FROM metadata WHERE key GLOB 'index.callGraphStorageVersion.*';
+        COMMIT;
+      `);
+    } finally {
+      legacy.close();
+    }
+    const { dev, ino } = fs.statSync(dbPath);
+    const reader = createLocalIndexer();
+    expect(await reader.getCallers("alpha")).toEqual([
+      expect.objectContaining({ fromSymbolName: "beta", targetName: "alpha", isResolved: true }),
+    ]);
+
+    fs.writeFileSync(sourcePath, "export function gamma() { return 42; }\nexport function beta() { return gamma(); }\n");
+    await seedIndex();
+    expect(fs.statSync(dbPath)).toMatchObject({ dev, ino });
+
+    const symbols = await reader.getCallGraphSymbols();
+    const caller = symbols.find((symbol) => symbol.name === "beta")!;
+    const target = symbols.find((symbol) => symbol.name === "gamma")!;
+    expect(await reader.getCallees(caller.id)).toEqual([
+      expect.objectContaining({ targetName: "gamma", toSymbolId: target.id, isResolved: true, line: 2 }),
+    ]);
+    expect(await reader.getCallers("gamma")).toEqual([
+      expect.objectContaining({ fromSymbolId: caller.id, toSymbolId: target.id, isResolved: true }),
+    ]);
+    expect((await reader.findCallPath("beta", "gamma")).map((hop) => hop.symbolId)).toEqual([caller.id, target.id]);
   });
 
   it("keeps an unreadable BM25 artifact untouched under a live writer lease", async () => {

@@ -190,7 +190,10 @@ describe("Python import graph indexing lifecycle", () => {
         const caller = db.getSymbolsByName("render_report")[0];
         const persistedEdges = db.getCallees(caller.id, "default");
         expect(persistedEdges).toHaveLength(2);
-        for (const edge of persistedEdges) db.upsertCallEdge({ ...edge, toSymbolId: undefined, isResolved: false });
+        db.replaceBranchCallSets("default", [{
+          fromSymbolId: caller.id,
+          sites: persistedEdges.map((edge) => ({ ...edge, toSymbolId: undefined })),
+        }]);
       } finally { db.close(); }
       indexer = new Indexer(root, config, "opencode");
       expect((await edges()).every((edge) => !edge.resolved)).toBe(true);

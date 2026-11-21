@@ -186,6 +186,11 @@ export interface CallEdgeData {
   isResolved: boolean;
 }
 
+export interface BranchCallSet {
+  fromSymbolId: string;
+  sites: Pick<CallEdgeData, "targetName" | "toSymbolId" | "callType" | "confidence" | "line" | "col">[];
+}
+
 export interface PathHopData {
   symbolId: string;
   symbolName: string;

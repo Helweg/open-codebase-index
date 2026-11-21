@@ -182,10 +182,9 @@ fn bfs_callees(
     let mut stmt = conn.prepare(
         r#"
         SELECT ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN symbols s ON ce.from_symbol_id = s.id
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE ce.from_symbol_id = ?
+        FROM catalog_call_edges ce
+        JOIN symbols s ON s.id = ce.from_symbol_id
+        WHERE ce.branch = ? AND ce.from_symbol_id = ?
         "#,
     )?;
 
@@ -252,10 +251,9 @@ fn bfs_callers(
     let mut stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.to_symbol_id, ce.target_name
-        FROM call_edges ce
-        INNER JOIN symbols s ON ce.from_symbol_id = s.id
-        INNER JOIN branch_symbols bs ON s.id = bs.symbol_id AND bs.branch = ?
-        WHERE (ce.to_symbol_id = ? OR ce.target_name = ? COLLATE NOCASE)
+        FROM catalog_call_edges ce
+        JOIN symbols s ON s.id = ce.from_symbol_id
+        WHERE ce.branch = ? AND (ce.to_symbol_id = ? OR ce.target_name = ? COLLATE NOCASE)
         "#,
     )?;
 
@@ -326,8 +324,7 @@ pub fn detect_communities(
     let mut edges_stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 
@@ -516,58 +513,56 @@ pub fn compute_centrality(conn: &Connection, branch: &str) -> DbResult<Vec<Centr
         return Ok(vec![]);
     }
 
-    let (symbol_map, name_map) = build_symbol_maps(&symbols);
-
-    let mut caller_counts: HashMap<String, u32> = HashMap::new();
-    let mut callee_counts: HashMap<String, u32> = HashMap::new();
-
-    for s in &symbols {
-        caller_counts.insert(s.id.clone(), 0);
-        callee_counts.insert(s.id.clone(), 0);
+    let mut symbol_indices = HashMap::with_capacity(symbols.len());
+    let mut unique_names = HashMap::with_capacity(symbols.len());
+    let mut counts = vec![(0, 0); symbols.len()];
+    for (i, symbol) in symbols.iter().enumerate() {
+        symbol_indices.insert(symbol.id.as_str(), i);
+        unique_names
+            .entry(symbol.name.to_lowercase())
+            .and_modify(|index| *index = None)
+            .or_insert(Some(i));
     }
 
-    let mut edges_stmt = conn.prepare(
+    let mut edges_stmt = conn.prepare_cached(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 
-    let edge_rows: Vec<(String, String, Option<String>)> = edges_stmt
-        .query_map(params![branch], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, Option<String>>(2)?,
-            ))
-        })?
-        .filter_map(|r| r.ok())
-        .collect();
+    let mut edges = edges_stmt.query([branch])?;
+    while let Some(row) = edges.next()? {
+        let (Ok(from), Ok(name), Ok(to)) = (
+            row.get_ref(0)?.as_str(),
+            row.get_ref(1)?.as_str(),
+            row.get_ref(2)?.as_str_or_null(),
+        ) else {
+            continue;
+        };
+        if let Some(&i) = symbol_indices.get(from) {
+            counts[i].1 += 1;
+        }
 
-    for (from_id, target_name, to_symbol_id) in edge_rows {
-        *callee_counts.entry(from_id.clone()).or_insert(0) += 1;
-
-        let resolved = resolve_target_symbol(&to_symbol_id, &target_name, &symbol_map, &name_map);
-
-        if let Some(to_id) = resolved {
-            *caller_counts.entry(to_id).or_insert(0) += 1;
+        let target_index = match to {
+            Some(id) => symbol_indices.get(id).copied(),
+            None => unique_names.get(&name.to_lowercase()).copied().flatten(),
+        };
+        if let Some(i) = target_index {
+            counts[i].0 += 1;
         }
     }
 
     let mut results: Vec<CentralityScore> = symbols
-        .iter()
-        .map(|s| {
-            let cc = *caller_counts.get(&s.id).unwrap_or(&0);
-            let ec = *callee_counts.get(&s.id).unwrap_or(&0);
-            CentralityScore {
-                symbol_id: s.id.clone(),
-                symbol_name: s.name.clone(),
-                file_path: s.file_path.clone(),
-                caller_count: cc,
-                callee_count: ec,
-                total_connections: cc + ec,
-            }
+        .into_iter()
+        .zip(counts)
+        .map(|(symbol, (caller_count, callee_count))| CentralityScore {
+            symbol_id: symbol.id,
+            symbol_name: symbol.name,
+            file_path: symbol.file_path,
+            caller_count,
+            callee_count,
+            total_connections: caller_count + callee_count,
         })
         .collect();
 
@@ -600,8 +595,7 @@ pub fn detect_community_couplings(
     let mut edges_stmt = conn.prepare(
         r#"
         SELECT ce.from_symbol_id, ce.target_name, ce.to_symbol_id
-        FROM call_edges ce
-        INNER JOIN branch_symbols bs ON ce.from_symbol_id = bs.symbol_id AND bs.branch = ?
+        FROM catalog_call_edges ce WHERE ce.branch = ?
         "#,
     )?;
 
@@ -1557,6 +1551,7 @@ mod tests {
             make_symbol("s_l1", "Leaf1", "src/leaf1.ts"),
             make_symbol("s_l2", "Leaf2", "src/leaf2.ts"),
             make_symbol("s_l3", "Leaf3", "src/leaf3.ts"),
+            make_symbol("s_extra", "CENTER", "src/extra.ts"),
         ];
         db::upsert_symbols_batch(&mut conn, &syms).unwrap();
         db::add_symbols_to_branch(
@@ -1570,6 +1565,12 @@ mod tests {
             ],
         )
         .unwrap();
+        db::add_symbols_to_branch(
+            &conn,
+            "other",
+            &syms.iter().map(|s| s.id.clone()).collect::<Vec<_>>(),
+        )
+        .unwrap();
 
         let edges = vec![
             make_edge("e1", "s_center", "Leaf1", Some("s_l1")),
@@ -1577,7 +1578,7 @@ mod tests {
             make_edge("e3", "s_center", "Leaf3", Some("s_l3")),
             make_edge("e4", "s_l1", "Center", Some("s_center")),
             make_edge("e5", "s_l2", "Center", Some("s_center")),
-            make_edge("e6", "s_l3", "Center", Some("s_center")),
+            make_edge("e6", "s_l3", "CENTER", None),
         ];
         db::upsert_call_edges_batch(&mut conn, &edges).unwrap();
 
@@ -1594,6 +1595,18 @@ mod tests {
 
         // Center should be first (sorted by caller_count desc)
         assert_eq!(results[0].symbol_id, "s_center");
+
+        let other = compute_centrality(&conn, "other").unwrap();
+        let center = other.iter().find(|r| r.symbol_id == "s_center").unwrap();
+        assert_eq!(
+            center.caller_count, 2,
+            "ambiguous names add no incoming edge"
+        );
+        let leaf = other.iter().find(|r| r.symbol_id == "s_l3").unwrap();
+        assert_eq!(
+            leaf.callee_count, 1,
+            "ambiguous sites still count as outgoing"
+        );
     }
 
     #[test]

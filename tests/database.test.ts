@@ -84,7 +84,7 @@ describe("Database", () => {
       const dbPath = path.join(tempDir, "test.db");
       db.setMetadata("schema_version", "5");
 
-      expect(() => Database.openReadOnly(dbPath)).toThrow(/found version 5, expected 8/i);
+      expect(() => Database.openReadOnly(dbPath)).toThrow(/found version 5.*a writer must migrate/i);
       expect(db.getMetadata("schema_version")).toBe("5");
     });
 

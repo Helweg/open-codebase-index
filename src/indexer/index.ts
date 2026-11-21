@@ -35,6 +35,7 @@ import {
   estimateTokens,
 } from "../native/index.js";
 import type { ParsedFile, SymbolData, CallEdgeData, PathHopData, ReachabilityData, CommunityData, CommunityCouplingData, CentralityData } from "../native/index.js";
+import type { BranchCallSet } from "../native/types.js";
 import { getBranchOrDefault, getBaseBranch, isGitRepo } from "../git/index.js";
 import { isFullGitCommit, resolveLocalGitCommit, withMaterializedBranch } from "../git/branch-materialization.js";
 import type { HostMode } from "../config/host.js";
@@ -132,6 +133,13 @@ import {
   LocalModuleCallResolver,
   TsConfigPathAliasCache,
 } from "./local-module-resolution.js";
+import {
+  affectedJavaScriptGraphFiles,
+  readJavaScriptGraphDependencies,
+  writeJavaScriptGraphDependencies,
+  type JavaScriptGraphDependency,
+  type PackageFormat,
+} from "./javascript-graph-dependencies.js";
 import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
 import { PdfExtractionError } from "../documents/pdf.js";
 import {
@@ -218,6 +226,8 @@ const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "12";
+const CALL_GRAPH_STORAGE_VERSION = "1";
+const JAVASCRIPT_GRAPH_DEPENDENCIES_KEY = "index.javaScriptGraphDependencies";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -590,6 +600,7 @@ export interface IndexFreshnessResult {
 
 interface LocalModuleResolutionState {
   configHash: string;
+  javaScriptGraphConfigHash?: string;
   pathAliasCache: TsConfigPathAliasCache;
   workspacePackages: ReturnType<typeof getLocalWorkspacePackages>;
 }
@@ -1510,18 +1521,16 @@ export class Indexer {
     this.failedBatchesPath = this.getRuntimeArtifactPath("failed-batches.json");
   }
 
-  private buildCallGraphSymbols(parsed: ParsedFile, sourceHash: string): SymbolData[] {
-    const preparedNamespace = this.config.indexing.scipTypeScript.enabled
-      ? hashContent(this.getBranchCatalogKey()).slice(0, 16)
-      : this.getPreparedBranchNamespace();
+  private buildCallGraphSymbols(parsed: ParsedFile): SymbolData[] {
     return parsed.symbols
       .filter((parsedSymbol) => CALL_GRAPH_SYMBOL_CHUNK_TYPES.has(parsedSymbol.kind))
       .map((parsedSymbol) => {
+        // Keep the existing shared declaration ID format across languages.
+        // The namespace is historical; it does not select a resolver.
         const symbolId = `sym_${hashContent(
-          (preparedNamespace ? `${preparedNamespace}:` : "")
-          + parsed.path + ":" + parsedSymbol.name + ":" + parsedSymbol.kind + ":"
-          + parsedSymbol.startLine + ":" + parsedSymbol.startCol + ":" + sourceHash,
-        ).slice(0, 16)}`;
+          `structural-js:shared:${parsed.path}:${parsedSymbol.name}:${parsedSymbol.kind}:`
+          + `${parsedSymbol.startLine}:${parsedSymbol.startCol}:${parsedSymbol.endLine}:${parsedSymbol.endCol}:${parsed.hash}`,
+        )}`;
         return {
           id: symbolId,
           filePath: parsed.path,
@@ -1882,7 +1891,7 @@ export class Indexer {
       (ids) => database.deleteBranchChunksForBranch(branchCatalogKey, ids),
       (ids) => database.addChunksToBranchBatch(branchCatalogKey, ids),
     );
-    const removedSymbolCandidates = this.publishBranchMembership(
+    this.publishBranchMembership(
       previousSymbolIds, stagedSymbolIds, currentSymbolIds,
       (ids) => database.deleteBranchSymbolsForBranch(branchCatalogKey, ids),
       (ids) => database.addSymbolsToBranchBatch(branchCatalogKey, ids),
@@ -1897,9 +1906,8 @@ export class Indexer {
       database.deleteChunksByIds(removableChunkIds);
     }
 
-    const referencedSymbolIds = new Set(database.getReferencedSymbolIds(removedSymbolCandidates));
-    const removableSymbolIds = removedSymbolCandidates.filter((symbolId) => !referencedSymbolIds.has(symbolId));
-    database.clearCallEdgeTargetsForSymbols(removableSymbolIds);
+    // Only unowned backing rows are collectible. Legacy outgoing rows on other
+    // branches must not be rewritten when this branch retires a target.
     database.gcOrphanSymbols();
     database.gcOrphanCallEdges();
     database.gcOrphanEmbeddings();
@@ -1964,6 +1972,15 @@ export class Indexer {
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
     return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
+  }
+
+  private canPruneJavaScriptGraphRefresh(): boolean {
+    return this.config.scope === "project" && this.config.indexing.mode === "structural"
+      && !this.config.indexing.scipTypeScript.enabled;
+  }
+
+  private getCallGraphStorageMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
+    return this.getBranchMigrationMetadataKey("index.callGraphStorageVersion", catalogIdentity);
   }
 
   private getLocalModuleResolutionConfigMetadataKey(
@@ -2050,7 +2067,9 @@ export class Indexer {
       && database.getMetadata(this.getRubyParserVersionMetadataKey(catalogIdentity))
       === RUBY_PARSER_VERSION
       && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
-      === SYMBOL_EXTRACTOR_VERSION;
+      === SYMBOL_EXTRACTOR_VERSION
+      && database.getMetadata(this.getCallGraphStorageMetadataKey(catalogIdentity))
+        === CALL_GRAPH_STORAGE_VERSION;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -3718,22 +3737,26 @@ export class Indexer {
       }
     }
 
-    const shouldRefreshStructuralDatabase = isStructural && (
-      databaseReplaced || databaseChanged || structuralGenerationChanged || retryDue("database") || retryDue("keyword")
-    );
-    if (shouldRefreshStructuralDatabase) {
-      if (existsSync(dbPath)) {
-        try {
-          const database = Database.openReadOnly(dbPath);
-          if (this.database) this.retiredDatabases.push(this.database);
-          this.database = database;
-          issues.delete("database");
-          this.readerArtifactRetryAfter.delete("database");
-        } catch (error) {
-          setIssue("database", this.getDatabaseReadIssueMessage(), error);
+    if (
+      databaseReplaced || databaseChanged || retryDue("database") ||
+      (isStructural && (structuralGenerationChanged || retryDue("keyword")))
+    ) {
+      try {
+        if (existsSync(dbPath)) {
+          // Existing hybrid connections see ordinary WAL writes, but their
+          // call-graph layout is fixed to the schema version at open.
+          if (isStructural || databaseReplaced || issues.has("database") || this.database?.readOnlySchemaChanged()) {
+            const database = Database.openReadOnly(dbPath);
+            if (this.database) this.retiredDatabases.push(this.database);
+            this.database = database;
+            issues.delete("database");
+            this.readerArtifactRetryAfter.delete("database");
+          }
+        } else if (isStructural || (this.store?.count() ?? 0) > 0 || issues.has("database")) {
+          setIssue("database", this.getDatabaseReadIssueMessage());
         }
-      } else {
-        setIssue("database", this.getDatabaseReadIssueMessage());
+      } catch (error) {
+        setIssue("database", this.getDatabaseReadIssueMessage(), error);
       }
     }
 
@@ -3770,30 +3793,6 @@ export class Indexer {
         : (this.store?.count() ?? 0) > 0) || issues.has("keyword")) {
         if (isStructural) this.invertedIndex = new InvertedIndex(invertedIndexPath);
         setIssue("keyword", this.getKeywordReadIssueMessage());
-      }
-    }
-
-    if (
-      !isStructural && (
-      databaseReplaced ||
-      (databaseChanged && issues.has("database")) ||
-      retryDue("database")
-      )
-    ) {
-      if (existsSync(dbPath)) {
-        try {
-          const database = Database.openReadOnly(dbPath);
-          if (this.database) {
-            this.retiredDatabases.push(this.database);
-          }
-          this.database = database;
-          issues.delete("database");
-          this.readerArtifactRetryAfter.delete("database");
-        } catch (error) {
-          setIssue("database", this.getDatabaseReadIssueMessage(), error);
-        }
-      } else if ((this.store?.count() ?? 0) > 0 || issues.has("database")) {
-        setIssue("database", this.getDatabaseReadIssueMessage());
       }
     }
 
@@ -4890,7 +4889,10 @@ export class Indexer {
     }, options.signal);
   }
 
-  private getLocalModuleResolutionState(files: readonly { path: string }[]): LocalModuleResolutionState {
+  private getLocalModuleResolutionState(
+    files: readonly { path: string }[],
+    trackJavaScriptDependencies = false,
+  ): LocalModuleResolutionState {
     const loadFileText = (configPath: string): string | undefined => {
       try {
         return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
@@ -4906,15 +4908,22 @@ export class Indexer {
     });
     const workspaceManifestPaths = getLocalWorkspacePackageManifestPaths(importerPaths, loadFileText);
     const workspacePackages = getLocalWorkspacePackages(importerPaths, loadFileText);
-    const configHash = hashContent(JSON.stringify({
-      tsconfig: pathAliasCache.getConfigState(importerPaths),
-      packageManifests: workspaceManifestPaths.map((manifestPath) => [
-        manifestPath,
-        loadFileText(manifestPath) ?? null,
-      ]),
-    }));
+    const tsconfig = pathAliasCache.getConfigState(importerPaths);
+    const packageManifests = workspaceManifestPaths.map((manifestPath) => [
+      manifestPath,
+      loadFileText(manifestPath) ?? null,
+    ] as const);
+    const configHash = hashContent(JSON.stringify({ tsconfig, packageManifests }));
+    // Discovery also fingerprints absent configs for the existing freshness check.
+    // A newly indexed source directory with no configs is not a resolver change.
+    const javaScriptGraphConfigHash = trackJavaScriptDependencies
+      ? hashContent(JSON.stringify({
+        tsconfig: tsconfig.filter(([, content]) => content !== null),
+        packageManifests: packageManifests.filter(([, content]) => content !== null),
+      }))
+      : undefined;
 
-    return { configHash, pathAliasCache, workspacePackages };
+    return { configHash, javaScriptGraphConfigHash, pathAliasCache, workspacePackages };
   }
 
   async indexBranchIfMissing(
@@ -4998,6 +5007,13 @@ export class Indexer {
     const indexedCommit = this.expectedCommitOverride ?? materializedCommit;
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
+    const projectStructural = isStructural && this.config.scope === "project";
+    const trackJavaScriptDependencies = this.canPruneJavaScriptGraphRefresh();
+    const callGraphStorageKey = this.getCallGraphStorageMetadataKey();
+    const needsCallGraphStorageMigration = database.getMetadata(callGraphStorageKey) !== CALL_GRAPH_STORAGE_VERSION;
+    const javaScriptDependencyKey = projectStructural
+      ? this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_DEPENDENCIES_KEY)
+      : undefined;
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
     const previousBranchSymbolIdSet = new Set(database.getBranchSymbolIds(branchCatalogKey));
@@ -5137,7 +5153,8 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
-    const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    const localModuleResolutionState = this.getLocalModuleResolutionState(files, trackJavaScriptDependencies);
+    const { javaScriptGraphConfigHash } = localModuleResolutionState;
     this.localModuleResolutionConfigHash = localModuleResolutionState.configHash;
     const scipConfig = this.config.indexing.scipTypeScript;
     this.scipTypeScriptState = await prepareScipTypeScriptEnrichment({
@@ -5157,6 +5174,105 @@ export class Indexer {
         message: this.scipTypeScriptState.message,
       });
     }
+    // Scope format evidence to this refresh, including cached missing manifests.
+    const packageFormats = new Map<string, Promise<PackageFormat>>();
+    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
+      const manifestPath = path.join(directory, "package.json");
+      let realManifest: string;
+      try {
+        const realDirectory = await fsPromises.realpath(directory);
+        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
+        realManifest = await fsPromises.realpath(manifestPath);
+      } catch (error) {
+        if (isOperationInterruption(error)) throw error;
+        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
+          ? undefined
+          : null;
+      }
+      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
+      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
+      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
+        if (isOperationInterruption(error)) throw error;
+        return undefined;
+      });
+      if (!handle) return null;
+      let content: string | null = null;
+      let interruption: unknown;
+      try {
+        const openedStats = await handle.stat();
+        throwIfOperationAborted(signal);
+        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
+          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
+          // One spare byte proves EOF and rejects growth beyond the observed size.
+          const buffer = Buffer.alloc(openedStats.size + 1);
+          let offset = 0;
+          while (true) {
+            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+            throwIfOperationAborted(signal);
+            if (bytesRead === 0) {
+              content = buffer.subarray(0, offset).toString("utf8");
+              break;
+            }
+            offset += bytesRead;
+            if (offset > openedStats.size) break;
+          }
+        }
+      } catch (error: unknown) {
+        if (isOperationInterruption(error)) interruption = error;
+      } finally {
+        try {
+          await handle.close();
+        } catch (error: unknown) {
+          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
+        }
+      }
+      if (interruption !== undefined) throw interruption;
+      return content;
+    };
+    const packageDirectoryForFile = (filePath: string): string | undefined => {
+      const materializedPath = this.toMaterializedFilePath(filePath);
+      if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
+      return path.dirname(materializedPath);
+    };
+    const packageFormatForDirectory = (directory: string | undefined): Promise<PackageFormat> => {
+      if (directory === undefined) return Promise.resolve("unknown");
+      const cached = packageFormats.get(directory);
+      if (cached) return cached;
+      const lookup = (async (): Promise<PackageFormat> => {
+        throwIfOperationAborted(signal);
+        const content = await readBoundedManifest(directory);
+        if (content === null) return "unknown";
+        if (content !== undefined) return declaredPackageFormat(content);
+        const parent = path.dirname(directory);
+        if (parent === directory || !isPathWithinRoot(parent, this.materializedProjectRoot)) return "unknown";
+        return packageFormatForDirectory(parent);
+      })();
+      packageFormats.set(directory, lookup);
+      return lookup;
+    };
+    const moduleFormatForFile = (filePath: string): Promise<PackageFormat> =>
+      packageFormatForDirectory(packageDirectoryForFile(filePath));
+    const packageFormatsMatch = async (dependencies: ReadonlyMap<string, JavaScriptGraphDependency>): Promise<boolean> => {
+      const expectedFormats = new Map<string | undefined, PackageFormat>();
+      for (const [file, { format }] of dependencies) {
+        if (format === undefined) continue;
+        const directory = packageDirectoryForFile(file);
+        const expected = expectedFormats.get(directory);
+        if (expected !== undefined && expected !== format) return false;
+        expectedFormats.set(directory, format);
+      }
+      for (const batch of iterateOrderedFileBatches(expectedFormats, () => PACKAGE_MANIFEST_MAX_BYTES, this.fileBatchLimits)) {
+        const matches = await Promise.all(batch.map(async ([directory, expected]) =>
+          await packageFormatForDirectory(directory) === expected
+        ));
+        if (matches.includes(false)) return false;
+      }
+      return true;
+    };
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -5169,6 +5285,15 @@ export class Indexer {
     const localModuleResolutionConfigChanged =
       database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
       !== this.localModuleResolutionConfigHash;
+    const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
+    let priorJavaScriptDependencies = javaScriptGraphConfigHash !== undefined
+      && !needsCallGraphStorageMigration && !needsCallGraphResolutionMigration && !scipStateChanged
+      ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
+      : undefined;
+    if (priorJavaScriptDependencies && !await packageFormatsMatch(priorJavaScriptDependencies)) {
+      priorJavaScriptDependencies = undefined;
+    }
+    const changedJavaScriptFiles = new Set<string>();
     let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
       (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
       && isJavaScriptFamilyFilePath(filePath)
@@ -5228,6 +5353,7 @@ export class Indexer {
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
       if (!cachedHashMatches && isJavaScriptFamilyFilePath(storedPath)) {
         javaScriptGraphSourcesChanged = true;
+        if (priorJavaScriptDependencies) changedJavaScriptFiles.add(storedPath);
       }
       if (!cachedHashMatches && isGoFilePath(storedPath)) {
         changedGoPackageDirectories.add(path.posix.dirname(storedPath.split(path.sep).join("/")));
@@ -5238,7 +5364,9 @@ export class Indexer {
       const needsCallGraphRefresh = cachedHashMatches
         && (
           (
-            (needsCallGraphResolutionMigration || localModuleResolutionConfigChanged || scipStateChanged)
+            (needsCallGraphResolutionMigration || scipStateChanged || (
+              localModuleResolutionConfigChanged && !(trackJavaScriptDependencies && isJavaScriptFamilyFilePath(storedPath))
+            ))
             && (
               isJavaScriptFamilyFilePath(storedPath)
               || database.getChunksByFile(storedPath).some((chunk) =>
@@ -5266,6 +5394,7 @@ export class Indexer {
       if (
         cachedHashMatches
         && !inMigrationScope
+        && !needsCallGraphStorageMigration
         && !needsCallGraphRefresh
         && !requiresJavaScriptParserUpgrade
         && !requiresSwiftParserUpgrade
@@ -5283,7 +5412,23 @@ export class Indexer {
       }
     }
 
-    if (javaScriptGraphSourcesChanged || pythonGraphSourcesChanged) {
+    if (priorJavaScriptDependencies) {
+      for (const filePath of priorJavaScriptDependencies.keys()) {
+        if (!allFileDescriptors.has(filePath)) changedJavaScriptFiles.add(filePath);
+      }
+    }
+    const refreshAllJavaScript = trackJavaScriptDependencies && !priorJavaScriptDependencies;
+    const affectedJavaScriptFiles = priorJavaScriptDependencies && changedJavaScriptFiles.size > 0
+      ? affectedJavaScriptGraphFiles(changedJavaScriptFiles, priorJavaScriptDependencies)
+      : undefined;
+    const javaScriptDependencies = trackJavaScriptDependencies
+      ? priorJavaScriptDependencies ?? new Map<string, JavaScriptGraphDependency>()
+      : undefined;
+    let javaScriptDependenciesDirty = refreshAllJavaScript || changedJavaScriptFiles.size > 0;
+    for (const filePath of changedJavaScriptFiles) javaScriptDependencies?.delete(filePath);
+
+    const broadJavaScriptRefresh = refreshAllJavaScript || (!trackJavaScriptDependencies && javaScriptGraphSourcesChanged);
+    if (broadJavaScriptRefresh || affectedJavaScriptFiles || pythonGraphSourcesChanged) {
       let processedDescriptors = 0;
       for (const [storedPath, descriptor] of allFileDescriptors) {
         if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
@@ -5292,7 +5437,8 @@ export class Indexer {
         }
         processedDescriptors += 1;
         if (
-          !(javaScriptGraphSourcesChanged && isJavaScriptFamilyFilePath(storedPath))
+          !(broadJavaScriptRefresh && isJavaScriptFamilyFilePath(storedPath))
+          && !affectedJavaScriptFiles?.has(storedPath)
           && !(pythonGraphSourcesChanged && isPythonFilePath(storedPath))
         ) continue;
         if (changedFilePathSet.has(storedPath)) continue;
@@ -5425,86 +5571,6 @@ export class Indexer {
         descriptor,
       ]),
     );
-    const moduleFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
-    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
-      const manifestPath = path.join(directory, "package.json");
-      let realManifest: string;
-      try {
-        const realDirectory = await fsPromises.realpath(directory);
-        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
-        realManifest = await fsPromises.realpath(manifestPath);
-      } catch (error) {
-        if (isOperationInterruption(error)) throw error;
-        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
-          ? undefined
-          : null;
-      }
-      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
-      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
-      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!handle) return null;
-      let content: string | null = null;
-      let interruption: unknown;
-      try {
-        const openedStats = await handle.stat();
-        throwIfOperationAborted(signal);
-        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
-          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
-          // One spare byte proves EOF and rejects growth beyond the observed size.
-          const buffer = Buffer.alloc(openedStats.size + 1);
-          let offset = 0;
-          while (true) {
-            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
-            throwIfOperationAborted(signal);
-            if (bytesRead === 0) {
-              content = buffer.subarray(0, offset).toString("utf8");
-              break;
-            }
-            offset += bytesRead;
-            if (offset > openedStats.size) break;
-          }
-        }
-      } catch (error: unknown) {
-        if (isOperationInterruption(error)) interruption = error;
-      } finally {
-        try {
-          await handle.close();
-        } catch (error: unknown) {
-          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
-        }
-      }
-      if (interruption !== undefined) throw interruption;
-      return content;
-    };
-    const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
-      const cached = moduleFormats.get(filePath);
-      if (cached) return cached;
-      const lookup = (async () => {
-        const materializedPath = this.toMaterializedFilePath(filePath);
-        if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return "unknown" as const;
-        let directory = path.dirname(materializedPath);
-        while (isPathWithinRoot(directory, this.materializedProjectRoot)) {
-          throwIfOperationAborted(signal);
-          const content = await readBoundedManifest(directory);
-          if (content === null) return "unknown" as const;
-          if (content !== undefined) return declaredPackageFormat(content);
-          const parent = path.dirname(directory);
-          if (parent === directory) break;
-          directory = parent;
-        }
-        // The ownership boundary prevents proving the nearest enclosing format.
-        return "unknown" as const;
-      })();
-      moduleFormats.set(filePath, lookup);
-      return lookup;
-    };
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
       moduleFormatForFile,
@@ -5515,9 +5581,7 @@ export class Indexer {
         const content = await fsPromises.readFile(descriptor.materializedPath, "utf-8");
         throwIfOperationAborted(signal);
         if (unchangedFilePaths.has(descriptor.storedPath)) {
-          const symbols = database.getSymbolsByFile(descriptor.storedPath).filter((symbol) =>
-            !restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)
-          );
+          const symbols = database.getSymbolsForFiles([descriptor.storedPath], branchCatalogKey);
           return { content, symbols };
         }
 
@@ -5530,7 +5594,7 @@ export class Indexer {
         )[0];
         return {
           content,
-          symbols: parsed ? this.buildCallGraphSymbols(parsed, descriptor.hash) : [],
+          symbols: parsed ? this.buildCallGraphSymbols(parsed) : [],
           moduleSyntax: parsed?.moduleSyntax,
         };
       },
@@ -5605,12 +5669,8 @@ export class Indexer {
         }
       }
 
-      for (const filePath of unchangedFilePaths) {
-        for (const symbol of database.getSymbolsByFile(filePath)) {
-          if (!restrictExistingChunksToBranch || previousBranchSymbolIdSet.has(symbol.id)) {
-            allSymbolIds.add(symbol.id);
-          }
-        }
+      for (const { id } of database.getSymbolsForFiles([...unchangedFilePaths], branchCatalogKey)) {
+        allSymbolIds.add(id);
       }
 
       let processedChangedFiles = 0;
@@ -5624,6 +5684,13 @@ export class Indexer {
       )) {
         throwIfOperationAborted(signal);
         const parseStartTime = performance.now();
+        if (javaScriptDependencies) {
+          for (const { storedPath } of descriptorBatch) {
+            if (!isJavaScriptFamilyFilePath(storedPath)) continue;
+            javaScriptDependencies.delete(storedPath);
+            javaScriptDependenciesDirty = true;
+          }
+        }
         const loadedEntries = await Promise.all(descriptorBatch.map(async (descriptor) => {
           try {
             const bytes = await fsPromises.readFile(descriptor.materializedPath);
@@ -5681,7 +5748,7 @@ export class Indexer {
         const pendingChunks: PendingChunk[] = [];
         const symbolBatch: SymbolData[] = [];
         const symbolBatchIds = new Set<string>();
-        const edgeBatch: CallEdgeData[] = [];
+        const callSets = new Map<string, BranchCallSet>();
 
         for (const entry of parsedFiles) {
           const parsed = entry.prepared;
@@ -5793,16 +5860,30 @@ export class Indexer {
             });
           }
 
-          const fileSymbols = this.buildCallGraphSymbols(parsed, descriptor.hash);
+          const fileSymbols = this.buildCallGraphSymbols(parsed);
           for (const symbol of fileSymbols) {
             if (!symbolBatchIds.has(symbol.id)) {
               symbolBatch.push(symbol);
               symbolBatchIds.add(symbol.id);
             }
             allSymbolIds.add(symbol.id);
+            if (!callSets.has(symbol.id)) {
+              callSets.set(symbol.id, { fromSymbolId: symbol.id, sites: [] });
+            }
           }
           if (parsed.kind === "source") {
             localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
+          }
+          if (javaScriptDependencies && isJavaScriptFamilyFilePath(descriptor.storedPath)
+            && parsed.hash === descriptor.hash && parsed.moduleSyntax?.valid) {
+            const { imports, reexports, usesPackageFormat } =
+              localModuleResolver.getModuleDependencyProbes(descriptor.storedPath, parsed.moduleSyntax);
+            javaScriptDependencies.set(descriptor.storedPath, {
+              hash: descriptor.hash,
+              imports,
+              reexports,
+              ...(usesPackageFormat ? { format: await moduleFormatForFile(descriptor.storedPath) } : {}),
+            });
           }
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
@@ -5867,18 +5948,13 @@ export class Indexer {
                 allSymbolIds.add(resolvedTarget.id);
               }
             }
-            edgeBatch.push({
-              id: `edge_${hashContent(
-                enclosingSymbol.id + ":" + site.calleeName + ":" + site.line + ":" + site.column,
-              ).slice(0, 16)}`,
-              fromSymbolId: enclosingSymbol.id,
+            callSets.get(enclosingSymbol.id)!.sites.push({
               targetName: site.calleeName,
               toSymbolId: resolvedTarget?.id,
               callType: site.callType,
               confidence: site.confidence,
               line: site.line,
               col: site.column,
-              isResolved: resolvedTarget !== undefined,
             });
           }
         }
@@ -5890,9 +5966,7 @@ export class Indexer {
           database.upsertSymbolsBatch(symbolBatch);
           stageSymbols(symbolBatch);
         }
-        if (edgeBatch.length > 0) {
-          database.upsertCallEdgesBatch(edgeBatch);
-        }
+        database.replaceBranchCallSets(branchCatalogKey, [...callSets.values()]);
 
         processedChangedFiles += descriptorBatch.length;
         stats.totalChunks += pendingChunks.length;
@@ -6074,16 +6148,30 @@ export class Indexer {
       }
 
       if (this.scipTypeScriptState?.outcome === "ready") {
-        // During a configuration-only identity transition, newly parsed symbols are
-        // added before replaceBranchCatalog retires the previous IDs. Restrict the
-        // overlay to the catalog we are about to publish so stale and current
-        // declarations cannot make otherwise unique SCIP definitions ambiguous.
+        // SCIP must see the declarations and targets that the active branch
+        // will publish, not memberships awaiting retirement.
         const branchSymbols = database.getSymbolsForBranch(branchCatalogKey)
           .filter((symbol) => allSymbolIds.has(symbol.id));
-        const allBranchEdges = branchSymbols.flatMap((symbol) => database.getCallees(symbol.id, branchCatalogKey));
+        const allBranchEdges = branchSymbols.flatMap((symbol) =>
+          database.getCallees(symbol.id, branchCatalogKey).map((edge) =>
+            edge.toSymbolId && !allSymbolIds.has(edge.toSymbolId)
+              ? { ...edge, toSymbolId: undefined, isResolved: false }
+              : edge
+          )
+        );
         if (allBranchEdges.length > 0) {
           const result = this.scipTypeScriptState.apply(allBranchEdges, branchSymbols);
-          database.upsertCallEdgesBatch(result.edges);
+          if (result.matchedEdges > 0) {
+            // Replace complete sets only for callers that SCIP enriched.
+            const enriched = new Map<string, BranchCallSet>();
+            for (const [i, edge] of result.edges.entries()) {
+              if (edge.toSymbolId !== allBranchEdges[i].toSymbolId && !enriched.has(edge.fromSymbolId)) {
+                enriched.set(edge.fromSymbolId, { fromSymbolId: edge.fromSymbolId, sites: [] });
+              }
+            }
+            for (const edge of result.edges) enriched.get(edge.fromSymbolId)?.sites.push(edge);
+            database.replaceBranchCallSets(branchCatalogKey, [...enriched.values()]);
+          }
           if (result.matchedEdges > 0 || result.ambiguousDefinitions > 0 || result.disagreements > 0) {
             this.logger.info("Applied SCIP TypeScript call graph enrichment", {
               matchedEdges: result.matchedEdges,
@@ -6093,6 +6181,32 @@ export class Indexer {
             });
           }
         }
+      }
+
+      // Publish only a complete proof, atomically with its branch's edges.
+      // The prior proof suffices to invalidate this run; a read/parse failure means it
+      // cannot justify pruning the next run, even if the file hash cache was updated.
+      if (javaScriptDependencyKey && (javaScriptDependenciesDirty || !javaScriptDependencies)) {
+        let complete = javaScriptDependencies !== undefined;
+        if (javaScriptDependencies) {
+          for (const file of currentStoredFilePaths) {
+            if (isJavaScriptFamilyFilePath(file) && !javaScriptDependencies.has(file)) {
+              complete = false;
+              break;
+            }
+          }
+        }
+        if (complete && javaScriptDependencies && javaScriptGraphConfigHash !== undefined) {
+          database.setMetadata(
+            javaScriptDependencyKey,
+            writeJavaScriptGraphDependencies(javaScriptGraphConfigHash, javaScriptDependencies),
+          );
+        } else if (storedJavaScriptDependencies !== null) {
+          database.deleteMetadata(javaScriptDependencyKey);
+        }
+      }
+      if (needsCallGraphStorageMigration) {
+        database.setMetadata(callGraphStorageKey, CALL_GRAPH_STORAGE_VERSION);
       }
 
       const removedChunkIds: string[] = [];
@@ -7374,6 +7488,10 @@ export class Indexer {
     // cannot reuse stale chunks, symbols, or embeddings from a prior provider.
     database.clearAllIndexedData();
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
+    for (const branchKey of clearedBranchKeys) {
+      database.deleteMetadata(this.getCallGraphStorageMetadataKey(branchKey));
+      database.deleteMetadata(`${JAVASCRIPT_GRAPH_DEPENDENCIES_KEY}.${hashContent(branchKey).slice(0, 24)}`);
+    }
     if (this.config.indexing.mode === "structural") {
       this.publishClearedStructuralKeywordCatalog(invertedIndex, database);
     }
@@ -7488,10 +7606,6 @@ export class Indexer {
       database.deleteBranchSymbolsForBranch(branchKey, missingSymbolIds);
       await options.heartbeat?.();
     }
-    const referencedSymbolIds = new Set(database.getReferencedSymbolIds(missingSymbolIds));
-    throwIfOperationAborted(options.signal);
-    const removedSymbolIds = missingSymbolIds.filter((symbolId) => !referencedSymbolIds.has(symbolId));
-    database.clearCallEdgeTargetsForSymbols(removedSymbolIds);
 
     const removedChunkKeySet = new Set(removedChunkKeys);
     const removedStoredFilePaths = missingStoredFilePaths.filter((filePath) =>
