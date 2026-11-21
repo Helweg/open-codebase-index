@@ -109,7 +109,7 @@ describe("project structural JS/TS graph refresh", () => {
   }
 
   beforeEach(() => {
-    temp = fs.mkdtempSync(path.join(os.tmpdir(), "ocbi-structural-js-graph-"));
+    temp = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "ocbi-structural-js-graph-"));
     project = path.join(temp, "project");
     indexRoot = path.join(temp, "index");
     cleanSequence = 0;
@@ -277,6 +277,43 @@ describe("project structural JS/TS graph refresh", () => {
     await refresh();
     expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: true, target: { file: "left.tsx" } });
     expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+  });
+
+  it("refreshes unchanged CommonJS targets when their nearest package manifest appears or disappears", async () => {
+    put("packages/package.json", '{"type":"commonjs"}');
+    put("packages/nested/first.js", "function firstEntry() { return 1; }\nmodule.exports = firstEntry;");
+    put("packages/nested/deeper/second.js", "function secondEntry() { return 2; }\nmodule.exports = secondEntry;");
+    put("packages/sibling.js", "function siblingEntry() { return 3; }\nmodule.exports = siblingEntry;");
+    put("package-app.js", [
+      "import first from './packages/nested/first.js';",
+      "import second from './packages/nested/deeper/second.js';",
+      "import sibling from './packages/sibling.js';",
+      "export function usePackages() { return first() + second() + sibling(); }",
+    ].join("\n"));
+
+    const manifest = "packages/nested/package.json";
+    const indexer = new Indexer(project, config, "jcode", { indexPath: indexRoot });
+    try {
+      await indexer.index();
+      expect(callFrom("main", "usePackages", "first")).toMatchObject({ target: { name: "firstEntry" } });
+      expect(callFrom("main", "usePackages", "second")).toMatchObject({ target: { name: "secondEntry" } });
+
+      // A nearer invalid manifest must block inheritance, not fall through to CommonJS.
+      put(manifest, "{");
+      await indexer.index();
+      expect(callFrom("main", "usePackages", "first")).toMatchObject({ resolved: false, target: null });
+      expect(callFrom("main", "usePackages", "second")).toMatchObject({ resolved: false, target: null });
+      expect(callFrom("main", "usePackages", "sibling")).toMatchObject({ target: { name: "siblingEntry" } });
+      expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+
+      fs.unlinkSync(path.join(project, manifest));
+      await indexer.index();
+      expect(callFrom("main", "usePackages", "first")).toMatchObject({ target: { name: "firstEntry" } });
+      expect(callFrom("main", "usePackages", "second")).toMatchObject({ target: { name: "secondEntry" } });
+      expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+    } finally {
+      await indexer.close();
+    }
   });
 
   it("drops stale resolution during an invalid parse and recovers after the barrel is repaired", async () => {

@@ -138,6 +138,7 @@ import {
   readJavaScriptGraphDependencies,
   writeJavaScriptGraphDependencies,
   type JavaScriptGraphDependency,
+  type PackageFormat,
 } from "./javascript-graph-dependencies.js";
 import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
 import { PdfExtractionError } from "../documents/pdf.js";
@@ -5205,7 +5206,8 @@ export class Indexer {
         message: this.scipTypeScriptState.message,
       });
     }
-    const moduleFormats = new Map<string, Promise<"module" | "commonjs" | "unknown">>();
+    // Scope format evidence to this refresh, including cached missing manifests.
+    const packageFormats = new Map<string, Promise<PackageFormat>>();
     const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
       const manifestPath = path.join(directory, "package.json");
       let realManifest: string;
@@ -5263,27 +5265,45 @@ export class Indexer {
       if (interruption !== undefined) throw interruption;
       return content;
     };
-    const moduleFormatForFile = async (filePath: string): Promise<"module" | "commonjs" | "unknown"> => {
-      const cached = moduleFormats.get(filePath);
+    const packageDirectoryForFile = (filePath: string): string | undefined => {
+      const materializedPath = this.toMaterializedFilePath(filePath);
+      if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
+      return path.dirname(materializedPath);
+    };
+    const packageFormatForDirectory = (directory: string | undefined): Promise<PackageFormat> => {
+      if (directory === undefined) return Promise.resolve("unknown");
+      const cached = packageFormats.get(directory);
       if (cached) return cached;
-      const lookup = (async () => {
-        const materializedPath = this.toMaterializedFilePath(filePath);
-        if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return "unknown" as const;
-        let directory = path.dirname(materializedPath);
-        while (isPathWithinRoot(directory, this.materializedProjectRoot)) {
-          throwIfOperationAborted(signal);
-          const content = await readBoundedManifest(directory);
-          if (content === null) return "unknown" as const;
-          if (content !== undefined) return declaredPackageFormat(content);
-          const parent = path.dirname(directory);
-          if (parent === directory) break;
-          directory = parent;
-        }
-        // The ownership boundary prevents proving the nearest enclosing format.
-        return "unknown" as const;
+      const lookup = (async (): Promise<PackageFormat> => {
+        throwIfOperationAborted(signal);
+        const content = await readBoundedManifest(directory);
+        if (content === null) return "unknown";
+        if (content !== undefined) return declaredPackageFormat(content);
+        const parent = path.dirname(directory);
+        if (parent === directory || !isPathWithinRoot(parent, this.materializedProjectRoot)) return "unknown";
+        return packageFormatForDirectory(parent);
       })();
-      moduleFormats.set(filePath, lookup);
+      packageFormats.set(directory, lookup);
       return lookup;
+    };
+    const moduleFormatForFile = (filePath: string): Promise<PackageFormat> =>
+      packageFormatForDirectory(packageDirectoryForFile(filePath));
+    const packageFormatsMatch = async (dependencies: ReadonlyMap<string, JavaScriptGraphDependency>): Promise<boolean> => {
+      const expectedFormats = new Map<string | undefined, PackageFormat>();
+      for (const [file, { format }] of dependencies) {
+        if (format === undefined) continue;
+        const directory = packageDirectoryForFile(file);
+        const expected = expectedFormats.get(directory);
+        if (expected !== undefined && expected !== format) return false;
+        expectedFormats.set(directory, format);
+      }
+      for (const batch of iterateOrderedFileBatches(expectedFormats, () => PACKAGE_MANIFEST_MAX_BYTES, this.fileBatchLimits)) {
+        const matches = await Promise.all(batch.map(async ([directory, expected]) =>
+          await packageFormatForDirectory(directory) === expected
+        ));
+        if (matches.includes(false)) return false;
+      }
+      return true;
     };
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
@@ -5304,13 +5324,8 @@ export class Indexer {
       && !needsCallGraphResolutionMigration && !scipStateChanged
       ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
       : undefined;
-    if (priorJavaScriptDependencies) {
-      for (const [file, { format }] of priorJavaScriptDependencies) {
-        if (format !== undefined && format !== await moduleFormatForFile(file)) {
-          priorJavaScriptDependencies = undefined;
-          break;
-        }
-      }
+    if (priorJavaScriptDependencies && !await packageFormatsMatch(priorJavaScriptDependencies)) {
+      priorJavaScriptDependencies = undefined;
     }
     const changedJavaScriptFiles = new Set<string>();
     let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>

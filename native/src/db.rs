@@ -2924,8 +2924,15 @@ mod tests {
 
         upsert_symbols_batch(&mut conn, &symbols).unwrap();
         add_symbols_to_branch(&conn, "main", &symbol_ids).unwrap();
+        let mut other = symbols[950].clone();
+        other.id = "other-version".to_owned();
+        upsert_symbol(&conn, &other).unwrap();
+        add_symbols_to_branch(&conn, "other", &[other.id]).unwrap();
 
         let result = get_symbols_for_files(&conn, &file_paths, "main").unwrap();
-        assert_eq!(result.len(), 1000);
+        assert_eq!(
+            result.into_iter().map(|row| row.id).collect::<Vec<_>>(),
+            symbol_ids
+        );
     }
 }

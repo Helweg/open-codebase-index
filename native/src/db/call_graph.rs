@@ -285,12 +285,13 @@ pub fn get_symbols_for_files(
         let placeholders = std::iter::repeat_n("?", chunk.len())
             .collect::<Vec<_>>()
             .join(", ");
+        // Start with file-index seeks; membership-first scans the branch for every bind batch.
         let sql = format!(
             r#"
             SELECT s.id, s.file_path, s.name, s.kind, s.start_line, s.start_col, s.end_line, s.end_col, s.language
             FROM symbols s
-            INNER JOIN branch_symbols bs ON s.id = bs.symbol_id
-            WHERE bs.branch = ? AND s.file_path IN ({})
+            CROSS JOIN branch_symbols bs ON bs.branch = ? AND bs.symbol_id = s.id
+            WHERE s.file_path IN ({})
             ORDER BY s.start_line
             "#,
             placeholders
