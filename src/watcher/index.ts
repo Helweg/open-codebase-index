@@ -3,7 +3,6 @@ import type { HostMode } from "../config/host.js";
 import type { Indexer } from "../indexer/index.js";
 
 import { parseConfig } from "../config/schema.js";
-import { getProjectConfigCandidatePaths } from "../config/paths.js";
 import { loadConfigFile } from "../config/merger.js";
 import { isGitRepo } from "../git/index.js";
 import { refreshIndexerForDirectory } from "../tools/operations.js";
@@ -17,8 +16,6 @@ export { GitHeadWatcher } from "./git-head-watcher.js";
 export type { BranchChangeHandler } from "./git-head-watcher.js";
 
 export interface CombinedWatcher {
-  fileWatcher: FileWatcher;
-  gitWatcher: GitHeadWatcher | null;
   whenReady(): Promise<void>;
   isBusy(): boolean;
   stop(): Promise<void>;
@@ -36,8 +33,8 @@ export function createWatcherWithIndexer(
   options: WatcherOptions = {},
 ): CombinedWatcher {
   const fileWatcher = new FileWatcher(projectRoot, config, host, options);
-  const configPaths = getConfigPaths(projectRoot, host, options);
-  configureAutoIndex(projectRoot, host, parseConfig(config), getIndexer, {
+  const parsedConfig = parseConfig(config);
+  configureAutoIndex(projectRoot, host, parsedConfig, getIndexer, {
     synchronizeBackgroundWorker: false,
   });
   let stopped = false;
@@ -51,23 +48,16 @@ export function createWatcherWithIndexer(
   };
 
   fileWatcher.start(async (changes) => {
-    const hasAddOrChange = changes.some(
-      (c) => c.type === "add" || c.type === "change"
-    );
-    const hasDelete = changes.some((c) => c.type === "unlink");
-
-    if (hasAddOrChange || hasDelete) {
-      if (changes.some((change) => configPaths.includes(pathNormalize(change.path)))) {
-        const parsedConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
-        const refreshedConfig = refreshIndexerForDirectory(projectRoot, host, parsedConfig);
-        if (refreshedConfig) {
-          configureAutoIndex(projectRoot, host, refreshedConfig, getIndexer, {
-            synchronizeBackgroundWorker: false,
-          });
-        }
+    if (fileWatcher.hasProjectConfigChange(changes)) {
+      const explicitConfig = options.configPath ? parseConfig(loadConfigFile(options.configPath)) : undefined;
+      const refreshedConfig = refreshIndexerForDirectory(projectRoot, host, explicitConfig);
+      if (refreshedConfig) {
+        configureAutoIndex(projectRoot, host, refreshedConfig, getIndexer, {
+          synchronizeBackgroundWorker: false,
+        });
       }
-      requestReindex();
     }
+    requestReindex();
   });
 
   let gitWatcher: GitHeadWatcher | null = null;
@@ -84,42 +74,25 @@ export function createWatcherWithIndexer(
       requestReindex();
     });
   }
-  let startupCatchupRequested = false;
+  const startup = (async () => {
+    await gitWatcher?.waitUntilReady();
+    await fileWatcher.waitUntilReady();
+    // Catch edits between the initial index scan and subscription readiness.
+    if (parsedConfig.indexing.autoIndex) requestReindex();
+  })();
 
   return {
-    fileWatcher,
-    gitWatcher,
     isBusy() {
       return fileWatcher.isBusy() || (gitWatcher?.isBusy() ?? false);
     },
-    whenReady() {
-      return Promise.all([
-        fileWatcher.waitUntilReady(),
-        gitWatcher?.waitUntilReady(),
-      ]).then(() => {
-        if (startupCatchupRequested) return;
-        startupCatchupRequested = true;
-        // Reconcile edits made after the startup scan but before subscriptions became ready.
-        if (config.indexing?.autoIndex !== false) requestReindex();
-      });
+    async whenReady() {
+      await startup;
+      // Later observers must also wait for any backend replacement in progress.
+      await fileWatcher.waitUntilReady();
     },
     async stop() {
       stopped = true;
       await Promise.all([fileWatcher.stop(), gitWatcher?.stop()]);
     },
   };
-}
-
-function pathNormalize(value: string): string {
-  return value.split("\\").join("/");
-}
-
-function getConfigPaths(projectRoot: string, host: HostMode, options: WatcherOptions): string[] {
-  if (options.configPath) {
-    return [pathNormalize(options.configPath)];
-  }
-
-  return getProjectConfigCandidatePaths(projectRoot, host).map(
-    (configPath) => pathNormalize(configPath),
-  );
 }

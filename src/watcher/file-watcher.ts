@@ -69,7 +69,8 @@ export class FileWatcher {
   private configPath: string | undefined;
   private indexPath: string;
   private backend: FileWatcherBackend;
-  private projectConfigPaths: string[];
+  private readonly projectConfigPaths: string[];
+  private readonly projectConfigRelativePaths: string[];
   private pendingChanges: Map<string, FileChangeType> = new Map();
   private debounceTimer: NodeJS.Timeout | null = null;
   private debounceMs = 1000;
@@ -102,6 +103,9 @@ export class FileWatcher {
     this.projectConfigPaths = options.configPath
       ? [options.configPath]
       : getProjectConfigCandidatePaths(projectRoot, host);
+    this.projectConfigRelativePaths = this.projectConfigPaths.map(
+      (configPath) => path.relative(projectRoot, configPath),
+    );
     this.localModuleConfigTracker = new LocalModuleConfigTracker(projectRoot, this.getSnapshotConfig());
   }
 
@@ -1006,15 +1010,17 @@ export class FileWatcher {
     return { ...this.config, protectedPaths: [this.indexPath] };
   }
 
+  hasProjectConfigChange(changes: readonly FileChange[]): boolean {
+    return changes.some(({ path: filePath }) => this.isProjectConfigPath(filePath));
+  }
+
   private isProjectConfigPath(filePath: string): boolean {
-    const relativePath = path.relative(this.projectRoot, filePath);
-    const normalizedRelativePath = path.normalize(relativePath);
-    return this.getProjectConfigRelativePaths().some((configPath) => configPath === normalizedRelativePath);
+    return this.projectConfigRelativePaths.includes(path.relative(this.projectRoot, filePath));
   }
 
   private isProjectConfigPathOrAncestor(relativePath: string): boolean {
     const normalizedRelativePath = path.normalize(relativePath);
-    return this.getProjectConfigRelativePaths().some(
+    return this.projectConfigRelativePaths.some(
       (configPath) => configPath === normalizedRelativePath || configPath.startsWith(`${normalizedRelativePath}${path.sep}`),
     );
   }
@@ -1033,12 +1039,6 @@ export class FileWatcher {
       candidate = parent;
     }
     return candidate;
-  }
-
-  private getProjectConfigRelativePaths(): string[] {
-    return this.projectConfigPaths.map(
-      (configPath) => path.normalize(path.relative(this.projectRoot, configPath)),
-    );
   }
 
   private getConfigPathStates(): Map<string, ConfigPathState> {

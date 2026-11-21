@@ -481,6 +481,36 @@ describe("FileWatcher", () => {
   });
 
   describe("createWatcherWithIndexer", () => {
+    it("requests startup catch-up without an observer and does not wait for indexing to finish", async () => {
+      const indexing = Promise.withResolvers<void>();
+      const indexer = { index: vi.fn(() => indexing.promise) };
+      const config = createTestConfig();
+      config.indexing.autoIndex = true;
+      const combinedWatcher = createWatcherWithIndexer(() => indexer, tempDir, config, "opencode");
+
+      try {
+        await waitForIndexerCalls(indexer, 1);
+        await Promise.all([combinedWatcher.whenReady(), combinedWatcher.whenReady()]);
+        indexing.resolve();
+        await indexing.promise;
+        expect(indexer.index).toHaveBeenCalledTimes(1);
+      } finally {
+        indexing.resolve();
+        await combinedWatcher.stop();
+      }
+    }, 5000);
+
+    it("does not request startup catch-up when stopped before readiness", async () => {
+      const indexer = { index: vi.fn().mockResolvedValue(undefined) };
+      const config = createTestConfig();
+      config.indexing.autoIndex = true;
+      const combinedWatcher = createWatcherWithIndexer(() => indexer, tempDir, config, "opencode");
+
+      await combinedWatcher.stop();
+      await combinedWatcher.whenReady();
+      expect(indexer.index).not.toHaveBeenCalled();
+    });
+
     it("records branch changes without writing to stdout and still reindexes", async () => {
       fs.mkdirSync(path.join(tempDir, ".git", "refs", "heads"), { recursive: true });
       fs.writeFileSync(path.join(tempDir, ".git", "HEAD"), "ref: refs/heads/main\n");
@@ -650,7 +680,7 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await combinedWatcher.fileWatcher.waitUntilReady();
+      await combinedWatcher.whenReady();
       await writeUntilObserved(
         (attempt) => fs.writeFileSync(
           path.join(tempDir, "src", "retry.ts"),
@@ -685,7 +715,7 @@ describe("FileWatcher", () => {
         "opencode",
       );
 
-      await combinedWatcher.fileWatcher.waitUntilReady();
+      await combinedWatcher.whenReady();
       await writeUntilObserved(
         (attempt) => fs.writeFileSync(
           path.join(tempDir, "src", "blocked.ts"),
@@ -733,25 +763,16 @@ describe("FileWatcher", () => {
       await combinedWatcher.stop();
     });
 
-    it("stops the watcher cleanly after start", async () => {
-      const indexer = {
-        index: vi.fn().mockResolvedValue(undefined),
-      };
+    it("does not catch up on startup in watcher-only mode", async () => {
+      const indexer = { index: vi.fn().mockResolvedValue(undefined) };
+      const combinedWatcher = createWatcherWithIndexer(() => indexer, tempDir, createTestConfig(), "opencode");
 
-      const combinedWatcher = createWatcherWithIndexer(
-        () => indexer,
-        tempDir,
-        createTestConfig(),
-        "opencode",
-      );
-
-      expect(combinedWatcher.fileWatcher.isRunning()).toBe(true);
-      expect(combinedWatcher.gitWatcher?.isRunning() ?? false).toBe(false);
-
-      await combinedWatcher.stop();
-
-      expect(combinedWatcher.fileWatcher.isRunning()).toBe(false);
-      expect(combinedWatcher.gitWatcher?.isRunning() ?? false).toBe(false);
+      try {
+        await combinedWatcher.whenReady();
+        expect(indexer.index).not.toHaveBeenCalled();
+      } finally {
+        await combinedWatcher.stop();
+      }
     });
   });
 });

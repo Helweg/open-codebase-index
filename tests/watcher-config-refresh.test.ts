@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import * as os from "os";
 import * as path from "path";
+import { FSWatcher } from "chokidar";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,7 +19,7 @@ vi.mock("../src/git/index.js", async (importOriginal) => ({
 }));
 
 import { parseConfig } from "../src/config/schema.js";
-import { createWatcherWithIndexer } from "../src/watcher/index.js";
+import { createWatcherWithIndexer, FileWatcher } from "../src/watcher/index.js";
 
 const WATCH_EVENT_TIMEOUT_MS = 10000;
 
@@ -211,14 +212,16 @@ describe("watcher config refresh", () => {
   });
 
   it("uses native project watching alongside a lightweight external config watcher for linked worktrees", async () => {
-    const { watcher } = createLinkedWorktreeWatcher(tempDir);
-    const internals = watcher.fileWatcher as unknown as {
+    const { worktreeDir } = createLinkedWorktree(tempDir);
+    const watcher = new FileWatcher(worktreeDir, parseConfig({ include: ["**/*.ts"] }), "opencode");
+    const internals = watcher as unknown as {
       nativeWatcher: unknown;
       watcher: unknown;
     };
 
     try {
-      await watcher.whenReady();
+      watcher.start(async () => {});
+      await watcher.waitUntilReady();
 
       expect(internals.nativeWatcher).not.toBeNull();
       expect(internals.watcher).not.toBeNull();
@@ -337,16 +340,18 @@ describe("watcher config refresh", () => {
   });
 
   it("reconciles an inherited config created between Chokidar ready events", async () => {
+    const add = vi.spyOn(FSWatcher.prototype, "add");
     const { configPath, indexer, watcher, worktreeDir } = createLinkedWorktreeWatcher(tempDir, false);
-    const chokidarWatcher = watcher.fileWatcher as unknown as {
-      watcher: { emit(event: string): boolean; removeAllListeners(event?: string): unknown } | null;
-    };
-
     try {
       await watcher.whenReady();
-      chokidarWatcher.watcher?.removeAllListeners("add");
+      const externalWatcher = add.mock.instances.find((_watcher, index) => {
+        const [targets] = add.mock.calls[index];
+        return Array.isArray(targets) && targets.includes(path.dirname(configPath));
+      });
+      if (!externalWatcher) throw new Error("External config watcher not installed");
+      externalWatcher.removeAllListeners("add");
       writeFileSync(configPath, JSON.stringify({ include: ["created-during-ready/**/*.ts"] }));
-      chokidarWatcher.watcher?.emit("ready");
+      externalWatcher.emit("ready");
 
       await vi.waitFor(() => {
         expect(operationMocks.refreshIndexerForDirectory).toHaveBeenCalledWith(
@@ -357,11 +362,12 @@ describe("watcher config refresh", () => {
         expect(indexer.index).toHaveBeenCalledTimes(1);
       }, { timeout: WATCH_EVENT_TIMEOUT_MS });
     } finally {
+      add.mockRestore();
       await watcher.stop();
     }
   });
 
-  it("refreshes from explicit config path when configured", async () => {
+  it("refreshes from an explicit config path with non-normalized segments", async () => {
     const projectRoot = path.join(tempDir, "project");
     mkdirSync(projectRoot, { recursive: true });
     const configPath = path.join(tempDir, "custom-config.json");
@@ -375,7 +381,7 @@ describe("watcher config refresh", () => {
       projectRoot,
       parseConfig({ include: ["**/*.ts"] }),
       "codex",
-      { configPath },
+      { configPath: `${tempDir}${path.sep}.${path.sep}custom-config.json` },
     );
 
     await watcher.whenReady();
@@ -389,6 +395,8 @@ describe("watcher config refresh", () => {
           expect.objectContaining({ include: ["custom/**/*.ts"] }),
         );
         expect(indexer.index).toHaveBeenCalledTimes(1);
+        expect(operationMocks.refreshIndexerForDirectory.mock.invocationCallOrder[0])
+          .toBeLessThan(indexer.index.mock.invocationCallOrder[0]);
       },
     );
 

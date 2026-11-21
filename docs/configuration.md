@@ -350,7 +350,7 @@ When file watching uses Chokidar, an identified Node `watch` registration failur
 
 Chokidar also receives explicit targets for local module configuration dependencies discovered at startup, including transitive `tsconfig` dependencies. This retains its independent first-change coverage when macOS omits an initial recursive directory notification. Existing selection, exclusion, and protected-path policies still apply; configuration notifications do not broaden which files are indexed.
 
-With automatic indexing enabled, file/Git watcher readiness requests one ordinary coordinated refresh. This catches edits made after the initial scan but before subscriptions became ready, including during background-leader promotion. Existing in-flight indexing coalesces the refresh; unchanged chunks reuse their embeddings. Watcher-only mode (`autoIndex: false`) does not request a startup refresh.
+With automatic indexing enabled, the combined watcher requests one ordinary coordinated refresh once file and Git subscriptions are ready, even if no caller waits for readiness. Readiness confirms the refresh was requested, not that indexing has finished. This catches edits made after the initial scan but before subscriptions became ready, including during background-leader promotion. Existing in-flight indexing coalesces the refresh; unchanged chunks reuse their embeddings. Watcher-only mode (`autoIndex: false`) and a watcher stopped before readiness do not request a startup refresh.
 
 For the disabled-by-default compiler-index pilot, see [Optional SCIP TypeScript enrichment](scip-typescript.md).
 
