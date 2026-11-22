@@ -251,6 +251,15 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
       }),
       expect.objectContaining({ caller: "RunGo", name: "Target", resolved: false, target: null }),
     ]));
+
+    // Restoring the package must resolve the unchanged caller again; retiring
+    // the previous target alone cannot produce this edge.
+    write("worker/replacement.go", "package worker\n\nfunc Target() {\n  // Restored in place.\n}\n");
+    await indexer.index();
+    expect((await compareWithClean()).edges).toContainEqual(expect.objectContaining({
+      caller: "RunGo", name: "Target", resolved: true,
+      target: expect.objectContaining({ file: "worker/replacement.go", name: "Target" }),
+    }));
   } finally {
     await indexer.close();
   }
