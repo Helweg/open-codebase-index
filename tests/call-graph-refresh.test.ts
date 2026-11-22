@@ -196,6 +196,7 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
       const currentInputs = new Set(capturedInputs.splice(0));
       if (mode === "hybrid") {
         expect(incrementalInputs.length).toBeGreaterThan(0);
+        expect(new Set(incrementalInputs).size).toBe(incrementalInputs.length);
         for (const input of incrementalInputs) {
           expect(currentInputs.has(input)).toBe(true);
           expect(previousInputs.has(input)).toBe(false);
@@ -237,6 +238,18 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
     expect((await compareWithClean()).edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ caller: "run_python", resolved: true, target: expect.objectContaining({ file: "pkg/formatting/__init__.py" }) }),
       expect.objectContaining({ caller: "RunGo", resolved: true, target: expect.objectContaining({ file: "worker/replacement.go" }) }),
+    ]));
+
+    // Change existing targets without touching either caller or adding/deleting files.
+    write("pkg/formatting/__init__.py", "\n\ndef helper():\n    return 4\n");
+    write("worker/replacement.go", "package other\n\nfunc Target() {}\n");
+    await indexer.index();
+    expect((await compareWithClean()).edges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        caller: "run_python", name: "helper", resolved: true,
+        target: expect.objectContaining({ file: "pkg/formatting/__init__.py", span: [3, 0, 4, 12] }),
+      }),
+      expect.objectContaining({ caller: "RunGo", name: "Target", resolved: false, target: null }),
     ]));
   } finally {
     await indexer.close();
