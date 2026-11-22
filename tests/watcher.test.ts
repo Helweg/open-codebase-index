@@ -5,6 +5,9 @@ import * as os from "os";
 import { FileWatcher, GitHeadWatcher, FileChange, createWatcherWithIndexer } from "../src/watcher/index.js";
 import { ParsedCodebaseIndexConfig } from "../src/config/schema.js";
 import { IndexLockContentionError } from "../src/indexer/index-lock.js";
+import { Indexer } from "../src/indexer/index.js";
+import { parseConfig } from "../src/config/schema.js";
+import * as autoIndex from "../src/utils/auto-index.js";
 
 const createTestConfig = (overrides: Partial<ParsedCodebaseIndexConfig> = {}): ParsedCodebaseIndexConfig => ({
   embeddingProvider: "auto",
@@ -499,6 +502,57 @@ describe("FileWatcher", () => {
         await combinedWatcher.stop();
       }
     }, 5000);
+
+    it("makes a startup-gap edit searchable without a readiness observer", async () => {
+      const config = parseConfig({
+        include: ["**/*.ts"],
+        indexing: { mode: "structural", autoIndex: true, pauseBackgroundIndexingOnBattery: false },
+      });
+      const sourcePath = path.join(tempDir, "src", "startup.ts");
+      const symbol = "startupGapDefinition";
+      const indexer = new Indexer(tempDir, config, "opencode");
+      fs.writeFileSync(sourcePath, "export function initialDefinition() { return 1; }\n");
+
+      await indexer.index();
+      expect(await indexer.search("initialDefinition", 10, { definitionIntent: true }))
+        .toContainEqual(expect.objectContaining({ name: "initialDefinition", filePath: sourcePath }));
+
+      const release = Promise.withResolvers<void>();
+      const start = FileWatcher.prototype.start;
+      const waitUntilReady = FileWatcher.prototype.waitUntilReady;
+      let subscription: Promise<void> | undefined;
+      // Delay registration itself so no live file notification can recover the edit.
+      const startSpy = vi.spyOn(FileWatcher.prototype, "start").mockImplementation(function (this: FileWatcher, handler) {
+        subscription = release.promise.then(() => start.call(this, handler));
+      });
+      const readySpy = vi.spyOn(FileWatcher.prototype, "waitUntilReady").mockImplementation(async function (this: FileWatcher) {
+        await subscription;
+        await waitUntilReady.call(this);
+      });
+      const refreshSpy = vi.spyOn(autoIndex, "requestBackgroundIndex");
+      const combinedWatcher = createWatcherWithIndexer(() => indexer, tempDir, config, "opencode");
+
+      try {
+        await vi.waitFor(() => expect(readySpy).toHaveBeenCalledOnce());
+        fs.writeFileSync(sourcePath, `export function ${symbol}() { return 2; }\n`);
+        expect(refreshSpy).not.toHaveBeenCalled();
+        release.resolve();
+
+        await vi.waitFor(async () => {
+          expect(await indexer.search(symbol, 10, { definitionIntent: true }))
+            .toContainEqual(expect.objectContaining({ name: symbol, filePath: sourcePath }));
+        }, { timeout: 5000 });
+      } finally {
+        release.resolve();
+        await subscription;
+        await combinedWatcher.stop();
+        await autoIndex.stopAutoIndex(tempDir, "opencode", true);
+        refreshSpy.mockRestore();
+        readySpy.mockRestore();
+        startSpy.mockRestore();
+        await indexer.close();
+      }
+    }, 10_000);
 
     it("does not request startup catch-up when stopped before readiness", async () => {
       const indexer = { index: vi.fn().mockResolvedValue(undefined) };
