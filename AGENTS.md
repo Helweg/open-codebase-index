@@ -388,3 +388,16 @@ Supported release targets are macOS ARM64/x64, Linux ARM64/x64 GNU, and Windows 
 
 Do not manually publish release version that workflow is expected to publish. Do not reuse or overwrite existing npm version.
 
+## Agent skills
+
+### Issue tracker
+
+For issues, specs, or tickets, use GitHub Issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+For triage state changes, use the label mapping in `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+For domain terminology and prior decisions, use the single-context layout in `docs/agents/domain.md`.
