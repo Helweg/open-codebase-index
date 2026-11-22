@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Incremental call graph refresh**: Share JS/TS, Python, and Go refresh planning and dependency proof publication across structural and hybrid indexing. Language-specific refresh scope, SCIP behavior, and existing indexes are unchanged.
+
 ### Performance
 
 - **Index startup and refresh**: Use targeted SQLite presence and count queries, seek distinct branch names through existing indexes, compile each native call query once, and publish only changed branch memberships.

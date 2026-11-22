@@ -114,7 +114,7 @@ import {
   type FailedBatchWriter,
 } from "./failed-state-persistence.js";
 import { iterateOrderedFileBatches, type FileBatchLimits } from "./file-batches.js";
-import { canonicalizePathForComparison } from "../utils/canonical-path.js";
+import { canonicalizePathForComparison, isPathWithinRoot } from "../utils/canonical-path.js";
 import {
   createProviderRequestSignal,
   isOperationInterruption,
@@ -123,23 +123,14 @@ import {
   throwIfOperationAborted,
 } from "../utils/operation-control.js";
 import { summarizeCallGraphCoverage, type CallGraphCoverage } from "./call-graph-coverage.js";
-import { createGoDirectCallClassifier, isGoFilePath } from "./go-package-resolution.js";
+import { createGoDirectCallClassifier } from "./go-package-resolution.js";
 import { isPythonFilePath } from "./python-import-resolution.js";
+import { isJavaScriptFamilyFilePath, LocalModuleCallResolver } from "./local-module-resolution.js";
 import {
-  declaredPackageFormat,
-  getLocalWorkspacePackageManifestPaths,
-  getLocalWorkspacePackages,
-  isJavaScriptFamilyFilePath,
-  LocalModuleCallResolver,
-  TsConfigPathAliasCache,
-} from "./local-module-resolution.js";
-import {
-  affectedJavaScriptGraphFiles,
-  readJavaScriptGraphDependencies,
-  writeJavaScriptGraphDependencies,
-  type JavaScriptGraphDependency,
-  type PackageFormat,
-} from "./javascript-graph-dependencies.js";
+  callGraphDependencyMetadataKey,
+  prepareCallGraphRefresh,
+  readLocalModuleResolutionState,
+} from "./call-graph-refresh.js";
 import { generatePreparedChunkId, PDF_EXTRACTION_VERSION, prepareDocument, prepareDocuments } from "../documents/prepare.js";
 import { PdfExtractionError } from "../documents/pdf.js";
 import {
@@ -222,12 +213,9 @@ function resolveSameCommunityCandidateIds(
     ))
     .map((candidate) => candidate.id));
 }
-const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
-
 // Existing indexes without this metadata are the implicit version 1.
 const CALL_GRAPH_RESOLUTION_VERSION = "12";
 const CALL_GRAPH_STORAGE_VERSION = "1";
-const JAVASCRIPT_GRAPH_DEPENDENCIES_KEY = "index.javaScriptGraphDependencies";
 const PHP_FUNCTION_SYMBOL_CHUNK_TYPES = new Set([
   "function_declaration",
   "function",
@@ -598,13 +586,6 @@ export interface IndexFreshnessResult {
   reason: IndexFreshnessReason;
 }
 
-interface LocalModuleResolutionState {
-  configHash: string;
-  javaScriptGraphConfigHash?: string;
-  pathAliasCache: TsConfigPathAliasCache;
-  workspacePackages: ReturnType<typeof getLocalWorkspacePackages>;
-}
-
 type InitializationMode = "none" | "reader" | "writer";
 
 interface IndexReadIssue {
@@ -804,12 +785,6 @@ const MARKUP_PARSER_VERSION = "1";
 const KOTLIN_PARSER_VERSION = "1";
 const RUBY_PARSER_VERSION = "1";
 const SYMBOL_EXTRACTOR_VERSION = "2";
-
-function isPathWithinRoot(filePath: string, rootPath: string): boolean {
-  const normalizedFilePath = path.resolve(filePath);
-  const normalizedRoot = path.resolve(rootPath);
-  return normalizedFilePath === normalizedRoot || normalizedFilePath.startsWith(`${normalizedRoot}${path.sep}`);
-}
 
 function isMarkupFilePath(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase();
@@ -1972,11 +1947,6 @@ export class Indexer {
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
     return this.getBranchMigrationMetadataKey("index.callGraphResolutionVersion", catalogIdentity);
-  }
-
-  private canPruneJavaScriptGraphRefresh(): boolean {
-    return this.config.scope === "project" && this.config.indexing.mode === "structural"
-      && !this.config.indexing.scipTypeScript.enabled;
   }
 
   private getCallGraphStorageMetadataKey(catalogIdentity = this.getBranchCatalogIdentity()): string {
@@ -4889,43 +4859,6 @@ export class Indexer {
     }, options.signal);
   }
 
-  private getLocalModuleResolutionState(
-    files: readonly { path: string }[],
-    trackJavaScriptDependencies = false,
-  ): LocalModuleResolutionState {
-    const loadFileText = (configPath: string): string | undefined => {
-      try {
-        return readFileSync(path.join(this.materializedProjectRoot, ...configPath.split("/")), "utf-8");
-      } catch {
-        return undefined;
-      }
-    };
-    const pathAliasCache = new TsConfigPathAliasCache(loadFileText);
-    const importerPaths = files.flatMap((file) => {
-      if (!isPathWithinRoot(file.path, this.materializedProjectRoot)) return [];
-      const relativePath = path.relative(this.materializedProjectRoot, file.path).split(path.sep).join("/");
-      return isJavaScriptFamilyFilePath(relativePath) ? [relativePath] : [];
-    });
-    const workspaceManifestPaths = getLocalWorkspacePackageManifestPaths(importerPaths, loadFileText);
-    const workspacePackages = getLocalWorkspacePackages(importerPaths, loadFileText);
-    const tsconfig = pathAliasCache.getConfigState(importerPaths);
-    const packageManifests = workspaceManifestPaths.map((manifestPath) => [
-      manifestPath,
-      loadFileText(manifestPath) ?? null,
-    ] as const);
-    const configHash = hashContent(JSON.stringify({ tsconfig, packageManifests }));
-    // Discovery also fingerprints absent configs for the existing freshness check.
-    // A newly indexed source directory with no configs is not a resolver change.
-    const javaScriptGraphConfigHash = trackJavaScriptDependencies
-      ? hashContent(JSON.stringify({
-        tsconfig: tsconfig.filter(([, content]) => content !== null),
-        packageManifests: packageManifests.filter(([, content]) => content !== null),
-      }))
-      : undefined;
-
-    return { configHash, javaScriptGraphConfigHash, pathAliasCache, workspacePackages };
-  }
-
   async indexBranchIfMissing(
     branch: string,
     commit: string,
@@ -5007,13 +4940,9 @@ export class Indexer {
     const indexedCommit = this.expectedCommitOverride ?? materializedCommit;
     const scopedRoots = this.config.scope === "global" ? this.getScopedRoots() : null;
     const branchCatalogKey = this.getBranchCatalogKey();
-    const projectStructural = isStructural && this.config.scope === "project";
-    const trackJavaScriptDependencies = this.canPruneJavaScriptGraphRefresh();
     const callGraphStorageKey = this.getCallGraphStorageMetadataKey();
     const needsCallGraphStorageMigration = database.getMetadata(callGraphStorageKey) !== CALL_GRAPH_STORAGE_VERSION;
-    const javaScriptDependencyKey = projectStructural
-      ? this.getBranchMigrationMetadataKey(JAVASCRIPT_GRAPH_DEPENDENCIES_KEY)
-      : undefined;
+    const graphDependencyKey = callGraphDependencyMetadataKey(branchCatalogKey);
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
     const previousBranchSymbolIdSet = new Set(database.getBranchSymbolIds(branchCatalogKey));
@@ -5153,9 +5082,6 @@ export class Indexer {
       skippedFiles: skipped.length,
     });
 
-    const localModuleResolutionState = this.getLocalModuleResolutionState(files, trackJavaScriptDependencies);
-    const { javaScriptGraphConfigHash } = localModuleResolutionState;
-    this.localModuleResolutionConfigHash = localModuleResolutionState.configHash;
     const scipConfig = this.config.indexing.scipTypeScript;
     this.scipTypeScriptState = await prepareScipTypeScriptEnrichment({
       ...scipConfig,
@@ -5174,105 +5100,6 @@ export class Indexer {
         message: this.scipTypeScriptState.message,
       });
     }
-    // Scope format evidence to this refresh, including cached missing manifests.
-    const packageFormats = new Map<string, Promise<PackageFormat>>();
-    const readBoundedManifest = async (directory: string): Promise<string | undefined | null> => {
-      const manifestPath = path.join(directory, "package.json");
-      let realManifest: string;
-      try {
-        const realDirectory = await fsPromises.realpath(directory);
-        if (!isPathWithinRoot(realDirectory, this.materializedProjectRoot)) return null;
-        realManifest = await fsPromises.realpath(manifestPath);
-      } catch (error) {
-        if (isOperationInterruption(error)) throw error;
-        return error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")
-          ? undefined
-          : null;
-      }
-      if (!isPathWithinRoot(realManifest, this.materializedProjectRoot)) return null;
-      const stats = await fsPromises.lstat(realManifest).catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!stats || !stats.isFile() || stats.size > PACKAGE_MANIFEST_MAX_BYTES) return null;
-      const handle = await fsPromises.open(realManifest, "r").catch((error: unknown) => {
-        if (isOperationInterruption(error)) throw error;
-        return undefined;
-      });
-      if (!handle) return null;
-      let content: string | null = null;
-      let interruption: unknown;
-      try {
-        const openedStats = await handle.stat();
-        throwIfOperationAborted(signal);
-        if (openedStats.isFile() && openedStats.size <= PACKAGE_MANIFEST_MAX_BYTES
-          && openedStats.dev === stats.dev && openedStats.ino === stats.ino) {
-          // One spare byte proves EOF and rejects growth beyond the observed size.
-          const buffer = Buffer.alloc(openedStats.size + 1);
-          let offset = 0;
-          while (true) {
-            const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
-            throwIfOperationAborted(signal);
-            if (bytesRead === 0) {
-              content = buffer.subarray(0, offset).toString("utf8");
-              break;
-            }
-            offset += bytesRead;
-            if (offset > openedStats.size) break;
-          }
-        }
-      } catch (error: unknown) {
-        if (isOperationInterruption(error)) interruption = error;
-      } finally {
-        try {
-          await handle.close();
-        } catch (error: unknown) {
-          if (interruption === undefined && isOperationInterruption(error)) interruption = error;
-        }
-      }
-      if (interruption !== undefined) throw interruption;
-      return content;
-    };
-    const packageDirectoryForFile = (filePath: string): string | undefined => {
-      const materializedPath = this.toMaterializedFilePath(filePath);
-      if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
-      return path.dirname(materializedPath);
-    };
-    const packageFormatForDirectory = (directory: string | undefined): Promise<PackageFormat> => {
-      if (directory === undefined) return Promise.resolve("unknown");
-      const cached = packageFormats.get(directory);
-      if (cached) return cached;
-      const lookup = (async (): Promise<PackageFormat> => {
-        throwIfOperationAborted(signal);
-        const content = await readBoundedManifest(directory);
-        if (content === null) return "unknown";
-        if (content !== undefined) return declaredPackageFormat(content);
-        const parent = path.dirname(directory);
-        if (parent === directory || !isPathWithinRoot(parent, this.materializedProjectRoot)) return "unknown";
-        return packageFormatForDirectory(parent);
-      })();
-      packageFormats.set(directory, lookup);
-      return lookup;
-    };
-    const moduleFormatForFile = (filePath: string): Promise<PackageFormat> =>
-      packageFormatForDirectory(packageDirectoryForFile(filePath));
-    const packageFormatsMatch = async (dependencies: ReadonlyMap<string, JavaScriptGraphDependency>): Promise<boolean> => {
-      const expectedFormats = new Map<string | undefined, PackageFormat>();
-      for (const [file, { format }] of dependencies) {
-        if (format === undefined) continue;
-        const directory = packageDirectoryForFile(file);
-        const expected = expectedFormats.get(directory);
-        if (expected !== undefined && expected !== format) return false;
-        expectedFormats.set(directory, format);
-      }
-      for (const batch of iterateOrderedFileBatches(expectedFormats, () => PACKAGE_MANIFEST_MAX_BYTES, this.fileBatchLimits)) {
-        const matches = await Promise.all(batch.map(async ([directory, expected]) =>
-          await packageFormatForDirectory(directory) === expected
-        ));
-        if (matches.includes(false)) return false;
-      }
-      return true;
-    };
 
     const changedFileDescriptors: ChangedFileDescriptor[] = [];
     const changedFilePathSet = new Set<string>();
@@ -5280,38 +5107,26 @@ export class Indexer {
     const unchangedFilePaths = new Set<string>();
     const currentFileHashes = new Map<string, string>();
     const currentStoredFilePaths = new Set(files.map((file) => this.toStoredFilePath(file.path)));
-    const needsCallGraphResolutionMigration =
-      database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION;
-    const localModuleResolutionConfigChanged =
-      database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey())
-      !== this.localModuleResolutionConfigHash;
-    const storedJavaScriptDependencies = javaScriptDependencyKey ? database.getMetadata(javaScriptDependencyKey) : null;
-    let priorJavaScriptDependencies = javaScriptGraphConfigHash !== undefined
-      && !needsCallGraphStorageMigration && !needsCallGraphResolutionMigration && !scipStateChanged
-      ? readJavaScriptGraphDependencies(storedJavaScriptDependencies, javaScriptGraphConfigHash, this.fileHashCache)
-      : undefined;
-    if (priorJavaScriptDependencies && !await packageFormatsMatch(priorJavaScriptDependencies)) {
-      priorJavaScriptDependencies = undefined;
-    }
-    const changedJavaScriptFiles = new Set<string>();
-    let javaScriptGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
-      (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
-      && isJavaScriptFamilyFilePath(filePath)
-      && !currentStoredFilePaths.has(filePath)
-    );
-    let pythonGraphSourcesChanged = Array.from(this.fileHashCache.keys()).some((filePath) =>
-      (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
-      && isPythonFilePath(filePath)
-      && !currentStoredFilePaths.has(filePath)
-    );
-    const changedGoPackageDirectories = new Set(
-      Array.from(this.fileHashCache.keys()).flatMap((filePath) =>
-        (!scopedRoots || this.isFileInCurrentScope(filePath, scopedRoots))
-          && isGoFilePath(filePath)
-          && !currentStoredFilePaths.has(filePath)
-          ? [path.posix.dirname(filePath.split(path.sep).join("/"))]
-          : []
-      ),
+    const graphRefresh = await prepareCallGraphRefresh({
+      config: this.config,
+      materializedRoot: this.materializedProjectRoot,
+      files,
+      currentPaths: currentStoredFilePaths,
+      previousHashes: this.fileHashCache,
+      toMaterializedPath: (file) => this.toMaterializedFilePath(file),
+      inScope: scopedRoots ? (file) => this.isFileInCurrentScope(file, scopedRoots) : undefined,
+      readSnapshot: () => database.getMetadata(graphDependencyKey),
+      previousResolutionConfigHash: database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey()),
+      storageChanged: needsCallGraphStorageMigration,
+      resolutionChanged: database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION,
+      scipChanged: scipStateChanged,
+      javaScriptParserChanged: reparseCachedJavaScriptFiles,
+      fileBatchLimits: this.fileBatchLimits,
+      signal,
+    });
+    this.localModuleResolutionConfigHash = graphRefresh.resolution.configHash;
+    const hasOtherLocalModuleEdges = (file: string): boolean => database.getChunksByFile(file).some((chunk) =>
+      chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
     );
 
     for (const [fileIndex, file] of files.entries()) {
@@ -5351,33 +5166,8 @@ export class Indexer {
       allFileDescriptors.set(storedPath, descriptor);
 
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
-      if (!cachedHashMatches && isJavaScriptFamilyFilePath(storedPath)) {
-        javaScriptGraphSourcesChanged = true;
-        if (priorJavaScriptDependencies) changedJavaScriptFiles.add(storedPath);
-      }
-      if (!cachedHashMatches && isGoFilePath(storedPath)) {
-        changedGoPackageDirectories.add(path.posix.dirname(storedPath.split(path.sep).join("/")));
-      }
-      if (!cachedHashMatches && isPythonFilePath(storedPath)) {
-        pythonGraphSourcesChanged = true;
-      }
-      const needsCallGraphRefresh = cachedHashMatches
-        && (
-          (
-            (needsCallGraphResolutionMigration || scipStateChanged || (
-              localModuleResolutionConfigChanged && !(trackJavaScriptDependencies && isJavaScriptFamilyFilePath(storedPath))
-            ))
-            && (
-              isJavaScriptFamilyFilePath(storedPath)
-              || database.getChunksByFile(storedPath).some((chunk) =>
-                chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
-              )
-            )
-          )
-          || (needsCallGraphResolutionMigration && (isGoFilePath(storedPath) || isPythonFilePath(storedPath)))
-        );
-      const requiresJavaScriptParserUpgrade =
-        reparseCachedJavaScriptFiles && isJavaScriptFamilyFilePath(storedPath);
+      if (!cachedHashMatches) graphRefresh.recordSourceChange(storedPath);
+      const needsCallGraphRefresh = cachedHashMatches && graphRefresh.cachedSourceNeedsRefresh(storedPath, hasOtherLocalModuleEdges);
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
@@ -5396,7 +5186,6 @@ export class Indexer {
         && !inMigrationScope
         && !needsCallGraphStorageMigration
         && !needsCallGraphRefresh
-        && !requiresJavaScriptParserUpgrade
         && !requiresSwiftParserUpgrade
         && !requiresMetalParserUpgrade
         && !requiresMarkupParserUpgrade
@@ -5412,62 +5201,14 @@ export class Indexer {
       }
     }
 
-    if (priorJavaScriptDependencies) {
-      for (const filePath of priorJavaScriptDependencies.keys()) {
-        if (!allFileDescriptors.has(filePath)) changedJavaScriptFiles.add(filePath);
-      }
-    }
-    const refreshAllJavaScript = trackJavaScriptDependencies && !priorJavaScriptDependencies;
-    const affectedJavaScriptFiles = priorJavaScriptDependencies && changedJavaScriptFiles.size > 0
-      ? affectedJavaScriptGraphFiles(changedJavaScriptFiles, priorJavaScriptDependencies)
-      : undefined;
-    const javaScriptDependencies = trackJavaScriptDependencies
-      ? priorJavaScriptDependencies ?? new Map<string, JavaScriptGraphDependency>()
-      : undefined;
-    let javaScriptDependenciesDirty = refreshAllJavaScript || changedJavaScriptFiles.size > 0;
-    for (const filePath of changedJavaScriptFiles) javaScriptDependencies?.delete(filePath);
-
-    const broadJavaScriptRefresh = refreshAllJavaScript || (!trackJavaScriptDependencies && javaScriptGraphSourcesChanged);
-    if (broadJavaScriptRefresh || affectedJavaScriptFiles || pythonGraphSourcesChanged) {
-      let processedDescriptors = 0;
-      for (const [storedPath, descriptor] of allFileDescriptors) {
-        if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
-          await heartbeat?.();
-          throwIfOperationAborted(signal);
-        }
-        processedDescriptors += 1;
-        if (
-          !(broadJavaScriptRefresh && isJavaScriptFamilyFilePath(storedPath))
-          && !affectedJavaScriptFiles?.has(storedPath)
-          && !(pythonGraphSourcesChanged && isPythonFilePath(storedPath))
-        ) continue;
-        if (changedFilePathSet.has(storedPath)) continue;
-        unchangedFilePaths.delete(storedPath);
-        changedFileDescriptors.push(descriptor);
-        changedFilePathSet.add(storedPath);
-      }
-    }
-
-    if (changedGoPackageDirectories.size > 0) {
-      let processedDescriptors = 0;
-      for (const [storedPath, descriptor] of allFileDescriptors) {
-        if (processedDescriptors > 0 && processedDescriptors % 256 === 0) {
-          await heartbeat?.();
-          throwIfOperationAborted(signal);
-        }
-        processedDescriptors += 1;
-        const normalizedStoredPath = storedPath.split(path.sep).join("/");
-        if (
-          !isGoFilePath(normalizedStoredPath)
-          || !changedGoPackageDirectories.has(path.posix.dirname(normalizedStoredPath))
-          || changedFilePathSet.has(storedPath)
-        ) {
-          continue;
-        }
-        unchangedFilePaths.delete(storedPath);
-        changedFileDescriptors.push(descriptor);
-        changedFilePathSet.add(storedPath);
-      }
+    const additionalGraphFiles = await graphRefresh.selectAdditionalFiles(allFileDescriptors, changedFilePathSet, async () => {
+      await heartbeat?.();
+      throwIfOperationAborted(signal);
+    });
+    for (const descriptor of additionalGraphFiles) {
+      unchangedFilePaths.delete(descriptor.storedPath);
+      changedFileDescriptors.push(descriptor);
+      changedFilePathSet.add(descriptor.storedPath);
     }
 
     let processedCacheEntries = 0;
@@ -5573,7 +5314,7 @@ export class Indexer {
     );
     const localModuleResolver = new LocalModuleCallResolver({
       filePaths: [...sourceDescriptorsByPath.keys()],
-      moduleFormatForFile,
+      moduleFormatForFile: graphRefresh.moduleFormatForFile,
       loadModule: async (filePath) => {
         throwIfOperationAborted(signal);
         const descriptor = sourceDescriptorsByPath.get(filePath);
@@ -5603,11 +5344,11 @@ export class Indexer {
           const materializedPath = this.toMaterializedFilePath(filePath);
           if (!isPathWithinRoot(materializedPath, this.materializedProjectRoot)) return undefined;
           const relativePath = path.relative(this.materializedProjectRoot, materializedPath).split(path.sep).join("/");
-          return localModuleResolutionState.pathAliasCache.getPathAliasesForImporter(relativePath);
+          return graphRefresh.resolution.pathAliasCache.getPathAliasesForImporter(relativePath);
         }
-        return localModuleResolutionState.pathAliasCache.getPathAliasesForImporter(filePath);
+        return graphRefresh.resolution.pathAliasCache.getPathAliasesForImporter(filePath);
       },
-      workspacePackages: localModuleResolutionState.workspacePackages,
+      workspacePackages: graphRefresh.resolution.workspacePackages,
     });
     let writeTransactionActive = false;
 
@@ -5684,13 +5425,7 @@ export class Indexer {
       )) {
         throwIfOperationAborted(signal);
         const parseStartTime = performance.now();
-        if (javaScriptDependencies) {
-          for (const { storedPath } of descriptorBatch) {
-            if (!isJavaScriptFamilyFilePath(storedPath)) continue;
-            javaScriptDependencies.delete(storedPath);
-            javaScriptDependenciesDirty = true;
-          }
-        }
+        graphRefresh.beginParseBatch(descriptorBatch);
         const loadedEntries = await Promise.all(descriptorBatch.map(async (descriptor) => {
           try {
             const bytes = await fsPromises.readFile(descriptor.materializedPath);
@@ -5874,17 +5609,8 @@ export class Indexer {
           if (parsed.kind === "source") {
             localModuleResolver.seedModule(parsed.path, { content: sourceContent, symbols: fileSymbols, moduleSyntax: parsed.moduleSyntax });
           }
-          if (javaScriptDependencies && isJavaScriptFamilyFilePath(descriptor.storedPath)
-            && parsed.hash === descriptor.hash && parsed.moduleSyntax?.valid) {
-            const { imports, reexports, usesPackageFormat } =
-              localModuleResolver.getModuleDependencyProbes(descriptor.storedPath, parsed.moduleSyntax);
-            javaScriptDependencies.set(descriptor.storedPath, {
-              hash: descriptor.hash,
-              imports,
-              reexports,
-              ...(usesPackageFormat ? { format: await moduleFormatForFile(descriptor.storedPath) } : {}),
-            });
-          }
+          const pendingProof = graphRefresh.recordParsedSource(descriptor.storedPath, descriptor.hash, parsed, localModuleResolver);
+          if (pendingProof) await pendingProof;
 
           const fileLanguage = parsed.symbols[0]?.language ?? parsed.chunks[0]?.language;
           if (!fileLanguage || !CALL_GRAPH_LANGUAGES.has(fileLanguage)) {
@@ -6183,27 +5909,12 @@ export class Indexer {
         }
       }
 
-      // Publish only a complete proof, atomically with its branch's edges.
-      // The prior proof suffices to invalidate this run; a read/parse failure means it
-      // cannot justify pruning the next run, even if the file hash cache was updated.
-      if (javaScriptDependencyKey && (javaScriptDependenciesDirty || !javaScriptDependencies)) {
-        let complete = javaScriptDependencies !== undefined;
-        if (javaScriptDependencies) {
-          for (const file of currentStoredFilePaths) {
-            if (isJavaScriptFamilyFilePath(file) && !javaScriptDependencies.has(file)) {
-              complete = false;
-              break;
-            }
-          }
-        }
-        if (complete && javaScriptDependencies && javaScriptGraphConfigHash !== undefined) {
-          database.setMetadata(
-            javaScriptDependencyKey,
-            writeJavaScriptGraphDependencies(javaScriptGraphConfigHash, javaScriptDependencies),
-          );
-        } else if (storedJavaScriptDependencies !== null) {
-          database.deleteMetadata(javaScriptDependencyKey);
-        }
+      // Publish dependency proof in the same transaction as the branch's edges.
+      const proof = graphRefresh.snapshotPublication();
+      if (proof.action === "replace") {
+        database.setMetadata(graphDependencyKey, proof.value);
+      } else if (proof.action === "invalidate") {
+        database.deleteMetadata(graphDependencyKey);
       }
       if (needsCallGraphStorageMigration) {
         database.setMetadata(callGraphStorageKey, CALL_GRAPH_STORAGE_VERSION);
@@ -7208,7 +6919,7 @@ export class Indexer {
       this.config.indexing.includeIgnored ?? [],
     );
     throwIfOperationAborted(options.signal);
-    const localModuleResolutionState = this.getLocalModuleResolutionState(files);
+    const localModuleResolutionState = readLocalModuleResolutionState(this.materializedProjectRoot, files);
     await options.heartbeat?.();
     throwIfOperationAborted(options.signal);
     const scipConfig = this.config.indexing.scipTypeScript;
@@ -7490,7 +7201,7 @@ export class Indexer {
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
     for (const branchKey of clearedBranchKeys) {
       database.deleteMetadata(this.getCallGraphStorageMetadataKey(branchKey));
-      database.deleteMetadata(`${JAVASCRIPT_GRAPH_DEPENDENCIES_KEY}.${hashContent(branchKey).slice(0, 24)}`);
+      database.deleteMetadata(callGraphDependencyMetadataKey(branchKey));
     }
     if (this.config.indexing.mode === "structural") {
       this.publishClearedStructuralKeywordCatalog(invertedIndex, database);

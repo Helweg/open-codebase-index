@@ -8,6 +8,12 @@ export interface CanonicalPathComparisonOptions {
   isCaseInsensitive?: (existingAncestor: string) => boolean | undefined;
 }
 
+export function isPathWithinRoot(filePath: string, rootPath: string): boolean {
+  const normalizedFilePath = path.resolve(filePath);
+  const normalizedRoot = path.resolve(rootPath);
+  return normalizedFilePath === normalizedRoot || normalizedFilePath.startsWith(`${normalizedRoot}${path.sep}`);
+}
+
 function alternateAsciiCase(value: string): string | null {
   const index = value.search(/[A-Za-z]/);
   if (index === -1) return null;
