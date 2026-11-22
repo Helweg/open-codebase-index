@@ -127,7 +127,7 @@ import { createGoDirectCallClassifier } from "./go-package-resolution.js";
 import { isPythonFilePath } from "./python-import-resolution.js";
 import { isJavaScriptFamilyFilePath, LocalModuleCallResolver } from "./local-module-resolution.js";
 import {
-  callGraphDependencyMetadataKey,
+  javaScriptGraphDependencyMetadataKey,
   prepareCallGraphRefresh,
   readLocalModuleResolutionState,
 } from "./call-graph-refresh.js";
@@ -4942,7 +4942,7 @@ export class Indexer {
     const branchCatalogKey = this.getBranchCatalogKey();
     const callGraphStorageKey = this.getCallGraphStorageMetadataKey();
     const needsCallGraphStorageMigration = database.getMetadata(callGraphStorageKey) !== CALL_GRAPH_STORAGE_VERSION;
-    const graphDependencyKey = callGraphDependencyMetadataKey(branchCatalogKey);
+    const javaScriptGraphDependencyKey = javaScriptGraphDependencyMetadataKey(branchCatalogKey);
     const previousBranchChunkIds = database.getBranchChunkIds(branchCatalogKey);
     const previousBranchChunkIdSet = new Set(previousBranchChunkIds);
     const previousBranchSymbolIdSet = new Set(database.getBranchSymbolIds(branchCatalogKey));
@@ -5115,7 +5115,7 @@ export class Indexer {
       previousHashes: this.fileHashCache,
       toMaterializedPath: (file) => this.toMaterializedFilePath(file),
       inScope: scopedRoots ? (file) => this.isFileInCurrentScope(file, scopedRoots) : undefined,
-      readSnapshot: () => database.getMetadata(graphDependencyKey),
+      readSnapshot: () => database.getMetadata(javaScriptGraphDependencyKey),
       previousResolutionConfigHash: database.getMetadata(this.getLocalModuleResolutionConfigMetadataKey()),
       storageChanged: needsCallGraphStorageMigration,
       resolutionChanged: database.getMetadata(this.getCallGraphResolutionMetadataKey()) !== CALL_GRAPH_RESOLUTION_VERSION,
@@ -5125,7 +5125,7 @@ export class Indexer {
       signal,
     });
     this.localModuleResolutionConfigHash = graphRefresh.resolution.configHash;
-    const hasOtherLocalModuleEdges = (file: string): boolean => database.getChunksByFile(file).some((chunk) =>
+    const hasPhpOrCFamilyChunks = (file: string): boolean => database.getChunksByFile(file).some((chunk) =>
       chunk.language === "php" || chunk.language === "c" || chunk.language === "cpp"
     );
 
@@ -5167,7 +5167,7 @@ export class Indexer {
 
       const cachedHashMatches = this.fileHashCache.get(storedPath) === currentHash;
       if (!cachedHashMatches) graphRefresh.recordSourceChange(storedPath);
-      const needsCallGraphRefresh = cachedHashMatches && graphRefresh.cachedSourceNeedsRefresh(storedPath, hasOtherLocalModuleEdges);
+      const needsCallGraphRefresh = cachedHashMatches && graphRefresh.cachedSourceNeedsRefresh(storedPath, hasPhpOrCFamilyChunks);
       const requiresSwiftParserUpgrade =
         reparseCachedSwiftFiles && path.extname(storedPath).toLowerCase() === ".swift";
       const requiresMetalParserUpgrade =
@@ -5912,9 +5912,9 @@ export class Indexer {
       // Publish dependency proof in the same transaction as the branch's edges.
       const proof = graphRefresh.snapshotPublication();
       if (proof.action === "replace") {
-        database.setMetadata(graphDependencyKey, proof.value);
+        database.setMetadata(javaScriptGraphDependencyKey, proof.value);
       } else if (proof.action === "invalidate") {
-        database.deleteMetadata(graphDependencyKey);
+        database.deleteMetadata(javaScriptGraphDependencyKey);
       }
       if (needsCallGraphStorageMigration) {
         database.setMetadata(callGraphStorageKey, CALL_GRAPH_STORAGE_VERSION);
@@ -7201,7 +7201,7 @@ export class Indexer {
     this.deleteBranchCommitMetadata(database, clearedBranchKeys);
     for (const branchKey of clearedBranchKeys) {
       database.deleteMetadata(this.getCallGraphStorageMetadataKey(branchKey));
-      database.deleteMetadata(callGraphDependencyMetadataKey(branchKey));
+      database.deleteMetadata(javaScriptGraphDependencyMetadataKey(branchKey));
     }
     if (this.config.indexing.mode === "structural") {
       this.publishClearedStructuralKeywordCatalog(invertedIndex, database);

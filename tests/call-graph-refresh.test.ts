@@ -9,6 +9,7 @@ import { prepareCallGraphRefresh } from "../src/indexer/call-graph-refresh.js";
 import { Indexer } from "../src/indexer/index.js";
 import { LocalModuleCallResolver } from "../src/indexer/local-module-resolution.js";
 import { parseFiles } from "../src/native/index.js";
+import { readIndexerGraph } from "./fixtures/indexer-graph.js";
 
 let root: string;
 
@@ -148,28 +149,23 @@ describe("call graph refresh selection", () => {
   });
 });
 
-async function readGraph(indexer: Indexer) {
-  const symbols = await indexer.getSymbolsForBranch();
-  const locations = new Map(symbols.map((symbol) => [symbol.id, {
-    file: path.relative(root, symbol.filePath).split(path.sep).join("/"), name: symbol.name, kind: symbol.kind,
-    span: [symbol.startLine, symbol.startCol, symbol.endLine, symbol.endCol],
-  }]));
-  const outgoing = await Promise.all(symbols.map(async (symbol) =>
-    (await indexer.getCallees(symbol.id)).map((edge) => ({
-      caller: locations.get(symbol.id)?.name, source: locations.get(symbol.id), name: edge.targetName,
-      target: edge.toSymbolId ? locations.get(edge.toSymbolId) ?? "off-branch" : null,
-      resolved: edge.isResolved, type: edge.callType, line: edge.line, column: edge.col,
-    })),
-  ));
-  return outgoing.flat().sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+function readEmbeddingInputs(body: RequestInit["body"]): string[] {
+  const request: unknown = JSON.parse(String(body));
+  if (request && typeof request === "object" && "input" in request) {
+    if (typeof request.input === "string") return [request.input];
+    if (Array.isArray(request.input) && request.input.every((input: unknown) => typeof input === "string")) {
+      return request.input;
+    }
+  }
+  throw new Error("Expected string embedding inputs");
 }
 
 it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, Python, and Go dependency edits (%s)", async (mode) => {
-  const embed = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
-    const body: unknown = JSON.parse(String(init?.body));
-    if (!body || typeof body !== "object" || !("input" in body)) throw new Error("Missing embedding input");
-    const count = Array.isArray(body.input) ? body.input.length : 1;
-    return new Response(JSON.stringify({ data: Array.from({ length: count }, () => ({ embedding: Array(8).fill(0.125) })) }));
+  const capturedInputs: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+    const inputs = readEmbeddingInputs(init?.body);
+    for (const input of inputs) capturedInputs.push(input);
+    return new Response(JSON.stringify({ data: inputs.map(() => ({ embedding: Array(8).fill(0.125) })) }));
   });
   write("app.ts", "import { selected } from './outer.js'; export function runJs() { return selected(); }");
   write("outer.ts", "export * from './barrel.js';");
@@ -187,12 +183,28 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
   const activeConfig = config(mode);
   const indexer = new Indexer(root, activeConfig, "opencode", { indexPath: path.join(root, "incremental-index") });
   let cleanSequence = 0;
+  let previousInputs = new Set<string>();
   async function compareWithClean() {
     const clean = new Indexer(root, activeConfig, "opencode", { indexPath: path.join(root, `clean-${cleanSequence++}`) });
     try {
-      const incremental = await readGraph(indexer);
+      const incrementalInputs = capturedInputs.splice(0);
+      const incremental = await readIndexerGraph(indexer, root);
       await clean.index();
-      expect(incremental).toEqual(await readGraph(clean));
+      expect(incremental).toEqual(await readIndexerGraph(clean, root));
+      // A clean rebuild supplies the current corpus. Only texts absent from the
+      // previous corpus can require new embeddings on these edits.
+      const currentInputs = new Set(capturedInputs.splice(0));
+      if (mode === "hybrid") {
+        expect(incrementalInputs.length).toBeGreaterThan(0);
+        for (const input of incrementalInputs) {
+          expect(currentInputs.has(input)).toBe(true);
+          expect(previousInputs.has(input)).toBe(false);
+        }
+      } else {
+        expect(incrementalInputs).toEqual([]);
+        expect(currentInputs.size).toBe(0);
+      }
+      previousInputs = currentInputs;
       return incremental;
     } finally {
       await clean.close();
@@ -201,26 +213,19 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
 
   try {
     await indexer.index();
-    const initial = await readGraph(indexer);
-    expect(initial).toEqual(expect.arrayContaining([
+    previousInputs = new Set(capturedInputs.splice(0));
+    const initial = await readIndexerGraph(indexer, root);
+    expect(initial.edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ caller: "runJs", resolved: true, target: expect.objectContaining({ name: "left" }) }),
       expect.objectContaining({ caller: "run_python", name: "helper", resolved: true }),
       expect.objectContaining({ caller: "RunGo", name: "Target", resolved: true }),
     ]));
 
-    embed.mockClear();
     write("barrel.ts", "export { right as selected } from './right.js';");
     write("pkg/formatting/__init__.py", "def helper():\n    return 2\n");
     fs.unlinkSync(path.join(root, "worker/target.go"));
     await indexer.index();
-    if (mode === "structural") expect(embed).not.toHaveBeenCalled();
-    const inputs = embed.mock.calls.flatMap(([, init]) => {
-      const body: unknown = JSON.parse(String(init?.body));
-      if (!body || typeof body !== "object" || !("input" in body)) throw new Error("Missing embedding input");
-      return Array.isArray(body.input) ? body.input : [body.input];
-    });
-    expect(inputs.some((input) => typeof input === "string" && /function runJs|def run_python|func RunGo/.test(input))).toBe(false);
-    expect(await compareWithClean()).toEqual(expect.arrayContaining([
+    expect((await compareWithClean()).edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ caller: "runJs", resolved: true, target: expect.objectContaining({ file: "right.ts", name: "right" }) }),
       expect.objectContaining({ caller: "run_python", name: "helper", resolved: false, target: null }),
       expect.objectContaining({ caller: "RunGo", name: "Target", resolved: false, target: null }),
@@ -229,7 +234,7 @@ it.each(["structural", "hybrid"] as const)("matches a clean graph after JS/TS, P
     fs.unlinkSync(path.join(root, "pkg/formatting.py"));
     write("worker/replacement.go", "package worker\n\nfunc Target() {}\n");
     await indexer.index();
-    expect(await compareWithClean()).toEqual(expect.arrayContaining([
+    expect((await compareWithClean()).edges).toEqual(expect.arrayContaining([
       expect.objectContaining({ caller: "run_python", resolved: true, target: expect.objectContaining({ file: "pkg/formatting/__init__.py" }) }),
       expect.objectContaining({ caller: "RunGo", resolved: true, target: expect.objectContaining({ file: "worker/replacement.go" }) }),
     ]));

@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config/schema.js";
 import { Indexer } from "../src/indexer/index.js";
 import { Database, hashContent, hashFile } from "../src/native/index.js";
+import { readIndexerGraph } from "./fixtures/indexer-graph.js";
 
 const config = parseConfig({
   scope: "project",
@@ -94,6 +95,18 @@ describe("project structural JS/TS graph refresh", () => {
     expect(git("branch", "--show-current")).toBe(branch);
     await refresh(fresh);
     return persistedGraph(fresh, branch);
+  }
+
+  async function compareWithCleanIndexerGraph(indexer: Indexer) {
+    const clean = new Indexer(project, config, "jcode", { indexPath: path.join(temp, `clean-${cleanSequence++}`) });
+    try {
+      const incremental = await readIndexerGraph(indexer, project);
+      await clean.index();
+      expect(incremental).toEqual(await readIndexerGraph(clean, project));
+      return incremental.edges;
+    } finally {
+      await clean.close();
+    }
   }
 
   function barrel(target: "left" | "right" | "third"): void {
@@ -277,15 +290,22 @@ describe("project structural JS/TS graph refresh", () => {
   });
 
   it("re-resolves a deleted module through its barrel and observes a newly created alternative", async () => {
-    await refresh();
-    fs.unlinkSync(path.join(project, "left.ts"));
-    await refresh();
-    expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: false, target: null });
-    expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
-    put("left.tsx", "export function left() { return 4; }");
-    await refresh();
-    expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: true, target: { file: "left.tsx" } });
-    expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+    const indexer = new Indexer(project, config, "jcode", { indexPath: indexRoot });
+    try {
+      await indexer.index();
+      fs.unlinkSync(path.join(project, "left.ts"));
+      await indexer.index();
+      expect(await compareWithCleanIndexerGraph(indexer)).toContainEqual(expect.objectContaining({
+        caller: "run", name: "selected", resolved: false, target: null,
+      }));
+      put("left.tsx", "export function left() { return 4; }");
+      await indexer.index();
+      expect(await compareWithCleanIndexerGraph(indexer)).toContainEqual(expect.objectContaining({
+        caller: "run", name: "selected", resolved: true, target: expect.objectContaining({ file: "left.tsx" }),
+      }));
+    } finally {
+      await indexer.close();
+    }
   });
 
   it("refreshes unchanged CommonJS targets when their nearest package manifest appears or disappears", async () => {
@@ -304,36 +324,54 @@ describe("project structural JS/TS graph refresh", () => {
     const indexer = new Indexer(project, config, "jcode", { indexPath: indexRoot });
     try {
       await indexer.index();
-      expect(callFrom("main", "usePackages", "first")).toMatchObject({ target: { name: "firstEntry" } });
-      expect(callFrom("main", "usePackages", "second")).toMatchObject({ target: { name: "secondEntry" } });
+      const initial = await readIndexerGraph(indexer, project);
+      expect(initial.edges.filter(({ caller, name }) => caller === "usePackages" && name !== "sibling"))
+        .toMatchObject([
+          { name: "first", resolved: true, target: { name: "firstEntry" } },
+          { name: "second", resolved: true, target: { name: "secondEntry" } },
+        ]);
 
-      // A nearer invalid manifest must block inheritance, not fall through to CommonJS.
-      put(manifest, "{");
-      await indexer.index();
-      expect(callFrom("main", "usePackages", "first")).toMatchObject({ resolved: false, target: null });
-      expect(callFrom("main", "usePackages", "second")).toMatchObject({ resolved: false, target: null });
-      expect(callFrom("main", "usePackages", "sibling")).toMatchObject({ target: { name: "siblingEntry" } });
-      expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+      for (const content of ['{"type":"module"}', "{"]) {
+        // Neither a nearer ESM manifest nor an invalid manifest inherits CommonJS.
+        put(manifest, content);
+        await indexer.index();
+        const edges = await compareWithCleanIndexerGraph(indexer);
+        expect(edges.filter(({ caller }) => caller === "usePackages")).toMatchObject([
+          { name: "first", resolved: false, target: null },
+          { name: "second", resolved: false, target: null },
+          { name: "sibling", resolved: true, target: { name: "siblingEntry" } },
+        ]);
+      }
 
       fs.unlinkSync(path.join(project, manifest));
       await indexer.index();
-      expect(callFrom("main", "usePackages", "first")).toMatchObject({ target: { name: "firstEntry" } });
-      expect(callFrom("main", "usePackages", "second")).toMatchObject({ target: { name: "secondEntry" } });
-      expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+      const repaired = await compareWithCleanIndexerGraph(indexer);
+      expect(repaired.filter(({ caller, name }) => caller === "usePackages" && name !== "sibling"))
+        .toMatchObject([
+          { name: "first", resolved: true, target: { name: "firstEntry" } },
+          { name: "second", resolved: true, target: { name: "secondEntry" } },
+        ]);
     } finally {
       await indexer.close();
     }
   });
 
   it("drops stale resolution during an invalid parse and recovers after the barrel is repaired", async () => {
-    await refresh();
-    put("barrel.ts", "export { selected as");
-    await refresh();
-    expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: false, target: null });
-    expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
-    barrel("right");
-    await refresh();
-    expect(callFrom("main", "run", "selected")).toMatchObject({ resolved: true, target: { file: "right.ts" } });
-    expect(persistedGraph(indexRoot, "main")).toEqual(await cleanGraph("main"));
+    const indexer = new Indexer(project, config, "jcode", { indexPath: indexRoot });
+    try {
+      await indexer.index();
+      put("barrel.ts", "export { selected as");
+      await indexer.index();
+      expect(await compareWithCleanIndexerGraph(indexer)).toContainEqual(expect.objectContaining({
+        caller: "run", name: "selected", resolved: false, target: null,
+      }));
+      barrel("right");
+      await indexer.index();
+      expect(await compareWithCleanIndexerGraph(indexer)).toContainEqual(expect.objectContaining({
+        caller: "run", name: "selected", resolved: true, target: expect.objectContaining({ file: "right.ts" }),
+      }));
+    } finally {
+      await indexer.close();
+    }
   });
 });

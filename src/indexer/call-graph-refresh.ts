@@ -30,7 +30,7 @@ import { isPythonFilePath } from "./python-import-resolution.js";
 
 const PACKAGE_MANIFEST_MAX_BYTES = 64 * 1024;
 
-export function callGraphDependencyMetadataKey(branchKey: string): string {
+export function javaScriptGraphDependencyMetadataKey(branchKey: string): string {
   return `index.javaScriptGraphDependencies.${hashContent(branchKey).slice(0, 24)}`;
 }
 
@@ -102,7 +102,7 @@ interface CallGraphRefresh {
   resolution: LocalModuleResolutionState;
   moduleFormatForFile: (file: string) => Promise<PackageFormat>;
   recordSourceChange(file: string): void;
-  cachedSourceNeedsRefresh(file: string, hasOtherLocalModuleEdges: (file: string) => boolean): boolean;
+  cachedSourceNeedsRefresh(file: string, hasPhpOrCFamilyChunks: (file: string) => boolean): boolean;
   selectAdditionalFiles<T>(
     available: ReadonlyMap<string, T>,
     scheduled: ReadonlySet<string>,
@@ -164,12 +164,12 @@ export async function prepareCallGraphRefresh(options: RefreshOptions): Promise<
     resolution,
     moduleFormatForFile: formats.forFile,
     recordSourceChange,
-    cachedSourceNeedsRefresh(file, hasOtherLocalModuleEdges) {
+    cachedSourceNeedsRefresh(file, hasPhpOrCFamilyChunks) {
       if (isJavaScriptFamilyFilePath(file)) {
         return javaScriptParserChanged || versionOrScipChanged || (configChanged && !trackJavaScript);
       }
       return (resolutionChanged && (isGoFilePath(file) || isPythonFilePath(file)))
-        || ((versionOrScipChanged || configChanged) && hasOtherLocalModuleEdges(file));
+        || ((versionOrScipChanged || configChanged) && hasPhpOrCFamilyChunks(file));
     },
     async selectAdditionalFiles<T>(available: ReadonlyMap<string, T>, scheduled: ReadonlySet<string>, checkpoint?: () => void | Promise<void>) {
       // Missing descriptors include files that are still listed but could not be hashed.
