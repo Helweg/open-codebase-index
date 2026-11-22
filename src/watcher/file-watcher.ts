@@ -481,14 +481,23 @@ export class FileWatcher {
     }, 100);
   }
 
+  private shouldRefreshLocalModuleConfigForPath(
+    filePath: string,
+    ignoreFilter = createIgnoreFilter(this.projectRoot),
+  ): boolean {
+    return (
+      shouldTrackLocalModuleConfigPath(filePath, this.projectRoot, ignoreFilter, this.getSnapshotConfig())
+      || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
+      || this.localModuleConfigTracker.has(filePath)
+    );
+  }
+
   private refreshLocalModuleConfigForChanges(changes: FileChange[], watcher?: FSWatcher): void {
     if (changes.length === 0) return;
     const ignoreFilter = createIgnoreFilter(this.projectRoot);
-    const dependencyChanged = changes.some((change) => (
-      shouldTrackLocalModuleConfigPath(change.path, this.projectRoot, ignoreFilter, this.getSnapshotConfig())
-      || this.localModuleConfigTracker.shouldTrackPackagePath(change.path)
-      || this.localModuleConfigTracker.has(change.path)
-    ));
+    const dependencyChanged = changes.some((change) =>
+      this.shouldRefreshLocalModuleConfigForPath(change.path, ignoreFilter)
+    );
     const importerSetChanged = changes.some((change) => this.isSelectedJavaScriptPath(change.path) && (
       change.type === "add" || change.type === "unlink" || !this.localModuleConfigTracker.hasImporterPath(change.path)
     ));
@@ -793,16 +802,7 @@ export class FileWatcher {
     if (
       filePath === null
       || filePath === path.join(this.projectRoot, ".gitignore")
-      || (filePath !== null && (
-        shouldTrackLocalModuleConfigPath(
-          filePath,
-          this.projectRoot,
-          createIgnoreFilter(this.projectRoot),
-          this.getSnapshotConfig(),
-        )
-        || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
-        || this.localModuleConfigTracker.has(filePath)
-      ))
+      || this.shouldRefreshLocalModuleConfigForPath(filePath)
     ) {
       this.refreshLocalModuleConfigTracker();
     }
@@ -914,16 +914,7 @@ export class FileWatcher {
       return;
     }
 
-    if (
-      shouldTrackLocalModuleConfigPath(
-        filePath,
-        this.projectRoot,
-        createIgnoreFilter(this.projectRoot),
-        this.getSnapshotConfig(),
-      )
-      || this.localModuleConfigTracker.shouldTrackPackagePath(filePath)
-      || this.localModuleConfigTracker.has(filePath)
-    ) {
+    if (this.shouldRefreshLocalModuleConfigForPath(filePath)) {
       this.refreshLocalModuleConfigTracker(watcher);
       this.recordChokidarChange(watcher, { path: filePath, type });
       return;
