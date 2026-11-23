@@ -778,13 +778,36 @@ const INDEX_METADATA_VERSION = "1";
 const PROJECT_PATH_STORAGE_VERSION = "2";
 const GLOBAL_PATH_STORAGE_VERSION = "1";
 const EMBEDDING_STRATEGY_VERSION = "2";
-const JAVASCRIPT_PARSER_VERSION = "3";
-const SWIFT_PARSER_VERSION = "2";
-const METAL_PARSER_VERSION = "1";
-const MARKUP_PARSER_VERSION = "1";
-const KOTLIN_PARSER_VERSION = "1";
-const RUBY_PARSER_VERSION = "1";
-const SYMBOL_EXTRACTOR_VERSION = "2";
+type BranchMigrationVersionRecord = readonly [prefix: string, version: string];
+
+const BRANCH_MIGRATION_VERSIONS = {
+  javaScriptParser: ["index.parser.javascriptVersion", "3"],
+  swiftParser: ["index.parser.swiftVersion", "2"],
+  metalParser: ["index.parser.metalVersion", "1"],
+  markupParser: ["index.parser.markupVersion", "1"],
+  kotlinParser: ["index.parser.kotlinVersion", "1"],
+  rubyParser: ["index.parser.rubyVersion", "1"],
+  symbolExtractor: ["index.symbolExtractorVersion", "2"],
+} as const satisfies Record<string, BranchMigrationVersionRecord>;
+const BRANCH_MIGRATION_VERSION_RECORDS = Object.values(BRANCH_MIGRATION_VERSIONS);
+
+function branchMigrationMetadataSuffix(branchKey: string): string {
+  return hashContent(branchKey).slice(0, 24);
+}
+
+function isBranchMigrationVersionCurrent(
+  database: Database,
+  suffix: string,
+  [prefix, version]: BranchMigrationVersionRecord,
+): boolean {
+  return database.getMetadata(`${prefix}.${suffix}`) === version;
+}
+
+function saveBranchMigrationVersions(database: Database, suffix: string): void {
+  for (const [prefix, version] of BRANCH_MIGRATION_VERSION_RECORDS) {
+    database.setMetadata(`${prefix}.${suffix}`, version);
+  }
+}
 
 function isMarkupFilePath(filePath: string): boolean {
   const extension = path.extname(filePath).toLowerCase();
@@ -1940,7 +1963,7 @@ export class Indexer {
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): string {
     const branchKey = this.getBranchCatalogKeyFor(catalogIdentity);
-    return `${prefix}.${hashContent(branchKey).slice(0, 24)}`;
+    return `${prefix}.${branchMigrationMetadataSuffix(branchKey)}`;
   }
 
   private getCallGraphResolutionMetadataKey(
@@ -1976,70 +1999,20 @@ export class Indexer {
     }
   }
 
-  private getJavaScriptParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.javascriptVersion", catalogIdentity);
-  }
-
-  private getSwiftParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.swiftVersion", catalogIdentity);
-  }
-
-  private getMetalParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.metalVersion", catalogIdentity);
-  }
-
-  private getMarkupParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.markupVersion", catalogIdentity);
-  }
-
-  private getKotlinParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.kotlinVersion", catalogIdentity);
-  }
-
-  private getRubyParserVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.parser.rubyVersion", catalogIdentity);
-  }
-
-  private getSymbolExtractorVersionMetadataKey(
-    catalogIdentity = this.getBranchCatalogIdentity(),
-  ): string {
-    return this.getBranchMigrationMetadataKey("index.symbolExtractorVersion", catalogIdentity);
-  }
-
   private areBranchMigrationVersionsCurrent(
     database: Database,
     catalogIdentity = this.getBranchCatalogIdentity(),
   ): boolean {
-    return database.getMetadata(this.getCallGraphResolutionMetadataKey(catalogIdentity))
-      === CALL_GRAPH_RESOLUTION_VERSION
-      && database.getMetadata(this.getJavaScriptParserVersionMetadataKey(catalogIdentity))
-      === JAVASCRIPT_PARSER_VERSION
-      && database.getMetadata(this.getSwiftParserVersionMetadataKey(catalogIdentity))
-      === SWIFT_PARSER_VERSION
-      && database.getMetadata(this.getMetalParserVersionMetadataKey(catalogIdentity))
-      === METAL_PARSER_VERSION
-      && database.getMetadata(this.getMarkupParserVersionMetadataKey(catalogIdentity))
-      === MARKUP_PARSER_VERSION
-      && database.getMetadata(this.getKotlinParserVersionMetadataKey(catalogIdentity))
-      === KOTLIN_PARSER_VERSION
-      && database.getMetadata(this.getRubyParserVersionMetadataKey(catalogIdentity))
-      === RUBY_PARSER_VERSION
-      && database.getMetadata(this.getSymbolExtractorVersionMetadataKey(catalogIdentity))
-      === SYMBOL_EXTRACTOR_VERSION
-      && database.getMetadata(this.getCallGraphStorageMetadataKey(catalogIdentity))
-        === CALL_GRAPH_STORAGE_VERSION;
+    if (database.getMetadata(this.getCallGraphResolutionMetadataKey(catalogIdentity)) !== CALL_GRAPH_RESOLUTION_VERSION) {
+      return false;
+    }
+    const suffix = branchMigrationMetadataSuffix(this.getBranchCatalogKeyFor(catalogIdentity));
+    for (const record of BRANCH_MIGRATION_VERSION_RECORDS) {
+      if (!isBranchMigrationVersionCurrent(database, suffix, record)) {
+        return false;
+      }
+    }
+    return database.getMetadata(this.getCallGraphStorageMetadataKey(catalogIdentity)) === CALL_GRAPH_STORAGE_VERSION;
   }
 
   private hasProjectForceReembedPending(): boolean {
@@ -5014,21 +4987,14 @@ export class Indexer {
     const upgradeKeywordTokenizer = keywordTokenizerUpgradeChunks !== undefined;
     let keywordTokenizerUpdated = false;
 
-    const javaScriptParserMetadataKey = this.getJavaScriptParserVersionMetadataKey();
-    const reparseCachedJavaScriptFiles = database.getMetadata(javaScriptParserMetadataKey) !== JAVASCRIPT_PARSER_VERSION;
-
-    const swiftParserMetadataKey = this.getSwiftParserVersionMetadataKey();
-    const reparseCachedSwiftFiles = database.getMetadata(swiftParserMetadataKey) !== SWIFT_PARSER_VERSION;
-    const metalParserMetadataKey = this.getMetalParserVersionMetadataKey();
-    const reparseCachedMetalFiles = database.getMetadata(metalParserMetadataKey) !== METAL_PARSER_VERSION;
-    const markupParserMetadataKey = this.getMarkupParserVersionMetadataKey();
-    const reparseCachedMarkupFiles = database.getMetadata(markupParserMetadataKey) !== MARKUP_PARSER_VERSION;
-    const kotlinParserMetadataKey = this.getKotlinParserVersionMetadataKey();
-    const reparseCachedKotlinFiles = database.getMetadata(kotlinParserMetadataKey) !== KOTLIN_PARSER_VERSION;
-    const rubyParserMetadataKey = this.getRubyParserVersionMetadataKey();
-    const reparseCachedRubyFiles = database.getMetadata(rubyParserMetadataKey) !== RUBY_PARSER_VERSION;
-    const symbolExtractorMetadataKey = this.getSymbolExtractorVersionMetadataKey();
-    const refreshCachedSymbols = database.getMetadata(symbolExtractorMetadataKey) !== SYMBOL_EXTRACTOR_VERSION;
+    const migrationSuffix = branchMigrationMetadataSuffix(this.getBranchCatalogKey());
+    const reparseCachedJavaScriptFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.javaScriptParser);
+    const reparseCachedSwiftFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.swiftParser);
+    const reparseCachedMetalFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.metalParser);
+    const reparseCachedMarkupFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.markupParser);
+    const reparseCachedKotlinFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.kotlinParser);
+    const reparseCachedRubyFiles = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.rubyParser);
+    const refreshCachedSymbols = !isBranchMigrationVersionCurrent(database, migrationSuffix, BRANCH_MIGRATION_VERSIONS.symbolExtractor);
     if (
       reparseCachedSwiftFiles &&
       Array.from(this.fileHashCache.keys()).some((filePath) => path.extname(filePath).toLowerCase() === ".swift")
@@ -5957,13 +5923,7 @@ export class Indexer {
         if ((removedStoredChunks || keywordTokenizerUpdated) && !isStructural) {
           this.saveInvertedIndex(invertedIndex);
         }
-        database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
-        database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
-        database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
-        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
-        database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
-        database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
-        database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
+        saveBranchMigrationVersions(database, migrationSuffix);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
         else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
@@ -6002,13 +5962,7 @@ export class Indexer {
         );
         if (!isStructural) requireLoadedCapability(store, "vector store").save();
         if (!isStructural) this.saveInvertedIndex(invertedIndex);
-        database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
-        database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
-        database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
-        database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
-        database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
-        database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
-        database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
+        saveBranchMigrationVersions(database, migrationSuffix);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
         else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
@@ -6101,13 +6055,7 @@ export class Indexer {
       if (forceScopedReembed) {
         database.setMetadata(this.getProjectMigrationFinalizedMetadataKey(), "true");
       }
-      database.setMetadata(javaScriptParserMetadataKey, JAVASCRIPT_PARSER_VERSION);
-      database.setMetadata(swiftParserMetadataKey, SWIFT_PARSER_VERSION);
-      database.setMetadata(metalParserMetadataKey, METAL_PARSER_VERSION);
-      database.setMetadata(markupParserMetadataKey, MARKUP_PARSER_VERSION);
-      database.setMetadata(kotlinParserMetadataKey, KOTLIN_PARSER_VERSION);
-      database.setMetadata(rubyParserMetadataKey, RUBY_PARSER_VERSION);
-      database.setMetadata(symbolExtractorMetadataKey, SYMBOL_EXTRACTOR_VERSION);
+      saveBranchMigrationVersions(database, migrationSuffix);
       this.saveBranchCommit(database, indexedCommit);
       if (isStructural) this.saveStructuralIndexMetadata();
       else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
