@@ -592,6 +592,56 @@ describe("native OpenCode codebase_context", () => {
     expect(result.details?.recovery?.successfulAttemptIndex).toBe(2);
   });
 
+  it("keeps the successful recovery attempt when the budget leaves no citations", async () => {
+    const result = await resolveSearchContext(
+      {
+        query: "where is `getStatus` defined",
+        limit: 10,
+        tokenBudget: 128,
+      },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search: vi.fn().mockResolvedValue([{
+          filePath: `src/${"a1/b2/c3/d4/e5/f6/g7/h8/i9/".repeat(4)}status.ts`,
+          startLine: 1,
+          endLine: 8,
+          name: "getStatusForPendingRequestsWithUnresolvedAuthorization",
+          chunkType: "function",
+          content: "function getStatusForPendingRequestsWithUnresolvedAuthorization() {}",
+          score: 0.88,
+        }]),
+      },
+    );
+
+    expect(result.details).toMatchObject({
+      selectedCount: 0,
+      budgetOmittedCount: 1,
+      recovery: {
+        attempts: [
+          { kind: "definition", resultCount: 0 },
+          { kind: "conceptual", resultCount: 1 },
+        ],
+        successfulAttemptIndex: 1,
+      },
+    });
+    expect(result.details?.results).toEqual([]);
+  });
+
+  it("reports no attempts and an own undefined success index for an empty query", async () => {
+    const result = await resolveSearchContext(
+      { query: "" },
+      {
+        lookup: vi.fn().mockResolvedValue([]),
+        search: vi.fn().mockResolvedValue([]),
+      },
+    );
+
+    const recovery = result.details?.recovery;
+    expect(recovery?.attempts).toEqual([]);
+    expect(Object.hasOwn(recovery ?? {}, "successfulAttemptIndex")).toBe(true);
+    expect(recovery?.successfulAttemptIndex).toBeUndefined();
+  });
+
   it("reports explicit-symbol definition miss with recovery details", async () => {
     const result = await resolveSearchContext(
       {
@@ -615,7 +665,8 @@ describe("native OpenCode codebase_context", () => {
       route: "definition",
       routedQuery: "missingDefinition",
     });
-    expect(result.details?.recovery?.attempts).toEqual([
+    const recovery = result.details?.recovery;
+    expect(recovery?.attempts).toEqual([
       {
         kind: "definition",
         scope: "unscoped",
@@ -623,7 +674,7 @@ describe("native OpenCode codebase_context", () => {
         relaxedFields: [],
       },
     ]);
-    expect(result.details?.recovery?.successfulAttemptIndex).toBeUndefined();
+    expect(Object.hasOwn(recovery ?? {}, "successfulAttemptIndex")).toBe(false);
   });
 
 
