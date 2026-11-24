@@ -18,6 +18,14 @@ assert.equal(manifest.schemaVersion, 1);
 assert.equal(manifest.version, expectedVersion);
 assert.deepEqual(manifest.packages.map((entry) => entry.name).sort(), expectedNames);
 
+function verifyTypes(types) {
+  assert.equal(types.compiler, "5.9.3");
+  assert.equal(types.options.strict, true);
+  assert.equal(types.options.skipLibCheck, false);
+  assert.deepEqual(types.consumers.map((consumer) => consumer.extension).sort(), ["cts", "mts"]);
+  assert.ok(types.consumers.every((consumer) => consumer.diagnostics === 0));
+}
+
 function verifyArchive(entry) {
   assert.equal(entry.version, expectedVersion);
   assert.ok(lstatSync(entry.tarball).isFile(), "Validated tarball must be a regular file");
@@ -25,13 +33,14 @@ function verifyArchive(entry) {
   const integrity = `sha512-${createHash("sha512").update(readFileSync(entry.tarball)).digest("base64")}`;
   assert.equal(integrity, entry.integrity, `Validated tarball changed: ${entry.name}`);
   assert.equal(entry.validation.runtime, true);
-  assert.ok(entry.validation.sdkInteropTypes.length > 0,
-    "Publication requires upstream SDK interoperability checks; consumer-only validation is insufficient");
-  assert.equal(entry.validation.types.compiler, "5.9.3");
-  assert.equal(entry.validation.types.options.strict, true);
-  assert.equal(entry.validation.types.options.skipLibCheck, false);
-  assert.deepEqual(entry.validation.types.consumers.map((consumer) => consumer.extension).sort(), ["cts", "mts"]);
-  assert.ok(entry.validation.types.consumers.every((consumer) => consumer.diagnostics === 0));
+  const { types, sdkInteropTypes } = entry.validation;
+  assert.deepEqual(sdkInteropTypes.map((result) => result.hostSdkLayout).sort(), ["deduplicated", "nested"],
+    `${entry.name}: publication requires both deduplicated and nested host SDK interoperability checks`);
+  for (const result of sdkInteropTypes) {
+    assert.equal(result.sdkInterop, true);
+    verifyTypes(result);
+  }
+  verifyTypes(types);
 }
 
 // Validate BOTH identities before any registry request or publication.

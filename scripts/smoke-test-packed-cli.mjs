@@ -201,12 +201,14 @@ async function smokeIdentity(identity, expectedBinaries) {
   // The upstream host SDK is a development dependency with a higher Node floor than standalone consumers.
   const sdkInteropTypes = [];
   const pluginVersion = lock.packages["node_modules/@opencode-ai/plugin"].version;
-  const sdkVersions = consumerOnly ? [] : new Set([
-    lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"],
-    lock.packages["node_modules/@opencode-ai/sdk"].version,
-  ]);
-  for (const sdkVersion of sdkVersions) {
-    const sdkInteropRoot = path.join(scratchRoot, `sdk-interop-${identity.packageName}-${sdkVersion}`);
+  const hostSdkVersion = lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"];
+  // The nested fixture must not track our production SDK pin: it can match the host's pin.
+  const sdkFixtures = consumerOnly ? [] : [
+    { sdkVersion: hostSdkVersion, expectedLayout: "deduplicated" },
+    { sdkVersion: "1.19.5", expectedLayout: "nested" },
+  ];
+  for (const { sdkVersion, expectedLayout } of sdkFixtures) {
+    const sdkInteropRoot = path.join(scratchRoot, `sdk-interop-${identity.packageName}-${expectedLayout}`);
     mkdirSync(sdkInteropRoot);
     writeFileSync(path.join(sdkInteropRoot, "package.json"), "{\"private\":true}\n", { flag: "wx", mode: 0o600 });
     run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--save-exact", tarballPath,
@@ -214,10 +216,14 @@ async function smokeIdentity(identity, expectedBinaries) {
       `@types/node@${lock.packages["node_modules/@types/node"].version}`,
       `@opencode-ai/plugin@${pluginVersion}`, `@opencode-ai/sdk@${sdkVersion}`], sdkInteropRoot);
     const nestedSdk = path.join(sdkInteropRoot, "node_modules", "@opencode-ai", "plugin", "node_modules", "@opencode-ai", "sdk", "package.json");
-    const hostSdkVersion = lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"];
-    assert.equal(existsSync(nestedSdk), sdkVersion !== hostSdkVersion, "Expected deduplicated and nested host SDK layouts");
+    const hostSdkLayout = existsSync(nestedSdk) ? "nested" : "deduplicated";
+    assert.equal(hostSdkLayout, expectedLayout, `${identity.packageName}: unexpected host SDK layout for SDK ${sdkVersion}`);
+    const rootSdk = path.join(sdkInteropRoot, "node_modules", "@opencode-ai", "sdk", "package.json");
+    assert.equal(JSON.parse(readFileSync(rootSdk, "utf8")).version, sdkVersion, "Unexpected consumer root SDK version");
+    const hostSdk = hostSdkLayout === "nested" ? nestedSdk : rootSdk;
+    assert.equal(JSON.parse(readFileSync(hostSdk, "utf8")).version, hostSdkVersion, "Unexpected host SDK version");
     sdkInteropTypes.push({
-      pluginVersion, sdkVersion, hostSdkLayout: sdkVersion === hostSdkVersion ? "deduplicated" : "nested",
+      pluginVersion, sdkVersion, hostSdkLayout,
       ...checkPackedTypes(sdkInteropRoot, identity.packageName, { sdkInterop: true }),
     });
   }
