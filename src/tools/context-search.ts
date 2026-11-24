@@ -3,7 +3,7 @@ import type { SearchTrace } from "../indexer/index.js";
 import { analyzeQueryIntent } from "../indexer/intent-aware-ranking.js";
 import { inferExactSymbolFromQuery, inferTestSymbolFromQuery } from "./symbol-inference.js";
 import { buildContextPack, fitTextToContextBudget } from "./utils.js";
-import type { ContextPackTrace } from "./context-pack.js";
+import type { ContextPackOptions, ContextPackTrace } from "./context-pack.js";
 import type { TestDiscoveryResult, TestEvidenceKind, TestReferenceResult } from "./test-discovery.js";
 
 export interface CodebaseContextInput {
@@ -108,30 +108,6 @@ function testDiscoveryMetadata(discovery: TestDiscoveryResult): Omit<TestDiscove
   };
 }
 
-function packedResult(
-  route: "definition" | "conceptual",
-  routedQuery: string,
-  pack: ReturnType<typeof buildContextPack>,
-): CodebaseContextResult {
-  return {
-    text: pack.text,
-    details: {
-      route,
-      routedQuery,
-      tokenBudget: pack.tokenBudget,
-      tokenEstimate: pack.tokenEstimate,
-      candidateCount: pack.candidateCount,
-      deduplicatedCount: pack.deduplicatedCount,
-      selectedCount: pack.selectedCount,
-      omittedCount: pack.omittedCount,
-      duplicateCount: pack.duplicateCount,
-      limitOmittedCount: pack.limitOmittedCount,
-      budgetOmittedCount: pack.budgetOmittedCount,
-      results: locations(pack.results),
-    },
-  };
-}
-
 interface SearchContextOperations {
   lookup(
     symbol: string,
@@ -161,7 +137,9 @@ interface RecoveryAttempt {
   relaxedFields: Array<"directory" | "fileType">;
 }
 
-interface SearchAttemptState extends RecoveryAttempt {
+interface SearchAttempt extends RecoveryAttempt {
+  index: number;
+  results: SearchResult[];
   query: string;
   scopeFilter: SearchScope;
   searchTrace?: SearchTrace;
@@ -214,7 +192,7 @@ function buildPackHeading(route: "definition" | "conceptual", decisions: Recover
 }
 
 function buildRecoveryFallbackText(
-  attempts: RecoveryAttempt[],
+  attempts: SearchAttempt[],
   tokenBudget: number | undefined,
   heading: string,
 ): ReturnType<typeof fitTextToContextBudget> {
@@ -226,7 +204,7 @@ function buildRecoveryFallbackText(
   ];
 
   return fitTextToContextBudget(
-    `${lines.join("\n")}\n${attempts.map((attempt, index) => formatRecoveryAttemptLine(attempt, index)).join("\n")}`,
+    `${lines.join("\n")}\n${attempts.map(formatRecoveryAttemptLine).join("\n")}`,
     tokenBudget,
   );
 }
@@ -244,47 +222,29 @@ function attemptKey(kind: "definition" | "conceptual", query: string, scope: Sea
   });
 }
 
-function formatRecoveryAttemptLine(attempt: RecoveryAttempt, index: number): string {
+function formatRecoveryAttemptLine(attempt: SearchAttempt): string {
   const scope = attempt.scope === "scoped"
     ? "scoped"
     : attempt.relaxedFields.length > 0
       ? `unscoped (after removing ${attempt.relaxedFields.join(" and ")})`
       : "unscoped";
 
-  return `${index + 1}. ${attempt.kind} ${scope} search: ${attempt.resultCount} result${attempt.resultCount === 1 ? "" : "s"}`;
+  return `${attempt.index + 1}. ${attempt.kind} ${scope} search: ${attempt.resultCount} result${attempt.resultCount === 1 ? "" : "s"}`;
 }
 
-function findSuccessfulAttemptIndex(route: "definition" | "conceptual", attempts: RecoveryAttempt[]): number | null {
-  for (let index = attempts.length - 1; index >= 0; index -= 1) {
-    const attempt = attempts[index];
-    if (attempt.kind === route && attempt.resultCount > 0) {
-      return index;
-    }
-  }
-  return null;
+function buildRecoveryDetails(attempts: SearchAttempt[], successfulAttempt?: SearchAttempt) {
+  return {
+    attempts: attempts.map(({ kind, scope, resultCount, relaxedFields }) => ({
+      kind,
+      scope,
+      resultCount,
+      relaxedFields,
+    })),
+    ...(successfulAttempt && { successfulAttemptIndex: successfulAttempt.index }),
+  };
 }
 
-function buildRecoveryDetails(attempts: RecoveryAttempt[], successIndex: number | null) {
-  return successIndex === null
-    ? {
-      attempts,
-    }
-    : {
-      attempts,
-      successfulAttemptIndex: successIndex,
-    };
-}
-
-function serializeAttempts(attempts: SearchAttemptState[]): RecoveryAttempt[] {
-  return attempts.map((attempt) => ({
-    kind: attempt.kind,
-    scope: attempt.scope,
-    resultCount: attempt.resultCount,
-    relaxedFields: attempt.relaxedFields,
-  }));
-}
-
-function buildSearchDiagnostic(attempt: SearchAttemptState | undefined): SearchDiagnostic | undefined {
+function buildSearchDiagnostic(attempt: SearchAttempt | undefined): SearchDiagnostic | undefined {
   if (!attempt) {
     return undefined;
   }
@@ -353,8 +313,7 @@ export async function resolveSearchContext(
   const unscopedScope: SearchScope = {};
   const hasFilters = Boolean(fileType || directory);
   const relaxedFields = relaxedHintFields(fileType, directory);
-  const attempts: RecoveryAttempt[] = [];
-  const attemptStates: SearchAttemptState[] = [];
+  const attempts: SearchAttempt[] = [];
   const decisions: RecoveryDecisions = {
     inferredDefinitionMiss: false,
     fallbackFromOriginalConceptualToInferred: false,
@@ -387,32 +346,30 @@ export async function resolveSearchContext(
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
     runAttempt: (trace?: (trace: SearchTrace) => void) => Promise<SearchResult[]>,
     lane: "search" | "test-discovery" = "search",
-  ): Promise<SearchResult[]> => {
+  ): Promise<SearchAttempt | undefined> => {
     const key = `${lane}:${attemptKey(kind, attemptQuery, scope)}`;
     if (seenAttempts.has(key)) {
-      return [];
+      return undefined;
     }
 
-    const attemptState: SearchAttemptState = {
+    let searchTrace: SearchTrace | undefined;
+    const attemptScope = describeScope(scope.fileType, scope.directory);
+    const results = await runAttempt(input.diagnostic ? (trace) => {
+      searchTrace = trace;
+    } : undefined);
+    const attempt: SearchAttempt = {
+      index: attempts.length,
       kind,
-      scope: describeScope(scope.fileType, scope.directory),
-      resultCount: 0,
+      scope: attemptScope,
+      resultCount: results.length,
+      results,
       relaxedFields: [...relaxedFieldsForAttempt],
       query: attemptQuery,
       scopeFilter: scope,
+      searchTrace,
     };
-    const results = await runAttempt((trace) => {
-      attemptState.searchTrace = trace;
-    });
-    attemptState.resultCount = results.length;
     seenAttempts.add(key);
-    attemptStates.push(attemptState);
-    attempts.push({
-      kind,
-      scope: describeScope(scope.fileType, scope.directory),
-      resultCount: results.length,
-      relaxedFields: relaxedFieldsForAttempt,
-    });
+    attempts.push(attempt);
 
     for (const field of relaxedFieldsForAttempt) {
       if (!decisions.relaxedFields.includes(field)) {
@@ -420,30 +377,30 @@ export async function resolveSearchContext(
       }
     }
 
-    return results;
+    return attempt;
   };
 
-  const tryDefinitionLookup = async (
+  const tryDefinitionLookup = (
     symbol: string,
     exactSymbol: boolean,
     scope: SearchScope = scopedScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType"> = [],
-  ): Promise<SearchResult[]> => {
+  ): Promise<SearchAttempt | undefined> => {
     return recordAttempt(
       "definition",
       symbol,
       scope,
       relaxedFieldsForAttempt,
-      (trace) => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT, scope, exactSymbol, input.diagnostic ? trace : undefined),
+      (trace) => operations.lookup(symbol, MAX_CONTEXT_RESULT_LIMIT, scope, exactSymbol, trace),
     );
   };
 
-  const tryConceptualSearch = async (
+  const tryConceptualSearch = (
     searchQuery: string,
     scope: SearchScope,
     relaxedFieldsForAttempt: Array<"directory" | "fileType">,
     prioritizeSourcePaths: boolean,
-  ): Promise<SearchResult[]> => {
+  ): Promise<SearchAttempt | undefined> => {
     return recordAttempt(
       "conceptual",
       searchQuery,
@@ -453,47 +410,43 @@ export async function resolveSearchContext(
         searchQuery,
         MAX_CONTEXT_RESULT_LIMIT,
         scope,
-        input.diagnostic ? trace : undefined,
+        trace,
         { prioritizeSourcePaths },
       ),
     );
   };
 
-  const findSuccessfulAttemptState = (
-    route: "definition" | "conceptual",
-  ): SearchAttemptState | undefined => {
-    for (let index = attemptStates.length - 1; index >= 0; index -= 1) {
-      const attempt = attemptStates[index];
-      if (attempt.kind === route && attempt.resultCount > 0) {
-        return attempt;
-      }
-    }
-
-    return undefined;
-  };
-
   let discovery: TestDiscoveryResult | undefined;
   const toResult = (
-    route: "definition" | "conceptual",
-    routedQuery: string,
-    pack: ReturnType<typeof buildContextPack>,
-    successfulAttempt?: SearchAttemptState,
+    attempt: SearchAttempt,
+    options: Omit<ContextPackOptions, "trace">,
   ): CodebaseContextResult => {
-    const base = packedResult(route, routedQuery, pack);
-    const baseDetails = base.details as NonNullable<CodebaseContextResult["details"]>;
-    const successIndex = findSuccessfulAttemptIndex(route, attempts);
-    const successState = successfulAttempt ?? findSuccessfulAttemptState(route);
+    const pack = buildContextPack(attempt.results, {
+      ...options,
+      trace: input.diagnostic ? (trace) => {
+        attempt.contextPackTrace = trace;
+      } : undefined,
+    });
     return {
-      text: base.text,
+      text: pack.text,
       details: {
-        ...baseDetails,
-        tokenBudget: baseDetails.tokenBudget,
-        tokenEstimate: baseDetails.tokenEstimate,
+        route: attempt.kind,
+        routedQuery: attempt.query,
+        tokenBudget: pack.tokenBudget,
+        tokenEstimate: pack.tokenEstimate,
+        candidateCount: pack.candidateCount,
+        deduplicatedCount: pack.deduplicatedCount,
+        selectedCount: pack.selectedCount,
+        omittedCount: pack.omittedCount,
+        duplicateCount: pack.duplicateCount,
+        limitOmittedCount: pack.limitOmittedCount,
+        budgetOmittedCount: pack.budgetOmittedCount,
+        results: locations(pack.results),
         truncated: false,
-        recovery: buildRecoveryDetails(serializeAttempts(attemptStates), successIndex),
+        recovery: buildRecoveryDetails(attempts, attempt),
         ...(discovery ? { testDiscovery: testDiscoveryMetadata(discovery) } : undefined),
         ...(input.diagnostic && {
-          diagnostic: buildSearchDiagnostic(successState),
+          diagnostic: buildSearchDiagnostic(attempt),
         }),
       },
     };
@@ -501,24 +454,17 @@ export async function resolveSearchContext(
 
   const tryTestDiscovery = testSymbol && operations.discoverTests
     ? async (scope: SearchScope, relaxed: Array<"directory" | "fileType">): Promise<CodebaseContextResult | undefined> => {
-        const results = await recordAttempt("conceptual", query!, scope, relaxed, async () => {
+        const attempt = await recordAttempt("conceptual", query!, scope, relaxed, async () => {
           discovery = await operations.discoverTests!(testSymbol, scope);
           return discovery.results;
         }, "test-discovery");
-        if (results.length === 0) return undefined;
-        const pack = buildContextPack(results, {
+        if (!attempt || attempt.resultCount === 0) return undefined;
+        const resolved = toResult(attempt, {
           tokenBudget, maxResults: limit, preserveInputOrder: true,
           heading: `Bounded test references; not invariant coverage.${discovery!.capped ? " Source caps reached." : ""}\n${buildPackHeading("conceptual", decisions)}`,
           evidenceLabel: (result) => (result as TestReferenceResult).evidenceKind === "direct_target_test_reference"
             ? "Direct target test reference" : "Related caller test; not direct target coverage",
-          ...(input.diagnostic ? {
-            trace: (trace) => {
-              const state = findSuccessfulAttemptState("conceptual");
-              if (state) state.contextPackTrace = trace;
-            },
-          } : undefined),
         });
-        const resolved = toResult("conceptual", query!, pack);
         return {
           ...resolved,
           details: {
@@ -530,58 +476,30 @@ export async function resolveSearchContext(
     : undefined;
 
   if (definitionSymbol) {
-    const scopedDefinitionResults = await tryDefinitionLookup(definitionSymbol, Boolean(explicitSymbol));
-    if (scopedDefinitionResults.length > 0) {
-      const heading = buildPackHeading("definition", decisions);
-      return toResult(
-        "definition",
-        definitionSymbol,
-        buildContextPack(scopedDefinitionResults, {
-          tokenBudget,
-          maxResults: limit,
-          heading,
-          preserveInputOrder: true,
-          ...(input.diagnostic ? {
-            trace: (trace) => {
-              const attemptState = findSuccessfulAttemptState("definition");
-              if (attemptState) {
-                attemptState.contextPackTrace = trace;
-              }
-            },
-          } : undefined),
-        }),
-        findSuccessfulAttemptState("definition"),
-      );
+    const scopedDefinition = await tryDefinitionLookup(definitionSymbol, Boolean(explicitSymbol));
+    if (scopedDefinition && scopedDefinition.resultCount > 0) {
+      return toResult(scopedDefinition, {
+        tokenBudget,
+        maxResults: limit,
+        heading: buildPackHeading("definition", decisions),
+        preserveInputOrder: true,
+      });
     }
 
     if (explicitSymbol && hasFilters && input.allowUnscopedRecovery === true) {
-      const relaxedDefinitionResults = await tryDefinitionLookup(
+      const relaxedDefinition = await tryDefinitionLookup(
         definitionSymbol,
         Boolean(explicitSymbol),
         unscopedScope,
         relaxedFields,
       );
-      if (relaxedDefinitionResults.length > 0) {
-        const heading = buildPackHeading("definition", decisions);
-        return toResult(
-          "definition",
-          definitionSymbol,
-          buildContextPack(relaxedDefinitionResults, {
-            tokenBudget,
-            maxResults: limit,
-            heading,
-            preserveInputOrder: true,
-            ...(input.diagnostic ? {
-              trace: (trace) => {
-                const attemptState = findSuccessfulAttemptState("definition");
-                if (attemptState) {
-                  attemptState.contextPackTrace = trace;
-                }
-              },
-            } : undefined),
-          }),
-          findSuccessfulAttemptState("definition"),
-        );
+      if (relaxedDefinition && relaxedDefinition.resultCount > 0) {
+        return toResult(relaxedDefinition, {
+          tokenBudget,
+          maxResults: limit,
+          heading: buildPackHeading("definition", decisions),
+          preserveInputOrder: true,
+        });
       }
     }
 
@@ -600,9 +518,9 @@ export async function resolveSearchContext(
           tokenBudget: heading.tokenBudget,
           tokenEstimate: heading.tokenEstimate,
           truncated: heading.truncated,
-          recovery: buildRecoveryDetails(serializeAttempts(attemptStates), null),
+          recovery: buildRecoveryDetails(attempts),
           ...(input.diagnostic && {
-            diagnostic: buildSearchDiagnostic(attemptStates[attemptStates.length - 1]),
+            diagnostic: buildSearchDiagnostic(attempts.at(-1)),
           }),
         },
       };
@@ -637,32 +555,19 @@ export async function resolveSearchContext(
       if (inferredSymbol && conceptQuery === inferredSymbol && conceptQuery !== query) {
         decisions.fallbackFromOriginalConceptualToInferred = true;
       }
-      const results = await tryConceptualSearch(conceptQuery, attempt.scope, attempt.relaxed, prioritizeSourcePaths);
-      if (results.length > 0) {
+      const conceptual = await tryConceptualSearch(conceptQuery, attempt.scope, attempt.relaxed, prioritizeSourcePaths);
+      if (conceptual && conceptual.resultCount > 0) {
         const heading = `${buildPackHeading("conceptual", decisions)}${discovery?.capped ? "\nTest discovery source caps reached; ordinary retrieval fallback." : ""}`;
         const intent = analyzeQueryIntent(conceptQuery);
-        return toResult(
-          "conceptual",
-          conceptQuery,
-          buildContextPack(results, {
-            origins,
-            tokenBudget,
-            maxResults: limit,
-            heading,
-            includeExactSearchHandoff: true,
-            preferImplementationPaths:
-              intent.preferSourcePaths || (intent.primary !== "docs" && intent.primary !== "test"),
-            ...(input.diagnostic ? {
-              trace: (trace) => {
-                const attemptState = findSuccessfulAttemptState("conceptual");
-                if (attemptState) {
-                  attemptState.contextPackTrace = trace;
-                }
-              },
-            } : undefined),
-          }),
-          findSuccessfulAttemptState("conceptual"),
-        );
+        return toResult(conceptual, {
+          origins,
+          tokenBudget,
+          maxResults: limit,
+          heading,
+          includeExactSearchHandoff: true,
+          preferImplementationPaths:
+            intent.preferSourcePaths || (intent.primary !== "docs" && intent.primary !== "test"),
+        });
       }
     }
   }
@@ -680,10 +585,10 @@ export async function resolveSearchContext(
       tokenBudget: fallbackText.tokenBudget,
       tokenEstimate: fallbackText.tokenEstimate,
       truncated: fallbackText.truncated,
-      recovery: buildRecoveryDetails(serializeAttempts(attemptStates), null),
+      recovery: buildRecoveryDetails(attempts),
       ...(discovery ? { testDiscovery: testDiscoveryMetadata(discovery) } : undefined),
       ...(input.diagnostic && {
-        diagnostic: buildSearchDiagnostic(attemptStates[attemptStates.length - 1]),
+        diagnostic: buildSearchDiagnostic(attempts.at(-1)),
       }),
     },
   };
