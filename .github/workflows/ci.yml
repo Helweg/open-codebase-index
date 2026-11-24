@@ -106,7 +106,10 @@ jobs:
         run: npm run test:coverage
 
       - name: Smoke-test packed CLI and TypeScript consumer identities
-        run: npm run smoke:package -- --output-dir "${RUNNER_TEMP}/packed-cli-node-${{ matrix.node }}"
+        run: |
+          packed="${RUNNER_TEMP}/packed-cli-node-${{ matrix.node }}"
+          npm run smoke:package -- --output-dir "$packed"
+          node scripts/publish-validated-packages.mjs "$packed/validated-packages.json" --check-only
 
       - name: Check published-to-candidate index compatibility
         if: matrix.node == '24'
@@ -248,7 +251,10 @@ jobs:
         run: npx vitest run tests/tools-utils.test.ts tests/context-evidence-acceptance.test.ts tests/omp-package.test.ts
 
       - name: Smoke-test packed MCP and omp entrypoints
-        run: npm run smoke:package -- --output-dir "${RUNNER_TEMP}/packed-cli-macos"
+        run: |
+          packed="${RUNNER_TEMP}/packed-cli-macos"
+          npm run smoke:package -- --output-dir "$packed"
+          node scripts/publish-validated-packages.mjs "$packed/validated-packages.json" --check-only
 
       - name: Check published-to-candidate index compatibility
         run: |

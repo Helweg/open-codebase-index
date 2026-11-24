@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
+import { packedSdkFixtures } from "./packed-sdk-fixtures.mjs";
 
 const [manifestArg, checkOnly] = process.argv.slice(2);
 assert.ok(manifestArg && (checkOnly === undefined || checkOnly === "--check-only"),
@@ -12,11 +13,21 @@ const artifactRoot = realpathSync(path.dirname(manifestPath));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const expectedVersion = JSON.parse(readFileSync(path.join(repositoryRoot, "package.json"), "utf8")).version;
+const lock = JSON.parse(readFileSync(path.join(repositoryRoot, "package-lock.json"), "utf8"));
+const hostSdkVersion = lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"];
 const catalog = JSON.parse(readFileSync(path.join(repositoryRoot, "src", "identity-catalog.json"), "utf8"));
 const expectedNames = [catalog.product.current.packageName, catalog.product.future.packageName].sort();
 assert.equal(manifest.schemaVersion, 1);
 assert.equal(manifest.version, expectedVersion);
 assert.deepEqual(manifest.packages.map((entry) => entry.name).sort(), expectedNames);
+
+function verifyTypes(types) {
+  assert.equal(types.compiler, "5.9.3");
+  assert.equal(types.options.strict, true);
+  assert.equal(types.options.skipLibCheck, false);
+  assert.deepEqual(types.consumers.map((consumer) => consumer.extension).sort(), ["cts", "mts"]);
+  assert.ok(types.consumers.every((consumer) => consumer.diagnostics === 0));
+}
 
 function verifyArchive(entry) {
   assert.equal(entry.version, expectedVersion);
@@ -25,13 +36,24 @@ function verifyArchive(entry) {
   const integrity = `sha512-${createHash("sha512").update(readFileSync(entry.tarball)).digest("base64")}`;
   assert.equal(integrity, entry.integrity, `Validated tarball changed: ${entry.name}`);
   assert.equal(entry.validation.runtime, true);
-  assert.ok(entry.validation.sdkInteropTypes.length > 0,
-    "Publication requires upstream SDK interoperability checks; consumer-only validation is insufficient");
-  assert.equal(entry.validation.types.compiler, "5.9.3");
-  assert.equal(entry.validation.types.options.strict, true);
-  assert.equal(entry.validation.types.options.skipLibCheck, false);
-  assert.deepEqual(entry.validation.types.consumers.map((consumer) => consumer.extension).sort(), ["cts", "mts"]);
-  assert.ok(entry.validation.types.consumers.every((consumer) => consumer.diagnostics === 0));
+  const { types, sdkInteropTypes } = entry.validation;
+  const fixtures = packedSdkFixtures(artifactRoot, entry.name, hostSdkVersion);
+  assert.deepEqual(sdkInteropTypes.map((result) => result.hostSdkLayout).sort(),
+    fixtures.map(({ expectedLayout }) => expectedLayout),
+    `${entry.name}: publication requires both deduplicated and nested host SDK interoperability checks`);
+  for (const { expectedLayout, sdkVersion, installRoot } of fixtures) {
+    const result = sdkInteropTypes.find(({ hostSdkLayout }) => hostSdkLayout === expectedLayout);
+    assert.equal(result.sdkVersion, sdkVersion, `${entry.name}: unexpected root SDK version for ${expectedLayout}`);
+    assert.equal(result.sdkInterop, true);
+    verifyTypes(result);
+    const declarationRoot = path.join(installRoot, "node_modules", entry.name, "dist");
+    for (const { extension, resolvedDeclaration } of result.consumers) {
+      const declaration = extension === "mts" ? "index.d.ts" : "index.d.cts";
+      assert.equal(resolvedDeclaration, path.join(declarationRoot, declaration),
+        `${entry.name}: unexpected ${extension} declaration path for ${expectedLayout}`);
+    }
+  }
+  verifyTypes(types);
 }
 
 // Validate BOTH identities before any registry request or publication.

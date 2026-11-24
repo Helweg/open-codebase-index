@@ -27,6 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Pre-edit evaluation scope**: Keep `expected.filePath` out of `edit-context` requests; only explicit `args.filePath` scopes target resolution, so unscoped duplicate symbols no longer resolve using a gold label.
 - **Eval reindex isolation**: Load evaluation configs in memory without writing project configuration; incremental and forced project-scoped evals use an isolated worktree-local default catalog, preserving configured-store rebuild guards and structural/global isolation.
 - **Unmeasured context budgets**: Fail evaluation gates with `contextMeasurementRequired` when context thresholds are configured but no context queries are measured. Remove inactive context thresholds from the search-only smoke budgets while preserving measured context budgets.
+- **Packed OpenCode SDK validation**: Require passing deduplicated and nested host SDK type checks for both package identities, even when the production SDK and host SDK pins match.
 
 ## [0.40.1] - 2026-11-19
 
