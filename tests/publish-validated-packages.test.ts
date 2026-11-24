@@ -101,6 +101,24 @@ describe.each(names)("publication proof for %s", (name) => {
     expect(result.stderr).toContain(`${name}: unexpected ${extension} declaration path for nested`);
   });
 
+  it.each(["deduplicated", "nested"])("rejects a %s layout without both consumer modes", (layout) => {
+    const proof = receipt();
+    const { sdkInteropTypes } = proof.packages.find((entry) => entry.name === name)!.validation;
+    const row = sdkInteropTypes.find((result) => result.hostSdkLayout === layout)!;
+    row.consumers.pop();
+    const result = checkOnly(proof);
+    expect(result.status, result.stderr).toBe(1);
+  });
+
+  it.each(["deduplicated", "nested"])("rejects a %s layout with consumer diagnostics", (layout) => {
+    const proof = receipt();
+    const { sdkInteropTypes } = proof.packages.find((entry) => entry.name === name)!.validation;
+    const row = sdkInteropTypes.find((result) => result.hostSdkLayout === layout)!;
+    row.consumers[0].diagnostics = 1;
+    const result = checkOnly(proof);
+    expect(result.status, result.stderr).toBe(1);
+  });
+
   it("rejects SDK type proof copied from the other identity", () => {
     const proof = receipt();
     const { validation } = proof.packages.find((entry) => entry.name === name)!;
