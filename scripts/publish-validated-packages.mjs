@@ -3,6 +3,7 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
+import { packedSdkFixtures } from "./packed-sdk-fixtures.mjs";
 
 const [manifestArg, checkOnly] = process.argv.slice(2);
 assert.ok(manifestArg && (checkOnly === undefined || checkOnly === "--check-only"),
@@ -12,6 +13,8 @@ const artifactRoot = realpathSync(path.dirname(manifestPath));
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 const repositoryRoot = path.resolve(import.meta.dirname, "..");
 const expectedVersion = JSON.parse(readFileSync(path.join(repositoryRoot, "package.json"), "utf8")).version;
+const lock = JSON.parse(readFileSync(path.join(repositoryRoot, "package-lock.json"), "utf8"));
+const hostSdkVersion = lock.packages["node_modules/@opencode-ai/plugin"].dependencies["@opencode-ai/sdk"];
 const catalog = JSON.parse(readFileSync(path.join(repositoryRoot, "src", "identity-catalog.json"), "utf8"));
 const expectedNames = [catalog.product.current.packageName, catalog.product.future.packageName].sort();
 assert.equal(manifest.schemaVersion, 1);
@@ -34,11 +37,21 @@ function verifyArchive(entry) {
   assert.equal(integrity, entry.integrity, `Validated tarball changed: ${entry.name}`);
   assert.equal(entry.validation.runtime, true);
   const { types, sdkInteropTypes } = entry.validation;
-  assert.deepEqual(sdkInteropTypes.map((result) => result.hostSdkLayout).sort(), ["deduplicated", "nested"],
+  const fixtures = packedSdkFixtures(artifactRoot, entry.name, hostSdkVersion);
+  assert.deepEqual(sdkInteropTypes.map((result) => result.hostSdkLayout).sort(),
+    fixtures.map(({ expectedLayout }) => expectedLayout),
     `${entry.name}: publication requires both deduplicated and nested host SDK interoperability checks`);
-  for (const result of sdkInteropTypes) {
+  for (const { expectedLayout, sdkVersion, installRoot } of fixtures) {
+    const result = sdkInteropTypes.find(({ hostSdkLayout }) => hostSdkLayout === expectedLayout);
+    assert.equal(result.sdkVersion, sdkVersion, `${entry.name}: unexpected root SDK version for ${expectedLayout}`);
     assert.equal(result.sdkInterop, true);
     verifyTypes(result);
+    const declarationRoot = path.join(installRoot, "node_modules", entry.name, "dist");
+    for (const { extension, resolvedDeclaration } of result.consumers) {
+      const declaration = extension === "mts" ? "index.d.ts" : "index.d.cts";
+      assert.equal(resolvedDeclaration, path.join(declarationRoot, declaration),
+        `${entry.name}: unexpected ${extension} declaration path for ${expectedLayout}`);
+    }
   }
   verifyTypes(types);
 }
