@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.40.2] - 2026-11-25
+
+### Upgrade notes
+
+- **Catalog downgrade**: Indexes migrated to catalog schema v9 must be rebuilt before use with an older reader. Normal refresh upgrades branch call graphs one branch at a time.
+
 ### Changed
 
-- **Incremental call graph refresh**: Share JS/TS, Python, and Go refresh planning and dependency proof publication across structural and hybrid indexing. Language-specific refresh scope, SCIP behavior, and existing indexes are unchanged.
+- **Incremental call graph refresh**: Share JS/TS, Python, and Go refresh planning and dependency proof publication across structural and hybrid indexing, preserving language-specific refresh scope and SCIP behavior.
+- **Watcher and context internals**: Share module-config classification and snapshot traversal across watcher paths; unify context-search attempt bookkeeping without conflating test discovery, recovery, and misses. Add coverage for empty queries and recovery whose evidence does not fit the render budget.
+- **Branch migration records**: Share parser and symbol-extractor version records across readiness checks, stale checks, and successful writes.
+- **Dependencies**: Update the runtime OpenCode SDK to 1.19.6 and `ignore` to 7.0.16; update Vitest and its coverage provider to 5.1.1, Rollup to 4.68.7, and typescript-eslint to 8.73.0.
+- **Documentation and validation**: Document contributor workflows, indexing terms, branch-local call-graph storage, and native BM25 loading. Add a pinned startup and incremental-refresh benchmark that checks graph and index parity before reporting timings.
 
 ### Performance
 
@@ -21,8 +31,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Call graph branch isolation**: All call-graph languages share declarations and outgoing call sets without overwriting other branches’ graphs, including with SCIP enrichment. Normal refresh converts each branch separately and leaves language-specific refresh rules unchanged. The v9 catalog requires an index rebuild to downgrade to an older reader.
+- **Call graph branch isolation**: All call-graph languages share declarations and outgoing call sets without overwriting other branches’ graphs, including with SCIP enrichment. Upgrades preserve inactive branch graphs and language-specific refresh rules.
 - **Live hybrid readers**: Reopen SQLite after an in-place schema upgrade so already-running readers see newly published call edges.
+- **Watcher startup and config handling**: Schedule catch-up when subscriptions become ready without waiting for a readiness caller. Classify project config edits using the watcher's path policy and cover edits during startup with a regression test.
 - **Explicit eval config selection**: Reject missing `--config` paths before indexing instead of silently falling back to another config; omitted `--config` keeps the existing fallback.
 - **Pre-edit evaluation scope**: Keep `expected.filePath` out of `edit-context` requests; only explicit `args.filePath` scopes target resolution, so unscoped duplicate symbols no longer resolve using a gold label.
 - **Eval reindex isolation**: Load evaluation configs in memory without writing project configuration; incremental and forced project-scoped evals use an isolated worktree-local default catalog, preserving configured-store rebuild guards and structural/global isolation.
@@ -1194,7 +1205,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - File watcher for automatic re-indexing
 - OpenCode tools: `codebase_search`, `index_codebase`, `index_status`, `index_health_check`
 
-[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.40.1...HEAD
+[Unreleased]: https://github.com/Helweg/open-codebase-index/compare/v0.40.2...HEAD
+[0.40.2]: https://github.com/Helweg/open-codebase-index/compare/v0.40.1...v0.40.2
 [0.40.1]: https://github.com/Helweg/open-codebase-index/compare/v0.40.0...v0.40.1
 [0.40.0]: https://github.com/Helweg/open-codebase-index/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/Helweg/open-codebase-index/compare/v0.38.2...v0.39.0
