@@ -195,7 +195,7 @@ Rust components exposed via NAPI:
 
 In schema v9, `call_edge_sets` identifies immutable outgoing call sets per caller, and `shared_call_edges` stores their call sites. Identical sets for a caller can be reused across branches; `branch_symbols.edge_set_id` selects the set for a symbol on a particular branch.
 
-Opening the database for writing upgrades older schemas without rewriting legacy `call_edges` rows. Queries still use those rows for symbols without a selector, and normal indexing converts each branch as it refreshes its graph. Read-only opens of v6–v8 use a temporary compatibility view without migrating the database. The SQLite layout changed; existing public call-edge result shapes and NAPI `CallEdgeData` fields did not.
+The schema v9 migration leaves existing `call_edges` rows in place. Queries still use those rows for symbols without a selector, and normal indexing converts each branch as it refreshes its graph. Read-only opens of v6–v8 use a temporary compatibility view without migrating the database. The SQLite layout changed; existing public call-edge result shapes and NAPI `CallEdgeData` fields did not.
 
 ### Tool Runtime (`src/tools/`)
 
@@ -295,7 +295,7 @@ Solution:
    - Deduplicated storage
    
 2. **Branch catalog tracks membership**
-   - `branch_chunks` tracks chunk membership; `branch_symbols` tracks symbol membership and selects each symbol's outgoing call set on that branch
+   - `branch_chunks` tracks chunk membership; `branch_symbols` tracks symbol membership and stores an optional outgoing call-set selector for each symbol on that branch
    - Instant branch switch (no re-embedding)
    
 3. **Filter search by current branch**
