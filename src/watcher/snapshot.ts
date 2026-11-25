@@ -67,31 +67,15 @@ export async function buildFileSnapshotScan(
     if (stat) snapshot.set(normalizedPath, { size: stat.size, mtimeMs: stat.mtimeMs });
   };
 
-  const walk = async (directoryPath: string, depth: number): Promise<void> => {
-    let entries: Dirent[];
-    try {
-      entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
-    } catch (error) {
-      if (isMissingFsError(error)) return;
-      if (isPermissionFsError(error)) {
-        unreadablePrefixes.add(path.resolve(directoryPath));
-        return;
-      }
-      throw error;
-    }
-
-    for (const entry of entries) {
-      const fullPath = path.join(directoryPath, entry.name);
-      if (entry.isDirectory()) {
-        if (!shouldTraverseDirectory(fullPath, normalizedProjectRoot, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions)) continue;
-        if (maxDepth === -1 || depth < maxDepth) await walk(fullPath, depth + 1);
-      } else if (entry.isFile()) {
-        await includeFile(fullPath);
-      }
-    }
-  };
-
-  await walk(normalizedProjectRoot, 0);
+  await walkSnapshotDirectory(
+    normalizedProjectRoot,
+    0,
+    maxDepth,
+    unreadablePrefixes,
+    (directoryPath) =>
+      shouldTraverseDirectory(directoryPath, normalizedProjectRoot, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions),
+    includeFile,
+  );
   await includeExplicitConfigPaths(snapshot, unreadablePrefixes, configPaths);
   return { entries: snapshot, unreadablePrefixes };
 }
@@ -142,29 +126,6 @@ export async function buildFileSnapshotForPathScan(
     if (stat) snapshot.set(normalizedPath, { size: stat.size, mtimeMs: stat.mtimeMs });
   };
 
-  const walk = async (directoryPath: string, depth: number): Promise<void> => {
-    let entries: Dirent[];
-    try {
-      entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
-    } catch (error) {
-      if (isMissingFsError(error)) return;
-      if (isPermissionFsError(error)) {
-        unreadablePrefixes.add(path.resolve(directoryPath));
-        return;
-      }
-      throw error;
-    }
-    for (const entry of entries) {
-      const fullPath = path.join(directoryPath, entry.name);
-      if (entry.isDirectory()) {
-        if (!shouldTraverseDirectory(fullPath, normalizedProjectRoot, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions)) continue;
-        if (maxDepth === -1 || depth < maxDepth) await walk(fullPath, depth + 1);
-      } else if (entry.isFile()) {
-        await includeFile(fullPath);
-      }
-    }
-  };
-
   const targetStat = await readStatIfFile(normalizedTargetPath, unreadablePrefixes);
   const targetDirectory = targetStat ? path.dirname(normalizedTargetPath) : normalizedTargetPath;
   const targetDepth = path.relative(normalizedProjectRoot, targetDirectory).split(path.sep).filter(Boolean).length;
@@ -180,10 +141,54 @@ export async function buildFileSnapshotForPathScan(
     await includeExplicitConfigPathsInPath(snapshot, unreadablePrefixes, configPaths, normalizedTargetPath);
     return { entries: snapshot, unreadablePrefixes };
   }
-  if (targetStat) await includeFile(normalizedTargetPath);
-  else await walk(normalizedTargetPath, targetDepth);
+  if (targetStat) {
+    await includeFile(normalizedTargetPath);
+  } else {
+    await walkSnapshotDirectory(
+      normalizedTargetPath,
+      targetDepth,
+      maxDepth,
+      unreadablePrefixes,
+      (directoryPath) =>
+        shouldTraverseDirectory(directoryPath, normalizedProjectRoot, config.exclude, ignoreFilter, includeIgnored, gitIgnoreFilter, filterOptions),
+      includeFile,
+    );
+  }
   await includeExplicitConfigPathsInPath(snapshot, unreadablePrefixes, configPaths, normalizedTargetPath);
   return { entries: snapshot, unreadablePrefixes };
+}
+
+async function walkSnapshotDirectory(
+  directoryPath: string,
+  depth: number,
+  maxDepth: number,
+  unreadablePrefixes: Set<string>,
+  canTraverse: (directoryPath: string) => boolean,
+  includeFile: (filePath: string) => Promise<void>,
+): Promise<void> {
+  let entries: Dirent[];
+  try {
+    entries = await fsPromises.readdir(directoryPath, { withFileTypes: true });
+  } catch (error) {
+    if (isMissingFsError(error)) return;
+    if (isPermissionFsError(error)) {
+      unreadablePrefixes.add(path.resolve(directoryPath));
+      return;
+    }
+    throw error;
+  }
+
+  for (const entry of entries) {
+    const fullPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      if (!canTraverse(fullPath)) continue;
+      if (maxDepth === -1 || depth < maxDepth) {
+        await walkSnapshotDirectory(fullPath, depth + 1, maxDepth, unreadablePrefixes, canTraverse, includeFile);
+      }
+    } else if (entry.isFile()) {
+      await includeFile(fullPath);
+    }
+  }
 }
 
 function canReachScopedTarget(
