@@ -191,7 +191,11 @@ Rust components exposed via NAPI:
 | InvertedIndex | Custom | BM25 keyword search |
 | Hasher | xxhash-rust | Fast content hashing |
 
-The crate root in `native/src/lib.rs` remains the NAPI assembly facade. The Database NAPI class lives in `native/src/bindings/database.rs`. SQLite call-graph rows and queries live in `native/src/db/call_graph.rs`, while the remaining schema, migrations, chunk, embedding, and branch persistence stay in `native/src/db.rs`. Source-level TypeScript/JavaScript module resolution stays above this boundary in the TypeScript indexer; the persisted call-edge contract and NAPI value shapes remain unchanged.
+`native/src/lib.rs` assembles the NAPI exports, and `native/src/bindings/database.rs` exposes the Database class. `native/src/db.rs` manages the SQLite schema and dispatches migrations. Call-graph queries live in `native/src/db/call_graph.rs`; `native/src/db/shared_calls.rs` owns the schema v9 migration and shared call-set writes. Source-level TypeScript/JavaScript module resolution still runs in the TypeScript indexer.
+
+In schema v9, `call_edge_sets` identifies immutable outgoing call sets per caller, and `shared_call_edges` stores their call sites. Identical sets for a caller can be reused across branches; `branch_symbols.edge_set_id` selects the set for a symbol on a particular branch.
+
+Opening the database for writing upgrades older schemas without rewriting legacy `call_edges` rows. Queries still use those rows for symbols without a selector, and normal indexing converts each branch as it refreshes its graph. Read-only opens of v6–v8 use a temporary compatibility view without migrating the database. The SQLite layout changed; existing public call-edge result shapes and NAPI `CallEdgeData` fields did not.
 
 ### Tool Runtime (`src/tools/`)
 
@@ -291,7 +295,7 @@ Solution:
    - Deduplicated storage
    
 2. **Branch catalog tracks membership**
-   - Lightweight: just chunk IDs per branch
+   - `branch_chunks` tracks chunk membership; `branch_symbols` tracks symbol membership and selects each symbol's outgoing call set on that branch
    - Instant branch switch (no re-embedding)
    
 3. **Filter search by current branch**
