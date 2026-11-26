@@ -37,6 +37,7 @@ import { loadBudget, loadGoldenDataset } from "./schema.js";
 import type {
   EvalComparison,
   EvalGateResult,
+  EvalResolvedRoute,
   EvalRunOptions,
   EvalSearchResult,
   GoldenDataset,
@@ -170,20 +171,20 @@ function architectureEvidenceResults(
   return { results, candidateCount: candidates.length };
 }
 
+interface RetrievalOutcome {
+  results: EvalSearchResult[];
+  resolvedRoute: EvalResolvedRoute;
+  routedQuery: string;
+  context?: Parameters<typeof buildPerQueryResult>[5];
+  latencyMs: number;
+}
+
 async function runArchitectureContextQuery(
   indexer: Indexer,
   projectRoot: string,
   query: GoldenQuery,
-): Promise<{
-  results: EvalSearchResult[];
-  context: {
-    tokenBudget: number;
-    responseTokens: number;
-    candidateCount: number;
-    deduplicatedCount: number;
-    omittedCount: number;
-  };
-}> {
+  start: number,
+): Promise<RetrievalOutcome> {
   const architecture = await getArchitectureContextForIndexer(indexer, projectRoot, {
     query: query.query,
     directory: query.args?.directory,
@@ -194,6 +195,8 @@ async function runArchitectureContextQuery(
   const evidence = architectureEvidenceResults(architecture);
   return {
     results: evidence.results,
+    resolvedRoute: "search",
+    routedQuery: query.query,
     context: {
       tokenBudget: architecture.tokenBudget,
       responseTokens: architecture.tokenEstimate,
@@ -201,6 +204,7 @@ async function runArchitectureContextQuery(
       deduplicatedCount: evidence.results.length,
       omittedCount: Object.values(architecture.omitted).reduce((total, value) => total + value, 0),
     },
+    latencyMs: performance.now() - start,
   };
 }
 
@@ -208,18 +212,8 @@ async function runEditContextQuery(
   indexer: Indexer,
   projectRoot: string,
   query: GoldenQuery,
-): Promise<{
-  results: EvalSearchResult[];
-  resolvedRoute: "search" | "definition";
-  routedQuery: string;
-  context: {
-    tokenBudget: number;
-    responseTokens: number;
-    candidateCount: number;
-    deduplicatedCount: number;
-    omittedCount: number;
-  };
-}> {
+  start: number,
+): Promise<RetrievalOutcome> {
   let selectedEvidence: CodebaseEditContextEvidence = { sources: [], callers: [], callees: [], testReferences: [] };
   let callers: CallGraphDataResult | undefined;
 
@@ -267,7 +261,87 @@ async function runEditContextQuery(
       deduplicatedCount: results.length,
       omittedCount: 0,
     },
+    latencyMs: performance.now() - start,
   };
+}
+
+async function retrieveQuery(
+  indexer: Indexer,
+  projectRoot: string,
+  query: GoldenQuery,
+): Promise<RetrievalOutcome> {
+  const start = performance.now();
+  switch (query.retrievalMode) {
+    case "architecture":
+      return runArchitectureContextQuery(indexer, projectRoot, query, start);
+    case "edit-context":
+      return runEditContextQuery(indexer, projectRoot, query, start);
+    case "context": {
+      const contextResult = await resolveSearchContext({
+        query: query.query,
+        symbol: query.args?.symbol,
+        fileType: query.args?.fileType,
+        directory: query.args?.directory,
+        allowUnscopedRecovery: query.args?.allowUnscopedRecovery,
+        limit: 10,
+        tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
+      }, {
+        lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
+          metadataOnly: true,
+          filterByBranch: !!query.expected.branch,
+          definitionIntent: true,
+          fileType: scope.fileType,
+          directory: scope.directory,
+        }),
+        search: (searchQuery, limit, scope, _trace, searchOptions) => indexer.search(searchQuery, limit, {
+          metadataOnly: true,
+          filterByBranch: !!query.expected.branch,
+          definitionIntent: false,
+          fileType: scope.fileType,
+          directory: scope.directory,
+          prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
+        }),
+      });
+      const details = contextResult.details;
+      const results = details?.results ?? [];
+      const latencyMs = performance.now() - start;
+
+      const successfulRecoveryAttempt = details?.recovery?.successfulAttemptIndex;
+      const recoveryAttempts = details?.recovery?.attempts ?? [];
+      const recoveryRelaxed = successfulRecoveryAttempt === undefined
+        ? false
+        : (recoveryAttempts[successfulRecoveryAttempt]?.relaxedFields.length ?? 0) > 0;
+      const recoveryUsed = recoveryAttempts.length > 1
+        || recoveryAttempts.some((attempt) => attempt.relaxedFields.length > 0);
+
+      return {
+        results,
+        resolvedRoute: details?.route === "definition" ? "definition" : "search",
+        routedQuery: details?.routedQuery ?? query.query,
+        context: details ? {
+          tokenBudget: details.tokenBudget,
+          responseTokens: details.tokenEstimate,
+          candidateCount: details.candidateCount ?? 0,
+          deduplicatedCount: details.deduplicatedCount ?? 0,
+          omittedCount: details.omittedCount ?? 0,
+          recoveryUsed,
+          recoveryRelaxed,
+        } : undefined,
+        latencyMs,
+      };
+    }
+    case "search":
+    case undefined: {
+      const results = await indexer.search(query.query, 10, {
+        metadataOnly: true,
+        filterByBranch: !!query.expected.branch,
+        fileType: query.args?.fileType,
+        directory: query.args?.directory,
+      });
+      const latencyMs = performance.now() - start;
+      return { results, resolvedRoute: "search", routedQuery: query.query, latencyMs };
+    }
+  }
 }
 
 export interface EvalRunResult {
@@ -320,64 +394,9 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         );
       }
 
-      const start = performance.now();
-      const editContextResult = query.retrievalMode === "edit-context"
-        ? await runEditContextQuery(indexer, options.projectRoot, query)
-        : undefined;
-      const architectureResult = query.retrievalMode === "architecture"
-        ? await runArchitectureContextQuery(indexer, options.projectRoot, query)
-        : undefined;
-      const contextResult = query.retrievalMode === "context"
-        ? await resolveSearchContext({
-          query: query.query,
-          symbol: query.args?.symbol,
-          fileType: query.args?.fileType,
-          directory: query.args?.directory,
-          allowUnscopedRecovery: query.args?.allowUnscopedRecovery,
-          limit: 10,
-          tokenBudget: DEFAULT_CONTEXT_PACK_TOKEN_BUDGET,
-        }, {
-          lookup: (symbol, limit, scope) => indexer.search(symbol, limit, {
-            metadataOnly: true,
-            filterByBranch: !!query.expected.branch,
-            definitionIntent: true,
-            fileType: scope.fileType,
-            directory: scope.directory,
-          }),
-          search: (searchQuery, limit, scope, _trace, searchOptions) => indexer.search(searchQuery, limit, {
-            metadataOnly: true,
-            filterByBranch: !!query.expected.branch,
-            definitionIntent: false,
-            fileType: scope.fileType,
-            directory: scope.directory,
-            prioritizeSourcePaths: searchOptions?.prioritizeSourcePaths,
-          }),
-        })
-        : undefined;
-      const result = architectureResult?.results
-        ?? editContextResult?.results
-        ?? (contextResult ? contextResult.details?.results ?? [] : undefined)
-        ?? await indexer.search(query.query, 10, {
-          metadataOnly: true,
-          filterByBranch: !!query.expected.branch,
-          fileType: query.args?.fileType,
-          directory: query.args?.directory,
-        });
-      const elapsed = performance.now() - start;
-      const resolvedRoute = editContextResult?.resolvedRoute
-        ?? (contextResult?.details?.route === "definition" ? "definition" : "search");
-      const routedQuery = editContextResult?.routedQuery
-        ?? contextResult?.details?.routedQuery
-        ?? query.query;
-      const successfulRecoveryAttempt = contextResult?.details?.recovery?.successfulAttemptIndex;
-      const recoveryAttempts = contextResult?.details?.recovery?.attempts ?? [];
-      const recoveryRelaxed = successfulRecoveryAttempt === undefined
-        ? false
-        : (recoveryAttempts[successfulRecoveryAttempt]?.relaxedFields.length ?? 0) > 0;
-      const recoveryUsed = recoveryAttempts.length > 1
-        || recoveryAttempts.some((attempt) => attempt.relaxedFields.length > 0);
+      const outcome = await retrieveQuery(indexer, options.projectRoot, query);
 
-      const materialized: EvalSearchResult[] = result.map((item) => {
+      const materialized: EvalSearchResult[] = outcome.results.map((item) => {
         const graphDirection: EvalSearchResult["graphDirection"] = "graphDirection" in item
           && (item.graphDirection === "caller" || item.graphDirection === "callee")
           ? item.graphDirection
@@ -393,20 +412,7 @@ export async function runEvaluation(options: EvalRunOptions): Promise<EvalRunRes
         };
       });
 
-      const contextMeasurement = architectureResult?.context ?? editContextResult?.context ?? (contextResult?.details ? {
-        tokenBudget: contextResult.details.tokenBudget,
-        responseTokens: contextResult.details.tokenEstimate,
-        candidateCount: contextResult.details.candidateCount ?? 0,
-        deduplicatedCount: contextResult.details.deduplicatedCount ?? 0,
-        omittedCount: contextResult.details.omittedCount ?? 0,
-        recoveryUsed,
-        recoveryRelaxed,
-      } : undefined);
-
-      perQuery.push(buildPerQueryResult(query, materialized, elapsed, 10, {
-        resolvedRoute,
-        routedQuery,
-      }, contextMeasurement));
+      perQuery.push(buildPerQueryResult(query, materialized, outcome.latencyMs, 10, outcome, outcome.context));
     }
 
     const logger = indexer.getLogger();
