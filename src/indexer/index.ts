@@ -5904,7 +5904,7 @@ export class Indexer {
         removed: removedCount,
       });
 
-      if (stats.totalChunks === 0 && removedCount === 0) {
+      if (stats.totalChunks === 0) {
         const removedStoredChunks = this.replaceBranchCatalog(
           store,
           invertedIndex,
@@ -5913,55 +5913,22 @@ export class Indexer {
           previousBranchChunkIdSet, stagedChunkIds, currentChunkIds,
           previousBranchSymbolIdSet, stagedSymbolIds, allSymbolIds,
         );
-        const vectorPath = path.join(this.indexPath, "vectors");
-        const shouldFingerprintLegacyPair = !isStructural && !requireLoadedCapability(store, "vector store").hasFingerprint() &&
-          existsSync(vectorPath) &&
-          existsSync(`${vectorPath}.meta.json`);
-        if (backfilledBlameMetadata || shouldFingerprintLegacyPair || removedStoredChunks) {
-          if (!isStructural) requireLoadedCapability(store, "vector store").save();
+        if (!isStructural) {
+          const removalOnly = removedCount > 0;
+          let shouldFingerprintLegacyPair = false;
+          if (!removalOnly) {
+            const vectorPath = path.join(this.indexPath, "vectors");
+            shouldFingerprintLegacyPair = !requireLoadedCapability(store, "vector store").hasFingerprint() &&
+              existsSync(vectorPath) &&
+              existsSync(`${vectorPath}.meta.json`);
+          }
+          if (removalOnly || backfilledBlameMetadata || shouldFingerprintLegacyPair || removedStoredChunks) {
+            requireLoadedCapability(store, "vector store").save();
+          }
+          if (removalOnly || removedStoredChunks || keywordTokenizerUpdated) {
+            this.saveInvertedIndex(invertedIndex);
+          }
         }
-        if ((removedStoredChunks || keywordTokenizerUpdated) && !isStructural) {
-          this.saveInvertedIndex(invertedIndex);
-        }
-        saveBranchMigrationVersions(database, migrationSuffix);
-        this.saveBranchCommit(database, indexedCommit);
-        if (isStructural) this.saveStructuralIndexMetadata();
-        else this.saveIndexMetadata(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
-        this.indexCompatibility = { compatible: true };
-        if (structuralGeneration) database.setMetadata("index.structuralGeneration", structuralGeneration);
-        throwIfOperationAborted(signal);
-        database.commitWriteTransaction();
-        writeTransactionActive = false;
-        if (structuralGeneration) this.publishStructuralKeywordGeneration(invertedIndex, structuralGeneration);
-        this.finalizeFailedBatchWriteState(failedProcessing.state, resolvedRetryChunkIds);
-        if (scopedRoots) {
-          this.replaceScopedFileHashCache(currentFileHashes, scopedRoots);
-        } else {
-          this.fileHashCache = currentFileHashes;
-          this.saveFileHashCache();
-        }
-        stats.durationMs = Date.now() - startTime;
-        onProgress?.({
-          phase: "complete",
-          filesProcessed: files.length,
-          totalFiles: files.length,
-          chunksProcessed: 0,
-          totalChunks: 0,
-        });
-        return stats;
-      }
-
-      if (stats.totalChunks === 0) {
-        this.replaceBranchCatalog(
-          store,
-          invertedIndex,
-          database,
-          branchCatalogKey,
-          previousBranchChunkIdSet, stagedChunkIds, currentChunkIds,
-          previousBranchSymbolIdSet, stagedSymbolIds, allSymbolIds,
-        );
-        if (!isStructural) requireLoadedCapability(store, "vector store").save();
-        if (!isStructural) this.saveInvertedIndex(invertedIndex);
         saveBranchMigrationVersions(database, migrationSuffix);
         this.saveBranchCommit(database, indexedCommit);
         if (isStructural) this.saveStructuralIndexMetadata();
