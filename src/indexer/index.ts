@@ -15,7 +15,7 @@ import {
   EmbeddingProviderInterface,
   CustomProviderNonRetryableError,
 } from "../embeddings/provider.js";
-import { collectFiles, isExcludedByPatterns, type SkippedFile } from "../utils/files.js";
+import { collectFiles, isExcludedByPatterns, type CollectFilesResult, type SkippedFile } from "../utils/files.js";
 import { createCostEstimate, CostEstimate, DryRunEstimate } from "../utils/cost.js";
 import { Logger, initializeLogger } from "../utils/logger.js";
 import {
@@ -4673,14 +4673,13 @@ export class Indexer {
     };
   }
 
-  async estimateCost(options: IndexOperationOptions = {}): Promise<CostEstimate> {
-    throwIfOperationAborted(options.signal);
-    const { configuredProviderInfo } = await this.ensureInitialized();
-
-    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
-    const { files } = await collectFiles(
+  private discoverSourceFiles(
+    signal: IndexOperationOptions["signal"],
+    heartbeat: IndexOperationOptions["heartbeat"],
+  ): Promise<CollectFilesResult> {
+    return collectFiles(
       this.materializedProjectRoot,
-      includePatterns,
+      [...this.config.include, ...this.config.additionalInclude],
       this.config.exclude,
       this.config.indexing.maxFileSize,
       this.getMaterializedKnowledgeBases(),
@@ -4692,11 +4691,18 @@ export class Indexer {
           this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
           this.indexPath,
         ],
-        signal: options.signal,
-        heartbeat: options.heartbeat,
+        signal,
+        heartbeat,
       },
       this.config.indexing.includeIgnored ?? [],
     );
+  }
+
+  async estimateCost(options: IndexOperationOptions = {}): Promise<CostEstimate> {
+    throwIfOperationAborted(options.signal);
+    const { configuredProviderInfo } = await this.ensureInitialized();
+
+    const { files } = await this.discoverSourceFiles(options.signal, options.heartbeat);
 
     return createCostEstimate(files, requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
   }
@@ -4713,26 +4719,7 @@ export class Indexer {
     throwIfOperationAborted(options.signal);
     const { configuredProviderInfo } = await this.ensureInitialized();
     const maxChunkTokens = getSafeEmbeddingChunkTokenLimit(requireLoadedCapability(configuredProviderInfo, "embedding provider configuration"));
-    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
-    const { files } = await collectFiles(
-      this.materializedProjectRoot,
-      includePatterns,
-      this.config.exclude,
-      this.config.indexing.maxFileSize,
-      this.getMaterializedKnowledgeBases(),
-      {
-        maxDepth: this.config.indexing.maxDepth,
-        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        includeExcluded: this.config.indexing.includeExcluded,
-        protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
-          this.indexPath,
-        ],
-        signal: options.signal,
-        heartbeat: options.heartbeat,
-      },
-      this.config.indexing.includeIgnored ?? [],
-    );
+    const { files } = await this.discoverSourceFiles(options.signal, options.heartbeat);
 
     let filesCount = 0;
     let chunksCount = 0;
@@ -5014,26 +5001,7 @@ export class Indexer {
       this.logger.info("Reindexing cached XML and SVG files for semantic markup support");
     }
 
-    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
-    const { files, skipped } = await collectFiles(
-      this.materializedProjectRoot,
-      includePatterns,
-      this.config.exclude,
-      this.config.indexing.maxFileSize,
-      this.getMaterializedKnowledgeBases(),
-      {
-        maxDepth: this.config.indexing.maxDepth,
-        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        includeExcluded: this.config.indexing.includeExcluded,
-        protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
-          this.indexPath,
-        ],
-        signal,
-        heartbeat,
-      },
-      this.config.indexing.includeIgnored ?? [],
-    );
+    const { files, skipped } = await this.discoverSourceFiles(signal, heartbeat);
     throwIfOperationAborted(signal);
 
     stats.totalFiles = files.length;
@@ -6813,26 +6781,7 @@ export class Indexer {
     this.fileHashCache.clear();
     this.loadFileHashCache();
     throwIfOperationAborted(options.signal);
-    const includePatterns = [...this.config.include, ...this.config.additionalInclude];
-    const { files } = await collectFiles(
-      this.materializedProjectRoot,
-      includePatterns,
-      this.config.exclude,
-      this.config.indexing.maxFileSize,
-      this.getMaterializedKnowledgeBases(),
-      {
-        maxDepth: this.config.indexing.maxDepth,
-        maxFilesPerDirectory: this.config.indexing.maxFilesPerDirectory,
-        includeExcluded: this.config.indexing.includeExcluded,
-        protectedPaths: [
-          this.indexPathOverride ?? resolveProjectIndexPath(this.projectRoot, this.config.scope, this.host, this.config.indexPath),
-          this.indexPath,
-        ],
-        signal: options.signal,
-        heartbeat: options.heartbeat,
-      },
-      this.config.indexing.includeIgnored ?? [],
-    );
+    const { files } = await this.discoverSourceFiles(options.signal, options.heartbeat);
     throwIfOperationAborted(options.signal);
     const localModuleResolutionState = readLocalModuleResolutionState(this.materializedProjectRoot, files);
     await options.heartbeat?.();
